@@ -768,11 +768,13 @@ void TestKeeper::set(
 
 void TestKeeper::list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch)
 {
     TestKeeperListRequest request;
     request.path = path;
+    request.list_request_type = list_request_type;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperListRequest>(std::move(request));

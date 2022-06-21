@@ -1161,6 +1161,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         }
 
         auto & container = storage.container;
+
         auto node_it = container.find(request.path);
         if (node_it == container.end())
         {
@@ -1178,8 +1179,27 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
 
+            const auto add_child = [&](const auto child)
+            {
+                using enum Coordination::ListRequestType;
+
+                if (request.list_request_type == ALL)
+                    return true;
+
+                auto child_it = container.find(fmt::format("{}/{}", request.path, child));
+                if (child_it == container.end())
+                    onStorageInconsistency();
+
+                const auto is_ephemeral = child_it->value.stat.ephemeralOwner != 0;
+
+                return (is_ephemeral && request.list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && request.list_request_type == PERSISTENT_ONLY);
+            };
+
             for (const auto child : children)
-                response.names.push_back(child.toString());
+            {
+                if (add_child(child))
+                    response.names.push_back(child.toString());
+            }
 
             response.stat = node_it->value.stat;
             response.error = Coordination::Error::ZOK;
