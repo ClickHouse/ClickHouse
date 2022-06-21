@@ -23,21 +23,27 @@ bool ParserKQLBase :: parsePrepare(Pos & pos)
 String ParserKQLBase :: getExprFromToken(Pos &pos)
 {
     String res;
+    std::vector<String> tokens;
     std::unique_ptr<IParserKQLFunction> kql_function;
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         String token = String(pos->begin,pos->end);
         String new_token;
-        if (pos->type == TokenType::BareWord )
+        if (!KQLOperators().convert(tokens,pos))
         {
-            kql_function = KQLFunctionFactory::get(token);
-            if (kql_function && kql_function->convert(new_token,pos))
-                token = new_token;
+            if (pos->type == TokenType::BareWord )
+            {
+                kql_function = KQLFunctionFactory::get(token);
+                if (kql_function && kql_function->convert(new_token,pos))
+                    token = new_token;
+            }
+            tokens.push_back(token);
         }
-        res = res + token +" ";
         ++pos;
     }
+    for (auto token:tokens) 
+        res = res + token +" ";
     return res;
 }
 
