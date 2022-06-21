@@ -30,7 +30,9 @@ set (LIBURING_CONFIG_HAS_OPEN_HOW,        "no")
 set (LIBURING_CONFIG_HAS_STATX,           "no")
 set (LIBURING_CONFIG_HAS_GLIBC_STATX,     "no")
 
+add_compile_definitions(_GNU_SOURCE)
 add_compile_definitions(LIBURING_INTERNAL)
+
 configure_file (compat.h.in ${LIBURING_COMPAT_HEADER})
 
 add_library (_liburing ${SRCS})
