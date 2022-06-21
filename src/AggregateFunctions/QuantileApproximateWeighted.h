@@ -108,7 +108,7 @@ struct QuantileApproximateWeighted
         std::vector<Float64> cum_sum_array;
 
         bool first = true;
-        for(size_t idx = 0 ; idx < size ; ++idx)
+        for (size_t idx = 0; idx < size; ++idx)
         {
             accumulated += value_weight_pairs[idx].second;
 
@@ -131,25 +131,36 @@ struct QuantileApproximateWeighted
         UnderlyingType g;
 
         size_t idx = 0;
-        if (level >= value_weight_pairs[size - 2].second)
+        if (size >= 2)
         {
-            idx = size - 2;
-        }
-        else
-        {
-            while (level > value_weight_pairs[idx + 1].second)
-                idx++;
+            if (level >= value_weight_pairs[size - 2].second)
+            {
+                idx = size - 2;
+            }
+            else
+            {
+                while (level > value_weight_pairs[idx + 1].second)
+                    idx++;
+            }
         }
 
-        Float64 xl = value_weight_pairs[idx].second, xr = value_weight_pairs[idx + 1].second;
-        UnderlyingType yl = value_weight_pairs[idx].first, yr = value_weight_pairs[idx + 1].first;
+        size_t l = idx;
+        size_t u = idx + 1 < size ? idx + 1 : idx;
+
+        Float64 xl = value_weight_pairs[l].second, xr = value_weight_pairs[u].second;
+        UnderlyingType yl = value_weight_pairs[l].first, yr = value_weight_pairs[u].first;
 
         if (level < xl)
             yr = yl;
         if (level > xr)
             yl = yr;
 
-        auto dydx = (yr - yl) / (xr - xl);
+        auto dy = yr - yl;
+        auto dx = xr - xl;
+
+        dx = dx == 0 ? 1 : dx;
+        auto dydx = dy / dx;
+
         g = yl + dydx * (level - xl);
 
         return g;
@@ -188,7 +199,7 @@ struct QuantileApproximateWeighted
         std::vector<Float64> cum_sum_array;
 
         bool first = true;
-        for (size_t idx = 0 ; idx < size ; ++idx)
+        for (size_t idx = 0; idx < size; ++idx)
         {
             accumulated += value_weight_pairs[idx].second;
 
@@ -205,7 +216,7 @@ struct QuantileApproximateWeighted
 
         /// weighted_quantile = cum_sum_arr - (0.5 * sample_weights)
         for (size_t idx = 0; idx < size; ++idx)
-            value_weight_pairs[idx].second = (cum_sum_array[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+            value_weight_pairs[idx].second = sum_weight == 0 ? 0 : (cum_sum_array[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
 
         size_t level_index = 0;
 
@@ -214,26 +225,39 @@ struct QuantileApproximateWeighted
             /// linear interpolation for every level
             UnderlyingType g;
             auto level = levels[indices[level_index]];
+
             size_t idx = 0;
-            if (level >= value_weight_pairs[size - 2].second)
+            if (size >= 2)
             {
-                idx = size - 2;
-            }
-            else
-            {
-                while (level > value_weight_pairs[idx + 1].second)
-                    idx++;
+                if (level >= value_weight_pairs[size - 2].second)
+                {
+                    idx = size - 2;
+                }
+                else
+                {
+                    while (level > value_weight_pairs[idx + 1].second)
+                        idx++;
+                }
             }
 
-            Float64 xl = value_weight_pairs[idx].second, xr = value_weight_pairs[idx + 1].second;
-            UnderlyingType yl = value_weight_pairs[idx].first, yr = value_weight_pairs[idx + 1].first;
+            size_t l = idx;
+            size_t u = idx + 1 < size ? idx + 1 : idx;
+
+            Float64 xl = value_weight_pairs[l].second, xr = value_weight_pairs[u].second;
+            UnderlyingType yl = value_weight_pairs[l].first, yr = value_weight_pairs[u].first;
 
             if (level < xl)
                 yr = yl;
             if (level > xr)
                 yl = yr;
 
-            auto dydx = (yr - yl) / (xr - xl);
+
+            auto dy = yr - yl;
+            auto dx = xr - xl;
+
+            dx = dx == 0 ? 1 : dx;
+            auto dydx = dy / dx;
+
             g = yl + dydx * (level - xl);
 
             result[indices[level_index]] = g;
@@ -249,7 +273,7 @@ struct QuantileApproximateWeighted
 
     void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
     {
-        throw Exception("Method getManyFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method getManyFloat is not implemented for QuantileApproximateWeighted", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 
