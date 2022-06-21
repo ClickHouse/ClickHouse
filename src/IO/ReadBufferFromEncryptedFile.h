@@ -30,6 +30,8 @@ public:
 
     void setReadUntilEnd() override { in->setReadUntilEnd(); }
 
+    size_t getFileSize() override { return in->getFileSize(); }
+
 private:
     bool nextImpl() override;
 

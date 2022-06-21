@@ -26,7 +26,7 @@ class ReplicatedAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "replicated";
 
-    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_);
+    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_, bool allow_backup);
     virtual ~ReplicatedAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -35,6 +35,9 @@ public:
     void stopPeriodicReloading() override { stopWatchingThread(); }
 
     bool exists(const UUID & id) const override;
+
+    bool isBackupAllowed() const override { return backup_allowed; }
+    void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
 
 private:
     String zookeeper_path;
@@ -50,6 +53,7 @@ private:
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
+    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
     bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
     bool updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
@@ -85,5 +89,6 @@ private:
     std::unordered_map<UUID, Entry> entries_by_id;
     std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
     AccessChangesNotifier & changes_notifier;
+    bool backup_allowed = false;
 };
 }

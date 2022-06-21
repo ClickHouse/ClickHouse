@@ -730,19 +730,9 @@ namespace S3
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
         /// Extract object version ID from query string.
-        {
-            version_id = "";
-            const String version_key = "versionId=";
-            const auto query_string = uri.getQuery();
-
-            auto start = query_string.rfind(version_key);
-            if (start != std::string::npos)
-            {
-                start += version_key.length();
-                auto end = query_string.find_first_of('&', start);
-                version_id = query_string.substr(start, end == std::string::npos ? std::string::npos : end - start);
-            }
-        }
+        for (const auto & [query_key, query_value] : uri.getQueryParameters())
+            if (query_key == "versionId")
+                version_id = query_value;
 
         String name;
         String endpoint_authority_from_uri;
