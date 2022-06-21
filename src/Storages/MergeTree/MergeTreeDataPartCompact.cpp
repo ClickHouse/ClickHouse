@@ -139,7 +139,6 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();
-    // String path = getRelativePath();
     String mrk_file_name = DATA_FILE_NAME + index_granularity_info.marks_file_extension;
 
     if (!checksums.empty())

@@ -47,6 +47,8 @@ public:
     /// If include_projection is true, also update metadatas in projection parts.
     virtual void updateAll(bool include_projection) = 0;
 
+    /// This method should be called after data part was moved.
+    /// 'from' and 'to' are data part path used.
     virtual void move(const String & from, const String & to) = 0;
 
     /// Check all metadatas in part.

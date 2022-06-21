@@ -129,7 +129,6 @@ protected:
 
     const MergeTreeIndices skip_indices;
 
-    //const String part_path;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
 
