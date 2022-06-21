@@ -207,6 +207,10 @@ public:
 
     bool hasUUIDMapping(const UUID & uuid);
 
+    void addProtectedUUIDDir(const UUID & uuid);
+    void removeProtectedUUIDDir(const UUID & uuid);
+    bool isProtectedUUIDDir(const UUID & uuid);
+
     static String getPathForUUID(const UUID & uuid);
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
@@ -301,6 +305,9 @@ private:
     std::unordered_set<UUID> tables_marked_dropped_ids;
     mutable std::mutex tables_marked_dropped_mutex;
 
+    std::unordered_set<UUID> protected_uuid_dirs;
+    mutable std::mutex protected_uuid_dirs_mutex;
+
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     static constexpr time_t default_drop_delay_sec = 8 * 60;
     time_t drop_delay_sec = default_drop_delay_sec;
@@ -313,6 +320,15 @@ private:
     time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
     static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
     time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
+};
+
+
+class UUIDDirectoryProtector : private boost::noncopyable
+{
+    UUID uuid;
+public:
+    UUIDDirectoryProtector(UUID uuid_) : uuid(uuid_) { DatabaseCatalog::instance().addProtectedUUIDDir(uuid); }
+    ~UUIDDirectoryProtector() { DatabaseCatalog::instance().removeProtectedUUIDDir(uuid); }
 };
 
 }

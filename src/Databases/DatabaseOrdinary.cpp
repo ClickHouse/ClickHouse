@@ -29,6 +29,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace
@@ -83,7 +89,7 @@ void DatabaseOrdinary::loadStoredObjects(
       */
 
     ParsedTablesMetadata metadata;
-    loadTablesMetadata(local_context, metadata);
+    loadTablesMetadata(local_context, metadata, force_attach);
 
     size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
 
@@ -151,12 +157,12 @@ void DatabaseOrdinary::loadStoredObjects(
     }
 }
 
-void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata)
+void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, this](const String & file_name)
+    auto process_metadata = [&metadata, is_startup, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -176,16 +182,15 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     if (create_query->uuid != UUIDHelpers::Nil)
                     {
                         /// A bit tricky way to distinguish ATTACH DATABASE and server startup.
-                        if (getContext()->isServerCompletelyStarted())
-                        {
-                            /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
-                            if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
-                        }
-                        else
+                        if (is_startup)
                         {
                             /// Server is starting up. Lock UUID used by permanently detached table.
                             DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                        }
+                        else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
+                        {
+                            /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
                         }
                     }
 

@@ -249,6 +249,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
+    UUIDDirectoryProtector uuid_lock{create.uuid};
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
@@ -1269,6 +1270,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             database->checkDetachedTableNotInUse(create.uuid);
     }
 
+    UUIDDirectoryProtector uuid_lock{create.uuid};
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
