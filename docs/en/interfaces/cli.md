@@ -115,7 +115,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--user, -u` – The username. Default value: default.
 -   `--password` – The password. Default value: empty string.
 -   `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
--   `--queries-file, -qf` – file path with queries to execute. You must specify either `query` or `queries-file` option.
+-   `--queries-file` – file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
@@ -183,4 +183,3 @@ If the configuration above is applied, the ID of a query is shown in the followi
 ``` text
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
-
