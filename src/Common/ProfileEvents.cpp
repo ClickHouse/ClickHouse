@@ -348,14 +348,14 @@
     M(KeeperPacketsReceived, "Packets received by keeper server") \
     M(KeeperRequestTotal, "Total requests number on keeper server") \
     M(KeeperLatency, "Keeper latency") \
-    M(KeeperCommits, "Number of commit count") \
-    M(KeeperCommitsFailed, "Number of commit failed count") \
-    M(KeeperSnapshotCreations, "Number of snapshot creations count")\
-    M(KeeperSnapshotCreationsFailed, "Number of snapshot creations failed count")\
+    M(KeeperCommits, "Number of successful commits") \
+    M(KeeperCommitsFailed, "Number of failed commits") \
+    M(KeeperSnapshotCreations, "Number of snapshots creations")\
+    M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations")\
     M(KeeperSnapshotApplys, "Number of snapshot applying")\
-    M(KeeperSnapshotApplysFailed, "Number of snapshot applying failed")\
+    M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
     M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
-    M(KeeperSaveSnapshot, "Number of snapshot save")
+    M(KeeperSaveSnapshot, "Number of snapshot save")\
 
 
 namespace ProfileEvents
