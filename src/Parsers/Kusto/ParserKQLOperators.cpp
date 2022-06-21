@@ -1,6 +1,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
+#include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
+#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 
 namespace DB
 {
@@ -33,22 +35,33 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
             break;
     }
 
-    if (!tokens.empty() && ((++token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
+    ++token_pos;
+
+    if (!tokens.empty() && ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
         new_expr = ch_op +"(" + tokens.back() +", '"+left_wildcards + String(token_pos->begin + 1,token_pos->end - 1) + right_wildcards + "')";
+    else if (!tokens.empty() && ((token_pos)->type == TokenType::BareWord))
+    {
+        String tmp_arg = String(token_pos->begin,token_pos->end);
+        if (token_pos->type == TokenType::BareWord )
+        {
+            String new_arg;
+            auto fun = KQLFunctionFactory::get(tmp_arg);
+            if (fun && fun->convert(new_arg,token_pos))
+                tmp_arg = new_arg;
+        }
+        new_expr = ch_op +"(" + tokens.back() +", concat('" + left_wildcards + "', " + tmp_arg +", '"+  right_wildcards + "'))";
+    }
     else
         throw Exception("Syntax error near " + kql_op, ErrorCodes::SYNTAX_ERROR);
     tokens.pop_back();
     return new_expr;
 }
 
-String KQLOperators::getExprFromToken(IParser::Pos &pos)
+bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
 {
-    String res;
-    std::vector<String> tokens;
-
     auto begin = pos;
 
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+    if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         KQLOperatorValue op_value = KQLOperatorValue::none;
 
@@ -89,8 +102,13 @@ String KQLOperators::getExprFromToken(IParser::Pos &pos)
         else
             --pos;
 
-        if (KQLOperator.find(op) != KQLOperator.end())
-           op_value = KQLOperator[op];
+        if (KQLOperator.find(op) == KQLOperator.end())
+        {
+            pos = begin;
+            return false;
+        }
+
+        op_value = KQLOperator[op];
 
         String new_expr;
         if (op_value == KQLOperatorValue::none)
@@ -231,14 +249,9 @@ String KQLOperators::getExprFromToken(IParser::Pos &pos)
 
             tokens.push_back(new_expr);
         }
-        ++pos;
+        return true;
     }
-
-    for (auto & token : tokens)
-        res = res + token + " ";
-
-    pos = begin;
-    return res;
+    return false;
 }
 
 }

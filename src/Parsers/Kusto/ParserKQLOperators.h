@@ -9,7 +9,7 @@ namespace DB
 class KQLOperators
 {
 public:
-    String getExprFromToken(IParser::Pos &pos) ;
+    bool convert(std::vector<String> &tokens,IParser::Pos &pos);
 protected:
 
     enum class WildcardsPos:uint8_t

@@ -19,7 +19,6 @@ public:
     {}
 };
 
-
 class ParserKQLWithOutput : public IParserBase
 {
 protected:

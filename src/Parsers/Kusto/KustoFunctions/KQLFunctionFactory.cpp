@@ -1,4 +1,3 @@
-
 #include <Parsers/IParserBase.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -65,7 +64,9 @@ namespace DB
         {"indexof", KQLFunctionValue::indexof},
         {"isempty", KQLFunctionValue::isempty},
         {"isnotempty", KQLFunctionValue::isnotempty},
+        {"notempty", KQLFunctionValue::isnotempty},
         {"isnotnull", KQLFunctionValue::isnotnull},
+        {"notnull", KQLFunctionValue::isnotnull},
         {"isnull", KQLFunctionValue::isnull},
         {"parse_command_line", KQLFunctionValue::parse_command_line},
         {"parse_csv", KQLFunctionValue::parse_csv},
@@ -82,6 +83,7 @@ namespace DB
         {"strlen", KQLFunctionValue::strlen},
         {"strrep", KQLFunctionValue::strrep},
         {"substring", KQLFunctionValue::substring},
+        {"tolower", KQLFunctionValue::tolower},
         {"toupper", KQLFunctionValue::toupper},
         {"translate", KQLFunctionValue::translate},
         {"trim", KQLFunctionValue::trim},
@@ -206,12 +208,6 @@ namespace DB
 
 std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function)
 {
-/*    if (kql_function=="strrep")  
-        return std::make_unique<StrRep>();
-    else if (kql_function=="strcat")  
-        return std::make_unique<StrCat>();
-    else
-        return nullptr;*/
     if (kql_functions.find(kql_function) == kql_functions.end())
         return nullptr;
 
@@ -222,293 +218,295 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
             return nullptr;
 
         case KQLFunctionValue::timespan:
-            return nullptr;
+            return std::make_unique<TimeSpan>();
 
         case KQLFunctionValue::datetime:
-            return nullptr;
+            return std::make_unique<DateTime>();
 
         case KQLFunctionValue::ago:
-            return nullptr;
+            return std::make_unique<Ago>();
 
         case KQLFunctionValue::datetime_add:
-            return nullptr;
+            return std::make_unique<DatetimeAdd>();
 
         case KQLFunctionValue::datetime_part:
-            return nullptr;
+            return std::make_unique<DatetimePart>();
 
         case KQLFunctionValue::datetime_diff:
-            return nullptr;
+            return std::make_unique<DatetimeDiff>();
 
         case KQLFunctionValue::dayofmonth:
-            return nullptr;
+            return std::make_unique<DayOfMonth>();
 
         case KQLFunctionValue::dayofweek:
-            return nullptr;
+            return std::make_unique<DayOfWeek>();
 
         case KQLFunctionValue::dayofyear:
-            return nullptr;
+            return std::make_unique<DayOfYear>();
 
         case KQLFunctionValue::endofday:
-            return nullptr;
+            return std::make_unique<EndOfDay>();
 
         case KQLFunctionValue::endofweek:
-            return nullptr;
+            return std::make_unique<EndOfWeek>();
 
         case KQLFunctionValue::endofyear:
-            return nullptr;
+            return std::make_unique<EndOfYear>();
 
         case KQLFunctionValue::format_datetime:
-            return nullptr;
+            return std::make_unique<FormatDateTime>();
 
         case KQLFunctionValue::format_timespan:
-            return nullptr;
+            return std::make_unique<FormatTimeSpan>();
 
         case KQLFunctionValue::getmonth:
-            return nullptr;
+            return std::make_unique<GetMonth>();
 
         case KQLFunctionValue::getyear:
-            return nullptr;
+            return std::make_unique<GetYear>();
 
         case KQLFunctionValue::hoursofday:
-            return nullptr;
+            return std::make_unique<HoursOfDay>();
 
         case KQLFunctionValue::make_timespan:
-            return nullptr;
+            return std::make_unique<MakeTimeSpan>();
 
         case KQLFunctionValue::make_datetime:
-            return nullptr;
+            return std::make_unique<MakeDateTime>();
 
         case KQLFunctionValue::now:
-            return nullptr;
+            return std::make_unique<Now>();
 
         case KQLFunctionValue::startofday:
-            return nullptr;
+            return std::make_unique<StartOfDay>();
 
         case KQLFunctionValue::startofmonth:
-            return nullptr;
+            return std::make_unique<StartOfMonth>();
 
         case KQLFunctionValue::startofweek:
-            return nullptr;
+            return std::make_unique<StartOfWeek>();
 
         case KQLFunctionValue::startofyear:
-            return nullptr;
+            return std::make_unique<StartOfYear>();
 
         case KQLFunctionValue::unixtime_microseconds_todatetime:
-            return nullptr;
+            return std::make_unique<UnixTimeMicrosecondsToDateTime>();
 
         case KQLFunctionValue::unixtime_milliseconds_todatetime:
-            return nullptr;
+            return std::make_unique<UnixTimeMillisecondsToDateTime>();
 
         case KQLFunctionValue::unixtime_nanoseconds_todatetime:
-            return nullptr;
+            return std::make_unique<UnixTimeNanosecondsToDateTime>();
 
         case KQLFunctionValue::unixtime_seconds_todatetime:
-            return nullptr;
+            return std::make_unique<UnixTimeSecondsToDateTime>();
 
         case KQLFunctionValue::weekofyear:
-            return nullptr;
-
+            return std::make_unique<WeekOfYear>();
 
         case KQLFunctionValue::base64_encode_tostring:
-            return nullptr;
+            return std::make_unique<Base64EncodeToString>();
 
         case KQLFunctionValue::base64_encode_fromguid:
-            return nullptr;
+            return std::make_unique<Base64EncodeFromGuid>();
 
         case KQLFunctionValue::base64_decode_tostring:
-            return nullptr;
+            return std::make_unique<Base64DecodeToString>();
 
         case KQLFunctionValue::base64_decode_toarray:
-            return nullptr;
+            return std::make_unique<Base64DecodeToArray>();
 
         case KQLFunctionValue::base64_decode_toguid:
-            return nullptr;
+            return std::make_unique<Base64DecodeToGuid>();
 
         case KQLFunctionValue::countof:
-            return nullptr;
+            return std::make_unique<CountOf>();
 
         case KQLFunctionValue::extract:
-            return nullptr;
+            return std::make_unique<Extract>();
 
         case KQLFunctionValue::extract_all:
-            return nullptr;
+            return std::make_unique<ExtractAll>();
 
         case KQLFunctionValue::extractjson:
-            return nullptr;
+            return std::make_unique<ExtractJson>();
 
         case KQLFunctionValue::has_any_index:
-            return nullptr;
+            return std::make_unique<HasAnyIndex>();
 
         case KQLFunctionValue::indexof:
-            return nullptr;
+            return std::make_unique<IndexOf>();
 
         case KQLFunctionValue::isempty:
-            return nullptr;
+            return std::make_unique<IsEmpty>();
 
         case KQLFunctionValue::isnotempty:
-            return nullptr;
+            return std::make_unique<IsNotEmpty>();
 
         case KQLFunctionValue::isnotnull:
-            return nullptr;
+            return std::make_unique<IsNotNull>();
 
         case KQLFunctionValue::isnull:
-            return nullptr;
+            return std::make_unique<IsNull>();
 
         case KQLFunctionValue::parse_command_line:
-            return nullptr;
+            return std::make_unique<ParseCommandLine>();
 
         case KQLFunctionValue::parse_csv:
-            return nullptr;
+            return std::make_unique<ParseCSV>();
 
         case KQLFunctionValue::parse_json:
-            return nullptr;
+            return std::make_unique<ParseJson>();
 
         case KQLFunctionValue::parse_url:
-            return nullptr;
+            return std::make_unique<ParseURL>();
 
         case KQLFunctionValue::parse_urlquery:
-            return nullptr;
+            return std::make_unique<ParseURLQuery>();
 
         case KQLFunctionValue::parse_version:
-            return nullptr;
+            return std::make_unique<ParseVersion>();
 
         case KQLFunctionValue::replace_regex:
-            return nullptr;
+           return std::make_unique<ReplaceRegex>();
 
         case KQLFunctionValue::reverse:
-            return nullptr;
+            return std::make_unique<Reverse>();
 
         case KQLFunctionValue::split:
-            return nullptr;
+            return std::make_unique<Split>();
 
         case KQLFunctionValue::strcat:
             return std::make_unique<StrCat>();
 
         case KQLFunctionValue::strcat_delim:
-            return nullptr;
+            return std::make_unique<StrCatDelim>();
 
         case KQLFunctionValue::strcmp:
-            return nullptr;
+            return std::make_unique<StrCmp>();
 
         case KQLFunctionValue::strlen:
-            return nullptr;
+            return std::make_unique<StrLen>();
 
         case KQLFunctionValue::strrep:
             return std::make_unique<StrRep>();
 
         case KQLFunctionValue::substring:
-            return nullptr;
+            return std::make_unique<SubString>();
+
+        case KQLFunctionValue::tolower:
+            return std::make_unique<ToLower>();
 
         case KQLFunctionValue::toupper:
-            return nullptr;
+            return std::make_unique<ToUpper>();
 
         case KQLFunctionValue::translate:
-            return nullptr;
+            return std::make_unique<Translate>();
 
         case KQLFunctionValue::trim:
-            return nullptr;
+            return std::make_unique<Trim>();
 
         case KQLFunctionValue::trim_end:
-            return nullptr;
+            return std::make_unique<TrimEnd>();
 
         case KQLFunctionValue::trim_start:
-            return nullptr;
+            return std::make_unique<TrimStart>();
 
         case KQLFunctionValue::url_decode:
-            return nullptr;
+            return std::make_unique<URLDecode>();
 
         case KQLFunctionValue::url_encode:
-            return nullptr;
+            return std::make_unique<URLEncode>();
 
         case KQLFunctionValue::array_concat:
-            return nullptr;
+            return std::make_unique<ArrayConcat>();
 
         case KQLFunctionValue::array_iif:
-            return nullptr;
+            return std::make_unique<ArrayIif>();
 
         case KQLFunctionValue::array_index_of:
-            return nullptr;
+            return std::make_unique<ArrayIndexOf>();
 
         case KQLFunctionValue::array_length:
-            return nullptr;
+            return std::make_unique<ArrayLength>();
 
         case KQLFunctionValue::array_reverse:
-            return nullptr;
+            return std::make_unique<ArrayReverse>();
 
         case KQLFunctionValue::array_rotate_left:
-            return nullptr;
+            return std::make_unique<ArrayRotateLeft>();
 
         case KQLFunctionValue::array_rotate_right:
-            return nullptr;
+            return std::make_unique<ArrayRotateRight>();
 
         case KQLFunctionValue::array_shift_left:
-            return nullptr;
+            return std::make_unique<ArrayShiftLeft>();
 
         case KQLFunctionValue::array_shift_right:
-            return nullptr;
+            return std::make_unique<ArrayShiftRight>();
 
         case KQLFunctionValue::array_slice:
-            return nullptr;
+            return std::make_unique<ArraySlice>();
 
         case KQLFunctionValue::array_sort_asc:
-            return nullptr;
+            return std::make_unique<ArraySortAsc>();
 
         case KQLFunctionValue::array_sort_desc:
-            return nullptr;
+            return std::make_unique<ArraySortDesc>();
 
         case KQLFunctionValue::array_split:
-            return nullptr;
+            return std::make_unique<ArraySplit>();
 
         case KQLFunctionValue::array_sum:
-            return nullptr;
+            return std::make_unique<ArraySum>();
 
         case KQLFunctionValue::bag_keys:
-            return nullptr;
+            return std::make_unique<BagKeys>();
 
         case KQLFunctionValue::bag_merge:
-            return nullptr;
+            return std::make_unique<BagMerge>();
 
         case KQLFunctionValue::bag_remove_keys:
-            return nullptr;
+            return std::make_unique<BagRemoveKeys>();
 
         case KQLFunctionValue::jaccard_index:
-            return nullptr;
+            return std::make_unique<JaccardIndex>();
 
         case KQLFunctionValue::pack:
-            return nullptr;
+            return std::make_unique<Pack>();
 
         case KQLFunctionValue::pack_all:
-            return nullptr;
+            return std::make_unique<PackAll>();
 
         case KQLFunctionValue::pack_array:
-            return nullptr;
+            return std::make_unique<PackArray>();
 
         case KQLFunctionValue::repeat:
-            return nullptr;
+            return std::make_unique<Repeat>();
 
         case KQLFunctionValue::set_difference:
-            return nullptr;
+            return std::make_unique<SetDifference>();
 
         case KQLFunctionValue::set_has_element:
-            return nullptr;
+            return std::make_unique<SetHasElement>();
 
         case KQLFunctionValue::set_intersect:
-            return nullptr;
+            return std::make_unique<SetIntersect>();
 
         case KQLFunctionValue::set_union:
-            return nullptr;
+            return std::make_unique<SetUnion>();
 
         case KQLFunctionValue::treepath:
-            return nullptr;
+            return std::make_unique<TreePath>();
 
         case KQLFunctionValue::zip:
-            return nullptr;
+            return std::make_unique<Zip>();
 
         case KQLFunctionValue::tobool:
-            return std::make_unique<Tobool>();
+            return std::make_unique<ToBool>();
 
         case KQLFunctionValue::todatetime:
-            return std::make_unique<ToDatetime>();
+            return std::make_unique<ToDateTime>();
 
         case KQLFunctionValue::todouble:
             return std::make_unique<ToDouble>();
@@ -520,222 +518,220 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
             return std::make_unique<ToString>();
 
         case KQLFunctionValue::totimespan:
-            return std::make_unique<ToTimespan>();
+            return std::make_unique<ToTimeSpan>();
 
         case KQLFunctionValue::arg_max:
-            return nullptr;
+            return std::make_unique<ArgMax>();
 
         case KQLFunctionValue::arg_min:
-            return nullptr;
+            return std::make_unique<ArgMin>();
 
         case KQLFunctionValue::avg:
-            return nullptr;
+            return std::make_unique<Avg>();
 
         case KQLFunctionValue::avgif:
-            return nullptr;
+            return std::make_unique<AvgIf>();
 
         case KQLFunctionValue::binary_all_and:
-            return nullptr;
+            return std::make_unique<BinaryAllAnd>();
 
         case KQLFunctionValue::binary_all_or:
-            return nullptr;
+            return std::make_unique<BinaryAllOr>();
 
         case KQLFunctionValue::binary_all_xor:
-            return nullptr;
+            return std::make_unique<BinaryAllXor>();
+
         case KQLFunctionValue::buildschema:
-            return nullptr;
+            return std::make_unique<BuildSchema>();
 
         case KQLFunctionValue::count:
-            return nullptr;
+            return std::make_unique<Count>();
 
         case KQLFunctionValue::countif:
-            return nullptr;
+            return std::make_unique<CountIf>();
 
         case KQLFunctionValue::dcount:
-            return nullptr;
+            return std::make_unique<DCount>();
 
         case KQLFunctionValue::dcountif:
-            return nullptr;
+            return std::make_unique<DCountIf>();
 
         case KQLFunctionValue::make_bag:
-            return nullptr;
+            return std::make_unique<MakeBag>();
 
         case KQLFunctionValue::make_bag_if:
-            return nullptr;
+            return std::make_unique<MakeBagIf>();
 
         case KQLFunctionValue::make_list:
-            return nullptr;
+            return std::make_unique<MakeList>();
 
         case KQLFunctionValue::make_list_if:
-            return nullptr;
+            return std::make_unique<MakeListIf>();
 
         case KQLFunctionValue::make_list_with_nulls:
-            return nullptr;
+            return std::make_unique<MakeListWithNulls>();
 
         case KQLFunctionValue::make_set:
-            return nullptr;
+            return std::make_unique<MakeSet>();
 
         case KQLFunctionValue::make_set_if:
-            return nullptr;
+            return std::make_unique<MakeSetIf>();
 
         case KQLFunctionValue::max:
-            return nullptr;
+            return std::make_unique<Max>();
 
         case KQLFunctionValue::maxif:
-            return nullptr;
+            return std::make_unique<MaxIf>();
 
         case KQLFunctionValue::min:
-            return nullptr;
+            return std::make_unique<Min>();
 
         case KQLFunctionValue::minif:
-            return nullptr;
+            return std::make_unique<MinIf>();
 
         case KQLFunctionValue::percentiles:
-            return nullptr;
+            return std::make_unique<Percentiles>();
 
         case KQLFunctionValue::percentiles_array:
-            return nullptr;
+            return std::make_unique<PercentilesArray>();
 
         case KQLFunctionValue::percentilesw:
-            return nullptr;
+            return std::make_unique<Percentilesw>();
 
         case KQLFunctionValue::percentilesw_array:
-            return nullptr;
+            return std::make_unique<PercentileswArray>();
 
         case KQLFunctionValue::stdev:
-            return nullptr;
+            return std::make_unique<Stdev>();
 
         case KQLFunctionValue::stdevif:
-            return nullptr;
+            return std::make_unique<StdevIf>();
 
         case KQLFunctionValue::sum:
-            return nullptr;
+            return std::make_unique<Sum>();
 
         case KQLFunctionValue::sumif:
-            return nullptr;
+            return std::make_unique<SumIf>();
 
         case KQLFunctionValue::take_any:
-            return nullptr;
+            return std::make_unique<TakeAny>();
 
         case KQLFunctionValue::take_anyif:
-            return nullptr;
+            return std::make_unique<TakeAnyIf>();
 
         case KQLFunctionValue::variance:
-            return nullptr;
+            return std::make_unique<Variance>();
 
         case KQLFunctionValue::varianceif:
-            return nullptr;
-
+            return std::make_unique<VarianceIf>();
 
         case KQLFunctionValue::series_fir:
-            return nullptr;
+            return std::make_unique<SeriesFir>();
 
         case KQLFunctionValue::series_iir:
-            return nullptr;
+            return std::make_unique<SeriesIir>();
 
         case KQLFunctionValue::series_fit_line:
-            return nullptr;
+            return std::make_unique<SeriesFitLine>();
 
         case KQLFunctionValue::series_fit_line_dynamic:
-            return nullptr;
+            return std::make_unique<SeriesFitLineDynamic>();
 
         case KQLFunctionValue::series_fit_2lines:
-            return nullptr;
+            return std::make_unique<SeriesFit2lines>();
 
         case KQLFunctionValue::series_fit_2lines_dynamic:
-            return nullptr;
+            return std::make_unique<SeriesFit2linesDynamic>();
 
         case KQLFunctionValue::series_outliers:
-            return nullptr;
+            return std::make_unique<SeriesOutliers>();
 
         case KQLFunctionValue::series_periods_detect:
-            return nullptr;
+            return std::make_unique<SeriesPeriodsDetect>();
 
         case KQLFunctionValue::series_periods_validate:
-            return nullptr;
+            return std::make_unique<SeriesPeriodsValidate>();
 
         case KQLFunctionValue::series_stats_dynamic:
-            return nullptr;
+            return std::make_unique<SeriesStatsDynamic>();
 
         case KQLFunctionValue::series_stats:
-            return nullptr;
+            return std::make_unique<SeriesStats>();
 
         case KQLFunctionValue::series_fill_backward:
-            return nullptr;
+            return std::make_unique<SeriesFillBackward>();
 
         case KQLFunctionValue::series_fill_const:
-            return nullptr;
+            return std::make_unique<SeriesFillConst>();
 
         case KQLFunctionValue::series_fill_forward:
-            return nullptr;
+            return std::make_unique<SeriesFillForward>();
 
         case KQLFunctionValue::series_fill_linear:
-            return nullptr;
-
+            return std::make_unique<SeriesFillLinear>();
 
         case KQLFunctionValue::ipv4_compare:
-            return nullptr;
+            return std::make_unique<Ipv4Compare>();
 
         case KQLFunctionValue::ipv4_is_in_range:
-            return nullptr;
+            return std::make_unique<Ipv4IsInRange>();
 
         case KQLFunctionValue::ipv4_is_match:
-            return nullptr;
+            return std::make_unique<Ipv4IsMatch>();
 
         case KQLFunctionValue::ipv4_is_private:
-            return nullptr;
+            return std::make_unique<Ipv4IsPrivate>();
 
         case KQLFunctionValue::ipv4_netmask_suffix:
-            return nullptr;
+            return std::make_unique<Ipv4NetmaskSuffix>();
 
         case KQLFunctionValue::parse_ipv4:
-            return nullptr;
+            return std::make_unique<ParseIpv4>();
 
         case KQLFunctionValue::parse_ipv4_mask:
-            return nullptr;
+            return std::make_unique<ParseIpv4Mask>();
 
         case KQLFunctionValue::ipv6_compare:
-            return nullptr;
+            return std::make_unique<Ipv6Compare>();
 
         case KQLFunctionValue::ipv6_is_match:
-            return nullptr;
+            return std::make_unique<Ipv6IsMatch>();
 
         case KQLFunctionValue::parse_ipv6:
-            return nullptr;
+            return std::make_unique<ParseIpv6>();
 
         case KQLFunctionValue::parse_ipv6_mask:
-            return nullptr;
+            return std::make_unique<ParseIpv6Mask>();
 
         case KQLFunctionValue::format_ipv4:
-            return nullptr;
+            return std::make_unique<FormatIpv4>();
 
         case KQLFunctionValue::format_ipv4_mask:
-            return nullptr;
-
+            return std::make_unique<FormatIpv4Mask>();
 
         case KQLFunctionValue::binary_and:
-            return nullptr;
+            return std::make_unique<BinaryAnd>();
 
         case KQLFunctionValue::binary_not:
-            return nullptr;
+            return std::make_unique<BinaryNot>();
 
         case KQLFunctionValue::binary_or:
-            return nullptr;
+            return std::make_unique<BinaryOr>();
 
         case KQLFunctionValue::binary_shift_left:
-            return nullptr;
+            return std::make_unique<BinaryShiftLeft>();
 
         case KQLFunctionValue::binary_shift_right:
-            return nullptr;
+            return std::make_unique<BinaryShiftRight>();
 
         case KQLFunctionValue::binary_xor:
-            return nullptr;
+            return std::make_unique<BinaryXor>();
 
         case KQLFunctionValue::bitset_count_ones:
-            return nullptr;
+            return std::make_unique<BitsetCountOnes>();
 
         case KQLFunctionValue::bin:
-            return nullptr;
+            return std::make_unique<Bin>();
     }
 }
 

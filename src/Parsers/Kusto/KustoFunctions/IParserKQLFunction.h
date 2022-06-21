@@ -4,7 +4,7 @@
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 namespace DB
 {
-class IParserKQLFunction //: public IParser
+class IParserKQLFunction
 {
 public:
     template <typename F>
@@ -33,6 +33,7 @@ public:
     virtual ~IParserKQLFunction() = default;
 protected:
     virtual bool convertImpl(String &out,IParser::Pos &pos) = 0;
+    static bool directMapping(String &out,IParser::Pos &pos,const String &ch_fn);
 };
 
 }
