@@ -66,6 +66,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/noexcept_scope.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -2910,16 +2911,18 @@ bool MergeTreeData::renameTempPartAndReplace(
     part->renameTo(part_name, true);
 
     auto part_it = data_parts_indexes.insert(part).first;
-    /// FIXME Transactions: it's not the best place for checking and setting removal_tid,
-    /// because it's too optimistic. We should lock removal_tid of covered parts at the beginning of operation.
-    MergeTreeTransaction::addNewPartAndRemoveCovered(shared_from_this(), part, covered_parts, txn);
 
     if (out_transaction)
     {
+        chassert(out_transaction->txn == txn);
         out_transaction->precommitted_parts.insert(part);
     }
     else
     {
+        /// FIXME Transactions: it's not the best place for checking and setting removal_tid,
+        /// because it's too optimistic. We should lock removal_tid of covered parts at the beginning of operation.
+        MergeTreeTransaction::addNewPartAndRemoveCovered(shared_from_this(), part, covered_parts, txn);
+
         size_t reduce_bytes = 0;
         size_t reduce_rows = 0;
         size_t reduce_parts = 0;
@@ -3573,6 +3576,13 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id);
 }
 
+
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
+    ContextPtr local_context, const String & partition_id, DataPartsLock & lock) const
+{
+    return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id, &lock);
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
     MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock) const
 {
@@ -4216,7 +4226,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 }
 
 
-String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
+String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
@@ -4300,7 +4310,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     String partition_id = partition.getID(*this);
 
     {
-        auto data_parts_lock = lockParts();
+        auto data_parts_lock = (acquired_lock) ? DataPartsLock() : lockParts();
         DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
@@ -4907,18 +4917,6 @@ void MergeTreeData::Transaction::rollback()
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
-        if (!txn)
-        {
-            auto lock = data.lockParts();
-            for (const auto & part : precommitted_parts)
-            {
-                DataPartPtr covering_part;
-                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, lock);
-                for (auto & covered : covered_parts)
-                    covered->version.unlockRemovalTID(Tx::PrehistoricTID, TransactionInfoContext{data.getStorageID(), covered->name});
-            }
-        }
-
         data.removePartsFromWorkingSet(txn,
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
             /* clear_without_timeout = */ true);
@@ -4935,6 +4933,18 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
     {
         auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
+
+        if (txn)
+        {
+            for (const DataPartPtr & part : precommitted_parts)
+            {
+                DataPartPtr covering_part;
+                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
+                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
+            }
+        }
+
+        NOEXCEPT_SCOPE;
 
         auto current_time = time(nullptr);
 
@@ -4959,6 +4969,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             }
             else
             {
+                if (!txn)
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, NO_TRANSACTION_RAW);
+
                 total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
                 for (const auto & covered_part : covered_parts)
                 {
@@ -5565,8 +5578,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         // If optimize_aggregation_in_order = true, we need additional information to transform the projection's pipeline.
         auto attach_aggregation_in_order_info = [&]()
         {
-            for (const auto & key : keys)
+            for (const auto & desc : select.getQueryAnalyzer()->aggregationKeys())
             {
+                const String & key = desc.name;
                 auto actions_dag = analysis_result.before_aggregation->clone();
                 actions_dag->foldActionsByProjection({key}, sample_block_for_keys);
                 candidate.group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, actions_settings));
