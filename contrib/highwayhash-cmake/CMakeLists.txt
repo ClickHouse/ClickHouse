@@ -7,9 +7,9 @@ add_library(highwayhash "${LIBRARY_DIR}/highwayhash/highwayhash.h"
         )
 
 if (HAVE_AVX2)
-    target_compile_options(highwayhash PUBLIC -mavx2)
+    target_compile_options(highwayhash PRIVATE -mavx2)
 elseif(HAVE_SSE41)
-    target_compile_options(highwayhash PUBLIC -msse4.1)
+    target_compile_options(highwayhash PRIVATE -msse4.1)
 endif()
 
 target_include_directories(highwayhash PUBLIC ${LIBRARY_DIR})
