@@ -1495,23 +1495,19 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             if (keeper_dispatcher && keeper_dispatcher->isServerActive())
             {
                 auto keeper_4LW_info = keeper_dispatcher -> getKeeper4LWInfo();
-                if (keeper_4LW_info.is_standalone)
-                    is_standalone = 1;
-                if (keeper_4LW_info.is_leader)
-                    is_leader = 1;
-                if (keeper_4LW_info.is_observer)
-                    is_observer = 1;
-                if (keeper_4LW_info.is_follower)
-                    is_follower = 1;
+                is_standalone = static_cast<size_t>(keeper_4LW_info.is_standalone;
+                is_leader = static_cast<size_t>(keeper_4LW_info.is_leader;
+                is_observer = static_cast<size_t>(keeper_4LW_info.is_observer;
+                is_follower = static_cast<size_t>(keeper_4LW_info.is_follower;
 
                 zxid = keeper_4LW_info.last_zxid;
                 const auto & state_machine = keeper_dispatcher->getStateMachine();
                 znode_count = state_machine.getNodesCount();
                 watch_count = state_machine.getTotalWatchesCount();
                 ephemerals_count = state_machine.getTotalEphemeralNodesCount();
-                approximate_data_size =state_machine.getApproximateDataSize();
-                key_arena_size=state_machine.getKeyArenaSize();
-                latest_snapshot_size=state_machine.getLatestSnapshotBufSize();
+                approximate_data_size = state_machine.getApproximateDataSize();
+                key_arena_size = state_machine.getKeyArenaSize();
+                latest_snapshot_size = state_machine.getLatestSnapshotBufSize();
                 session_with_watches = state_machine.getSessionsWithWatchesCount();
                 paths_watched = state_machine.getWatchedPathsCount();
                 snapshot_dir_size = keeper_dispatcher->getSnapDirSize();
@@ -1540,7 +1536,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
             new_values["KeeperApproximateDataSize"] = approximate_data_size;
             new_values["KeeperKeyArenaSize"] = key_arena_size;
-
             new_values["KeeperLatestSnapshotSize"] = latest_snapshot_size;
 
             new_values["KeeperOpenFileDescriptorCount"] = open_file_descriptor_count;
