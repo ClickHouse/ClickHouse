@@ -594,7 +594,11 @@ void DataPartStorageOnDisk::removeVersionMetadata() const
 
 String DataPartStorageOnDisk::getUniqueId() const
 {
-    return volume->getDisk()->getUniqueId(fs::path(root_path) / part_dir);
+    auto disk = volume->getDisk();
+    if (!disk->supportZeroCopyReplication())
+        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
+
+    return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
 bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & storage_policy) const
