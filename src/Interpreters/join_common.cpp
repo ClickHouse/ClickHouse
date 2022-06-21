@@ -637,6 +637,8 @@ static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
+    if (num_shards == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
     if (likely(isPowerOf2(num_shards)))
         return scatterBlockByHashPow2(key_columns_names, block, num_shards);
     return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
