@@ -4,6 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include "Columns/IColumn.h"
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -119,7 +120,11 @@ Block flatten(const Block & block)
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
-                const ColumnTuple * column_tuple = typeid_cast<const ColumnTuple *>(elem.column.get());
+                const ColumnTuple * column_tuple;
+                if(isColumnConst(*elem.column))
+                    column_tuple = typeid_cast<const ColumnTuple *>(&assert_cast<const ColumnConst &>(*elem.column).getDataColumn());
+                else
+                    column_tuple = typeid_cast<const ColumnTuple *>(elem.column.get());
                 size_t tuple_size = column_tuple->tupleSize();
                 for (size_t i = 0; i < tuple_size; ++i)
                 {
@@ -306,7 +311,7 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
     {
         if (nested_table->has(new_column_name_prefix, case_insentive))
         {
-            ColumnWithTypeAndName column = nested_table->getByName(new_column_name_prefix, case_insentive);
+            ColumnWithTypeAndName column = *nested_table->findByName(new_column_name_prefix, case_insentive);
             if (case_insentive)
                 column.name = original_column_name;
             return {column};

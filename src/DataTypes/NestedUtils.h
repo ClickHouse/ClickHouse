@@ -18,8 +18,9 @@ namespace Nested
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
 
-    /// Replace Array(Tuple(...)) columns to a multiple of Array columns in a form of `column_name.element_name`.
-    /// only for named tuples that actually represent Nested structures.
+    /// Flat a column of nested type into columns
+    /// 1) For named tuples，t Tuple(x .., y ..., ...), replace it with t.x ..., t.y ... , ...
+    /// 2) For an Array with named Tuple element column, a Array(Tuple(x ..., y ..., ...)), replace it with multiple Array Columns, a.x ..., a.y ..., ...
     Block flatten(const Block & block);
 
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
@@ -35,6 +36,9 @@ namespace Nested
     std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
 }
 
+/// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple. 
+/// It can extract a column from a multiple nested type column, e.g. named Tuple in named Tuple
+/// Keeps some intermediate datas to avoid rebuild them multi-times.
 class NestedColumnExtractHelper
 {
 public:
