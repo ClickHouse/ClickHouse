@@ -58,14 +58,13 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     , settings(settings_)
     , read_until_position(read_until_position_ ? *read_until_position_ : file_size_)
     , implementation_buffer_creator(implementation_buffer_creator_)
-    , is_persistent(settings_.is_file_cache_persistent)
     , query_id(query_id_)
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
     , allow_seeks(allow_seeks_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
-    , is_persistent(false) /// Unused for now, see PR 36171
+    , is_persistent(settings_.is_file_cache_persistent)
 {
 }
 
@@ -947,7 +946,7 @@ bool CachedReadBufferFromFile::nextImplStep()
             {
                 download_current_segment = false;
                 file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-                LOG_DEBUG(log, "No space left in cache, will continue without cache download");
+                LOG_DEBUG(log, "No space left in cache, will continue without cache download ({})", file_segment->getInfoForLog());
             }
         }
 

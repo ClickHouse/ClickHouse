@@ -561,7 +561,9 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             */
             download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
             /// Resize this file segment by creating a copy file segment with DOWNLOADED state,
-            /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state.
+            /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
+            /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
+            /// (this will be crucial for other file segment holder, not for current one).
             cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
         }
 

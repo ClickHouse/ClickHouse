@@ -388,7 +388,8 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
 
 void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
 {
-    LOG_TEST(log, "Remove file by path: {}", backQuote(metadata_storage->getPath() + path));
+    String full_path = fs::path(metadata_storage->getPath()) / path;
+    LOG_TEST(log, "Remove file by path: {}", backQuote(full_path));
 
     if (!metadata_storage->exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
@@ -403,7 +404,7 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
 
         bool is_remote = object_storage->isRemote();
         if (!is_remote)
-            object_storage->removeCacheIfExists(path);
+            object_storage->removeCacheIfExists(full_path);
 
         auto tx = metadata_storage->createTransaction();
         tx->unlinkMetadata(path);

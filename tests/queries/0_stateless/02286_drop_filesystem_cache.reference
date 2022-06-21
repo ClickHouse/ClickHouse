@@ -37,11 +37,8 @@ FROM (
         system.remote_data_paths
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
-ON data_paths.cache_path = caches.cache_path
-FORMAT Vertical;
-Row 1:
-──────
-count(): 1
+ON data_paths.cache_path = caches.cache_path;
+1
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
 0
@@ -55,11 +52,8 @@ FROM (
         system.remote_data_paths
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
-ON data_paths.cache_path = caches.cache_path
-FORMAT Vertical;
-Row 1:
-──────
-count(): 0
+ON data_paths.cache_path = caches.cache_path;
+0
 DROP TABLE IF EXISTS test2;
 CREATE TABLE test2 (key UInt32, value String)
 Engine=MergeTree()
@@ -112,11 +106,8 @@ FROM (
         system.remote_data_paths
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
-ON data_paths.cache_path = caches.cache_path
-FORMAT Vertical;
-Row 1:
-──────
-count(): 0
+ON data_paths.cache_path = caches.cache_path;
+0
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
 0
@@ -130,11 +121,8 @@ FROM (
         system.remote_data_paths
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
-ON data_paths.cache_path = caches.cache_path
-FORMAT Vertical;
-Row 1:
-──────
-count(): 0
+ON data_paths.cache_path = caches.cache_path;
+0
 DROP TABLE IF EXISTS test2;
 CREATE TABLE test2 (key UInt32, value String)
 Engine=MergeTree()

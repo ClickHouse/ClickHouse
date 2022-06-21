@@ -322,6 +322,7 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
                 cache->removeIfReleasable(query.drop_persistent_files);
+            }
             break;
         }
         case Type::RELOAD_DICTIONARY:

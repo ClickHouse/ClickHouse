@@ -1,5 +1,4 @@
 #include "MetadataStorageFromLocalDisk.h"
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/IDisk.h>
 
 
@@ -18,7 +17,7 @@ MetadataStorageFromLocalDisk::MetadataStorageFromLocalDisk(DiskPtr disk_)
 
 MetadataTransactionPtr MetadataStorageFromLocalDisk::createTransaction() const
 {
-    return std::make_shared<MetadataStorageFromLocalDiskTransaction>(*this);
+    return std::make_shared<MetadataStorageFromLocalDiskTransaction>(*this, disk);
 }
 
 const std::string & MetadataStorageFromLocalDisk::getPath() const
@@ -99,61 +98,61 @@ uint32_t MetadataStorageFromLocalDisk::getHardlinkCount(const std::string & path
     return disk->getRefCount(path);
 }
 
-void MetadataStorageFromLocalDiskTransaction::writeStringToFile( /// NOLINT
-     const std::string & path,
-     const std::string & data)
+void MetadataStorageFromLocalDiskTransaction::writeStringToFile(const std::string & path, const std::string & data) /// NOLINT
 {
-    addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage_for_local.getDisk(), data));
+    auto wb = disk->writeFile(path);
+    wb->write(data.data(), data.size());
+    wb->finalize();
 }
 
 void MetadataStorageFromLocalDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
-    addOperation(std::make_unique<SetLastModifiedOperation>(path, timestamp, *metadata_storage_for_local.getDisk()));
+    disk->setLastModified(path, timestamp);
 }
 
 void MetadataStorageFromLocalDiskTransaction::unlinkFile(const std::string & path)
 {
-    addOperation(std::make_unique<UnlinkFileOperation>(path, *metadata_storage_for_local.getDisk()));
+    disk->removeFile(path);
 }
 
 void MetadataStorageFromLocalDiskTransaction::removeRecursive(const std::string & path)
 {
-    addOperation(std::make_unique<RemoveRecursiveOperation>(path, *metadata_storage_for_local.getDisk()));
+    disk->removeRecursive(path);
 }
 
 void MetadataStorageFromLocalDiskTransaction::createDirectory(const std::string & path)
 {
-    addOperation(std::make_unique<CreateDirectoryOperation>(path, *metadata_storage_for_local.getDisk()));
+    disk->createDirectory(path);
 }
 
 void MetadataStorageFromLocalDiskTransaction::createDicrectoryRecursive(const std::string & path)
 {
-    addOperation(std::make_unique<CreateDirectoryRecursiveOperation>(path, *metadata_storage_for_local.getDisk()));
+    disk->createDirectories(path);
 }
 
 void MetadataStorageFromLocalDiskTransaction::removeDirectory(const std::string & path)
 {
-    addOperation(std::make_unique<RemoveDirectoryOperation>(path, *metadata_storage_for_local.getDisk()));
+    disk->removeDirectory(path);
 }
 
 void MetadataStorageFromLocalDiskTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
-    addOperation(std::make_unique<MoveFileOperation>(path_from, path_to, *metadata_storage_for_local.getDisk()));
+    disk->moveFile(path_from, path_to);
 }
 
 void MetadataStorageFromLocalDiskTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
-    addOperation(std::make_unique<MoveDirectoryOperation>(path_from, path_to, *metadata_storage_for_local.getDisk()));
+    disk->moveDirectory(path_from, path_to);
 }
 
 void MetadataStorageFromLocalDiskTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, *metadata_storage_for_local.getDisk()));
+    disk->replaceFile(path_from, path_to);
 }
 
 void MetadataStorageFromLocalDiskTransaction::setReadOnly(const std::string & path)
 {
-    addOperation(std::make_unique<SetReadOnlyOperation>(path, *metadata_storage_for_local.getDisk()));
+    disk->setReadOnly(path);
 }
 
 void MetadataStorageFromLocalDiskTransaction::createHardLink(const std::string & /* path_from */, const std::string & /* path_from */)

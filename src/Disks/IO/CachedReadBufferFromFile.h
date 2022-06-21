@@ -128,8 +128,6 @@ private:
     String nextimpl_step_log_info;
     String last_caller_id;
 
-    bool is_persistent = false;
-
     String query_id;
     bool enable_logging = false;
     String current_buffer_id;
