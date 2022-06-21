@@ -1,4 +1,3 @@
-
 #include <Parsers/IParserBase.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -19,6 +18,11 @@
 namespace DB
 {
 
-
+bool Bin::convertImpl(String &out,IParser::Pos &pos)
+{
+    String res = String(pos->begin,pos->end);
+    out = res;
+    return false;
+}
 
 }
