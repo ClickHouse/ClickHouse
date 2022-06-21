@@ -80,7 +80,7 @@ public:
 
     /// Modification time for part directory.
     virtual Poco::Timestamp getLastModified() const = 0;
-    /// Interate part directory. Iteration in subdirectory is not needed yet.
+    /// Iterate part directory. Iteration in subdirectory is not needed yet.
     virtual DataPartStorageIteratorPtr iterate() const = 0;
 
     /// Get metadata for a file inside path dir.
