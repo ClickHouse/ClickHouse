@@ -208,7 +208,11 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
             std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression);
     };
 
-    auto columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
+    ColumnsDescription columns;
+    if (columns_from_cache)
+        columns = *columns_from_cache;
+    else
+        columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 
     if (ctx->getSettingsRef().use_cache_for_hdfs_schema_inference)
         addColumnsToCache(paths, columns, ctx);
