@@ -174,7 +174,20 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 {
                     /// Even if we don't load the table we can still mark the uuid of it as taken.
                     if (create_query->uuid != UUIDHelpers::Nil)
-                         DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                    {
+                        /// A bit tricky way to distinguish ATTACH DATABASE and server startup.
+                        if (getContext()->isServerCompletelyStarted())
+                        {
+                            /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
+                            if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
+                        }
+                        else
+                        {
+                            /// Server is starting up. Lock UUID used by permanently detached table.
+                            DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                        }
+                    }
 
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
