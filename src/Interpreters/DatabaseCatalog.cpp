@@ -20,6 +20,7 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <utime.h>
 
 #include "config_core.h"
 
