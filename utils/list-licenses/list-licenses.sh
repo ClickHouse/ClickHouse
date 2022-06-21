@@ -1,14 +1,7 @@
 #!/bin/bash
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    if ! [ -x "$(command -v ggrep)" ]; then
-        echo 'Error: GNU grep not found. You can install it with "brew grep".' >&2
-        exit 1
-    fi
-    if ! [ -x "$(command -v gfind)" ]; then
-        echo 'Error: GNU find not found. You can install it with "brew findutils".' >&2
-        exit 1
-    fi
+    # use GNU versions, their presence is ensured in cmake/tools.cmake
     GREP_CMD=ggrep
     FIND_CMD=gfind
 else
