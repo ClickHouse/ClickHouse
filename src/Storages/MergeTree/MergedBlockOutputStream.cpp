@@ -36,7 +36,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
 
-    data_part_storage_builder->createDirectories();
+    if (data_part->isStoredOnDisk())
+        data_part_storage_builder->createDirectories();
 
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
