@@ -106,3 +106,4 @@ RUN arch=${TARGETARCH:-amd64} \
 
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]
+
