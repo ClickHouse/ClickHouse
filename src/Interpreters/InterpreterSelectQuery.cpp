@@ -108,8 +108,17 @@ namespace ErrorCodes
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns) const
+FilterDAGInfoPtr generateFilterActions(
+    const StorageID & table_id,
+    const ASTPtr & row_policy_filter,
+    const ContextPtr & context,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
+    Names & prerequisite_columns)
 {
+    auto filter_info = std::make_shared<FilterDAGInfo>();
+
     const auto & db_name = table_id.getDatabaseName();
     const auto & table_name = table_id.getTableName();
 
@@ -145,16 +154,24 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
-    actions = analyzer.simpleSelectActions();
+    filter_info->actions = analyzer.simpleSelectActions();
 
-    auto column_name = expr_list->children.at(0)->getColumnName();
-    actions->removeUnusedActions(NameSet{column_name});
-    actions->projectInput(false);
+    filter_info->column_name = expr_list->children.at(0)->getColumnName();
+    filter_info->actions->removeUnusedActions(NameSet{filter_info->column_name});
+    filter_info->actions->projectInput(false);
 
-    for (const auto * node : actions->getInputs())
-        actions->getIndex().push_back(node);
+    for (const auto * node : filter_info->actions->getInputs())
+        filter_info->actions->getIndex().push_back(node);
 
-    return column_name;
+    auto required_columns_from_filter = filter_info->actions->getRequiredColumns();
+
+    for (const auto & column : required_columns_from_filter)
+    {
+        if (prerequisite_columns.end() == std::find(prerequisite_columns.begin(), prerequisite_columns.end(), column.name))
+            prerequisite_columns.push_back(column.name);
+    }
+
+    return filter_info;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -266,29 +283,37 @@ static void checkAccessRightsForSelect(
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
+/// Parse additional filter for table in format 'table.name:expression'
+/// Examples: 'default.hits:UserID=12345', 'visits:UserID = 0 ? 1 : 0'
 static ASTPtr parseAdditionalFilterConditionForTable(
-    const char * data, size_t size,
+    const char * start,
+    const char * end,
     const DatabaseAndTableWithAlias & target,
     const Context & context)
 {
-    size_t pos = 0;
-    for (; pos < size; ++pos)
-        if (data[pos] == ':')
+    const char delimiter = ':';
+
+    const char * pos = start;
+    for (; pos < end; ++pos)
+        if (*pos == delimiter)
             break;
 
-    if (pos == size)
+    std::string_view table(start, pos - start);
+
+    if (pos == end)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "No table is specified for additional filter {}. Expected syntax: 'table:condition'",
-            std::string_view(data, size));
+            table);
 
-    std::string_view table(data, pos);
-    if ((target.database == context.getCurrentDatabase() && target.table == table) ||
-        (target.database + '.' + target.table == table))
+    trim(table);
+
+    if ((table == target.table && context.getCurrentDatabase() == target.database) ||
+        (table == target.database + '.' + target.table))
     {
         /// Try to parse expression
         ParserExpression parser;
         const auto & settings = context.getSettingsRef();
-        return parseQuery(parser, data + pos, data + size, "additional filter", settings.max_query_size, settings.max_parser_depth);
+        return parseQuery(parser, pos + 1, end, "additional filter", settings.max_query_size, settings.max_parser_depth);
     }
 
     return nullptr;
@@ -304,19 +329,23 @@ static ASTPtr parseAdditionalFilterConditionForTable(
 
     const char delimiter = ';';
 
-    const auto size = setting.size();
-    const char * data = setting.data();
-    const char * end = data + setting.size();
-    for (const char * pos = data; pos < end; ++pos)
+    const char * start = setting.data();
+    const char * end = start + setting.size();
+    for (const char * pos = start; pos < end; ++pos)
     {
-        if (setting[pos] == delimiter)
+        if (*pos == delimiter)
         {
-            if (auto ast = parseAdditionalFilterConditionForTable(data, pos, target, context))
+            if (auto ast = parseAdditionalFilterConditionForTable(start, pos, target, context))
                 return ast;
 
-            data =
+            start = pos + 1;
         }
     }
+
+    if (start < end)
+        return parseAdditionalFilterConditionForTable(start, end, target, context);
+
+    return nullptr;
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
@@ -498,6 +527,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
 
+    if (!settings.additional_filters.value.empty() && storage && !joined_tables.tablesWithColumns().empty())
+        query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
+            settings.additional_filters, joined_tables.tablesWithColumns().front().table, *context);
+
     auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
@@ -616,16 +649,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Fix source_header for filter actions.
             if (row_policy_filter)
             {
-                filter_info = std::make_shared<FilterDAGInfo>();
-                filter_info->column_name = generateFilterActions(filter_info->actions, required_columns);
+                filter_info = generateFilterActions(
+                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+            }
 
-                auto required_columns_from_filter = filter_info->actions->getRequiredColumns();
+            if (query_info.additional_filter_ast)
+            {
+                additional_filter_info = generateFilterActions(
+                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns);
 
-                for (const auto & column : required_columns_from_filter)
-                {
-                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
-                        required_columns.push_back(column.name);
-                }
+                additional_filter_info->do_remove_column = true;
             }
 
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
@@ -1339,6 +1372,18 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
+            if (additional_filter_info)
+            {
+                auto additional_filter_step = std::make_unique<FilterStep>(
+                    query_plan.getCurrentDataStream(),
+                    additional_filter_info->actions,
+                    additional_filter_info->column_name,
+                    additional_filter_info->do_remove_column);
+
+                additional_filter_step->setStepDescription("Additional filter");
+                query_plan.addStep(std::move(additional_filter_step));
+            }
+
             if (expressions.before_array_join)
             {
                 QueryPlanStepPtr before_array_join_step
@@ -1950,6 +1995,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && storage
         && storage->getName() != "MaterializedMySQL"
         && !row_policy_filter
+        && !query_info.additional_filter_ast
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -2048,6 +2094,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query.limit_with_ties
         && !query.prewhere()
         && !query.where()
+        && !query_info.additional_filter_ast
         && !query.groupBy()
         && !query.having()
         && !query.orderBy()
@@ -2206,6 +2253,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         auto table_aliases = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), alias_actions);
         table_aliases->setStepDescription("Add table aliases");
         query_plan.addStep(std::move(table_aliases));
+    }
+
+    if (processing_stage == QueryProcessingStage::FetchColumns && query_info.additional_filter_ast)
+    {
+
     }
 }
 
