@@ -56,6 +56,7 @@ private:
 
     // Concurrency control related
     ConcurrencyControl::AllocationPtr slots;
+    ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
     std::mutex threads_mutex;
     std::vector<ThreadFromGlobalPool> threads;
 
