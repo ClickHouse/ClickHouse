@@ -4,14 +4,14 @@
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 namespace DB
 {
-class Tobool : public IParserKQLFunction
+class ToBool : public IParserKQLFunction
 {
 protected:
     const char * getName() const override { return "tobool()";}
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 
-class ToDatetime : public IParserKQLFunction
+class ToDateTime : public IParserKQLFunction
 {
 protected:
     const char * getName() const override { return "todatetime()";}
@@ -39,7 +39,7 @@ protected:
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 
-class ToTimespan : public IParserKQLFunction
+class ToTimeSpan : public IParserKQLFunction
 {
 protected:
     const char * getName() const override { return "totimespan()";}

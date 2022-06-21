@@ -15,14 +15,12 @@ bool ParserKQLFilter :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Pos begin = pos;
     String expr;
 
-    KQLOperators convetor;
-
     for (auto op_po : op_pos)
     {
         if (expr.empty())
-            expr = "(" + convetor.getExprFromToken(op_po) +")";
+            expr = "(" + getExprFromToken(op_po) +")";
         else
-            expr = expr + " and (" + convetor.getExprFromToken(op_po) +")";
+            expr = expr + " and (" + getExprFromToken(op_po) +")";
     }
 
     Tokens token_filter(expr.c_str(), expr.c_str()+expr.size());
