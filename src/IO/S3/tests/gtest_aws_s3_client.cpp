@@ -132,7 +132,7 @@ TEST(IOTestAwsS3Client, SimpleRead)
     class MyRequestHandler : public Poco::Net::HTTPRequestHandler
     {
     public:
-        virtual void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
+        void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
         {
             response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
             std::ostream & out = response.send();
@@ -149,7 +149,7 @@ TEST(IOTestAwsS3Client, SimpleRead)
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
-    String version_id = "";
+    String version_id;
     UInt64 max_single_read_retries = 1;
     bool enable_s3_requests_logging = false;
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -162,7 +162,7 @@ TEST(IOTestAwsS3Client, SimpleRead)
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
-    String server_side_encryption_customer_key_base64 = "";
+    String server_side_encryption_customer_key_base64;
     DB::HeaderCollection headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
@@ -204,7 +204,7 @@ TEST(IOTestAwsS3Client, ReadErrorInfo)
     class MyRequestHandler : public Poco::Net::HTTPRequestHandler
     {
     public:
-        virtual void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
+        void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
         {
             response.setStatus(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
             response.setContentType("application/xml");
@@ -222,7 +222,7 @@ TEST(IOTestAwsS3Client, ReadErrorInfo)
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
-    String version_id = "";
+    String version_id;
     UInt64 max_single_read_retries = 1;
     bool enable_s3_requests_logging = false;
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -235,7 +235,7 @@ TEST(IOTestAwsS3Client, ReadErrorInfo)
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
-    String server_side_encryption_customer_key_base64 = "";
+    String server_side_encryption_customer_key_base64;
     DB::HeaderCollection headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
@@ -284,7 +284,7 @@ TEST(IOTestAwsS3Client, ReadTooManyRequestsException)
     class MyRequestHandler : public Poco::Net::HTTPRequestHandler
     {
     public:
-        virtual void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
+        void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
         {
             response.setStatus(Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS);
             response.setContentType("application/xml");
@@ -302,7 +302,7 @@ TEST(IOTestAwsS3Client, ReadTooManyRequestsException)
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
-    String version_id = "";
+    String version_id;
     UInt64 max_single_read_retries = 1;
     bool enable_s3_requests_logging = false;
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -315,7 +315,7 @@ TEST(IOTestAwsS3Client, ReadTooManyRequestsException)
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
-    String server_side_encryption_customer_key_base64 = "";
+    String server_side_encryption_customer_key_base64;
     DB::HeaderCollection headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
