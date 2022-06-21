@@ -1132,7 +1132,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 }
                 if (total_max_threads)
                     ConcurrencyControl::instance().setMaxConcurrency(total_max_threads);
+                else
+                    ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
             }
+            else
+                ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
 
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
