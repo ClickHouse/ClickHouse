@@ -1,4 +1,3 @@
-
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
@@ -6,14 +5,14 @@
 
 namespace DB
 {
-bool Tobool::convertImpl(String &out,IParser::Pos &pos)
+bool ToBool::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
 }
 
-bool ToDatetime::convertImpl(String &out,IParser::Pos &pos)
+bool ToDateTime::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
@@ -41,7 +40,7 @@ bool ToString::convertImpl(String &out,IParser::Pos &pos)
     return false;
 }
 
-bool ToTimespan::convertImpl(String &out,IParser::Pos &pos)
+bool ToTimeSpan::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
