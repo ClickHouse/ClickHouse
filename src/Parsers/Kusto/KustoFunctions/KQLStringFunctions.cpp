@@ -314,9 +314,7 @@ bool IsNotNull::convertImpl(String & out,IParser::Pos & pos)
 
 bool ParseCommandLine::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out,pos,"isNull");
 }
 
 bool IsNull::convertImpl(String & out,IParser::Pos & pos)
@@ -458,9 +456,7 @@ bool StrCatDelim::convertImpl(String & out,IParser::Pos & pos)
 
 bool StrCmp::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out,pos,"lengthUTF8");
 }
 
 bool StrLen::convertImpl(String & out,IParser::Pos & pos)
