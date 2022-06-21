@@ -19,6 +19,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 #include <base/find_symbols.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
@@ -133,7 +134,7 @@ public:
     }
 
 private:
-    Strings registered_prefixes;
+    Strings registered_prefixes TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 
