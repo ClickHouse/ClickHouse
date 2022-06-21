@@ -1,3 +1,4 @@
+#pragma once
 #include <Parsers/ASTQueryWithOutput.h>
 
 namespace DB
