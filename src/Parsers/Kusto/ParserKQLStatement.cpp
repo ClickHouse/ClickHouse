@@ -59,17 +59,6 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     return true;
 }
-/*
-bool IParserKQLFunction::convert(String &out,IParser::Pos &pos)
-{
-    return wrapParseImpl(pos, IncreaseDepthTag{}, [&]
-    {
-        bool res = convertImpl(out,pos);
-        if (!res)
-            out = "";
-        return res;
-    });
-}*/
 
 bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
