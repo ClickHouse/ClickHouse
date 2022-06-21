@@ -654,11 +654,8 @@ struct MutationContext
     MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
         = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
 
-    //VolumePtr single_disk_volume;
     MergeTreeData::MutableDataPartPtr new_data_part;
-    //DiskPtr disk;
     DataPartStorageBuilderPtr data_part_storage_builder;
-    //String new_part_tmp_path;
 
     IMergedBlockOutputStreamPtr out{nullptr};
 
@@ -1212,7 +1209,7 @@ private:
             if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
-            String destination; // = ctx->new_part_tmp_path;
+            String destination;
             String file_name = it->name();
 
             auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
@@ -1496,9 +1493,6 @@ bool MutateTask::prepare()
     ctx->new_data_part->setColumns(new_columns);
     ctx->new_data_part->setSerializationInfos(new_infos);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
-
-    // ctx->disk = ctx->new_data_part->volume->getDisk();
-    //ctx->new_part_tmp_path = ctx->new_data_part->getRelativePath();
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())

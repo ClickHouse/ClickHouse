@@ -294,8 +294,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     {
         String file_name = it.first;
 
-        //String path = fs::path(part->getRelativePath()) / file_name;
-
         UInt64 size = part->data_part_storage->getFileSize(file_name);
 
         writeStringBinary(it.first, out);

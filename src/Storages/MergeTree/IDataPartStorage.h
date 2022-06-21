@@ -54,10 +54,10 @@ struct WriteSettings;
 class TemporaryFileOnDisk;
 
 /// This is an abstraction of storage for data part files.
-/// Generally, it contains read-only methods from IDisk.
+/// Ideally, it is assumed to contains read-only methods from IDisk.
+/// It is not fulfilled now, but let's try our best.
 class IDataPartStorage
 {
-private:
 public:
     virtual ~IDataPartStorage() = default;
 

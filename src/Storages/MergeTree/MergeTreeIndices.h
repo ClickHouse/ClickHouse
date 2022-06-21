@@ -24,9 +24,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-// class IDataPartStorage;
-// using DataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
-
 using MergeTreeIndexVersion = uint8_t;
 struct MergeTreeIndexFormat
 {

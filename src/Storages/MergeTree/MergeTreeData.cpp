@@ -2603,7 +2603,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const DataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part) const
 {
     MergeTreeDataPartType type;
-    // auto full_path = fs::path(relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
     auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(data_part_storage);
 
     if (mrk_ext)
@@ -5938,7 +5937,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     /// Why it is needed if we only hardlink files?
-    auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk()); //reserveSpace(src_part->getBytesOnDisk(), src_part->volume->getDisk());
+    auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
 
     auto src_part_storage = src_part->data_part_storage;
 
@@ -6119,8 +6118,6 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             continue;
 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
-
-        //auto disk = part->volume->getDisk();
 
         auto data_part_storage = part->data_part_storage;
         String src_part_path = data_part_storage->getRelativePath();

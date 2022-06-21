@@ -197,12 +197,10 @@ public:
     /// processed by multiple shards.
     UUID uuid = UUIDHelpers::Nil;
 
+    /// This is an object which encapsulates all the operations with disk.
+    /// Contains a path to stored data.
     DataPartStoragePtr data_part_storage;
 
-    /// A directory path (relative to storage's path) where part data is actually stored
-    /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
-    /// NOTE: Cannot have trailing slash.
-    /// mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
@@ -342,12 +340,6 @@ public:
 
     size_t getFileSizeOrZero(const String & file_name) const;
 
-    /// Returns path to part dir relatively to disk mount point
-    // String getRelativePath() const;
-
-    /// Returns full path to part dir
-    // String getFullPath() const;
-
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix) const;
 
@@ -371,9 +363,6 @@ public:
     /// Returns true if this part shall participate in merges according to
     /// settings of given storage policy.
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
-
-    /// Calculate the total size of the entire directory with all the files
-    // static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
 
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();

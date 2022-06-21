@@ -1739,8 +1739,6 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
     for (auto & part : data_parts)
     {
-        //auto disk = part->volume->getDisk();
-        //String part_path = part->getRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         String checksums_path = "checksums.txt";
         String tmp_checksums_path = "checksums.txt.tmp";
