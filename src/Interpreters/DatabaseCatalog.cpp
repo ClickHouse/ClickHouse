@@ -16,8 +16,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
 #include <Common/filesystemHelpers.h>
+
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #include "config_core.h"
 
@@ -27,11 +29,10 @@
 #endif
 
 #if USE_LIBPQXX
-#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#    include <utime.h>
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
-
-namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -143,6 +144,9 @@ StoragePtr TemporaryTableHolder::getTable() const
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
+    unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
+    unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
+    unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
@@ -150,6 +154,12 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
+    auto cleanup_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->cleanupStoreDirectoryTask(); });
+    cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
+    (*cleanup_task)->activate();
+    /// Do not start task immediately on server startup, it's not urgent.
+    (*cleanup_task)->scheduleAfter(unused_dir_hide_timeout_sec * 1000);
+
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
@@ -165,6 +175,9 @@ void DatabaseCatalog::loadDatabases()
 void DatabaseCatalog::shutdownImpl()
 {
     TemporaryLiveViewCleaner::shutdown();
+
+    if (cleanup_task)
+        (*cleanup_task)->deactivate();
 
     if (drop_task)
         (*drop_task)->deactivate();
@@ -372,6 +385,10 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     if (drop)
     {
+        UUID db_uuid = db->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            removeUUIDMappingFinally(db_uuid);
+
         /// Delete the database.
         db->drop(local_context);
 
@@ -558,6 +575,15 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     assert(prev_database && prev_table);
     prev_database = std::move(database);
     prev_table = std::move(table);
+}
+
+bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
+{
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    return it != map_part.map.end();
 }
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
@@ -1070,6 +1096,121 @@ void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, Tabl
             loading_dependencies[dependency].dependent_database_objects.insert(table_name);
 
     old_dependencies = std::move(new_dependencies);
+}
+
+void DatabaseCatalog::cleanupStoreDirectoryTask()
+{
+    fs::path store_path = fs::path(getContext()->getPath()) / "store";
+    size_t affected_dirs = 0;
+    for (const auto & prefix_dir : fs::directory_iterator{store_path})
+    {
+        String prefix = prefix_dir.path().filename();
+        bool expected_prefix_dir = prefix_dir.is_directory() &&
+            prefix.size() == 3 &&
+            isHexDigit(prefix[0]) &&
+            isHexDigit(prefix[1]) &&
+            isHexDigit(prefix[2]);
+
+        if (!expected_prefix_dir)
+        {
+            LOG_WARNING(log, "Found invalid directory {}, will try to remove it", prefix_dir.path().string());
+            maybeRemoveDirectory(prefix_dir.path());
+            continue;
+        }
+
+        for (const auto & uuid_dir : fs::directory_iterator{prefix_dir.path()})
+        {
+            String uuid_str = uuid_dir.path().filename();
+            UUID uuid;
+            bool parsed = tryParse(uuid, uuid_str);
+
+            bool expected_dir = uuid_dir.is_directory() &&
+                parsed &&
+                uuid != UUIDHelpers::Nil &&
+                uuid_str.starts_with(prefix);
+
+            if (!expected_dir)
+            {
+                LOG_WARNING(log, "Found invalid directory {}, will try to remove it", uuid_dir.path().string());
+                maybeRemoveDirectory(uuid_dir.path());
+                continue;
+            }
+
+            if (!hasUUIDMapping(uuid))
+            {
+                /// We load uuids even for detached and permanently detached tables,
+                /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
+                /// No table or database using this directory should concurrently appear,
+                /// because creation of new table would fail with "directory already exists".
+                affected_dirs += maybeRemoveDirectory(uuid_dir.path());
+            }
+        }
+    }
+
+    if (affected_dirs)
+        LOG_INFO(log, "Cleaned up {} directories from store/", affected_dirs);
+
+    (*cleanup_task)->scheduleAfter(unused_dir_cleanup_period_sec * 1000);
+}
+
+bool DatabaseCatalog::maybeRemoveDirectory(const fs::path & unused_dir)
+{
+    /// "Safe" automatic removal of some directory.
+    /// At first we do not remove anything and only revoke all access right.
+    /// And remove only if nobody noticed it after, for example, one month.
+
+    struct stat st;
+    if (stat(unused_dir.string().c_str(), &st))
+    {
+        LOG_ERROR(log, "Failed to stat {}, errno: {}", unused_dir.string(), errno);
+        return false;
+    }
+
+    if (st.st_uid != geteuid())
+    {
+        /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
+        LOG_WARNING(log, "Found directory {} with unexpected owner (uid={})", unused_dir.string(), st.st_uid);
+        return false;
+    }
+
+    time_t max_modification_time = std::max(st.st_atime, std::max(st.st_mtime, st.st_ctime));
+    time_t current_time = time(nullptr);
+    if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
+    {
+        if (current_time <= max_modification_time + unused_dir_hide_timeout_sec)
+            return false;
+
+        LOG_INFO(log, "Removing access rights for unused directory {} (will remove it when timeout exceed)", unused_dir.string());
+
+        /// Explicitly update modification time just in case
+
+        struct utimbuf tb;
+        tb.actime = current_time;
+        tb.modtime = current_time;
+        if (utime(unused_dir.string().c_str(), &tb) != 0)
+            LOG_ERROR(log, "Failed to utime {}, errno: {}", unused_dir.string(), errno);
+
+        /// Remove all access right
+        if (chmod(unused_dir.string().c_str(), 0))
+            LOG_ERROR(log, "Failed to chmod {}, errno: {}", unused_dir.string(), errno);
+
+        return true;
+    }
+    else
+    {
+        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
+            return false;
+
+        LOG_INFO(log, "Removing unused directory {}", unused_dir.string());
+
+        /// We have to set these access rights to make recursive removal work
+        if (chmod(unused_dir.string().c_str(), S_IRWXU))
+            LOG_ERROR(log, "Failed to chmod {}, errno: {}", unused_dir.string(), errno);
+
+        fs::remove_all(unused_dir);
+
+        return true;
+    }
 }
 
 
