@@ -1,20 +1,22 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/CopyTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <optional>
+#include <Columns/ColumnFixedString.h>
+#include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Aggregator.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
-#include <Interpreters/Aggregator.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Columns/ColumnFixedString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/CopyTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -76,7 +78,8 @@ AggregatingStep::AggregatingStep(
     size_t temporary_data_merge_threads_,
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
-    SortDescription group_by_sort_description_)
+    SortDescription group_by_sort_description_,
+    std::optional<QueryProcessingStage::Enum> processing_stage_)
     : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
@@ -89,6 +92,7 @@ AggregatingStep::AggregatingStep(
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
+    , processing_stage(processing_stage_)
 {
 }
 
@@ -353,7 +357,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
 
-        pipeline.resize(1);
+        // Needed for GroupingAggregatedTransform in distributed case. Strictly speaking, we should also check that `distributed_aggregation_memory_efficient` will be used.
+        const bool should_has_one_output_stream
+            = processing_stage.value_or(QueryProcessingStage::MAX) == QueryProcessingStage::WithMergeableState;
+        pipeline.resize(should_has_one_output_stream ? 1 : pipeline.getNumStreams(), true /* force */);
 
         aggregating = collector.detachProcessors(0);
     }

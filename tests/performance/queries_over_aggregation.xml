@@ -1,0 +1,4 @@
+<test>
+  <query>select * from (select * from numbers_mt(1e7) group by number) group by number</query>
+  <query>select * from (select * from numbers_mt(1e7) group by number) order by number</query>
+</test>

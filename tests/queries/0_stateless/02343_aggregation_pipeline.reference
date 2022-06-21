@@ -1,0 +1,69 @@
+-- { echoOn }
+
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_threads = 16;
+(Expression)
+ExpressionTransform × 16
+  (Aggregating)
+  Resize 16 → 16
+    AggregatingTransform × 16
+      StrictResize 16 → 16
+        (Expression)
+        ExpressionTransform × 16
+          (Aggregating)
+          Resize 16 → 16
+            AggregatingTransform × 16
+              (Expression)
+              ExpressionTransform × 16
+                (ReadFromStorage)
+                NumbersMt × 16 0 → 1
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_threads = 16;
+(Expression)
+ExpressionTransform
+  (Sorting)
+  MergingSortedTransform 16 → 1
+    MergeSortingTransform × 16
+      LimitsCheckingTransform × 16
+        PartialSortingTransform × 16
+          (Expression)
+          ExpressionTransform × 16
+            (Aggregating)
+            Resize 16 → 16
+              AggregatingTransform × 16
+                (Expression)
+                ExpressionTransform × 16
+                  (ReadFromStorage)
+                  NumbersMt × 16 0 → 1
+explain pipeline select WatchID from remote('127.0.0.{1,2,3}', 'test', hits) group by WatchID settings max_threads = 16, prefer_localhost_replica = 1, distributed_aggregation_memory_efficient = 1;
+(Expression)
+ExpressionTransform
+  (MergingAggregated)
+  SortingAggregatedTransform 16 → 1
+    MergingAggregatedBucketTransform × 16
+      Resize 1 → 16
+        GroupingAggregatedTransform 3 → 1
+          (Union)
+            (Aggregating)
+            Resize 16 → 1
+              AggregatingTransform × 16
+                StrictResize 16 → 16
+                  (Expression)
+                  ExpressionTransform × 16
+                    (ReadFromMergeTree)
+                    MergeTreeThread × 16 0 → 1
+            (ReadFromRemote)
+explain pipeline select WatchID from remote('127.0.0.{1,2,3}', 'test', hits) group by WatchID settings max_threads = 16, prefer_localhost_replica = 1, distributed_aggregation_memory_efficient = 0;
+(Expression)
+ExpressionTransform
+  (MergingAggregated)
+  MergingAggregatedTransform
+    Resize 3 → 1
+      (Union)
+        (Aggregating)
+        Resize 16 → 1
+          AggregatingTransform × 16
+            StrictResize 16 → 16
+              (Expression)
+              ExpressionTransform × 16
+                (ReadFromMergeTree)
+                MergeTreeThread × 16 0 → 1
+        (ReadFromRemote)

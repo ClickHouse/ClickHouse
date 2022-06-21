@@ -1,8 +1,10 @@
 #pragma once
+#include <optional>
+#include <Core/QueryProcessingStage.h>
+#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -40,7 +42,8 @@ public:
         size_t temporary_data_merge_threads_,
         bool storage_has_evenly_distributed_read_,
         InputOrderInfoPtr group_by_info_,
-        SortDescription group_by_sort_description_);
+        SortDescription group_by_sort_description_,
+        std::optional<QueryProcessingStage::Enum> processing_stage_ = std::nullopt);
 
     String getName() const override { return "Aggregating"; }
 
@@ -67,6 +70,8 @@ private:
 
     InputOrderInfoPtr group_by_info;
     SortDescription group_by_sort_description;
+
+    std::optional<QueryProcessingStage::Enum> processing_stage;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;
