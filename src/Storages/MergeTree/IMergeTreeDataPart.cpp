@@ -1388,8 +1388,10 @@ try
     String from = data_part_storage->getRelativePath();
     auto to = fs::path(relative_path) / new_relative_path;
 
+    metadata_manager->deleteAll(true);
+    metadata_manager->assertAllDeleted(true);
     data_part_storage->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
-    metadata_manager->move(from, to);
+    metadata_manager->updateAll(true);
 
     for (const auto & [p_name, part] : projection_parts)
     {

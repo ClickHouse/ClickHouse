@@ -60,12 +60,7 @@ std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const Str
 
 bool PartMetadataManagerWithCache::exists(const String & file_name) const
 {
-    return existsImpl(part->data_part_storage->getRelativePath(), file_name);
-}
-
-bool PartMetadataManagerWithCache::existsImpl(const String & path, const String & file_name) const
-{
-    String file_path = fs::path(path) / file_name;
+    String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
     String key = getKeyFromFilePath(file_path);
     String value;
     auto status = cache->get(key, value);
@@ -83,18 +78,13 @@ bool PartMetadataManagerWithCache::existsImpl(const String & path, const String 
 
 void PartMetadataManagerWithCache::deleteAll(bool include_projection)
 {
-    deleteAllImpl(part->data_part_storage->getRelativePath(), include_projection);
-}
-
-void PartMetadataManagerWithCache::deleteAllImpl(const String & path, bool include_projection)
-{
     Strings file_names;
     part->appendFilesOfColumnsChecksumsIndexes(file_names, include_projection);
 
     String value;
     for (const auto & file_name : file_names)
     {
-        String file_path = fs::path(path) / file_name;
+        String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
         String key = getKeyFromFilePath(file_path);
         auto status = cache->del(key);
         if (!status.ok())
@@ -115,11 +105,6 @@ void PartMetadataManagerWithCache::deleteAllImpl(const String & path, bool inclu
 
 void PartMetadataManagerWithCache::updateAll(bool include_projection)
 {
-    updateAllImpl(part->data_part_storage->getRelativePath(), include_projection);
-}
-
-void PartMetadataManagerWithCache::updateAllImpl(const String & path, bool include_projection)
-{
     Strings file_names;
     part->appendFilesOfColumnsChecksumsIndexes(file_names, include_projection);
 
@@ -127,7 +112,7 @@ void PartMetadataManagerWithCache::updateAllImpl(const String & path, bool inclu
     String read_value;
     for (const auto & file_name : file_names)
     {
-        String file_path = fs::path(path) / file_name;
+        String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
         if (!part->data_part_storage->exists(file_name))
             continue;
         auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
@@ -153,11 +138,6 @@ void PartMetadataManagerWithCache::updateAllImpl(const String & path, bool inclu
 
 void PartMetadataManagerWithCache::assertAllDeleted(bool include_projection) const
 {
-    assertAllDeletedImpl(part->data_part_storage->getRelativePath(), include_projection);
-}
-
-void PartMetadataManagerWithCache::assertAllDeletedImpl(const String & path, bool include_projection) const
-{
     Strings keys;
     std::vector<uint128> _;
     getKeysAndCheckSums(keys, _);
@@ -172,7 +152,7 @@ void PartMetadataManagerWithCache::assertAllDeletedImpl(const String & path, boo
         file_name = fs::path(file_path).filename();
 
         /// Metadata file belongs to current part
-        if (fs::path(path) / file_name == file_path)
+        if (fs::path(part->data_part_storage->getRelativePath()) / file_name == file_path)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Data part {} with type {} with meta file {} still in cache",
@@ -186,7 +166,7 @@ void PartMetadataManagerWithCache::assertAllDeletedImpl(const String & path, boo
             const auto & projection_parts = part->getProjectionParts();
             for (const auto & [projection_name, projection_part] : projection_parts)
             {
-                if (fs::path(path) / (projection_name + ".proj") / file_name == file_path)
+                if (fs::path(part->data_part_storage->getRelativePath()) / (projection_name + ".proj") / file_name == file_path)
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -199,13 +179,6 @@ void PartMetadataManagerWithCache::assertAllDeletedImpl(const String & path, boo
             }
         }
     }
-}
-
-void PartMetadataManagerWithCache::move(const String & from, const String & to)
-{
-    deleteAllImpl(from, true);
-    assertAllDeletedImpl(from, true);
-    updateAllImpl(to, true);
 }
 
 void PartMetadataManagerWithCache::getKeysAndCheckSums(Strings & keys, std::vector<uint128> & checksums) const

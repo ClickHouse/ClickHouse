@@ -23,8 +23,6 @@ public:
     void updateAll(bool /*include_projection*/) override {}
 
     std::unordered_map<String, uint128> check() const override { return {}; }
-
-    void move(const String &, const String &) override {}
 };
 
 
