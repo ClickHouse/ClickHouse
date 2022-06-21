@@ -239,14 +239,20 @@
     /// Query parameters with predefined default values.
     let params = {
         start: '2015-01-01',
-        word2: 'Coronavirus',
+        //word2: 'Coronavirus',
     };
 
     const query_param_regexp = /\{(\w+):[^}]+\}/g;
 
     /// Automatically parse more parameters from queires.
     function findParamsInQuery(query) {
-        [...query.matchAll(query_param_regexp)].forEach(arr => { params[arr[1]] ??= '' });
+        for (let match of query.matchAll(query_param_regexp)) {
+            const name = match[1];
+            if (!params[name]) {
+                params[name] = '';
+                insertParam(name, '');
+            };
+        }
     }
 
     function findParamsInQueries() {
@@ -290,8 +296,8 @@
         [...document.getElementsByClassName('param')].forEach(e => { params[e.name] = e.value; console.log(e.name, e.value) });
     }
 
-    findParamsInQueries();
     insertParams();
+    findParamsInQueries();
 
     function getParamsForURL() {
         let url = '';
@@ -373,7 +379,7 @@
         });
 
         let trash = document.createElement('a');
-        let trash_text = document.createTextNode('✖️');
+        let trash_text = document.createTextNode('✕');
         trash.appendChild(trash_text);
         trash.addEventListener('click', e => {
             chart.style.display = 'none';
