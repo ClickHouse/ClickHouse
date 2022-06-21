@@ -33,13 +33,14 @@ TEST(ConcurrencyControl, Fifo)
 {
     ConcurrencyControlTest t(1); // use single slot
     std::vector<ConcurrencyControl::AllocationPtr> allocations;
-    constexpr int N = 42;
-    for (int i = 0; i < N; i++)
+    constexpr int count = 42;
+    allocations.reserve(count);
+    for (int i = 0; i < count; i++)
         allocations.emplace_back(t.cc.allocate(0, 1));
-    for (int i = 0; i < N; i++)
+    for (int i = 0; i < count; i++)
     {
         ConcurrencyControl::SlotPtr holder;
-        for (int j = 0; j < N; j++)
+        for (int j = 0; j < count; j++)
         {
             auto slot = allocations[j]->tryAcquire();
             if (i == j) // check fifo order of allocations
@@ -58,6 +59,7 @@ TEST(ConcurrencyControl, Oversubscription)
 {
     ConcurrencyControlTest t(10);
     std::vector<ConcurrencyControl::AllocationPtr> allocations;
+    allocations.reserve(10);
     for (int i = 0; i < 10; i++)
         allocations.emplace_back(t.cc.allocate(1, 2));
     std::vector<ConcurrencyControl::SlotPtr> slots;
@@ -87,6 +89,7 @@ TEST(ConcurrencyControl, ReleaseUnacquiredSlots)
     ConcurrencyControlTest t(10);
     {
         std::vector<ConcurrencyControl::AllocationPtr> allocations;
+        allocations.reserve(10);
         for (int i = 0; i < 10; i++)
             allocations.emplace_back(t.cc.allocate(1, 2));
         // Do not acquire - just destroy allocations with granted slots
@@ -155,11 +158,11 @@ TEST(ConcurrencyControl, GrantReleasedToTheSameAllocation)
 TEST(ConcurrencyControl, FairGranting)
 {
     ConcurrencyControlTest t(3);
-    auto startBusyPeriod = t.cc.allocate(3, 3);
+    auto start_busy_period = t.cc.allocate(3, 3);
     auto a1 = t.cc.allocate(0, 10);
     auto a2 = t.cc.allocate(0, 10);
     auto a3 = t.cc.allocate(0, 10);
-    startBusyPeriod.reset();
+    start_busy_period.reset();
     for (int i = 0; i < 10; i++)
     {
         auto s1 = a1->tryAcquire();
