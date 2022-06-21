@@ -16,7 +16,6 @@ public:
     CommandMove()
     {
         command_name = "move";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "Move file or directory from `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
         usage = "move [OPTION]... <FROM_PATH> <TO_PATH>";
     }

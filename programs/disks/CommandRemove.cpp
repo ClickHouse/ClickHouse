@@ -16,7 +16,6 @@ public:
     CommandRemove()
     {
         command_name = "remove";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "Remove file or directory with all children. Throws exception if file doesn't exists.\nPath should be in format './' or './path' or 'path'";
         usage = "remove [OPTION]... <PATH>";
     }

@@ -34,11 +34,13 @@ public:
         DB::ContextMutablePtr & global_context,
         Poco::Util::LayeredConfiguration & config) = 0;
 
-    const ProgramOptionsDescription & getCommandOptions() const { return *command_option_description; }
+    const std::optional<ProgramOptionsDescription> & getCommandOptions() const { return command_option_description; }
 
-protected:
+    void addOptions(ProgramOptionsDescription & options_description);
+
     virtual void processOptions(Poco::Util::LayeredConfiguration & config, po::variables_map & options) const = 0;
 
+protected:
     void printHelpMessage() const;
 
     static String fullPathWithValidate(const DiskPtr & disk, const String & path);

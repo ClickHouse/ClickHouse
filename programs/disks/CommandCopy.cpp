@@ -53,7 +53,6 @@ public:
         String path_from = command_arguments[0];
         String path_to =  command_arguments[1];
 
-
         DiskPtr disk_from = global_context->getDisk(disk_name_from);
         DiskPtr disk_to = global_context->getDisk(disk_name_to);
 

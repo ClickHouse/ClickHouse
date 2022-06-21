@@ -16,7 +16,6 @@ public:
     CommandLink()
     {
         command_name = "link";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "Create hardlink from `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
         usage = "link [OPTION]... <FROM_PATH> <TO_PATH>";
     }
@@ -24,7 +23,8 @@ public:
     void processOptions(
         Poco::Util::LayeredConfiguration &,
         po::variables_map &) const override
-    {}
+    {
+    }
 
     void execute(
         const std::vector<String> & command_arguments,
