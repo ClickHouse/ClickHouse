@@ -23,7 +23,8 @@ def random_str(length=6):
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../"))
 CURRENT_WORK_DIR = os.getcwd()
-CONTAINER_NAME = f"clickhouse_integration_tests_{random_str()}"
+VOLUME_NAME = "clickhouse_integration_tests"
+CONTAINER_NAME = f"{VOLUME_NAME}_{random_str()}"
 
 CONFIG_DIR_IN_REPO = "programs/server"
 INTERGATION_DIR_IN_REPO = "tests/integration"
@@ -266,10 +267,10 @@ if __name__ == "__main__":
         dockerd_internal_volume = "--mount type=bind,source={},target=/var/lib/docker".format(args.dockerd_volume)
     else:
         try:
-            subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
+            subprocess.check_call(f'docker volume create {VOLUME_NAME}_volume', shell=True)
         except Exception as ex:
             print("Volume creationg failed, probably it already exists, exception", ex)
-        dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
+        dockerd_internal_volume = f"--volume={VOLUME_NAME}_volume:/var/lib/docker"
 
     # If enabled we kill and remove containers before pytest session run.
     env_cleanup = ""
