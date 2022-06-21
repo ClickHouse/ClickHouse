@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -75,7 +74,8 @@ ColumnsDescription readSchemaFromFormat(
         SchemaReaderPtr schema_reader;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
         size_t iterations = 0;
-        while ((buf = read_buffer_iterator()))
+        ColumnsDescription cached_columns;
+        while ((buf = read_buffer_iterator(cached_columns)))
         {
             ++iterations;
 
@@ -123,6 +123,9 @@ ColumnsDescription readSchemaFromFormat(
                 exception_messages += "\n" + exception_message;
             }
         }
+
+        if (!cached_columns.empty())
+            return cached_columns;
 
         if (names_and_types.empty())
             throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:{}", exception_messages);

@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using ReadBufferIterator = std::function<std::unique_ptr<ReadBuffer>()>;
+using ReadBufferIterator = std::function<std::unique_ptr<ReadBuffer>(ColumnsDescription &)>;
 
 /// Try to determine the schema of the data in specifying format.
 /// For formats that have an external schema reader, it will

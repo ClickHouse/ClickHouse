@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/Cache/SchemaCache.h>
 
 #include <Common/logger_useful.h>
 
@@ -92,6 +93,10 @@ protected:
 
 private:
     void setStorageMetadata(CommonArguments args);
+
+    static SchemaCache & getSchemaCache();
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & paths);
+    static void addColumnsToCache(const Strings & paths, const ColumnsDescription & columns, const ContextPtr & context);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table

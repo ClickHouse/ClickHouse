@@ -8,6 +8,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/Cache/SchemaCache.h>
 
 
 namespace DB
@@ -97,6 +98,10 @@ protected:
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
+
+    static SchemaCache & getSchemaCache();
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls);
+    static void addColumnsToCache(const Strings & urls, const ColumnsDescription & columns, const ContextPtr & context);
 };
 
 class StorageURLSink : public SinkToStorage

@@ -567,8 +567,11 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         urls_to_check = {uri};
     }
 
+    std::optional<ColumnsDescription> columns_from_cache;
+    if (context->getSettingsRef().use_cache_for_url_schema_inference)
+        columns_from_cache = tryGetColumnsFromCache(urls_to_check);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()]() mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == urls_to_check.cend())
             return nullptr;
@@ -591,7 +594,16 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         return buf;
     };
 
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
+    ColumnsDescription columns;
+    if (columns_from_cache)
+        columns = *columns_from_cache;
+    else
+        columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
+
+    if (context->getSettingsRef().use_cache_for_url_schema_inference)
+        addColumnsToCache(urls_to_check, columns, context);
+
+    return columns;
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns() const
@@ -770,6 +782,31 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             chooseCompressionMethod(uri, compression_method),
             http_method);
     }
+}
+
+SchemaCache & IStorageURLBase::getSchemaCache()
+{
+    static SchemaCache schema_cache;
+    return schema_cache;
+}
+
+std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(const Strings & urls)
+{
+    auto & schema_cache = getSchemaCache();
+    for (const auto & url : urls)
+    {
+        auto columns = schema_cache.tryGet(url);
+        if (columns)
+            return columns;
+    }
+
+    return std::nullopt;
+}
+
+void IStorageURLBase::addColumnsToCache(const Strings & urls, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    auto & schema_cache = getSchemaCache();
+    schema_cache.addMany(urls, columns, context->getSettingsRef().cache_ttl_for_url_schema_inference.totalSeconds());
 }
 
 StorageURL::StorageURL(
