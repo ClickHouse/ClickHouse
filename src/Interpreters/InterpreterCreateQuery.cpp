@@ -255,6 +255,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
+    bool need_lock_uuid = internal || !create.attach;
 
     if (need_write_metadata)
     {
@@ -278,6 +279,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// We attach database before loading it's tables, so do not allow concurrent DDL queries
     auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
+
+    if (create.uuid != UUIDHelpers::Nil && need_lock_uuid)
+    {
+        /// Lock uuid, so we will known it's already in use.
+        /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
+        DatabaseCatalog::instance().addUUIDMapping(create.uuid);
+    }
 
     bool added = false;
     bool renamed = false;

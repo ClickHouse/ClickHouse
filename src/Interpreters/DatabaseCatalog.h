@@ -20,7 +20,9 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -203,6 +205,8 @@ public:
     /// this method will throw an exception.
     void addUUIDMapping(const UUID & uuid);
 
+    bool hasUUIDMapping(const UUID & uuid);
+
     static String getPathForUUID(const UUID & uuid);
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
@@ -261,6 +265,9 @@ private:
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
+    void cleanupStoreDirectoryTask();
+    bool maybeRemoveDirectory(const fs::path & unused_dir);
+
     static constexpr size_t reschedule_time_ms = 100;
     static constexpr time_t drop_error_cooldown_sec = 5;
 
@@ -298,6 +305,14 @@ private:
     static constexpr time_t default_drop_delay_sec = 8 * 60;
     time_t drop_delay_sec = default_drop_delay_sec;
     std::condition_variable wait_table_finally_dropped;
+
+    std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
+    static constexpr time_t default_unused_dir_hide_timeout_sec = 60 * 60;              /// 1 hour
+    time_t unused_dir_hide_timeout_sec = default_unused_dir_hide_timeout_sec;
+    static constexpr time_t default_unused_dir_rm_timeout_sec = 30 * 24 * 60 * 60;      /// 30 days
+    time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
+    static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
+    time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
 };
 
 }

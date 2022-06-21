@@ -172,9 +172,9 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
-                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
-                    /// if (create_query->uuid != UUIDHelpers::Nil)
-                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                    /// Even if we don't load the table we can still mark the uuid of it as taken.
+                    if (create_query->uuid != UUIDHelpers::Nil)
+                         DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
 
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
