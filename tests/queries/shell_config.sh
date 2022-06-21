@@ -129,3 +129,17 @@ function clickhouse_client_removed_host_parameter()
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
+
+function wait_for_queries_to_finish()
+{
+    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
+    num_tries=0
+    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
+        sleep 0.5;
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq 20 ]; then
+            $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
+            break
+        fi
+    done
+}
