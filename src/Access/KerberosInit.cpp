@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
 #include <filesystem>
+#include <boost/core/noncopyable.hpp>
 #if USE_KRB5
 #include <krb5.h>
 #include <mutex>
@@ -27,7 +28,10 @@ struct k5_data
     krb5_boolean switch_to_cache;
 };
 
-class KerberosInit
+/**
+ * This class implements programmatic implementation of kinit.
+ */
+class KerberosInit : boost::noncopyable
 {
 public:
     int init(const String & keytab_file, const String & principal, const String & cache_name = "");
@@ -44,7 +48,7 @@ private:
 int KerberosInit::init(const String & keytab_file, const String & principal, const String & cache_name)
 {
     auto log = &Poco::Logger::get("KerberosInit");
-    LOG_DEBUG(log,"Trying to authenticate to Kerberos v5");
+    LOG_TRACE(log,"Trying to authenticate to Kerberos v5");
 
     krb5_error_code ret;
 
@@ -52,7 +56,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     int flags = 0;
 
     if (!std::filesystem::exists(keytab_file))
-        throw Exception("Error keytab file does not exist", ErrorCodes::KERBEROS_ERROR);
+        throw Exception("Keytab file does not exist", ErrorCodes::KERBEROS_ERROR);
 
     memset(&k5, 0, sizeof(k5));
     ret = krb5_init_context(&k5.ctx);
@@ -64,7 +68,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
         ret = krb5_cc_resolve(k5.ctx, cache_name.c_str(), &k5.out_cc);
         if (ret)
             throw Exception("Error in resolving cache", ErrorCodes::KERBEROS_ERROR);
-        LOG_DEBUG(log,"Resolved cache");
+        LOG_TRACE(log,"Resolved cache");
     }
     else
     {
@@ -72,7 +76,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
         ret = krb5_cc_default(k5.ctx, &defcache);
         if (ret)
             throw Exception("Error while getting default cache", ErrorCodes::KERBEROS_ERROR);
-        LOG_DEBUG(log,"Resolved default cache");
+        LOG_TRACE(log,"Resolved default cache");
         deftype = krb5_cc_get_type(k5.ctx, defcache);
         if (krb5_cc_get_principal(k5.ctx, defcache, &defcache_princ) != 0)
             defcache_princ = nullptr;
@@ -92,7 +96,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
             throw Exception("Error while searching for cache for " + principal, ErrorCodes::KERBEROS_ERROR);
         if (!ret)
         {
-            LOG_DEBUG(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
+            LOG_TRACE(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
             k5.switch_to_cache = 1;
         }
         else if (defcache_princ != nullptr)
@@ -101,7 +105,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
             ret = krb5_cc_new_unique(k5.ctx, deftype, nullptr, &k5.out_cc);
             if (ret)
                 throw Exception("Error while generating new cache", ErrorCodes::KERBEROS_ERROR);
-            LOG_DEBUG(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
+            LOG_TRACE(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
             k5.switch_to_cache = 1;
         }
     }
@@ -111,13 +115,13 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     {
         k5.out_cc = defcache;
         defcache = nullptr;
-        LOG_DEBUG(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
+        LOG_TRACE(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
     }
 
     ret = krb5_unparse_name(k5.ctx, k5.me, &k5.name);
     if (ret)
         throw Exception("Error when unparsing name", ErrorCodes::KERBEROS_ERROR);
-    LOG_DEBUG(log,"Using principal: {}", k5.name);
+    LOG_TRACE(log,"Using principal: {}", k5.name);
 
     memset(&my_creds, 0, sizeof(my_creds));
     ret = krb5_get_init_creds_opt_alloc(k5.ctx, &options);
@@ -128,7 +132,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     ret = krb5_kt_resolve(k5.ctx, keytab_file.c_str(), &keytab);
     if (ret)
         throw Exception("Error in resolving keytab "+keytab_file, ErrorCodes::KERBEROS_ERROR);
-    LOG_DEBUG(log,"Using keytab: {}", keytab_file);
+    LOG_TRACE(log,"Using keytab: {}", keytab_file);
 
     if (k5.in_cc)
     {
@@ -141,28 +145,28 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
         throw Exception("Error in setting output credential cache", ErrorCodes::KERBEROS_ERROR);
 
     // Action: init or renew
-    LOG_DEBUG(log,"Trying to renew credentials");
+    LOG_TRACE(log,"Trying to renew credentials");
     ret = krb5_get_renewed_creds(k5.ctx, &my_creds, k5.me, k5.out_cc, nullptr);
     if (ret)
     {
-        LOG_DEBUG(log,"Renew failed ({}). Trying to get initial credentials", ret);
+        LOG_TRACE(log,"Renew failed ({}). Trying to get initial credentials", ret);
         ret = krb5_get_init_creds_keytab(k5.ctx, &my_creds, k5.me, keytab, 0, nullptr, options);
         if (ret)
             throw Exception("Error in getting initial credentials", ErrorCodes::KERBEROS_ERROR);
         else
-            LOG_DEBUG(log,"Got initial credentials");
+            LOG_TRACE(log,"Got initial credentials");
     }
     else
     {
-        LOG_DEBUG(log,"Successful renewal");
+        LOG_TRACE(log,"Successful renewal");
         ret = krb5_cc_initialize(k5.ctx, k5.out_cc, k5.me);
         if (ret)
             throw Exception("Error when initializing cache", ErrorCodes::KERBEROS_ERROR);
-        LOG_DEBUG(log,"Initialized cache");
+        LOG_TRACE(log,"Initialized cache");
         ret = krb5_cc_store_cred(k5.ctx, k5.out_cc, &my_creds);
         if (ret)
-            LOG_DEBUG(log,"Error while storing credentials");
-        LOG_DEBUG(log,"Stored credentials");
+            LOG_TRACE(log,"Error while storing credentials");
+        LOG_TRACE(log,"Stored credentials");
     }
 
     if (k5.switch_to_cache)
@@ -172,7 +176,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
             throw Exception("Error while switching to new cache", ErrorCodes::KERBEROS_ERROR);
     }
 
-    LOG_DEBUG(log,"Authenticated to Kerberos v5");
+    LOG_TRACE(log,"Authenticated to Kerberos v5");
     return 0;
 }
 
