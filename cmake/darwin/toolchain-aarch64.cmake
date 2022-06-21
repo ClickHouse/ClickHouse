@@ -3,7 +3,7 @@ set (CMAKE_SYSTEM_PROCESSOR "aarch64")
 set (CMAKE_C_COMPILER_TARGET "aarch64-apple-darwin")
 set (CMAKE_CXX_COMPILER_TARGET "aarch64-apple-darwin")
 set (CMAKE_ASM_COMPILER_TARGET "aarch64-apple-darwin")
-set (CMAKE_OSX_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../toolchain/darwin-aarch64")
+set (CMAKE_OSX_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../toolchain/darwin-aarch64" CACHE PATH "OS X sysroot")
 
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)  # disable linkage check - it doesn't work in CMake
 
