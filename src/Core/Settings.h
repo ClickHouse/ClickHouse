@@ -589,7 +589,15 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     \
     M(Bool, allow_unrestricted_reads_from_keeper, false, "Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper", 0) \
     \
-    /** Experimental functions */ \
+    M(Bool, use_cache_for_file_schema_inference, true, "Use cache in schema inference while using file table function", 0) \
+    M(Seconds, cache_ttl_for_file_schema_inference, 3600 * 24, "TTL for schemes in cache in schema inference while using file table function. 0 means no ttl", 0) \
+    M(Bool, use_cache_for_s3_schema_inference, true, "Use cache in schema inference while using s3 table function", 0) \
+    M(Seconds, cache_ttl_for_s3_schema_inference, 3600 * 24, "TTL for schemes in cache in schema inference while using s3 table function. 0 means no ttl", 0) \
+    M(Bool, use_cache_for_hdfs_schema_inference, true, "Use cache in schema inference while using hdfs table function", 0) \
+    M(Seconds, cache_ttl_for_hdfs_schema_inference, 3600 * 24, "TTL for schemes in cache in schema inference while using hdfs table function. 0 means no ttl", 0) \
+    M(Bool, use_cache_for_url_schema_inference, true, "Use cache in schema inference while using url table function", 0) \
+    M(Seconds, cache_ttl_for_url_schema_inference, 3600, "TTL for schemes in cache in schema inference while using url table function. 0 means no ttl", 0) \
+     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
     M(Bool, allow_experimental_hash_functions, false, "Enable experimental hash functions (hashid, etc)", 0) \

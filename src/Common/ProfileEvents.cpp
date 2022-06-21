@@ -343,7 +343,13 @@
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")                                                                                                                                                                                                 \
+    \
+    M(SchemaInferenceCacheHits, "Number of times a schema from cache was used for schema inference") \
+    M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheTTLExpirations, "Number of times a schema from cache expires due to TTL") \
+    M(SchemaInferenceCacheTTLUpdates, "Number of times TTL for schema in cache was updated") \
+    M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data")
 
 namespace ProfileEvents
 {

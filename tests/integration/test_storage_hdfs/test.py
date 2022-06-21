@@ -1,6 +1,7 @@
 import os
 
 import pytest
+import time
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
@@ -626,6 +627,99 @@ def test_virtual_columns_2(started_cluster):
 
     result = node1.query(f"SELECT _path FROM {table_function}")
     assert result.strip() == "kek"
+
+
+def get_profile_event_for_query(node, query, profile_event):
+    node.query('system flush logs')
+    query = query.replace("'", "\\'")
+    return int(node.query(f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by event_time desc limit 1"))
+
+
+def test_schema_inference_cache(started_cluster):
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+    )
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache.jsonl')"
+    node1.query(desc_query)
+    cache_misses = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheMisses')
+    assert cache_misses == 1
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache.jsonl')"
+    node1.query(desc_query)
+    cache_hits = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheHits')
+    assert cache_hits == 1
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+    )
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache.jsonl')"
+    node1.query(desc_query)
+    cache_invalidations = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheInvalidations')
+    assert cache_invalidations == 1
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+    )
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') settings cache_ttl_for_hdfs_schema_inference=1"
+    node1.query(desc_query)
+    cache_misses = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheMisses')
+    assert cache_misses == 1
+
+    time.sleep(2)
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') settings cache_ttl_for_hdfs_schema_inference=1000"
+    node1.query(desc_query)
+    cache_misses = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheMisses')
+    assert cache_misses == 1
+    cache_ttl_expirations = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheTTLExpirations')
+    assert cache_ttl_expirations == 1
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache1.jsonl')"
+    node1.query(desc_query)
+    cache_hits = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheHits')
+    assert cache_hits == 1
+    cache_ttl_updates = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheTTLUpdates')
+    assert cache_ttl_updates == 1
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+    )
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') settings cache_ttl_for_hdfs_schema_inference=1"
+    node1.query(desc_query)
+    cache_invalidations = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheInvalidations')
+    assert cache_invalidations == 1
+
+    time.sleep(2)
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache.jsonl')"
+    node1.query(desc_query)
+    cache_hits = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheHits')
+    assert cache_hits == 1
+    cache_ttl_expirations = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheTTLExpirations')
+    assert cache_ttl_expirations == 1
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache1.jsonl')"
+    node1.query(desc_query)
+    cache_misses = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheMisses')
+    assert cache_misses == 1
+
+    node1.query(f"insert into function hdfs('hdfs://hdfs1:9000/test_cache2.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1")
+    node1.query(f"insert into function hdfs('hdfs://hdfs1:9000/test_cache3.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1")
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache*.jsonl')"
+    node1.query(desc_query)
+    cache_hits = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheHits')
+    assert cache_hits == 1
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache2.jsonl')"
+    node1.query(desc_query)
+    cache_hits = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheHits')
+    assert cache_hits == 1
+
+    desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache3.jsonl')"
+    node1.query(desc_query)
+    cache_hits = get_profile_event_for_query(node1, desc_query, 'SchemaInferenceCacheHits')
+    assert cache_hits == 1
 
 
 if __name__ == "__main__":

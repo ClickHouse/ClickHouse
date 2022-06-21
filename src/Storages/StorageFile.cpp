@@ -262,7 +262,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     /// in case of file descriptor we have a stream of data and we cannot
     /// start reading data from the beginning after reading some data for
     /// schema inference.
-    ReadBufferIterator read_buffer_iterator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
@@ -306,7 +306,11 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
             "table structure manually",
             format);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
+    std::optional<ColumnsDescription> columns_from_cache;
+    if (context->getSettingsRef().use_cache_for_file_schema_inference)
+        columns_from_cache = tryGetColumnsFromCache(paths);
+
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
         if (it == paths.end())
             return nullptr;
@@ -314,7 +318,16 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         return createReadBuffer(*it++, false, "File", -1, compression_method, context);
     };
 
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
+    ColumnsDescription columns;
+    if (columns_from_cache)
+        columns = *columns_from_cache;
+    else
+        columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
+
+    if (context->getSettingsRef().use_cache_for_file_schema_inference)
+        addColumnsToCache(paths, columns, context);
+
+    return columns;
 }
 
 bool StorageFile::supportsSubsetOfColumns() const
@@ -1190,4 +1203,40 @@ NamesAndTypesList StorageFile::getVirtuals() const
         {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
+
+SchemaCache & StorageFile::getSchemaCache()
+{
+    static SchemaCache schema_cache;
+    return schema_cache;
+}
+
+std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(const Strings & paths)
+{
+    /// Check if the cache contains one of the paths.
+    auto & schema_cache = getSchemaCache();
+    struct stat file_stat{};
+    for (const auto & path : paths)
+    {
+        auto get_last_mod_time = [&]()
+        {
+            if (0 != stat(path.c_str(), &file_stat))
+                throwFromErrno("Cannot stat file " + path, ErrorCodes::CANNOT_STAT);
+
+            return file_stat.st_mtim.tv_sec;
+        };
+
+        auto columns = schema_cache.tryGet(path, get_last_mod_time);
+        if (columns)
+            return columns;
+    }
+
+    return std::nullopt;
+}
+
+void StorageFile::addColumnsToCache(const Strings & paths, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    auto & schema_cache = getSchemaCache();
+    schema_cache.addMany(paths, columns, context->getSettingsRef().cache_ttl_for_file_schema_inference.totalSeconds());
+}
+
 }
