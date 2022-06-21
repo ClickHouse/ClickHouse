@@ -142,10 +142,7 @@ public:
     /// Return iterator to the contents of the specified directory.
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) const = 0;
 
-    /// Iterate all disk files by path and apply a callback to each path.
-    void iterateRecursively(const String & path, std::function<void(const String & path)>);
-
-    /// Return `true` if the specified directoskry is empty.
+    /// Return `true` if the specified directory is empty.
     bool isDirectoryEmpty(const String & path) const;
 
     /// Create empty file at `path`.

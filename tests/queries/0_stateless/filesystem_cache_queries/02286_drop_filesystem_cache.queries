@@ -39,8 +39,7 @@ FROM (
         system.remote_data_paths
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
-ON data_paths.cache_path = caches.cache_path
-FORMAT Vertical;
+ON data_paths.cache_path = caches.cache_path;
 
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
@@ -54,8 +53,7 @@ FROM (
         system.remote_data_paths
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
-ON data_paths.cache_path = caches.cache_path
-FORMAT Vertical;
+ON data_paths.cache_path = caches.cache_path;
 
 DROP TABLE IF EXISTS test2;
 

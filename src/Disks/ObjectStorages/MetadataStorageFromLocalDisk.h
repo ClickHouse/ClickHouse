@@ -54,11 +54,13 @@ class MetadataStorageFromLocalDiskTransaction final : public MetadataStorageFrom
 {
 private:
     const MetadataStorageFromLocalDisk & metadata_storage_for_local;
+    DiskPtr disk;
 
 public:
-    explicit MetadataStorageFromLocalDiskTransaction(const MetadataStorageFromLocalDisk & metadata_storage_)
+    explicit MetadataStorageFromLocalDiskTransaction(const MetadataStorageFromLocalDisk & metadata_storage_, DiskPtr disk_)
         : MetadataStorageFromDiskTransaction(metadata_storage_)
         , metadata_storage_for_local(metadata_storage_)
+        , disk(disk_)
     {}
 
     void writeStringToFile(const std::string & path, const std::string & data) override;

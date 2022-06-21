@@ -127,7 +127,14 @@ protected:
     virtual void reduceSizeToDownloaded(
         const Key & key, size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & /* segment_lock */) = 0;
+        std::lock_guard<std::mutex> & segment_lock) = 0;
+
+    virtual FileSegmentPtr setDownloading(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        bool is_persistent,
+        std::lock_guard<std::mutex> & cache_lock) = 0;
 
     void assertInitialized() const;
 

@@ -80,7 +80,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     std::optional<size_t> file_size) const
 {
     auto modified_read_settings = getReadSettingsForCache(read_settings);
-    auto impl = object_storage->readObjects(common_path_prefix, blobs_to_read, read_settings, read_hint, file_size);
+    auto impl = object_storage->readObjects(common_path_prefix, blobs_to_read, modified_read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
     if (impl->isIntegratedWithFilesystemCache()
