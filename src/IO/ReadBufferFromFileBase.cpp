@@ -5,7 +5,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 ReadBufferFromFileBase::ReadBufferFromFileBase() : BufferWithOwnMemory<SeekableReadBuffer>(0)
@@ -28,7 +28,7 @@ size_t ReadBufferFromFileBase::getFileSize()
 {
     if (file_size)
         return *file_size;
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getFileSize() is not implemented for read buffer");
+    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for read buffer");
 }
 
 }

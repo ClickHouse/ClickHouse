@@ -8,7 +8,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Progress.h>
-#include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
 

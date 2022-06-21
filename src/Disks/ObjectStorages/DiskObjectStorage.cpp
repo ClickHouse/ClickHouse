@@ -16,6 +16,7 @@
 #include <Common/IFileCache.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
+#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -24,18 +25,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
-    extern const int UNKNOWN_FORMAT;
-    extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
-    extern const int BAD_FILE_TYPE;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int CANNOT_OPEN_FILE;
-}
-
-static String revisionToString(UInt64 revision)
-{
-    return std::bitset<64>(revision).to_string();
 }
 
 namespace
@@ -85,6 +77,16 @@ private:
     ThreadPool pool;
 };
 
+}
+
+
+DiskTransactionPtr DiskObjectStorage::createTransaction()
+{
+    return std::make_shared<DiskObjectStorageTransaction>(
+        *object_storage,
+        *metadata_storage,
+        remote_fs_root_path,
+        send_metadata ? metadata_helper.get() : nullptr);
 }
 
 DiskObjectStorage::DiskObjectStorage(
@@ -175,9 +177,9 @@ bool DiskObjectStorage::isFile(const String & path) const
 
 void DiskObjectStorage::createFile(const String & path)
 {
-    auto tx = metadata_storage->createTransaction();
-    tx->createEmptyMetadataFile(path);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->createFile(path);
+    transaction->commit();
 }
 
 size_t DiskObjectStorage::getFileSize(const String & path) const
@@ -187,11 +189,6 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
-    if (exists(to_path))
-        throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
-
-    if (!exists(from_path))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", to_path);
 
     if (should_send_metadata)
     {
@@ -205,9 +202,9 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
         metadata_helper->createFileOperationObject("rename", revision, object_metadata);
     }
 
-    auto tx = metadata_storage->createTransaction();
-    tx->moveFile(from_path, to_path);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->moveFile(from_path, to_path);
+    transaction->commit();
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
@@ -219,13 +216,9 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
 {
     if (exists(to_path))
     {
-        auto blobs = metadata_storage->getRemotePaths(to_path);
-
-        auto tx = metadata_storage->createTransaction();
-        tx->replaceFile(from_path, to_path);
-        tx->commit();
-
-        removeFromObjectStorage(blobs);
+        auto transaction = createTransaction();
+        transaction->replaceFile(from_path, to_path);
+        transaction->commit();
     }
     else
         moveFile(from_path, to_path);
@@ -233,20 +226,9 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
 
 void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
-    std::vector<String> paths_to_remove;
-    removeMetadata(path, paths_to_remove);
-
-    bool remove_from_remote_fs = !paths_to_remove.empty() && !delete_metadata_only;
-    if (remove_from_remote_fs)
-        removeFromObjectStorage(paths_to_remove);
-}
-
-void DiskObjectStorage::removeFromObjectStorage(const std::vector<String> & paths)
-{
-    if (!object_storage->isRemote())
-        return;
-
-    object_storage->removeObjects(paths);
+    auto transaction = createTransaction();
+    transaction->removeSharedFile(path, delete_metadata_only);
+    transaction->commit();
 }
 
 UInt32 DiskObjectStorage::getRefCount(const String & path) const
@@ -295,10 +277,9 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
         metadata_helper->createFileOperationObject("hardlink", revision, object_metadata);
     }
 
-    /// Create FS hardlink to metadata file.
-    auto tx = metadata_storage->createTransaction();
-    tx->createHardLink(src_path, dst_path);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->createHardLink(src_path, dst_path);
+    transaction->commit();
 }
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path)
@@ -311,9 +292,9 @@ void DiskObjectStorage::setReadOnly(const String & path)
 {
     /// We should store read only flag inside metadata file (instead of using FS flag),
     /// because we modify metadata file when create hard-links from it.
-    auto tx = metadata_storage->createTransaction();
-    tx->setReadOnly(path);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->setReadOnly(path);
+    transaction->commit();
 }
 
 
@@ -325,33 +306,33 @@ bool DiskObjectStorage::isDirectory(const String & path) const
 
 void DiskObjectStorage::createDirectory(const String & path)
 {
-    auto tx = metadata_storage->createTransaction();
-    tx->createDirectory(path);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->createDirectory(path);
+    transaction->commit();
 }
 
 
 void DiskObjectStorage::createDirectories(const String & path)
 {
-    auto tx = metadata_storage->createTransaction();
-    tx->createDicrectoryRecursive(path);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->createDirectories(path);
+    transaction->commit();
 }
 
 
 void DiskObjectStorage::clearDirectory(const String & path)
 {
-    for (auto it = iterateDirectory(path); it->isValid(); it->next())
-        if (isFile(it->path()))
-            removeFile(it->path());
+    auto transaction = createTransaction();
+    transaction->clearDirectory(path);
+    transaction->commit();
 }
 
 
 void DiskObjectStorage::removeDirectory(const String & path)
 {
-    auto tx = metadata_storage->createTransaction();
-    tx->removeDirectory(path);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->removeDirectory(path);
+    transaction->commit();
 }
 
 
@@ -370,9 +351,9 @@ void DiskObjectStorage::listFiles(const String & path, std::vector<String> & fil
 
 void DiskObjectStorage::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    auto tx = metadata_storage->createTransaction();
-    tx->setLastModified(path, timestamp);
-    tx->commit();
+    auto transaction = createTransaction();
+    transaction->setLastModified(path, timestamp);
+    transaction->commit();
 }
 
 
@@ -385,82 +366,6 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
 {
     return metadata_storage->getLastChanged(path);
 }
-
-void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
-{
-    String full_path = fs::path(metadata_storage->getPath()) / path;
-    LOG_TEST(log, "Remove file by path: {}", backQuote(full_path));
-
-    if (!metadata_storage->exists(path))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
-
-    if (!metadata_storage->isFile(path))
-        throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
-
-    try
-    {
-        uint32_t hardlink_count = metadata_storage->getHardlinkCount(path);
-        auto remote_objects = metadata_storage->getRemotePaths(path);
-
-        bool is_remote = object_storage->isRemote();
-        if (!is_remote)
-            object_storage->removeCacheIfExists(full_path);
-
-        auto tx = metadata_storage->createTransaction();
-        tx->unlinkMetadata(path);
-        tx->commit();
-        LOG_TEST(log, "Remove file by path: {} hardlink count: {}", backQuote(metadata_storage->getPath() + path), hardlink_count);
-
-        if (hardlink_count == 0)
-        {
-            paths_to_remove = remote_objects;
-            if (is_remote)
-            {
-                for (const auto & path_to_remove : paths_to_remove)
-                    object_storage->removeCacheIfExists(path_to_remove);
-            }
-        }
-    }
-    catch (const Exception & e)
-    {
-        /// If it's impossible to read meta - just remove it from FS.
-        if (e.code() == ErrorCodes::UNKNOWN_FORMAT
-            || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
-            || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
-            || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-        {
-            LOG_INFO(log, "Failed to read metadata file {} before removal because it's incomplete or empty. "
-                     "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", path);
-
-            auto tx = metadata_storage->createTransaction();
-            tx->unlinkFile(path);
-            tx->commit();
-        }
-        else
-            throw;
-    }
-}
-
-
-void DiskObjectStorage::removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove)
-{
-    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-
-    if (metadata_storage->isFile(path))
-    {
-        removeMetadata(path, paths_to_remove[path]);
-    }
-    else
-    {
-        for (auto it = iterateDirectory(path); it->isValid(); it->next())
-            removeMetadataRecursive(it->path(), paths_to_remove);
-
-        auto tx = metadata_storage->createTransaction();
-        tx->removeDirectory(path);
-        tx->commit();
-    }
-}
-
 
 void DiskObjectStorage::shutdown()
 {
@@ -490,36 +395,16 @@ ReservationPtr DiskObjectStorage::reserve(UInt64 bytes)
 
 void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
-    std::vector<String> paths_to_remove;
-
-    if (metadata_storage->exists(path))
-    {
-        removeMetadata(path, paths_to_remove);
-
-        bool remove_from_remote_fs = !paths_to_remove.empty() && !delete_metadata_only;
-        if (remove_from_remote_fs)
-            removeFromObjectStorage(paths_to_remove);
-    }
+    auto transaction = createTransaction();
+    transaction->removeSharedFileIfExists(path, delete_metadata_only);
+    transaction->commit();
 }
 
 void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    std::unordered_map<String, std::vector<String>> paths_to_remove;
-    removeMetadataRecursive(path, paths_to_remove);
-
-    if (!keep_all_batch_data)
-    {
-        std::vector<String> remove_from_remote;
-        for (auto && [local_path, remote_paths] : paths_to_remove)
-        {
-            bool remove_from_remote_fs = !file_names_remove_metadata_only.contains(fs::path(local_path).filename());
-            if (remove_from_remote_fs)
-            {
-                remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
-            }
-        }
-        removeFromObjectStorage(remove_from_remote);
-    }
+    auto transaction = createTransaction();
+    transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+    transaction->commit();
 }
 
 std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
@@ -600,43 +485,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     WriteMode mode,
     const WriteSettings & settings)
 {
-    auto blob_name = object_storage->generateBlobNameForPath(path);
+    auto transaction = createTransaction();
+    auto result = transaction->writeFile(path, buf_size, mode, settings);
 
-    std::optional<ObjectAttributes> object_attributes;
-    if (send_metadata)
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter++;
-        object_attributes = {
-            {"path", path}
-        };
-        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
-    }
-
-    auto create_metadata_callback = [this, mode, path, blob_name] (size_t count)
-    {
-        auto tx = metadata_storage->createTransaction();
-        if (mode == WriteMode::Rewrite)
-            tx->createMetadataFile(path, blob_name, count);
-        else
-            tx->addBlobToMetadata(path, blob_name, count);
-
-        tx->commit();
-    };
-
-    if (mode == WriteMode::Append && !object_storage->supportsAppend())
-    {
-        /// We always use mode Rewrite because we simulate append using metadata and different files
-        mode = WriteMode::Rewrite;
-    }
-
-    return object_storage->writeObject(
-        fs::path(object_storage_root_path) / blob_name,
-        mode,
-        object_attributes,
-        std::move(create_metadata_callback),
-        buf_size,
-        updateSettingsForReadWrite(path, settings));
+    return result;
 }
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
