@@ -18,9 +18,7 @@ function thread_insert()
 {
     set -e
     val=1
-    trap "STOP_THE_LOOP=1" INT
-    STOP_THE_LOOP=0
-    while [[ $STOP_THE_LOOP != 1 ]]; do
+    while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
@@ -93,9 +91,7 @@ function thread_partition_dst_to_src()
 function thread_select()
 {
     set -e
-    trap "STOP_THE_LOOP=1" INT
-    STOP_THE_LOOP=0
-    while [[ $STOP_THE_LOOP != 1 ]]; do
+    while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         -- no duplicates
@@ -122,9 +118,10 @@ thread_partition_src_to_dst & PID_3=$!
 thread_partition_dst_to_src & PID_4=$!
 wait $PID_3 && wait $PID_4
 
-kill -INT $PID_1
-kill -INT $PID_2
+kill -TERM $PID_1
+kill -TERM $PID_2
 wait
+wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arraySort(groupArrayIf(n, type=1)) = arraySort(groupArrayIf(n, type=2)) FROM merge(currentDatabase(), '') GROUP BY _table ORDER BY _table"

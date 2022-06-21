@@ -138,4 +138,9 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Functions", std::move(functions_array));
 }
 
+const WindowDescription & WindowStep::getWindowDescription() const
+{
+    return window_description;
+}
+
 }

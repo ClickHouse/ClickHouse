@@ -4,6 +4,7 @@
 #include <nanodbc/nanodbc.h>
 #include <mutex>
 #include <base/BorrowedObjectPool.h>
+#include <base/defines.h>
 #include <unordered_map>
 
 
@@ -165,7 +166,7 @@ public:
 private:
     /// [connection_settings_string] -> [connection_pool]
     using PoolFactory = std::unordered_map<std::string, nanodbc::PoolPtr>;
-    PoolFactory factory;
+    PoolFactory factory TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
