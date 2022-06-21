@@ -9,6 +9,7 @@
 #include <base/find_symbols.h>
 #include <base/sort.h>
 #include <base/getFQDNOrHostName.h>
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
@@ -1059,7 +1060,7 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncGetChildren(const std::s
             promise->set_value(response);
     };
 
-    impl->list(path, std::move(callback), watch_callback);
+    impl->list(path, Coordination::ListRequestType::ALL, std::move(callback), watch_callback);
     return future;
 }
 
@@ -1073,7 +1074,7 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(co
         promise->set_value(response);
     };
 
-    impl->list(path, std::move(callback), watch_callback);
+    impl->list(path, Coordination::ListRequestType::ALL, std::move(callback), watch_callback);
     return future;
 }
 

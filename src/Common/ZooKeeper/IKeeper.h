@@ -281,9 +281,17 @@ struct SetResponse : virtual Response
     size_t bytesSize() const override { return sizeof(stat); }
 };
 
+enum class ListRequestType : uint8_t
+{
+    ALL,
+    PERSISTENT_ONLY,
+    EPHEMERAL_ONLY
+};
+
 struct ListRequest : virtual Request
 {
     String path;
+    ListRequestType list_request_type{ListRequestType::ALL};
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -492,6 +500,7 @@ public:
 
     virtual void list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) = 0;
 
