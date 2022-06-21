@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Dashboard</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css"> <!-- TODO: Add SRI -->
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
     <style>
         * {
@@ -50,6 +50,7 @@
         }
 
         input {
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             outline: none;
             border: none;
             font-size: 14pt;
@@ -69,6 +70,7 @@
         }
 
         #toggle-dark:hover, #toggle-light:hover {
+            display: inline-block;
             transform: translate(1px, 1px);
             filter: brightness(125%);
         }
@@ -193,10 +195,7 @@
 <div class="inputs">
     <input id="add" type="button" value="Add chart">
     <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
-    <form>
-        <span class="nowrap"><span class="param_name">start: </span><input class="param" name="param_start" type="text" value="2020-01-01" /></span>
-        <span class="nowrap"><span class="param_name">word2: </span><input class="param" name="param_word2" type="text" value="Coronavirus" /></span>
-        <input id="run" type="submit" value="Ok" />
+    <form id="params">
     </form>
 </div>
 <div id="charts">
@@ -237,6 +236,58 @@
             GROUP BY t ORDER BY t
             FORMAT JSONCompactColumns`}
     ];
+
+    /// Query parameters with predefined default values.
+    let params = {
+        start: '2015-01-01',
+        word2: 'Coronavirus',
+    };
+
+    /// Automatically parse more parameters from queires.
+    function findParamsInQuery(query) {
+        [...query.matchAll(/\{(\w+):[^}]+\}/g)].forEach(arr => { params[arr[1]] ??= '' });
+    }
+
+    function findParamsInQueries() {
+        queries.forEach(q => findParamsInQuery(q.query));
+    }
+
+    function insertParam(name, value) {
+        let param_wrapper = document.createElement('span');
+        param_wrapper.className = 'nowrap';
+
+        let param_name = document.createElement('span');
+        param_name.className = 'param_name';
+        let param_name_text = document.createTextNode(`${name}: `);
+        param_name.appendChild(param_name_text);
+
+        let param_value = document.createElement('input');
+        param_value.className = 'param';
+        param_value.name = `param_${name}`;
+        param_value.type = 'text';
+        param_value.value = value;
+
+        param_wrapper.appendChild(param_name);
+        param_wrapper.appendChild(param_value);
+        document.getElementById('params').appendChild(param_wrapper);
+    }
+
+    function insertParams() {
+        for (let [name, value] of Object.entries(params)) {
+            console.log(name, value);
+            insertParam(name, value);
+        }
+
+        let run = document.createElement('input');
+        run.id = 'run';
+        run.type = 'submit';
+        run.value = 'Ok';
+
+        document.getElementById('params').appendChild(run);
+    }
+
+    findParamsInQueries();
+    insertParams();
 
     function getParams() {
         let params = '';
