@@ -16,7 +16,6 @@ public:
     CommandListDisks()
     {
         command_name = "list-disks";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "List disks names";
         usage = "list-disks [OPTION]";
     }
