@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
