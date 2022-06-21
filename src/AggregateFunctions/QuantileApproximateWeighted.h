@@ -15,10 +15,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** Calculates quantile by counting number of occurrences for each value in a hash map.
+/** Approximates Quantile by:
+  * - sorting input values and weights
+  * - building a cumulative distribution based on weights
+  * - performing linear interpolation between the weights and values
   *
-  * It uses O(distinct(N)) memory. Can be naturally applied for values with weight.
-  * In case of many identical values, it can be more efficient than QuantileExact even when weight is not used.
   */
 template <typename Value>
 struct QuantileApproximateWeighted
@@ -82,7 +83,8 @@ struct QuantileApproximateWeighted
         if (0 == size)
             return std::numeric_limits<Value>::quiet_NaN();
 
-        /// Copy the data to a temporary array to get the element you need in order.
+        /// Maintain a vector of pair of values and weights for easier sorting and for building
+        /// a cumulative distribution using the provided weights.
         using Pair = typename std::pair<UnderlyingType, Float64>;
         std::vector<Pair> value_weight_pairs;
 
@@ -105,7 +107,9 @@ struct QuantileApproximateWeighted
 
         Float64 accumulated = 0;
 
-        std::vector<Float64> cum_sum_array;
+        /// vector for populating and storing the cumulative sum using the provided weights.
+        /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
+        std::vector<Float64> weights_cum_sum;
 
         bool first = true;
         for (size_t idx = 0; idx < size; ++idx)
@@ -114,23 +118,28 @@ struct QuantileApproximateWeighted
 
             if (first)
             {
-                cum_sum_array.push_back(value_weight_pairs[idx].second);
+                weights_cum_sum.push_back(value_weight_pairs[idx].second);
                 first = false;
             }
             else
             {
-                cum_sum_array.push_back(accumulated);
+                weights_cum_sum.push_back(accumulated);
             }
         }
 
-        /// weighted_quantile = cum_sum_arr - (0.5 * sample_weights)
-        for (size_t idx = 0; idx < size; ++idx)
-            value_weight_pairs[idx].second = (cum_sum_array[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+        /// The following estimation of quantile is general and the idea is:
+        /// https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method
 
-        /// linear interpolation
+        /// calculates a simple cumulative distribution based on weights
+        /// Note: if sum_weight is 0 then subsequent division is inf, so set the value of the exp to 0.
+        for (size_t idx = 0; idx < size; ++idx)
+            value_weight_pairs[idx].second = (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+
+        /// perform linear interpolation
         UnderlyingType g;
 
         size_t idx = 0;
+
         if (size >= 2)
         {
             if (level >= value_weight_pairs[size - 2].second)
@@ -180,7 +189,6 @@ struct QuantileApproximateWeighted
             return;
         }
 
-        /// Copy the data to a temporary array to get the element you need in order.
         using Pair = typename std::pair<UnderlyingType, Float64>;
         std::vector<Pair> value_weight_pairs;
 
@@ -214,7 +222,11 @@ struct QuantileApproximateWeighted
             }
         }
 
-        /// weighted_quantile = cum_sum_arr - (0.5 * sample_weights)
+        /// The following estimation of quantile is general and the idea is:
+        /// https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method
+
+        /// calculates a simple cumulative distribution based on weights
+        /// Note: if sum_weight is 0 then subsequent division is inf, so set the value of the exp to 0.
         for (size_t idx = 0; idx < size; ++idx)
             value_weight_pairs[idx].second = sum_weight == 0 ? 0 : (cum_sum_array[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
 
@@ -222,7 +234,7 @@ struct QuantileApproximateWeighted
 
         while (level_index < num_levels)
         {
-            /// linear interpolation for every level
+            /// perform linear interpolation for every level
             UnderlyingType g;
             auto level = levels[indices[level_index]];
 
