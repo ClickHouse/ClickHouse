@@ -137,7 +137,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
         {
             if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
             {
-                auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function->name);
+                auto is_aggregate_function = AggregateUtils::isAggregateFunction(*function);
                 if (is_aggregate_function)
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -615,7 +615,6 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
     actions = visitor_data.getActions();
 }
 
-
 void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
@@ -659,6 +658,28 @@ void ExpressionAnalyzer::getRootActionsForHaving(
 }
 
 
+void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions)
+{
+    LogAST log;
+    ActionsVisitor::Data visitor_data(
+        getContext(),
+        settings.size_limits_for_set,
+        subquery_depth,
+        sourceColumns(),
+        std::move(actions),
+        prepared_sets,
+        subqueries_for_sets,
+        no_makeset_for_subqueries,
+        false /* no_makeset */,
+        false /*only_consts */,
+        !isRemoteStorage() /* create_source_for_in */,
+        getAggregationKeysInfo(),
+        true);
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    actions = visitor_data.getActions();
+}
+
+
 void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions)
 {
     for (const ASTFunction * node : aggregates())
@@ -696,7 +717,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
     }
 }
 
-void makeWindowDescriptionFromAST(const Context & context,
+void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     const WindowDescriptions & existing_descriptions,
     WindowDescription & desc, const IAST * ast)
 {
@@ -765,6 +786,10 @@ void makeWindowDescriptionFromAST(const Context & context,
             desc.partition_by.push_back(SortColumnDescription(
                     with_alias->getColumnName(), 1 /* direction */,
                     1 /* nulls_direction */));
+
+            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            getRootActions(column_ast, false, actions_dag);
+            desc.partition_by_actions.push_back(std::move(actions_dag));
         }
     }
 
@@ -782,6 +807,10 @@ void makeWindowDescriptionFromAST(const Context & context,
                     order_by_element.children.front()->getColumnName(),
                     order_by_element.direction,
                     order_by_element.nulls_direction));
+
+            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            getRootActions(column_ast, false, actions_dag);
+            desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }
 
@@ -808,14 +837,14 @@ void makeWindowDescriptionFromAST(const Context & context,
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {
         auto [value, _] = evaluateConstantExpression(definition.frame_end_offset,
-            context.shared_from_this());
+            context_.shared_from_this());
         desc.frame.end_offset = value;
     }
 
     if (definition.frame_begin_type == WindowFrame::BoundaryType::Offset)
     {
         auto [value, _] = evaluateConstantExpression(definition.frame_begin_offset,
-            context.shared_from_this());
+            context_.shared_from_this());
         desc.frame.begin_offset = value;
     }
 }
@@ -894,7 +923,6 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                 window_function.function_node->name,
                 window_function.argument_types,
                 window_function.function_parameters, properties);
-
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
@@ -1388,6 +1416,15 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
     }
 }
 
+void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool /* only_types */)
+{
+    ExpressionActionsChain::Step & step = chain.lastStep(columns_after_window);
+    for (const auto & expression : syntax->expressions_with_window_function)
+    {
+        getRootActionsForWindowFunctions(expression->clone(), true, step.actions());
+    }
+}
+
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -1415,7 +1452,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
     {
         if (const auto * function = typeid_cast<const ASTFunction *>(child.get());
             function
-            && function->is_window_function)
+            && (function->is_window_function || function->compute_after_window_functions))
         {
             // Skip window function columns here -- they are calculated after
             // other SELECT expressions by a special step.
@@ -1890,6 +1927,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
             before_window = chain.getLastActions();
             finalize_chain(chain);
+
+            query_analyzer.appendExpressionsAfterWindowFunctions(chain, only_types || !first_stage);
+            for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
+            {
+                query_analyzer.columns_after_window.push_back(x);
+            }
 
             auto & step = chain.lastStep(query_analyzer.columns_after_window);
 

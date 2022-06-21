@@ -51,7 +51,7 @@ void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescript
 
 NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list);
 bool hasObjectColumns(const ColumnsDescription & columns);
-void finalizeObjectColumns(MutableColumns & columns);
+void finalizeObjectColumns(const MutableColumns & columns);
 
 /// Updates types of objects in @object_columns inplace
 /// according to types in new_columns.
