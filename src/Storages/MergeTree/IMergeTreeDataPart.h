@@ -463,6 +463,9 @@ public:
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
 
+    /// True if here is light weight bitmap file in part.
+    bool hasLightweightDelete() const { return has_lightweight_delete; }
+
     /// Reads deleted row mask from deleted_row_mask.bin if exists and set has_lightweight_delete.
     void loadDeletedRowMask();
 
