@@ -173,6 +173,8 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
 {
     String name_with_dot = name_without_dot + ".";
 
+    /// First we need to check if we have column with name name_without_dot
+    /// and if not - check if we have names that start with name_with_dot
     for (auto it = columns.begin(); it != columns.end(); ++it)
     {
         if (it->name == name_without_dot)
