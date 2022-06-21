@@ -25,14 +25,24 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     , allow_release(true)
 {}
 
-#define LOG_DEBUG_SAFE(...)                       \
-    do {                                          \
-        OvercommitTrackerBlockerInThread blocker; \
-        LOG_DEBUG(__VA_ARGS__);                   \
+#define LOG_DEBUG_SAFE(...)                                                                    \
+    do {                                                                                       \
+        OvercommitTrackerBlockerInThread blocker;                                              \
+        try                                                                                    \
+        {                                                                                      \
+            ALLOW_ALLOCATIONS_IN_SCOPE;                                                        \
+            LOG_DEBUG(__VA_ARGS__);                                                            \
+        }                                                                                      \
+        catch (std::bad_alloc const &)                                                         \
+        {                                                                                      \
+            fprintf(stderr, "Allocation failed during writing to log in OvercommitTracker\n"); \
+        }                                                                                      \
     } while (false)
 
 OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return OvercommitResult::NONE;
     // NOTE: Do not change the order of locks
@@ -108,6 +118,8 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
 void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return;
 
@@ -122,6 +134,8 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
 
 void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+
     std::unique_lock<std::mutex> lk(overcommit_m);
     if (picked_tracker == tracker)
     {
