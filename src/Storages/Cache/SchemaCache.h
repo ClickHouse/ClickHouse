@@ -47,7 +47,7 @@ public:
             addUnlocked(key, columns, ttl);
     }
 
-    std::optional<ColumnsDescription> tryGet(const String & key, std::function<time_t()> get_last_mod_time = {})
+    std::optional<ColumnsDescription> tryGet(const String & key, std::function<std::optional<time_t>()> get_last_mod_time = {})
     {
         std::lock_guard lock(mutex);
         clean();
@@ -64,12 +64,12 @@ public:
             /// It's important to call get_last_mod_time only if we have key in cache,
             /// because this function can do some heavy operations.
             auto last_mod_time = get_last_mod_time();
-            /// If get_last_mod_time function was provided but it returned 0, it means that
+            /// If get_last_mod_time function was provided but it returned nullopt, it means that
             /// it failed to get last modification time, so we cannot safely use value from cache.
             if (!last_mod_time)
                 return std::nullopt;
 
-            if (last_mod_time > schema_info.registration_time)
+            if (*last_mod_time > schema_info.registration_time)
             {
                 /// Object was modified after it was added in cache.
                 /// So, stored value is no more valid and we should remove it.

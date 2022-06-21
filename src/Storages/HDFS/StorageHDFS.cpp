@@ -724,7 +724,15 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(const Stri
     auto & schema_cache = getSchemaCache();
     for (const auto & path : paths)
     {
-        auto columns = schema_cache.tryGet(path, [&](){ return last_mod_time[path]; });
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        {
+            auto it = last_mod_time.find(path);
+            if (it == last_mod_time.end())
+                return std::nullopt;
+            return it->second;
+        };
+
+        auto columns = schema_cache.tryGet(path, get_last_mod_time);
         if (columns)
             return columns;
     }

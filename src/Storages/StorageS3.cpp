@@ -1336,7 +1336,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(const String
     {
         String path = fs::path(s3_configuration.uri.bucket) / *it;
         String cache_key = fs::path(s3_configuration.uri.uri.getHost() + std::to_string(s3_configuration.uri.uri.getPort())) / path;
-        auto get_last_mod_time = [&]()
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
             S3::ObjectInfo info;
             /// Check if we already have information about this object.
@@ -1353,7 +1353,9 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(const String
                     (*object_infos)[path] = info;
             }
 
-            return info.last_modification_time;
+            if (info.last_modification_time)
+                return info.last_modification_time;
+            return std::nullopt;
         };
 
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);

@@ -1,6 +1,5 @@
 #include <Storages/StorageURL.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -11,7 +10,6 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/IOThreadPool.h>
 #include <IO/ParallelReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 
@@ -569,7 +567,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (context->getSettingsRef().use_cache_for_url_schema_inference)
-        columns_from_cache = tryGetColumnsFromCache(urls_to_check);
+        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, context);
 
     ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -790,12 +788,23 @@ SchemaCache & IStorageURLBase::getSchemaCache()
     return schema_cache;
 }
 
-std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(const Strings & urls)
+std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(const Strings & urls, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context)
 {
     auto & schema_cache = getSchemaCache();
     for (const auto & url : urls)
     {
-        auto columns = schema_cache.tryGet(url);
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        {
+            auto last_mod_time = getLastModificationTime(url, headers, context);
+            /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
+            /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
+            /// special setting for this case is enabled.
+            if (!last_mod_time && context->getSettingsRef().allow_urls_without_last_mod_time_in_schema_inference_cache)
+                return 0;
+            return last_mod_time;
+        };
+
+        auto columns = schema_cache.tryGet(url, get_last_mod_time);
         if (columns)
             return columns;
     }
@@ -807,6 +816,34 @@ void IStorageURLBase::addColumnsToCache(const Strings & urls, const ColumnsDescr
 {
     auto & schema_cache = getSchemaCache();
     schema_cache.addMany(urls, columns, context->getSettingsRef().cache_ttl_for_url_schema_inference.totalSeconds());
+}
+
+std::optional<time_t> IStorageURLBase::getLastModificationTime(const String & url, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context)
+{
+    try
+    {
+        ReadWriteBufferFromHTTP buf(
+            Poco::URI(url),
+            Poco::Net::HTTPRequest::HTTP_GET,
+            {},
+            ConnectionTimeouts::getHTTPTimeouts(context),
+            {},
+            context->getSettingsRef().max_http_get_redirects,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getReadSettings(),
+            headers,
+            ReadWriteBufferFromHTTP::Range{},
+            &context->getRemoteHostFilter(),
+            true,
+            false,
+            false);
+
+        return buf.getLastModificationTime();
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
 }
 
 StorageURL::StorageURL(

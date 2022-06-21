@@ -1217,10 +1217,10 @@ std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(const Stri
     struct stat file_stat{};
     for (const auto & path : paths)
     {
-        auto get_last_mod_time = [&]()
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
             if (0 != stat(path.c_str(), &file_stat))
-                throwFromErrno("Cannot stat file " + path, ErrorCodes::CANNOT_STAT);
+                return std::nullopt;
 
             return file_stat.st_mtim.tv_sec;
         };

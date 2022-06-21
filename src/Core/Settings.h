@@ -596,7 +596,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, use_cache_for_hdfs_schema_inference, true, "Use cache in schema inference while using hdfs table function", 0) \
     M(Seconds, cache_ttl_for_hdfs_schema_inference, 3600 * 24, "TTL for schemes in cache in schema inference while using hdfs table function. 0 means no ttl", 0) \
     M(Bool, use_cache_for_url_schema_inference, true, "Use cache in schema inference while using url table function", 0) \
-    M(Seconds, cache_ttl_for_url_schema_inference, 3600, "TTL for schemes in cache in schema inference while using url table function. 0 means no ttl", 0) \
+    M(Seconds, cache_ttl_for_url_schema_inference, 3600 * 24, "TTL for schemes in cache in schema inference while using url table function. 0 means no ttl", 0) \
+    M(Bool, allow_urls_without_last_mod_time_in_schema_inference_cache, true, "Use schema from cache without last modification time validation for urls without Last-Modified header", 0) \
      /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
