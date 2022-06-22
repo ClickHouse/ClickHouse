@@ -615,6 +615,55 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 //     return makeASTFunction("and", res);
 // }
 
+ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
+{
+    // subject = arguments[0], left = arguments[1], right = arguments[2]
+    auto f_combined_expression = std::make_shared<ASTFunction>();
+    auto args_combined_expression = std::make_shared<ASTExpressionList>();
+
+    /// [NOT] BETWEEN left AND right
+    auto f_left_expr = std::make_shared<ASTFunction>();
+    auto args_left_expr = std::make_shared<ASTExpressionList>();
+
+    auto f_right_expr = std::make_shared<ASTFunction>();
+    auto args_right_expr = std::make_shared<ASTExpressionList>();
+
+    args_left_expr->children.emplace_back(arguments[0]);
+    args_left_expr->children.emplace_back(arguments[1]);
+
+    args_right_expr->children.emplace_back(arguments[0]);
+    args_right_expr->children.emplace_back(arguments[2]);
+
+    if (negative)
+    {
+        /// NOT BETWEEN
+        f_left_expr->name = "less";
+        f_right_expr->name = "greater";
+        f_combined_expression->name = "or";
+    }
+    else
+    {
+        /// BETWEEN
+        f_left_expr->name = "greaterOrEquals";
+        f_right_expr->name = "lessOrEquals";
+        f_combined_expression->name = "and";
+    }
+
+    f_left_expr->arguments = args_left_expr;
+    f_left_expr->children.emplace_back(f_left_expr->arguments);
+
+    f_right_expr->arguments = args_right_expr;
+    f_right_expr->children.emplace_back(f_right_expr->arguments);
+
+    args_combined_expression->children.emplace_back(f_left_expr);
+    args_combined_expression->children.emplace_back(f_right_expr);
+
+    f_combined_expression->arguments = args_combined_expression;
+    f_combined_expression->children.emplace_back(f_combined_expression->arguments);
+
+    return f_combined_expression;
+}
+
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
@@ -767,51 +816,7 @@ public:
                 if (!lastNOperands(arguments, 3))
                     return false;
 
-                // subject = arguments[0], left = arguments[1], right = arguments[2]
-                auto f_combined_expression = std::make_shared<ASTFunction>();
-                auto args_combined_expression = std::make_shared<ASTExpressionList>();
-
-                /// [NOT] BETWEEN left AND right
-                auto f_left_expr = std::make_shared<ASTFunction>();
-                auto args_left_expr = std::make_shared<ASTExpressionList>();
-
-                auto f_right_expr = std::make_shared<ASTFunction>();
-                auto args_right_expr = std::make_shared<ASTExpressionList>();
-
-                args_left_expr->children.emplace_back(arguments[0]);
-                args_left_expr->children.emplace_back(arguments[1]);
-
-                args_right_expr->children.emplace_back(arguments[0]);
-                args_right_expr->children.emplace_back(arguments[2]);
-
-                if (negative)
-                {
-                    /// NOT BETWEEN
-                    f_left_expr->name = "less";
-                    f_right_expr->name = "greater";
-                    f_combined_expression->name = "or";
-                }
-                else
-                {
-                    /// BETWEEN
-                    f_left_expr->name = "greaterOrEquals";
-                    f_right_expr->name = "lessOrEquals";
-                    f_combined_expression->name = "and";
-                }
-
-                f_left_expr->arguments = args_left_expr;
-                f_left_expr->children.emplace_back(f_left_expr->arguments);
-
-                f_right_expr->arguments = args_right_expr;
-                f_right_expr->children.emplace_back(f_right_expr->arguments);
-
-                args_combined_expression->children.emplace_back(f_left_expr);
-                args_combined_expression->children.emplace_back(f_right_expr);
-
-                f_combined_expression->arguments = args_combined_expression;
-                f_combined_expression->children.emplace_back(f_combined_expression->arguments);
-
-                func = f_combined_expression;
+                func = makeBetweenOperator(negative, arguments);
             }
             else
             {
@@ -987,9 +992,6 @@ public:
                 }
             }
 
-            if (has_distinct)
-                func_name += "Distinct";
-
             contents_begin = pos->begin;
         }
 
@@ -1039,6 +1041,39 @@ public:
                     parameters = std::make_shared<ASTExpressionList>();
                     std::swap(parameters->children, result);
                     action = Action::OPERAND;
+
+                    /// Parametric aggregate functions cannot have DISTINCT in parameters list.
+                    if (has_distinct)
+                        return false;
+
+                    auto pos_after_bracket = pos;
+                    auto old_expected = expected;
+
+                    ParserKeyword all("ALL");
+                    ParserKeyword distinct("DISTINCT");
+
+                    if (all.ignore(pos, expected))
+                        has_all = true;
+
+                    if (distinct.ignore(pos, expected))
+                        has_distinct = true;
+
+                    if (!has_all && all.ignore(pos, expected))
+                        has_all = true;
+
+                    if (has_all && has_distinct)
+                        return false;
+
+                    if (has_all || has_distinct)
+                    {
+                        /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
+                        if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
+                        {
+                            pos = pos_after_bracket;
+                            expected = old_expected;
+                            has_distinct = false;
+                        }
+                    }
                 }
                 else
                 {
@@ -1049,6 +1084,9 @@ public:
 
         if (state == 2)
         {
+            if (has_distinct)
+                func_name += "Distinct";
+
             auto function_node = makeASTFunction(func_name, std::move(result));
 
             if (parameters)
@@ -1971,46 +2009,46 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     static std::vector<std::pair<const char *, Operator>> op_table({
-        {"+",             Operator("plus", 20, 2)},            // Base arithmetic
-        {"-",             Operator("minus", 20, 2)},
-        {"*",             Operator("multiply", 30, 2)},
-        {"/",             Operator("divide", 30, 2)},
-        {"%",             Operator("modulo", 30, 2)},
-        {"MOD",           Operator("modulo", 30, 2)},
-        {"DIV",           Operator("intDiv", 30, 2)},
-        {"==",            Operator("equals", 10, 2)},          // Base logic
-        {"!=",            Operator("notEquals", 10, 2)},
-        {"<>",            Operator("notEquals", 10, 2)},
-        {"<=",            Operator("lessOrEquals", 10, 2)},
-        {">=",            Operator("greaterOrEquals", 10, 2)},
-        {"<",             Operator("less", 10, 2)},
-        {">",             Operator("greater", 10, 2)},
-        {"=",             Operator("equals", 10, 2)},
-        {"AND",           Operator("and", 5, 2)},              // AND OR
-        {"OR",            Operator("or", 4, 2)},
-        {"||",            Operator("concat", 30, 2)},          // concat() func
-        {".",             Operator("tupleElement", 40, 2)},    // tupleElement() func
-        {"IS NULL",       Operator("isNull", 9, 1)},           // IS (NOT) NULL
+        {"+",             Operator("plus",      20)},            // Base arithmetic
+        {"-",             Operator("minus",     20)},
+        {"*",             Operator("multiply",  30)},
+        {"/",             Operator("divide",    30)},
+        {"%",             Operator("modulo",    30)},
+        {"MOD",           Operator("modulo",    30)},
+        {"DIV",           Operator("intDiv",    30)},
+        {"==",            Operator("equals",    10)},          // Base logic
+        {"!=",            Operator("notEquals", 10)},
+        {"<>",            Operator("notEquals", 10)},
+        {"<=",            Operator("lessOrEquals", 10)},
+        {">=",            Operator("greaterOrEquals", 10)},
+        {"<",             Operator("less",      10)},
+        {">",             Operator("greater",   10)},
+        {"=",             Operator("equals",    10)},
+        {"AND",           Operator("and",       5)},              // AND OR
+        {"OR",            Operator("or",        4)},
+        {"||",            Operator("concat",    11)},          // concat() func
+        {".",             Operator("tupleElement", 40)},    // tupleElement() func
+        {"IS NULL",       Operator("isNull",    9, 1)},           // IS (NOT) NULL
         {"IS NOT NULL",   Operator("isNotNull", 9, 1)},
-        {"LIKE",          Operator("like", 10, 2)},            // LIKE funcs
-        {"ILIKE",         Operator("ilike", 10, 2)},
-        {"NOT LIKE",      Operator("notLike", 10, 2)},
-        {"NOT ILIKE",     Operator("notILike", 10, 2)},
-        {"IN",            Operator("in", 10, 2)},              // IN funcs
-        {"NOT IN",        Operator("notIn", 10, 2)},
-        {"GLOBAL IN",     Operator("globalIn", 10, 2)},
-        {"GLOBAL NOT IN", Operator("globalNotIn", 10, 2)},
-        {"?",             Operator("if_1", 3, 0)},
-        {":",             Operator("if", 4, 3)},
-        {"BETWEEN",       Operator("between_1", 5, 0)},
-        {"NOT BETWEEN",   Operator("not_between_1", 5, 0)},
-        {"[",             Operator("arrayElement", 40, 2)},     // Layer is added in the process
-        {"::",            Operator("CAST", 50, 2)}
+        {"LIKE",          Operator("like",      10)},            // LIKE funcs
+        {"ILIKE",         Operator("ilike",     10)},
+        {"NOT LIKE",      Operator("notLike",   10)},
+        {"NOT ILIKE",     Operator("notILike",  10)},
+        {"IN",            Operator("in",        10)},              // IN funcs
+        {"NOT IN",        Operator("notIn",     10)},
+        {"GLOBAL IN",     Operator("globalIn",  10)},
+        {"GLOBAL NOT IN", Operator("globalNotIn", 10)},
+        {"?",             Operator("if_1",      3, 0)},
+        {":",             Operator("if",        4, 3)},
+        {"BETWEEN",       Operator("between_1", 7, 0)},
+        {"NOT BETWEEN",   Operator("not_between_1", 7, 0)},
+        {"[",             Operator("arrayElement", 40)},     // Layer is added in the process
+        {"::",            Operator("CAST",      40)}
     });
 
     static std::vector<std::pair<const char *, Operator>> op_table_unary({
-        {"-",    Operator("negate", 39, 1)},
-        {"NOT",  Operator("not", 9, 1)}
+        {"-",             Operator("negate",    39, 1)},
+        {"NOT",           Operator("not",       6, 1)}
     });
 
     ParserCompoundIdentifier identifier_parser(false, true);
@@ -2192,17 +2230,44 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (op.func_name == "and" && storage.back()->hasBetween())
                 {
                     storage.back()->subBetween();
-                    op = Operator("between_2", 6, 0);
+                    op = Operator("between_2", 8, 0);
                 }
 
                 while (storage.back()->previousPriority() >= op.priority)
                 {
+                    ASTPtr func;
                     Operator prev_op;
                     storage.back()->popOperator(prev_op);
-                    auto func = makeASTFunction(prev_op.func_name);
 
-                    if (!storage.back()->lastNOperands(func->children[0]->children, prev_op.arity))
-                        return false;
+                    if ((op.func_name == "and" && prev_op.func_name == "and") ||
+                        (op.func_name == "or" && prev_op.func_name == "or") ||
+                        (op.func_name == "concat" && prev_op.func_name == "concat"))
+                    {
+                        op.arity += prev_op.arity - 1;
+                        break;
+                    }
+
+                    if (prev_op.func_name == "between_2")
+                    {
+                        Operator prev_prev_op;
+                        if (!storage.back()->popOperator(prev_prev_op) || !(prev_prev_op.func_name == "between_1" || prev_prev_op.func_name == "not_between_1"))
+                            return false;
+
+                        bool negative = prev_prev_op.func_name == "not_between_1";
+
+                        ASTs arguments;
+                        if (!storage.back()->lastNOperands(arguments, 3))
+                            return false;
+
+                        func = makeBetweenOperator(negative, arguments);
+                    }
+                    else
+                    {
+                        func = makeASTFunction(prev_op.func_name);
+
+                        if (!storage.back()->lastNOperands(func->children[0]->children, prev_op.arity))
+                            return false;
+                    }
 
                     storage.back()->pushOperand(func);
                 }
