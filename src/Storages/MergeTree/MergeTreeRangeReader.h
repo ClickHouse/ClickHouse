@@ -209,7 +209,9 @@ public:
 
         size_t countBytesInResultFilter(const IColumn::Filter & filter);
 
-        bool need_filter = false; /// TODO: what exactly does it mean?
+        /// If this flag is false than filtering form PREWHERE can be delayed and done in WHERE
+        /// to reduce memory copies and applying heavy filters multiple times
+        bool need_filter = false;
 
         Block block_before_prewhere;
 
