@@ -3,7 +3,7 @@ sidebar_position: 70
 sidebar_label: CollapsingMergeTree
 ---
 
-# CollapsingMergeTree {#table_engine-collapsingmergetree}
+# CollapsingMergeTree
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
@@ -42,7 +42,7 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning    
+:::warning
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 

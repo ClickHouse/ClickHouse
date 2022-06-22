@@ -22,7 +22,7 @@ SELECT '\\' LIKE '%\\\\%';
 SELECT '\\' LIKE '\\\\%';
 SELECT '\\' LIKE '%\\\\';
 SELECT '\\' LIKE '\\\\';
-SELECT '\\' LIKE '\\';
+SELECT '\\' LIKE '\\'; -- { serverError 25 }
 
 SELECT '\\xyz\\' LIKE '\\\\%\\\\';
 SELECT '\\xyz\\' LIKE '\\\\___\\\\';

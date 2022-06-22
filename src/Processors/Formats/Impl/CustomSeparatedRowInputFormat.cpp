@@ -47,6 +47,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         header_,
         *buf_,
         params_,
+        false,
         with_names_,
         with_types_,
         format_settings_,

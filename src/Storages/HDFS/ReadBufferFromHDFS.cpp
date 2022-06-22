@@ -16,7 +16,9 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_FILE_SIZE;
 }
+
 
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
@@ -58,11 +60,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    std::optional<size_t> getFileSize() const
+    size_t getFileSize() const
     {
         auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
         if (!file_info)
-            return std::nullopt;
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
         return file_info->mSize;
     }
 
@@ -130,7 +132,7 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
 {
 }
 
-std::optional<size_t> ReadBufferFromHDFS::getFileSize()
+size_t ReadBufferFromHDFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -180,6 +182,20 @@ off_t ReadBufferFromHDFS::getPosition()
 size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 {
     return impl->getPosition();
+}
+
+IAsynchronousReader::Result ReadBufferFromHDFS::readInto(char * data, size_t size, size_t offset, size_t /*ignore*/)
+{
+    /// TODO: we don't need to copy if there is no pending data
+    seek(offset, SEEK_SET);
+    if (eof())
+        return {0, 0};
+
+    /// Make sure returned size no greater than available bytes in working_buffer
+    size_t count = std::min(size, available());
+    memcpy(data, position(), count);
+    position() += count;
+    return {count, 0};
 }
 
 String ReadBufferFromHDFS::getFileName() const

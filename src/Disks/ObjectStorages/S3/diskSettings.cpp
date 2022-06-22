@@ -128,7 +128,7 @@ std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
     auto proxy_config = getProxyConfiguration(config_prefix, config);
     if (proxy_config)
     {
-        client_configuration.perRequestConfiguration
+        client_configuration.per_request_configuration
             = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
         client_configuration.error_report
             = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };

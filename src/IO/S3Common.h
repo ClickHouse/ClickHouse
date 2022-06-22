@@ -45,7 +45,7 @@ public:
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        bool enable_s3_requestrs_logging);
+        bool enable_s3_requests_logging);
 
 private:
     ClientFactory();

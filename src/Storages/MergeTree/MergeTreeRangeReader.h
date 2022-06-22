@@ -21,8 +21,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
 struct PrewhereExprInfo
 {
-    /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ExpressionActionsPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     ExpressionActionsPtr row_level_filter;

@@ -6,8 +6,10 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
+#include <Common/ArenaAllocator.h>
 #include <Common/PODArray_fwd.h>
 #include <base/types.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,10 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <limits>
 
-#include <DataTypes/DataTypeArray.h>
-
-#include <Common/ArenaAllocator.h>
-
+#include <boost/math/distributions/normal.hpp>
 
 namespace DB
 {
@@ -84,15 +83,14 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         if (alternative == Alternative::TwoSided)
             z = std::abs(z);
 
-        /// In fact cdf is a probability function, so it is intergral of density from (-inf, z].
-        /// But since standard normal distribution is symmetric, cdf(0) = 0.5 and we have to compute integral from [0, z].
-        const Float64 cdf = integrateSimpson(0, z, [] (Float64 t) { return std::pow(M_E, -0.5 * t * t) / std::sqrt(2 * M_PI);});
+        auto standart_normal_distribution = boost::math::normal_distribution<Float64>();
+        auto cdf = boost::math::cdf(standart_normal_distribution, z);
 
         Float64 p_value = 0;
         if (alternative == Alternative::TwoSided)
-            p_value = 1 - 2 * cdf;
+            p_value = 2 - 2 * cdf;
         else
-            p_value = 0.5 - cdf;
+            p_value = 1 - cdf;
 
         return {u2, p_value};
     }

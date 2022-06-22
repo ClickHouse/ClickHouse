@@ -1,4 +1,4 @@
-# zookeeper_log {#system-zookeeper_log}
+# zookeeper_log
 
 This table contains information about the parameters of the request to the ZooKeeper server and the response from it.
 
@@ -70,7 +70,7 @@ xid:              10858
 has_watch:        1
 op_num:           List
 path:             /clickhouse/task_queue/ddl
-data:             
+data:
 is_ephemeral:     0
 is_sequential:    0
 version:          ᴺᵁᴸᴸ
@@ -80,7 +80,7 @@ zxid:             0
 error:            ᴺᵁᴸᴸ
 watch_type:       ᴺᵁᴸᴸ
 watch_state:      ᴺᵁᴸᴸ
-path_created:     
+path_created:
 stat_czxid:       0
 stat_mzxid:       0
 stat_pzxid:       0
@@ -102,7 +102,7 @@ xid:              10858
 has_watch:        1
 op_num:           List
 path:             /clickhouse/task_queue/ddl
-data:             
+data:
 is_ephemeral:     0
 is_sequential:    0
 version:          ᴺᵁᴸᴸ
@@ -112,7 +112,7 @@ zxid:             16926267
 error:            ZOK
 watch_type:       ᴺᵁᴸᴸ
 watch_state:      ᴺᵁᴸᴸ
-path_created:     
+path_created:
 stat_czxid:       16925469
 stat_mzxid:       16925469
 stat_pzxid:       16926179
