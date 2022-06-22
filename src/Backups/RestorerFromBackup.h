@@ -94,6 +94,7 @@ private:
     BackupPtr backup;
     ContextMutablePtr context;
     std::chrono::seconds timeout;
+    UInt64 create_table_timeout_ms;
     Poco::Logger * log;
 
     Stage current_stage = Stage::kPreparing;

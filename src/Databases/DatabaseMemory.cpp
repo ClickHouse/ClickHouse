@@ -145,4 +145,52 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context, bool & consistency) const
+{
+    /// We need a special processing for the temporary database.
+    if (getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE)
+        return DatabaseWithOwnTablesBase::getTablesForBackup(filter, local_context, consistency);
+
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+
+    /// `this->tables` for the temporary database doesn't contain real names of tables.
+    /// That's why we need to call Context::getExternalTables() and then resolve those names using tryResolveStorageID() below.
+    auto external_tables = local_context->getExternalTables();
+
+    for (const auto & [table_name, storage] : external_tables)
+    {
+        if (!filter(table_name))
+            continue;
+
+        bool ok = false;
+        
+        if (auto storage_id = local_context->tryResolveStorageID(StorageID{"", table_name}, Context::ResolveExternal))
+        {
+            /// Here `storage_id.table_name` looks like looks like "_tmp_ab9b15a3-fb43-4670-abec-14a0e9eb70f1"
+            /// it's not the real name of the table.
+            if (auto create_table_query = tryGetCreateTableQuery(storage_id.table_name, local_context))
+            {
+                const auto & create = create_table_query->as<const ASTCreateQuery &>();
+                if (create.getTable() == table_name)
+                {
+                    storage->adjustCreateQueryForBackup(create_table_query, consistency);
+                    if (consistency)
+                    {
+                        res.emplace_back(create_table_query, storage);
+                        ok = true;
+                    }
+                }
+            }
+        }
+
+        if (!ok)
+        {
+            consistency = false;
+            return {};
+        }
+    }
+
+    return res;
+}
+
 }

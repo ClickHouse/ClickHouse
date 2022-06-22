@@ -49,7 +49,7 @@ public:
     /// Adds a function which must be called after all IStorage::backup() have finished their work on all hosts.
     /// This function is designed to help making a consistent in some complex cases like
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
-    void addPostCollectingTask(std::function<void()> task);
+    void addPostTask(std::function<void()> task);
 
     /// Writing a backup includes a few stages:
     enum class Stage
@@ -79,16 +79,31 @@ public:
 
 private:
     void setStage(Stage new_stage, const String & error_message = {});
+
     void calculateRootPathInBackup();
-    void collectDatabasesAndTablesInfo();
-    void collectTableInfo(const QualifiedTableName & table_name, bool is_temporary_table, const std::optional<ASTs> & partitions, bool throw_if_not_found);
-    void collectDatabaseInfo(const String & database_name, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_not_found);
-    void collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
+
+    void gatherMetadataAndCheckConsistency();
+
+    void gatherDatabasesMetadata();
+    
+    void gatherDatabaseMetadata(
+        const String & database_name,
+        bool throw_if_database_not_found,
+        bool backup_create_database_query,
+        const std::optional<String> & table_name,
+        bool throw_if_table_not_found,
+        const std::optional<ASTs> & partitions,
+        bool all_tables,
+        const std::set<DatabaseAndTableName> & except_table_names);
+
+    void gatherTablesMetadata();
+    void lockTablesForReading();
     void checkConsistency();
+
     void makeBackupEntriesForDatabasesDefs();
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
-    void runPostCollectingTasks();
+    void runPostTasks();
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
@@ -105,6 +120,17 @@ private:
     {
         DatabasePtr database;
         ASTPtr create_database_query;
+
+        struct TableParams
+        {
+            bool throw_if_table_not_found = false;
+            std::optional<ASTs> partitions;
+        };
+
+        std::unordered_map<String, TableParams> tables;
+
+        bool all_tables = false;
+        std::unordered_set<String> except_table_names;
     };
 
     struct TableInfo
@@ -117,22 +143,14 @@ private:
         std::optional<ASTs> partitions;
     };
 
-    struct TableKey
-    {
-        QualifiedTableName name;
-        bool is_temporary = false;
-        bool operator ==(const TableKey & right) const;
-        bool operator <(const TableKey & right) const;
-    };
-
     std::unordered_map<String, DatabaseInfo> database_infos;
-    std::map<TableKey, TableInfo> table_infos;
-    std::optional<std::set<String>> previous_database_names;
-    std::optional<std::set<TableKey>> previous_table_names;
-    bool consistent = false;
+    std::map<QualifiedTableName, TableInfo> table_infos;
+    std::set<String> previous_database_names;
+    std::set<QualifiedTableName> previous_table_names;
+    bool consistency = false;
 
     BackupEntries backup_entries;
-    std::queue<std::function<void()>> post_collecting_tasks;
+    std::queue<std::function<void()>> post_tasks;
 };
 
 }

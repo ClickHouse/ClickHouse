@@ -138,7 +138,7 @@ def test_backup_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "100\t4950\n"
 
 
-def test_materialized_view():
+def test_materialized_view_select_1():
     backup_name = new_backup_name()
     instance.query(
         "CREATE MATERIALIZED VIEW mv_1(x UInt8) ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT 1 AS x"
@@ -456,18 +456,32 @@ def test_temporary_table():
     ) == TSV([["e"], ["q"], ["w"]])
 
 
-# "BACKUP DATABASE _temporary_and_external_tables" is allowed but the backup must not contain these tables.
-def test_temporary_tables_database():
+# The backup created by "BACKUP DATABASE _temporary_and_external_tables" must not contain tables from other sessions.
+def test_temporary_database():
     session_id = new_session_id()
     instance.http_query(
         "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
     )
 
-    backup_name = new_backup_name()
-    instance.query(f"BACKUP DATABASE _temporary_and_external_tables TO {backup_name}")
+    other_session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE other_temp_tbl(s String)",
+        params={"session_id": other_session_id},
+    )
 
-    assert os.listdir(os.path.join(get_path_to_backup(backup_name), "metadata/")) == [
-        "_temporary_and_external_tables.sql"  # database metadata only
+    backup_name = new_backup_name()
+    instance.http_query(
+        f"BACKUP DATABASE _temporary_and_external_tables TO {backup_name}",
+        params={"session_id": session_id},
+    )
+
+    assert os.listdir(
+        os.path.join(get_path_to_backup(backup_name), "temporary_tables/metadata")
+    ) == ["temp_tbl.sql"]
+
+    assert sorted(os.listdir(get_path_to_backup(backup_name))) == [
+        ".backup",
+        "temporary_tables",
     ]
 
 

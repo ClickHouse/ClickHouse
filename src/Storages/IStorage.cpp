@@ -248,40 +248,21 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-ASTPtr IStorage::getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const
+void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query, bool &) const
 {
-    auto table_id = getStorageID();
-    auto db = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
-    if (!db)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-    ASTPtr query = db->tryGetCreateTableQuery(table_id.getTableName(), context);
-    if (!query)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
+    create_query = create_query->clone();
 
     /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
-    auto & create = query->as<ASTCreateQuery &>();
+    auto & create = create_query->as<ASTCreateQuery &>();
     create.uuid = UUIDHelpers::Nil;
     create.to_inner_uuid = UUIDHelpers::Nil;
 
-    /// If this is a definition of a system table we'll remove columns and comment because they're excessive for backups.
-    if (create.storage && create.storage->engine && create.storage->engine->name.starts_with("System"))
+    /// If this is a definition of a system table we'll remove columns and comment because they're reduntant for backups.
+    if (isSystemStorage())
     {
         create.reset(create.columns_list);
         create.reset(create.comment);
     }
-
-    if (database)
-        *database = db;
-
-    return query;
-}
-
-ASTPtr IStorage::getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const
-{
-    DatabasePtr database;
-    auto query = getCreateQueryForBackup(backup_entries_collector.getContext(), &database);
-    database->checkCreateTableQueryForBackup(query, backup_entries_collector);
-    return query;
 }
 
 void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
