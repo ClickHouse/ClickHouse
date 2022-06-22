@@ -95,12 +95,10 @@ struct InputOrderInfo
     InputOrderInfo(
         const SortDescription & order_key_fixed_prefix_descr_,
         const SortDescription & order_key_prefix_descr_,
-        int direction_,
-        UInt64 limit_)
+        int direction_, UInt64 limit_)
         : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
         , order_key_prefix_descr(order_key_prefix_descr_)
-        , direction(direction_)
-        , limit(limit_)
+        , direction(direction_), limit(limit_)
     {
     }
 

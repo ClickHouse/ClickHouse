@@ -118,12 +118,16 @@ ReadFromMergeTree::ReadFromMergeTree(
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
 
-    Names sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
-
+    /// build sort description for output stream
     SortDescription sort_description;
-    for (const auto & column : sorting_key_columns)
+    const Names sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+    Block const & header = output_stream->header;
+    for (const auto & column_name : sorting_key_columns)
     {
-        sort_description.emplace_back(column, 1);
+        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+            == header.end())
+            break;
+        sort_description.emplace_back(column_name, 1);
     }
     output_stream->sort_description = std::move(sort_description);
 }

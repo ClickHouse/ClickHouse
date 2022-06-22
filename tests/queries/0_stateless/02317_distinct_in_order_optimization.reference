@@ -30,7 +30,7 @@ ExpressionTransform
   (Distinct)
   DistinctTransform
     (Distinct)
-    DistinctPrimaryKeyTransform
+    DistinctSortedChunkTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
@@ -42,7 +42,7 @@ ExpressionTransform
   (Distinct)
   DistinctTransform
     (Distinct)
-    DistinctPrimaryKeyTransform
+    DistinctSortedChunkTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
@@ -65,7 +65,7 @@ single-threaded distinct
 0
 multi-threaded distinct
 0
-skip part of chunk since it contians values from previous one
+skip part of chunk since it contains values from previous one
 single-threaded distinct
 0
 1

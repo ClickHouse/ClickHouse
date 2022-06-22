@@ -33,7 +33,7 @@ select distinct * from distinct_in_order settings max_block_size=10, max_threads
 select 'multi-threaded distinct';
 select distinct * from distinct_in_order settings max_block_size=10;
 
-select 'skip part of chunk since it contians values from previous one';
+select 'skip part of chunk since it contains values from previous one';
 drop table if exists distinct_in_order sync;
 create table distinct_in_order (a int) engine=MergeTree() order by a settings index_granularity=10;
 insert into distinct_in_order (a) select * from zeros(10);
@@ -54,4 +54,4 @@ select distinct a,b from distinct_in_order order by b;
 select 'distinct with key prefix and non-sorted column';
 select distinct a,c from distinct_in_order order by c;
 
-drop table if exists distinct_in_order sync;
+-- drop table if exists distinct_in_order sync;
