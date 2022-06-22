@@ -514,3 +514,46 @@ def test_system_users():
         node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
     )
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
+
+
+def test_projection():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
+        "ORDER BY y PARTITION BY x%10"
+    )
+    node1.query(f"INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
+
+    node1.query("ALTER TABLE tbl ADD PROJECTION prjmax (SELECT MAX(x))")
+    node1.query(f"INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
+
+    assert (
+        node1.query(
+            "SELECT count() FROM system.projection_parts WHERE database='default' AND table='tbl' AND name='prjmax'"
+        )
+        == "2\n"
+    )
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    assert (
+        node1.query(
+            "SELECT count() FROM system.projection_parts WHERE database='default' AND table='tbl' AND name='prjmax'"
+        )
+        == "0\n"
+    )
+
+    node1.query(f"RESTORE TABLE tbl FROM {backup_name}")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV(
+        [[0, "0"], [1, "1"], [2, "2"], [100, "a"], [101, "b"]]
+    )
+
+    assert (
+        node1.query(
+            "SELECT count() FROM system.projection_parts WHERE database='default' AND table='tbl' AND name='prjmax'"
+        )
+        == "2\n"
+    )
