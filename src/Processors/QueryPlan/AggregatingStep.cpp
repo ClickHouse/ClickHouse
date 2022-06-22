@@ -358,9 +358,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         });
 
         // Needed for GroupingAggregatedTransform in distributed case. Strictly speaking, we should also check that `distributed_aggregation_memory_efficient` will be used.
-        const bool should_has_one_output_stream
+        const bool should_have_one_output_stream
             = processing_stage.value_or(QueryProcessingStage::MAX) == QueryProcessingStage::WithMergeableState;
-        pipeline.resize(should_has_one_output_stream ? 1 : pipeline.getNumStreams(), true /* force */);
+        pipeline.resize(should_have_one_output_stream ? 1 : pipeline.getNumStreams(), true /* force */);
 
         aggregating = collector.detachProcessors(0);
     }
