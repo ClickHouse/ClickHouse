@@ -27,8 +27,6 @@ struct MergeTreeReaderSettings
 
 struct MergeTreeWriterSettings
 {
-    MergeTreeWriterSettings() = default;
-
     MergeTreeWriterSettings(
         const Settings & global_settings,
         const WriteSettings & query_write_settings_,
