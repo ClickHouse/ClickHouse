@@ -304,8 +304,9 @@ void StorageJoinFromReadBuffer::restore()
     ProfileInfo info;
     while (Block block = block_stream.read())
     {
-        info.update(block);
-        insertBlock(block, ctx);
+        auto final_block = sample_block.cloneWithColumns(block.mutateColumns());
+        info.update(final_block);
+        insertBlock(final_block, ctx);
     }
 
     finishInsert();
@@ -350,6 +351,7 @@ StorageJoinFromReadBuffer::StorageJoinFromReadBuffer(
         , in(std::move(in_))
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
+    sample_block = metadata_snapshot->getSampleBlock();
     for (const auto & key : key_names)
         if (!metadata_snapshot->getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};

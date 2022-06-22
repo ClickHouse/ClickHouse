@@ -2,6 +2,7 @@
 #include <Common/DebugUtils.h>
 #include <Shuffle/ShuffleSplitter.h>
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 
 using namespace DB;
 
@@ -55,7 +56,10 @@ bool ReadBufferFromJavaInputStream::nextImpl()
 int ReadBufferFromJavaInputStream::readFromJava()
 {
     assert(ShuffleReader::env != nullptr);
-    jbyteArray buf = ShuffleReader::env->NewByteArray(internal_buffer.size());
+    if (buf == nullptr)
+    {
+        buf = static_cast<jbyteArray>(ShuffleReader::env->NewGlobalRef(ShuffleReader::env->NewByteArray(4096)));
+    }
     jint count = ShuffleReader::env->CallIntMethod(java_in, ShuffleReader::input_stream_read, buf);
     if (count > 0)
     {
@@ -66,12 +70,15 @@ int ReadBufferFromJavaInputStream::readFromJava()
 ReadBufferFromJavaInputStream::ReadBufferFromJavaInputStream(jobject input_stream)
     : java_in(input_stream)
 {
-
 }
 ReadBufferFromJavaInputStream::~ReadBufferFromJavaInputStream()
 {
     assert(ShuffleReader::env != nullptr);
     ShuffleReader::env->DeleteGlobalRef(java_in);
+    if (buf != nullptr)
+    {
+        ShuffleReader::env->DeleteGlobalRef(buf);
+    }
 }
 
 }

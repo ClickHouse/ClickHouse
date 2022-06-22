@@ -25,6 +25,7 @@ public:
     static std::shared_ptr<StorageJoinFromReadBuffer> getJoin(const std::string & key);
 
 private:
+    static std::queue<std::string> storage_join_queue;
     static std::unordered_map<std::string, std::shared_ptr<StorageJoinFromReadBuffer>> storage_join_map;
     static std::unordered_map<std::string, std::shared_ptr<std::mutex>> storage_join_lock;
     static std::mutex join_lock_mutex;

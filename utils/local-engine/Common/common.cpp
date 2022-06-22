@@ -33,10 +33,12 @@ void init()
     local_engine::SerializedPlanParser::global_context->setPath("/");
     local_engine::Logger::initConsoleLogger();
 
+#if USE_EMBEDDED_COMPILER
     /// 128 MB
     constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
     constexpr size_t compiled_expression_cache_elements_size_default = 10000;
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size_default, compiled_expression_cache_size_default);
+#endif
 }
 
 char * createExecutor(std::string plan_string)

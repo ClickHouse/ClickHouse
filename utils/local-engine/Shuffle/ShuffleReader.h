@@ -34,6 +34,7 @@ public:
 
 private:
     jobject java_in;
+    jbyteArray buf = nullptr;
     int readFromJava();
     bool nextImpl() override;
 

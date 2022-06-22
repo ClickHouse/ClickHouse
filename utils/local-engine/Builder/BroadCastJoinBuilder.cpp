@@ -21,6 +21,7 @@ using namespace DB;
 namespace local_engine
 {
 
+std::queue<std::string> BroadCastJoinBuilder::storage_join_queue;
 std::unordered_map<std::string, std::shared_ptr<StorageJoinFromReadBuffer>> BroadCastJoinBuilder::storage_join_map;
 std::unordered_map<std::string, std::shared_ptr<std::mutex>> BroadCastJoinBuilder::storage_join_lock;
 std::mutex BroadCastJoinBuilder::join_lock_mutex;
@@ -46,6 +47,13 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
         std::lock_guard build_lock(*storage_join_lock.at(key));
         if (!storage_join_map.contains(key))
         {
+            // limit memory usage
+            if (storage_join_queue.size() > 10)
+            {
+                auto tmp = storage_join_queue.front();
+                storage_join_queue.pop();
+                storage_join_map.erase(tmp);
+            }
             storage_join_map.emplace(key, std::make_shared<StorageJoinFromReadBuffer>(std::move(read_buffer),
                                                                                      StorageID("default", key),
                                                                                      key_names_,
@@ -57,6 +65,7 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
                                                                                      ConstraintsDescription(),
                                                                                      key,
                                                                                      true));
+            storage_join_queue.push(key);
         }
     }
 }

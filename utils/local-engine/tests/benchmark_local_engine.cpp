@@ -11,6 +11,7 @@
 #include <Storages/CustomMergeTreeSink.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -25,6 +26,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Shuffle/ShuffleSplitter.h>
 #include <Shuffle/ShuffleReader.h>
+#include <Interpreters/HashJoin.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Parsers/ASTIdentifier.h>
+
+
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -1158,6 +1164,7 @@ static void BM_TestDecompress(benchmark::State& state)
 
 #include <Parser/CHColumnToSparkRow.h>
 
+
 static void BM_CHColumnToSparkRowNew(benchmark::State& state) {
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
     ColumnsDescription columns_description;
@@ -1232,9 +1239,155 @@ static void BM_CHColumnToSparkRowNew(benchmark::State& state) {
     }
 }
 
+struct MergeTreeWithSnapshot {
+    std::shared_ptr<local_engine::CustomStorageMergeTree> merge_tree;
+    std::shared_ptr<StorageSnapshot> snapshot;
+    NamesAndTypesList columns;
+};
+
+MergeTreeWithSnapshot buildMergeTree(NamesAndTypesList names_and_types, std::string relative_path, std::string table)
+{
+    auto metadata = local_engine::buildMetaData(names_and_types, global_context);
+    auto param = DB::MergeTreeData::MergingParams();
+    auto settings = local_engine::buildMergeTreeSettings();
+    std::shared_ptr<local_engine::CustomStorageMergeTree> custom_merge_tree = std::make_shared<local_engine::CustomStorageMergeTree>(
+        DB::StorageID("default", table), relative_path, *metadata, false, global_context, "", param, std::move(settings));
+    auto snapshot = std::make_shared<StorageSnapshot>(*custom_merge_tree, metadata);
+    custom_merge_tree->loadDataParts(false);
+    return MergeTreeWithSnapshot{.merge_tree = custom_merge_tree, .snapshot = snapshot, .columns = names_and_types};
+}
+
+QueryPlanPtr readFromMergeTree(MergeTreeWithSnapshot storage)
+{
+    auto query_info = local_engine::buildQueryInfo(storage.columns);
+    auto data_parts = storage.merge_tree->getDataPartsVector();
+//    int min_block = 0;
+//    int max_block = 10;
+//    MergeTreeData::DataPartsVector selected_parts;
+//    std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
+//                 [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
+    return storage.merge_tree->reader.readFromParts(data_parts,
+                                                        storage.columns.getNames(),
+                                                        storage.snapshot,
+                                                        *query_info,
+                                                        global_context,
+                                                        10000,
+                                                        1);
+}
+
+QueryPlanPtr joinPlan(QueryPlanPtr left, QueryPlanPtr right, String left_key, String right_key, size_t block_size = 8192)
+{
+    auto join = std::make_shared<TableJoin>(global_context->getSettings(), global_context->getTemporaryVolume());
+    auto left_columns = left->getCurrentDataStream().header.getColumnsWithTypeAndName();
+    auto right_columns = right->getCurrentDataStream().header.getColumnsWithTypeAndName();
+    join->setKind(ASTTableJoin::Kind::Left);
+    join->setStrictness(ASTTableJoin::Strictness::All);
+    join->setColumnsFromJoinedTable(right->getCurrentDataStream().header.getNamesAndTypesList());
+    join->addDisjunct();
+    ASTPtr lkey = std::make_shared<ASTIdentifier>(left_key);
+    ASTPtr rkey = std::make_shared<ASTIdentifier>(right_key);
+    join->addOnKeys(lkey, rkey);
+    for (const auto & column : join->columnsFromJoinedTable())
+    {
+        join->addJoinedColumn(column);
+    }
+
+    auto left_keys = left->getCurrentDataStream().header.getNamesAndTypesList();
+    join->addJoinedColumnsAndCorrectTypes(left_keys, true);
+    ActionsDAGPtr left_convert_actions = nullptr;
+    ActionsDAGPtr right_convert_actions = nullptr;
+    std::tie(left_convert_actions, right_convert_actions) = join->createConvertingActions(left_columns, right_columns);
+
+    if (right_convert_actions)
+    {
+        auto converting_step = std::make_unique<ExpressionStep>(right->getCurrentDataStream(), right_convert_actions);
+        converting_step->setStepDescription("Convert joined columns");
+        right->addStep(std::move(converting_step));
+    }
+
+    if (left_convert_actions)
+    {
+        auto converting_step = std::make_unique<ExpressionStep>(right->getCurrentDataStream(), right_convert_actions);
+        converting_step->setStepDescription("Convert joined columns");
+        left->addStep(std::move(converting_step));
+    }
+    auto hash_join = std::make_shared<HashJoin>(join, right->getCurrentDataStream().header);
+
+    QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
+        left->getCurrentDataStream(),
+        right->getCurrentDataStream(),
+        hash_join,
+        block_size);
+
+    std::vector<QueryPlanPtr> plans;
+    plans.emplace_back(std::move(left));
+    plans.emplace_back(std::move(right));
+
+    auto query_plan = std::make_unique<QueryPlan>();
+    query_plan->unitePlans(std::move(join_step), std::move(plans));
+    return query_plan;
+}
+
+static void BM_JoinTest(benchmark::State& state) {
+    std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
+    ColumnsDescription columns_description;
+    auto int64_type = std::make_shared<DB::DataTypeInt64>();
+    auto int32_type = std::make_shared<DB::DataTypeInt32>();
+    auto double_type = std::make_shared<DB::DataTypeFloat64>();
+    const auto * supplier_type_string = "columns format version: 1\n"
+                                        "2 columns:\n"
+                                        "`s_suppkey` Int64\n"
+                                        "`s_nationkey` Int64\n";
+    auto supplier_types = NamesAndTypesList::parse(supplier_type_string);
+    auto supplier = buildMergeTree(supplier_types, "home/saber/Documents/data/tpch/mergetree/supplier", "supplier");
+
+    const auto * nation_type_string = "columns format version: 1\n"
+                                      "1 columns:\n"
+                                      "`n_nationkey` Int64\n";
+    auto nation_types = NamesAndTypesList::parse(nation_type_string);
+    auto nation = buildMergeTree(nation_types, "home/saber/Documents/data/tpch/mergetree/nation", "nation");
+
+
+    const auto * partsupp_type_string = "columns format version: 1\n"
+                                        "3 columns:\n"
+                                        "`ps_suppkey` Int64\n"
+                                        "`ps_availqty` Int64\n"
+                                        "`ps_supplycost` Float64\n";
+    auto partsupp_types = NamesAndTypesList::parse(partsupp_type_string);
+    auto partsupp = buildMergeTree(partsupp_types, "home/saber/Documents/data/tpch/mergetree/partsupp", "partsupp");
+
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        QueryPlanPtr supplier_query;
+        {
+            auto left = readFromMergeTree(partsupp);
+            auto right = readFromMergeTree(supplier);
+            supplier_query = joinPlan(std::move(left), std::move(right), "ps_suppkey", "s_suppkey");
+        }
+        auto right = readFromMergeTree(nation);
+        auto query_plan = joinPlan(std::move(supplier_query), std::move(right), "s_nationkey", "n_nationkey");
+        QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
+        BuildQueryPipelineSettings pipeline_settings;
+        auto pipeline_builder = query_plan->buildQueryPipeline(optimization_settings, pipeline_settings);
+        state.ResumeTiming();
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+        auto executor = PullingPipelineExecutor(pipeline);
+        Block header = executor.getHeader();
+        CHColumnToSparkRow converter;
+        int sum =0;
+        while(executor.pull(header))
+        {
+            sum+= header.rows();
+//            auto spark_row = converter.convertCHColumnToSparkRow(header);
+//            converter.freeMem(spark_row->getBufferAddress(), spark_row->getTotalBytes());
+        }
+    }
+}
+
 // BENCHMARK(BM_TestDecompress)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
 
-BENCHMARK(BM_CHColumnToSparkRowNew)->Unit(benchmark::kMillisecond)->Iterations(40);
+BENCHMARK(BM_JoinTest)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(250)->ComputeStatistics("80%", quantile);
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
 // BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
@@ -1245,8 +1398,8 @@ BENCHMARK(BM_CHColumnToSparkRowNew)->Unit(benchmark::kMillisecond)->Iterations(4
 //BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MERGE_TREE_TPCH_Q6_NEW)->Unit(benchmark::kMillisecond)->Iterations(10);
+//BENCHMARK(BM_MERGE_TREE_TPCH_Q6)->Unit(benchmark::kMillisecond)->Iterations(10);
+//BENCHMARK(BM_MERGE_TREE_TPCH_Q6_NEW)->Unit(benchmark::kMillisecond)->Iterations(10);
 
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);

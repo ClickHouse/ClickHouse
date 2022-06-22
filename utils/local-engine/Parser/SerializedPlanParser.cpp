@@ -132,6 +132,26 @@ bool isTypeSame(const substrait::Type & type, DataTypePtr data_type)
     return type_mapping.at(type_name) == data_type->getName();
 }
 
+DataTypePtr getCHType(const substrait::Type & type)
+{
+    static std::map<std::string, std::string> type_mapping
+        = {{"I8", "Int8"},
+           {"I16", "Int16"},
+           {"I32", "Int32"},
+           {"I64", "Int64"},
+           {"FP32", "Float32"},
+           {"FP64", "Float64"},
+           {"Date", "Date"},
+           {"String", "String"},
+           {"Boolean", "UInt8"}};
+    std::string type_name = typeName(type);
+    if (!type_mapping.contains(type_name))
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", type_name);
+    }
+    return DataTypeFactory::instance().get(type_mapping.at(type_name));
+}
+
 
 std::string getCastFunction(const substrait::Type & type)
 {
@@ -439,53 +459,39 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
         case substrait::Rel::RelTypeCase::kAggregate: {
             const auto & aggregate = rel.aggregate();
             query_plan = parseOp(aggregate.input());
-            auto aggregate_step = parseAggregate(*query_plan, aggregate);
+            bool is_final;
+            auto aggregate_step = parseAggregate(*query_plan, aggregate, is_final);
             query_plan->addStep(std::move(aggregate_step));
-//            std::set<int32_t> measure_positions;
-//            std::map<int32_t ,substrait::Type> measure_types;
-//            for (int i=0; i<aggregate.measures_size(); i++)
-//            {
-//                auto position = aggregate.measures(i).measure().args(0).selection().direct_reference().struct_field().field();
-//                measure_positions.insert(position);
-//                measure_types.emplace(position, aggregate.measures(i).measure().output_type());
-//            }
-//
-//            bool need_convert = false;
-//            auto header = query_plan->getCurrentDataStream().header;
-//            NamesWithAliases results;
-//            Names required_results;
-//            ActionsDAGPtr type_convert = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
-//            for (size_t position=0; position < header.columns(); position++)
-//            {
-//                if (!measure_positions.contains(position) || checkAndGetDataType<DataTypeAggregateFunction>(header.getByPosition(position).type.get()))
-//                {
-//                    results.emplace_back(NameWithAlias(header.getByPosition(position).name, header.getByPosition(position).name));
-//                    std::cerr<< "convert "<< header.getByPosition(position).name << std::endl;
-//                    continue;
-//                }
-//                bool type_same = isTypeSame(measure_types[position], header.getByPosition(position).type);
-//                if (!type_same)
-//                {
-//                    need_convert = true;
-//                    auto cast_function = getCastFunction(measure_types[position]);
-//                    DB::ActionsDAG::NodeRawConstPtrs cast_args({&type_convert->findInIndex(header.getByPosition(position).name)});
-//                    auto cast = FunctionFactory::instance().get(cast_function, this->context);
-//                    std::string cast_args_name;
-//                    join(cast_args, ',', cast_args_name);
-//                    auto result_name = cast_function + "(" + cast_args_name + ")";
-//                    const auto & cast_node = type_convert->addFunction(cast, cast_args, result_name);
-//                    type_convert->addOrReplaceInIndex(cast_node);
-//                    std::cerr<< "convert "<< header.getByPosition(position).name << "to " << result_name << std::endl;
-//                    results.emplace_back(NameWithAlias(result_name, header.getByPosition(position).name));
-//                }
-//            }
-//            if (need_convert)
-//            {
-//                type_convert->project(results);
-//                type_convert->projectInput();
-//                auto expression_step = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), type_convert);
-//                query_plan->addStep(std::move(expression_step));
-//            }
+
+            if (is_final)
+            {
+                std::vector<int32_t> measure_positions;
+                std::vector<substrait::Type> measure_types;
+                for (int i=0; i<aggregate.measures_size(); i++)
+                {
+                    auto position = aggregate.measures(i).measure().args(0).selection().direct_reference().struct_field().field();
+                    measure_positions.emplace_back(position);
+                    measure_types.emplace_back(aggregate.measures(i).measure().output_type());
+                }
+                auto source = query_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+                auto target = source;
+
+                for (size_t i=0; i< measure_positions.size(); i++)
+                {
+                    if (!isTypeSame(measure_types[i], source[measure_positions[i]].type))
+                    {
+                        auto target_type = getCHType(measure_types[i]);
+                        target[measure_positions[i]].type = target_type;
+                        target[measure_positions[i]].column = target_type->createColumn();
+                    }
+                }
+                ActionsDAGPtr convert_action = ActionsDAG::makeConvertingActions(source, target, DB::ActionsDAG::MatchColumnsMode::Position);
+                if (convert_action)
+                {
+                    QueryPlanStepPtr convert_step = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_action);
+                    query_plan->addStep(std::move(convert_step));
+                }
+            }
             break;
         }
         case substrait::Rel::RelTypeCase::kRead: {
@@ -538,7 +544,7 @@ AggregateFunctionPtr getAggregateFunction(const std::string & name, DataTypes ar
     return factory.get(name, arg_types, Array{}, properties);
 }
 
-QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const substrait::AggregateRel & rel)
+QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const substrait::AggregateRel & rel, bool & is_final)
 {
     auto input = plan.getCurrentDataStream();
     ActionsDAGPtr expression = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
@@ -593,7 +599,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
 
     bool only_merge = phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT);
 
-
+    is_final = final;
     ColumnNumbers keys = {};
     if (rel.groupings_size() == 1)
     {
