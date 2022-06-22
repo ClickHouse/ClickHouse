@@ -207,10 +207,6 @@ public:
 
     bool hasUUIDMapping(const UUID & uuid);
 
-    void addProtectedUUIDDir(const UUID & uuid);
-    void removeProtectedUUIDDir(const UUID & uuid);
-    bool isProtectedUUIDDir(const UUID & uuid);
-
     static String getPathForUUID(const UUID & uuid);
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
@@ -275,14 +271,11 @@ private:
     static constexpr size_t reschedule_time_ms = 100;
     static constexpr time_t drop_error_cooldown_sec = 5;
 
-    using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
-
     mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;
 
     Databases databases;
-    UUIDToDatabaseMap db_uuid_map;
     UUIDToStorageMap uuid_map;
 
     DependenciesInfos loading_dependencies;
@@ -305,9 +298,6 @@ private:
     std::unordered_set<UUID> tables_marked_dropped_ids;
     mutable std::mutex tables_marked_dropped_mutex;
 
-    std::unordered_set<UUID> protected_uuid_dirs;
-    mutable std::mutex protected_uuid_dirs_mutex;
-
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     static constexpr time_t default_drop_delay_sec = 8 * 60;
     time_t drop_delay_sec = default_drop_delay_sec;
@@ -322,13 +312,23 @@ private:
     time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
 };
 
-
-class UUIDDirectoryProtector : private boost::noncopyable
+/// This class is useful when creating a table or database.
+/// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
+/// But such object may start using a directory in store/ since its creation.
+/// To avoid race with cleanupStoreDirectoryTask() we have to mark UUID as used first.
+/// Then we can either add DatabasePtr/StoragePtr to the created UUID mapping
+/// or remove the lock if creation failed.
+/// See also addUUIDMapping(...)
+class TemporaryLockForUUIDDirectory : private boost::noncopyable
 {
-    UUID uuid;
+    UUID uuid = UUIDHelpers::Nil;
 public:
-    UUIDDirectoryProtector(UUID uuid_) : uuid(uuid_) { DatabaseCatalog::instance().addProtectedUUIDDir(uuid); }
-    ~UUIDDirectoryProtector() { DatabaseCatalog::instance().removeProtectedUUIDDir(uuid); }
+    TemporaryLockForUUIDDirectory() = default;
+    TemporaryLockForUUIDDirectory(UUID uuid_);
+    ~TemporaryLockForUUIDDirectory();
+
+    TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;
+    TemporaryLockForUUIDDirectory & operator = (TemporaryLockForUUIDDirectory && rhs) noexcept;
 };
 
 }

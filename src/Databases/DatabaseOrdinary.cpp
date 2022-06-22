@@ -176,24 +176,24 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->setDatabase(database_name);
 
+                /// Even if we don't load the table we can still mark the uuid of it as taken.
+                if (create_query->uuid != UUIDHelpers::Nil)
+                {
+                    /// A bit tricky way to distinguish ATTACH DATABASE and server startup (actually it's "force_attach" flag).
+                    if (is_startup)
+                    {
+                        /// Server is starting up. Lock UUID used by permanently detached table.
+                        DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                    }
+                    else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
+                    {
+                        /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
+                    }
+                }
+
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
-                    /// Even if we don't load the table we can still mark the uuid of it as taken.
-                    if (create_query->uuid != UUIDHelpers::Nil)
-                    {
-                        /// A bit tricky way to distinguish ATTACH DATABASE and server startup.
-                        if (is_startup)
-                        {
-                            /// Server is starting up. Lock UUID used by permanently detached table.
-                            DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-                        }
-                        else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
-                        {
-                            /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
-                        }
-                    }
-
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     return;

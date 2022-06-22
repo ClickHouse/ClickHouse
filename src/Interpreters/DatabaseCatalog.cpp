@@ -17,6 +17,7 @@
 #include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/noexcept_scope.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -79,6 +80,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
+    DatabaseCatalog::instance().addUUIDMapping(id);
     temporary_tables->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
@@ -207,19 +209,25 @@ void DatabaseCatalog::shutdownImpl()
     tables_marked_dropped.clear();
 
     std::lock_guard lock(databases_mutex);
+    for (const auto & db : databases)
+    {
+        UUID db_uuid = db.second->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            removeUUIDMapping(db_uuid);
+    }
     assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
         /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
         const auto & not_empty_mapping = [] (const auto & mapping)
         {
+            auto & db = mapping.second.first;
             auto & table = mapping.second.second;
-            return table;
+            return db || table;
         };
         auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
         return it != elem.map.end();
     }) == uuid_map.end());
     databases.clear();
-    db_uuid_map.clear();
     view_dependencies.clear();
 }
 
@@ -349,9 +357,10 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
+    NOEXCEPT_SCOPE;
     UUID db_uuid = database->getUUID();
     if (db_uuid != UUIDHelpers::Nil)
-        db_uuid_map.emplace(db_uuid, database);
+        addUUIDMapping(db_uuid, database, nullptr);
 }
 
 
@@ -365,7 +374,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         std::lock_guard lock{databases_mutex};
         assertDatabaseExistsUnlocked(database_name);
         db = databases.find(database_name)->second;
-        db_uuid_map.erase(db->getUUID());
+        UUID db_uuid = db->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            removeUUIDMapping(db_uuid);
         databases.erase(database_name);
     }
 
@@ -450,21 +461,19 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
 
 DatabasePtr DatabaseCatalog::getDatabase(const UUID & uuid) const
 {
-    std::lock_guard lock{databases_mutex};
-    auto it = db_uuid_map.find(uuid);
-    if (it == db_uuid_map.end())
+    auto db_and_table = tryGetByUUID(uuid);
+    if (!db_and_table.first || db_and_table.second)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database UUID {} does not exist", toString(uuid));
-    return it->second;
+    return db_and_table.first;
 }
 
 DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
 {
     assert(uuid != UUIDHelpers::Nil);
-    std::lock_guard lock{databases_mutex};
-    auto it = db_uuid_map.find(uuid);
-    if (it == db_uuid_map.end())
+    auto db_and_table = tryGetByUUID(uuid);
+    if (!db_and_table.first || db_and_table.second)
         return {};
-    return it->second;
+    return db_and_table.first;
 }
 
 bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
@@ -519,18 +528,22 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    assert((database && table) || (!database && !table));
+    assert(database || !table);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [it, inserted] = map_part.map.try_emplace(uuid, database, table);
     if (inserted)
+    {
+        /// Mapping must be locked before actually inserting something
+        chassert((!database && !table));
         return;
+    }
 
     auto & prev_database = it->second.first;
     auto & prev_table = it->second.second;
-    assert((prev_database && prev_table) || (!prev_database && !prev_table));
+    assert(prev_database || !prev_table);
 
-    if (!prev_table && table)
+    if (!prev_database && database)
     {
         /// It's empty mapping, it was created to "lock" UUID and prevent collision. Just update it.
         prev_database = database;
@@ -538,8 +551,8 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
         return;
     }
 
-    /// We are trying to replace existing mapping (prev_table != nullptr), it's logical error
-    if (table)
+    /// We are trying to replace existing mapping (prev_database != nullptr), it's logical error
+    if (database || table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", toString(uuid));
     /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
     /// so it's not LOGICAL_ERROR
@@ -732,6 +745,8 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
+    assert(!cleanup_task);
+
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
     /// Data directories of such tables still exists in store/
@@ -811,6 +826,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     time_t drop_time;
     if (table)
     {
+        chassert(hasUUIDMapping(table_id.uuid));
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         table->is_dropped = true;
     }
@@ -1142,7 +1158,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             }
 
             /// Order is important
-            if (!isProtectedUUIDDir(uuid) && !hasUUIDMapping(uuid))
+            if (!hasUUIDMapping(uuid))
             {
                 /// We load uuids even for detached and permanently detached tables,
                 /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
@@ -1219,32 +1235,45 @@ bool DatabaseCatalog::maybeRemoveDirectory(const fs::path & unused_dir)
     }
 }
 
-void DatabaseCatalog::addProtectedUUIDDir(const UUID & uuid)
+static void maybeUnlockUUID(UUID uuid)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
-    std::lock_guard lock{protected_uuid_dirs_mutex};
-    bool inserted = protected_uuid_dirs.insert(uuid).second;
-    if (inserted)
-        return;
 
-    throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Mapping for table with UUID={} already exists. It happened due to UUID collision, "
-                                                      "most likely because some not random UUIDs were manually specified in CREATE queries.", toString(uuid));
+    chassert(DatabaseCatalog::instance().hasUUIDMapping(uuid));
+    auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(uuid);
+    if (!db_and_table.first && !db_and_table.second)
+    {
+        DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
+        return;
+    }
+    chassert(db_and_table.first || !db_and_table.second);
 }
 
-void DatabaseCatalog::removeProtectedUUIDDir(const UUID & uuid)
+TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(UUID uuid_)
+    : uuid(uuid_)
 {
-    if (uuid == UUIDHelpers::Nil)
-        return;
-    std::lock_guard lock{protected_uuid_dirs_mutex};
-    chassert(protected_uuid_dirs.contains(uuid));
-    protected_uuid_dirs.erase(uuid);
+    if (uuid != UUIDHelpers::Nil)
+        DatabaseCatalog::instance().addUUIDMapping(uuid);
 }
 
-bool DatabaseCatalog::isProtectedUUIDDir(const UUID & uuid)
+TemporaryLockForUUIDDirectory::~TemporaryLockForUUIDDirectory()
 {
-    std::lock_guard lock{protected_uuid_dirs_mutex};
-    return protected_uuid_dirs.contains(uuid);
+    maybeUnlockUUID(uuid);
+}
+
+TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept
+    : uuid(rhs.uuid)
+{
+    rhs.uuid = UUIDHelpers::Nil;
+}
+
+TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (TemporaryLockForUUIDDirectory && rhs) noexcept
+{
+    maybeUnlockUUID(uuid);
+    uuid = rhs.uuid;
+    rhs.uuid = UUIDHelpers::Nil;
+    return *this;
 }
 
 
