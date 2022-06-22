@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
-#include <Common/ZooKeeper/Common.h>
-#include <map>
-#include <mutex>
+#include <Backups/BackupCoordinationHelpers.h>
 
 
 namespace DB
@@ -13,26 +11,38 @@ namespace DB
 class RestoreCoordinationDistributed : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
+    RestoreCoordinationDistributed(const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper);
     ~RestoreCoordinationDistributed() override;
 
-    void setOrGetPathInBackupForZkPath(const String & zk_path_, String & path_in_backup_) override;
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    void syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout) override;
 
-    bool acquireZkPathAndName(const String & zk_path_, const String & name_) override;
-    void setResultForZkPathAndName(const String & zk_path_, const String & name_, Result res_) override;
-    bool getResultForZkPathAndName(const String & zk_path_, const String & name_, Result & res_, std::chrono::milliseconds timeout_) const override;
+    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
+    void syncStageError(const String & current_host, const String & error_message) override;
 
+    /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
+    bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
+
+    /// Sets that this replica is going to restore a partition in a replicated table.
+    /// The function returns false if this partition is being already restored by another replica.
+    bool acquireInsertingDataIntoReplicatedTable(const String & table_zk_path) override;
+
+    /// Sets that this replica is going to restore a ReplicatedAccessStorage.
+    /// The function returns false if this access storage is being already restored by another replica.
+    bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) override;
+
+    /// Removes remotely stored information.
     void drop() override;
 
 private:
     void createRootNodes();
     void removeAllNodes();
 
+    class ReplicatedDatabasesMetadataSync;
+
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
-    mutable std::mutex mutex;
-    mutable std::map<std::pair<String, String>, std::optional<Result>> acquired;
-    std::unordered_map<String, String> paths_in_backup_by_zk_path;
+    BackupCoordinationStageSync stage_sync;
 };
 
 }

@@ -81,7 +81,8 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     if constexpr (use_indexes)
     {
         num_indexes = row_indexes->size();
-        next_index = indexes = row_indexes->data();
+        indexes = row_indexes->data();
+        next_index = indexes;
     }
 
     compare_results.resize(num_rows);
@@ -100,15 +101,9 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
         if constexpr (use_indexes)
             row = indexes[i];
 
-        int res = compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-
-        /// We need to convert int to Int8. Sometimes comparison return values which do not fit in one byte.
-        if (res < 0)
-            compare_results[row] = -1;
-        else if (res > 0)
-            compare_results[row] = 1;
-        else
-            compare_results[row] = 0;
+        int res = static_cast<const Derived *>(this)->compareAt(row, rhs_row_num, rhs, nan_direction_hint);
+        assert(res == 1 || res == -1 || res == 0);
+        compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
             compare_results[row] = -compare_results[row];
@@ -124,7 +119,10 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     }
 
     if constexpr (use_indexes)
-        row_indexes->resize(next_index - row_indexes->data());
+    {
+        size_t equal_row_indexes_size = next_index - row_indexes->data();
+        row_indexes->resize(equal_row_indexes_size);
+    }
 }
 
 template <typename Derived>

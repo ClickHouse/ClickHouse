@@ -50,9 +50,7 @@ function thread_insert_rollback()
 function thread_optimize()
 {
     set -e
-    trap "STOP_THE_LOOP=1" INT
-    STOP_THE_LOOP=0
-    while [[ $STOP_THE_LOOP != 1 ]]; do
+    while true; do
         optimize_query="OPTIMIZE TABLE src"
         partition_id=$(( RANDOM % 2 ))
         if (( RANDOM % 2 )); then
@@ -82,7 +80,6 @@ function thread_optimize()
 function thread_select()
 {
     set -e
-    trap "exit 0" INT
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
@@ -103,9 +100,7 @@ function thread_select()
 function thread_select_insert()
 {
     set -e
-    trap "STOP_THE_LOOP=1" INT
-    STOP_THE_LOOP=0
-    while [[ $STOP_THE_LOOP != 1 ]]; do
+    while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         SELECT throwIf((SELECT count() FROM tmp) != 0) FORMAT Null;
@@ -139,12 +134,13 @@ thread_select & PID_7=$!
 thread_select_insert & PID_8=$!
 
 wait $PID_1 && wait $PID_2 && wait $PID_3
-kill -INT $PID_4
-kill -INT $PID_5
-kill -INT $PID_6
-kill -INT $PID_7
-kill -INT $PID_8
+kill -TERM $PID_4
+kill -TERM $PID_5
+kill -TERM $PID_6
+kill -TERM $PID_7
+kill -TERM $PID_8
 wait
+wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;

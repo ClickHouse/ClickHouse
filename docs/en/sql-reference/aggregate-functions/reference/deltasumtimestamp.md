@@ -2,7 +2,7 @@
 sidebar_position: 141
 ---
 
-# deltaSumTimestamp {#agg_functions-deltasumtimestamp}
+# deltaSumTimestamp
 
 Adds the difference between consecutive rows. If the difference is negative, it is ignored.
 

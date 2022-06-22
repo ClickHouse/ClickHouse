@@ -45,8 +45,6 @@ public:
     static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
-    friend class PostgreSQLBlockOutputStream;
-
     String remote_table_name;
     String remote_table_schema;
     String on_conflict;

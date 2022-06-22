@@ -149,7 +149,7 @@ namespace DB
             }
         }
 
-        virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (arguments.size() != 2)
                 throw Exception(
@@ -166,7 +166,7 @@ namespace DB
             return std::make_shared<DataTypeUInt8>();
         }
 
-        virtual size_t getNumberOfArguments() const override { return 2; }
+        size_t getNumberOfArguments() const override { return 2; }
         bool useDefaultImplementationForNulls() const override { return false; }
 
     private:

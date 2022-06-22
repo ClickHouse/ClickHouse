@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
+set -x -e
 
 exec &> >(ts)
-set -x -e
 
 cache_status () {
     ccache --show-config ||:
     ccache --show-stats ||:
 }
 
-git config --global --add safe.directory /build
+[ -O /build ] || git config --global --add safe.directory /build
 
-mkdir -p build/cmake/toolchain/darwin-x86_64
-tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
-ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
+mkdir -p /build/cmake/toolchain/darwin-x86_64
+tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
+ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
 
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
@@ -20,8 +20,8 @@ ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 # export CCACHE_DEBUG=1
 
 
-mkdir -p build/build_docker
-cd build/build_docker
+mkdir -p /build/build_docker
+cd /build/build_docker
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
@@ -61,10 +61,10 @@ fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    mkdir -p /opt/cov-analysis
+    mkdir -p /workdir/cov-analysis
 
-    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /opt/cov-analysis --strip-components 1
-    export PATH=$PATH:/opt/cov-analysis/bin
+    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /workdir/cov-analysis --strip-components 1
+    export PATH=$PATH:/workdir/cov-analysis/bin
     cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
     SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
 fi
@@ -89,16 +89,36 @@ mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 
-# Different files for performance test.
-if [ "performance" == "$COMBINED_OUTPUT" ]
-then
-    cp -r ../tests/performance /output
-    cp -r ../tests/config/top_level_domains  /output
-    cp -r ../docker/test/performance-comparison/config /output ||:
-    rm /output/unit_tests_dbms ||:
-    rm /output/clickhouse-odbc-bridge ||:
+prepare_combined_output () {
+    local OUTPUT
+    OUTPUT="$1"
 
-    cp -r ../docker/test/performance-comparison /output/scripts ||:
+    mkdir -p "$OUTPUT"/config
+    cp /build/programs/server/config.xml "$OUTPUT"/config
+    cp /build/programs/server/users.xml "$OUTPUT"/config
+    cp -r --dereference /build/programs/server/config.d "$OUTPUT"/config
+}
+
+# Different files for performance test.
+if [ "$WITH_PERFORMANCE" == 1 ]
+then
+    PERF_OUTPUT=/workdir/performance/output
+    mkdir -p "$PERF_OUTPUT"
+    cp -r ../tests/performance "$PERF_OUTPUT"
+    cp -r ../tests/config/top_level_domains  "$PERF_OUTPUT"
+    cp -r ../docker/test/performance-comparison/config "$PERF_OUTPUT" ||:
+    for SRC in /output/clickhouse*; do
+        # Copy all clickhouse* files except packages and bridges
+        [[ "$SRC" != *.* ]] && [[ "$SRC" != *-bridge ]] && \
+          cp -d "$SRC" "$PERF_OUTPUT"
+    done
+    if [ -x "$PERF_OUTPUT"/clickhouse-keeper ]; then
+        # Replace standalone keeper by symlink
+        ln -sf clickhouse "$PERF_OUTPUT"/clickhouse-keeper
+    fi
+
+    cp -r ../docker/test/performance-comparison "$PERF_OUTPUT"/scripts ||:
+    prepare_combined_output "$PERF_OUTPUT"
 
     # We have to know the revision that corresponds to this binary build.
     # It is not the nominal SHA from pull/*/head, but the pull/*/merge, which is
@@ -111,22 +131,23 @@ then
     #   for a given nominal SHA, but it is not accessible outside Yandex.
     # This is why we add this repository snapshot from CI to the performance test
     # package.
-    mkdir /output/ch
-    git -C /output/ch init --bare
-    git -C /output/ch remote add origin /build
-    git -C /output/ch fetch --no-tags --depth 50 origin HEAD:pr
-    git -C /output/ch fetch --no-tags --depth 50 origin master:master
-    git -C /output/ch reset --soft pr
-    git -C /output/ch log -5
+    mkdir "$PERF_OUTPUT"/ch
+    git -C "$PERF_OUTPUT"/ch init --bare
+    git -C "$PERF_OUTPUT"/ch remote add origin /build
+    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin HEAD:pr
+    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin master:master
+    git -C "$PERF_OUTPUT"/ch reset --soft pr
+    git -C "$PERF_OUTPUT"/ch log -5
+    (
+        cd "$PERF_OUTPUT"/..
+        tar -cv -I pigz -f /output/performance.tgz output
+    )
 fi
 
 # May be set for split build or for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then
-    mkdir -p /output/config
-    cp ../programs/server/config.xml /output/config
-    cp ../programs/server/users.xml /output/config
-    cp -r --dereference ../programs/server/config.d /output/config
+    prepare_combined_output /output
     tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
@@ -137,13 +158,6 @@ then
     tar -cv -I pigz -f "coverity-scan.tgz" cov-int
     mv "coverity-scan.tgz" /output
 fi
-
-# Also build fuzzers if any sanitizer specified
-# if [ -n "$SANITIZER" ]
-# then
-#   # Currently we are in build/build_docker directory
-#   ../docker/packager/other/fuzzer.sh
-# fi
 
 cache_status
 
@@ -159,3 +173,5 @@ then
     # files in place, and will fail because this directory is not writable.
     tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
 fi
+
+ls -l /output

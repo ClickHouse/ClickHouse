@@ -410,7 +410,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
     -   `status` — используется с типом `static`, возвращает код состояния ответа.
 
-    -   `content_type` — используется с типом `static`, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+    -   `content_type` — используется со всеми типами, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
     -   `response_content` — используется с типом`static`, содержимое ответа, отправленное клиенту, при использовании префикса ‘file://’ or ‘config://’, находит содержимое из файла или конфигурации, отправленного клиенту.
 
