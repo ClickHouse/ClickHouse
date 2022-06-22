@@ -25,18 +25,19 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     , allow_release(true)
 {}
 
-#define LOG_DEBUG_SAFE(...)                                                                    \
-    do {                                                                                       \
-        OvercommitTrackerBlockerInThread blocker;                                              \
-        try                                                                                    \
-        {                                                                                      \
-            ALLOW_ALLOCATIONS_IN_SCOPE;                                                        \
-            LOG_DEBUG(__VA_ARGS__);                                                            \
-        }                                                                                      \
-        catch (std::bad_alloc const &)                                                         \
-        {                                                                                      \
-            fprintf(stderr, "Allocation failed during writing to log in OvercommitTracker\n"); \
-        }                                                                                      \
+#define LOG_DEBUG_SAFE(...)                                                                               \
+    do {                                                                                                  \
+        OvercommitTrackerBlockerInThread blocker;                                                         \
+        try                                                                                               \
+        {                                                                                                 \
+            ALLOW_ALLOCATIONS_IN_SCOPE;                                                                   \
+            LOG_DEBUG(__VA_ARGS__);                                                                       \
+        }                                                                                                 \
+        catch (...)                                                                                       \
+        {                                                                                                 \
+            if (fprintf(stderr, "Allocation failed during writing to log in OvercommitTracker\n") != -1)  \
+                ;                                                                                         \
+        }                                                                                                 \
     } while (false)
 
 OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
