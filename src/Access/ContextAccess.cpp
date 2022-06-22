@@ -676,7 +676,7 @@ void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccess
 
     auto current_user = getUser();
     if (!current_user->grantees.match(grantee_id))
-        throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
+        throw Exception(grantee.outputTypeAndName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
 }
 
 void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const
@@ -690,7 +690,7 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
 
     for (const auto & id : grantee_ids)
     {
-        auto entity = access_control->tryRead(id);
+        auto entity = manager->tryRead(id);
         if (auto role_entity = typeid_cast<RolePtr>(entity))
             checkGranteeIsAllowed(id, *role_entity);
         else if (auto user_entity = typeid_cast<UserPtr>(entity))
