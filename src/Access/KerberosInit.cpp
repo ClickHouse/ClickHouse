@@ -19,7 +19,9 @@ namespace ErrorCodes
 }
 }
 
-struct k5_data
+namespace
+{
+struct K5Data
 {
     krb5_context ctx;
     krb5_ccache in_cc, out_cc;
@@ -37,17 +39,18 @@ public:
     int init(const String & keytab_file, const String & principal, const String & cache_name = "");
     ~KerberosInit();
 private:
-    struct k5_data k5;
+    struct K5Data k5;
     krb5_ccache defcache = nullptr;
     krb5_get_init_creds_opt * options = nullptr;
     krb5_creds my_creds;
     krb5_keytab keytab = nullptr;
     krb5_principal defcache_princ = nullptr;
 };
+}
 
 int KerberosInit::init(const String & keytab_file, const String & principal, const String & cache_name)
 {
-    auto log = &Poco::Logger::get("KerberosInit");
+    auto * log = &Poco::Logger::get("KerberosInit");
     LOG_TRACE(log,"Trying to authenticate to Kerberos v5");
 
     krb5_error_code ret;

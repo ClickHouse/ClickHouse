@@ -5,6 +5,13 @@
 #include <Common/Exception.h>
 #include <Access/KerberosInit.h>
 
+/** The example demonstrates using of kerberosInit function to obtain and cache Kerberos ticket-granting ticket.
+  * The first argument specifies keytab file. The second argument specifies principal name.
+  * The third argument is optional. It specifies credentials cache location.
+  * After successful run of kerberos_init it is useful to call klist command to list cached Kerberos tickets.
+  * It is also useful to run kdestroy to destroy Kerberos tickets if needed.
+  */
+
 using namespace DB;
 
 int main(int argc, char ** argv)
