@@ -10,11 +10,12 @@ from datetime import date, datetime, timedelta
 from queue import Empty, Queue
 from subprocess import CalledProcessError, DEVNULL
 from threading import Thread
+from time import sleep
 from typing import Dict, List, Optional, TextIO
 
 from fuzzywuzzy.fuzz import ratio  # type: ignore
 from github import Github
-from github.GithubException import UnknownObjectException
+from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
 from github.Issue import Issue
 from github.PullRequest import PullRequest
@@ -67,10 +68,17 @@ class Description:
             r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
             entry,
         )
-        try:
-            user_name = self.user.name if self.user.name else self.user.login
-        except UnknownObjectException:
-            user_name = self.user.login
+        # It's possible that we face a secondary rate limit.
+        # In this case we should sleep until we get it
+        while True:
+            try:
+                user_name = self.user.name if self.user.name else self.user.login
+                break
+            except UnknownObjectException:
+                user_name = self.user.login
+                break
+            except RateLimitExceededException:
+                sleep_on_rate_limit()
         return (
             f"* {entry} [#{self.number}]({self.html_url}) "
             f"([{user_name}]({self.user.html_url}))."
@@ -118,6 +126,11 @@ class Worker(Thread):
             self.queue.task_done()
 
 
+def sleep_on_rate_limit(time: int = 20):
+    logging.warning("Faced rate limit, sleeping %s", time)
+    sleep(time)
+
+
 def get_pull_cached(
     repo: Repository, number: int, updated_at: Optional[datetime] = None
 ) -> PullRequest:
@@ -130,7 +143,12 @@ def get_pull_cached(
         if cache_updated > updated_at:
             with open(pr_cache_file, "rb") as prfd:
                 return GitHub.load(prfd)  # type: ignore
-    pr = repo.get_pull(number)
+    while True:
+        try:
+            pr = repo.get_pull(number)
+            break
+        except RateLimitExceededException:
+            sleep_on_rate_limit()
     with open(pr_cache_file, "wb") as prfd:
         GitHub.dump(pr, prfd)  # type: ignore
     return pr
@@ -414,9 +432,16 @@ def main():
     api_prs = GitHub.search_issues(query=query, sort="created")
     logging.info("Found %s PRs for the query: '%s'", api_prs.totalCount, query)
 
-    pr_numbers = list(api_prs)
+    issues = []  # type: List[Issue]
+    while True:
+        try:
+            for issue in api_prs:
+                issues.append(issue)
+            break
+        except RateLimitExceededException:
+            sleep_on_rate_limit()
 
-    descriptions = get_descriptions(repo, pr_numbers, args.jobs)
+    descriptions = get_descriptions(repo, issues, args.jobs)
 
     write_changelog(args.output, descriptions)
 
