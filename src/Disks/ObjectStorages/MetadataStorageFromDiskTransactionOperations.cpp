@@ -45,7 +45,6 @@ void UnlinkFileOperation::execute()
 {
     auto buf = disk.readFile(path);
     readStringUntilEOF(prev_data, *buf);
-    std::cerr << "\n\n\nRemove file: " << path << "\n\n\n";
     disk.removeFile(path);
 }
 
