@@ -231,10 +231,10 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
         for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
         {
             last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
-            current_task.pre_range_reader.push_back(
+            current_task.pre_range_readers.push_back(
                 MergeTreeRangeReader(pre_reader_for_step[i].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names));
 
-            prev_reader = &current_task.pre_range_reader.back();
+            prev_reader = &current_task.pre_range_readers.back();
         }
 
     }
@@ -246,8 +246,8 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     else
     {
         /// If all columns are read by pre_range_readers than move last pre_range_reader into range_reader
-        current_task.range_reader = std::move(current_task.pre_range_reader.back());
-        current_task.pre_range_reader.pop_back();
+        current_task.range_reader = std::move(current_task.pre_range_readers.back());
+        current_task.pre_range_readers.pop_back();
     }
 }
 
