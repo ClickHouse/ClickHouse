@@ -96,7 +96,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
-    params->aggregator.prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
+    if (!params->params.only_merge)
+    {
+        params->aggregator.prepareAggregateInstructions(
+            columns, aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
+    }
 
     size_t key_end = 0;
     size_t key_begin = 0;
