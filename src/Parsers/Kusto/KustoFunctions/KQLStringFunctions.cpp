@@ -188,84 +188,80 @@ bool StrLen::convertImpl(String &out,IParser::Pos &pos)
 
 bool StrRep::convertImpl(String &out,IParser::Pos &pos)
 {
-    std::unique_ptr<IParserKQLFunction> fun;
-    String res = String(pos->begin,pos->end);
-    ++pos;
-    if (pos->type != TokenType::OpeningRoundBracket)
-    {
-        --pos;
+    String fn_name = getKQLFunctionName(pos); //String(pos->begin,pos->end);
+
+    if (fn_name.empty())
         return false;
-    }
+
+    auto begin = pos;
+
     ++pos;
-    String value = String(pos->begin,pos->end);
-    if (pos->type == TokenType::BareWord )
-    {   String func_value;
-        fun = KQLFunctionFactory::get(value);
-        if (fun && fun->convert(func_value,pos))
-            value  = func_value;
-    }
-    ++pos;
+    String value = getConvertedArgument(fn_name,pos);
     if (pos->type != TokenType::Comma)
         return false;
 
     ++pos;
-    String multiplier = String(pos->begin,pos->end);
-    String new_multiplier;
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
-    {
-        if (pos->type == TokenType::BareWord )
-        {
-            String fun_multiplier;
-            fun = KQLFunctionFactory::get(multiplier);
-            if ( fun && fun->convert(fun_multiplier,pos))
-                new_multiplier += fun_multiplier;
-            else
-                new_multiplier = multiplier;
-        }
-        else if (pos->type == TokenType::Comma ||pos->type == TokenType::ClosingRoundBracket) // has delimiter
-        {
-            break;
-        }
-        else
-            new_multiplier += String(pos->begin,pos->end);
-        ++pos;
-    }
+    String multiplier = getConvertedArgument(fn_name,pos);
 
-    if (!new_multiplier.empty())
-        multiplier = new_multiplier;
-
-    String delimiter ;
+    String delimiter;
     if (pos->type == TokenType::Comma)
     {
         ++pos;
-        delimiter = String(pos->begin,pos->end);
-        if (pos->type == TokenType::BareWord )
-        {   String func_delimiter;
-            fun = KQLFunctionFactory::get(delimiter);
-            if (fun && fun->convert(func_delimiter,pos))
-                delimiter  = func_delimiter;
-        }
-        ++pos;
+        delimiter = getConvertedArgument(fn_name,pos);
     }
+
     if (pos->type == TokenType::ClosingRoundBracket)
     {
         if (!delimiter.empty())
         {
             String repeated_str = "repeat(concat("+value+"," + delimiter + ")," + multiplier + ")";
-            res = "substr("+ repeated_str + ", 1, length(" + repeated_str + ") - length(" + delimiter + "))";
+            out = "substr("+ repeated_str + ", 1, length(" + repeated_str + ") - length(" + delimiter + "))";
         }
         else
-            res = "repeat("+ value + ", " + multiplier + ")";
-        out = res;
+            out = "repeat("+ value + ", " + multiplier + ")";
+
         return true;
     }
+
+    pos = begin;
     return false;
 }
 
+
 bool SubString::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
+    String fn_name = getKQLFunctionName(pos); 
+
+    if (fn_name.empty())
+        return false;
+
+    auto begin = pos;
+
+    ++pos;
+    String source = getConvertedArgument(fn_name,pos);
+    
+    if (pos->type != TokenType::Comma)
+        return false;
+
+    ++pos;
+    String startingIndex = getConvertedArgument(fn_name,pos);
+
+    String length;
+    if (pos->type == TokenType::Comma)
+    {
+        ++pos;
+        length = getConvertedArgument(fn_name,pos);
+    }
+
+    if (pos->type == TokenType::ClosingRoundBracket)
+    {
+        if (length.empty())
+            out = "substr("+ source + "," + startingIndex +" + 1)";
+        else
+            out = "substr("+ source + ", " + startingIndex +" + 1, " + length + ")";
+        return true;
+    }
+    pos = begin;
     return false;
 }
 
@@ -273,7 +269,6 @@ bool ToLower::convertImpl(String &out,IParser::Pos &pos)
 {
     return directMapping(out,pos,"lower");
 }
-
 
 bool ToUpper::convertImpl(String &out,IParser::Pos &pos)
 {
