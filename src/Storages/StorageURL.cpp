@@ -866,20 +866,18 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
 ASTs::iterator StorageURL::collectHeaders(
     ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context)
 {
-    ASTs::iterator headers_it;
+    ASTs::iterator headers_it = url_function_args.end();
 
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
-        if (const auto * headers_ast_function = (*arg_it)->as<ASTFunction>())
+        const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
+        if (headers_ast_function && headers_ast_function->name == "headers")
         {
-            if (headers_it != ASTs::iterator())
+            if (headers_it != url_function_args.end())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "URL table function can have only one key-value argument: headers=(). {}",
                     bad_arguments_error_message);
-
-            if (headers_ast_function->name != "headers")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected argument. {}", bad_arguments_error_message);
 
             const auto * headers_function_args_expr = assert_cast<const ASTExpressionList *>(headers_ast_function->arguments.get());
             auto headers_function_args = headers_function_args_expr->children;
@@ -887,18 +885,28 @@ ASTs::iterator StorageURL::collectHeaders(
             for (auto & header_arg : headers_function_args)
             {
                 const auto * header_ast = header_arg->as<ASTFunction>();
-                if (!header_ast)
+                if (!header_ast || header_ast->name != "equals")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Headers argument is incorrect. {}", bad_arguments_error_message);
 
                 const auto * header_args_expr = assert_cast<const ASTExpressionList *>(header_ast->arguments.get());
                 auto header_args = header_args_expr->children;
                 if (header_args.size() != 2)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Headers argument is incorrect. {}", bad_arguments_error_message);
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Headers argument is incorrect: expected 2 arguments, got {}",
+                        header_args.size());
 
                 auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args[0], context);
-                auto arg_name = ast_literal->as<ASTLiteral>()->value.safeGet<String>();
+                auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
+                if (arg_name_value.getType() != Field::Types::Which::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header name");
+                auto arg_name = arg_name_value.safeGet<String>();
+
                 ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args[1], context);
                 auto arg_value = ast_literal->as<ASTLiteral>()->value;
+                if (arg_value.getType() != Field::Types::Which::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header value");
+
                 configuration.headers.emplace_back(arg_name, arg_value);
             }
 
@@ -947,7 +955,7 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
 
         auto header_it = collectHeaders(args, configuration, local_context);
-        if (header_it != ASTs::iterator())
+        if (header_it != args.end())
             args.erase(header_it);
 
         configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
