@@ -133,7 +133,9 @@ struct QuantileApproximateWeighted
         /// calculates a simple cumulative distribution based on weights
         /// Note: if sum_weight is 0 then subsequent division is inf, so set the value of the exp to 0.
         for (size_t idx = 0; idx < size; ++idx)
-            value_weight_pairs[idx].second = (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+            value_weight_pairs[idx].second
+                = sum_weight == 0 ? 0 : (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+
 
         /// perform linear interpolation
         UnderlyingType g;
@@ -204,7 +206,10 @@ struct QuantileApproximateWeighted
         ::sort(value_weight_pairs.begin(), value_weight_pairs.end(), [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 accumulated = 0;
-        std::vector<Float64> cum_sum_array;
+
+        /// vector for populating and storing the cumulative sum using the provided weights.
+        /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
+        std::vector<Float64> weights_cum_sum;
 
         bool first = true;
         for (size_t idx = 0; idx < size; ++idx)
@@ -213,12 +218,12 @@ struct QuantileApproximateWeighted
 
             if (first)
             {
-                cum_sum_array.emplace_back(value_weight_pairs[idx].second);
+                weights_cum_sum.emplace_back(value_weight_pairs[idx].second);
                 first = false;
             }
             else
             {
-                cum_sum_array.emplace_back(accumulated);
+                weights_cum_sum.emplace_back(accumulated);
             }
         }
 
@@ -228,7 +233,8 @@ struct QuantileApproximateWeighted
         /// calculates a simple cumulative distribution based on weights
         /// Note: if sum_weight is 0 then subsequent division is inf, so set the value of the exp to 0.
         for (size_t idx = 0; idx < size; ++idx)
-            value_weight_pairs[idx].second = sum_weight == 0 ? 0 : (cum_sum_array[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
+            value_weight_pairs[idx].second
+                = sum_weight == 0 ? 0 : (weights_cum_sum[idx] - 0.5 * value_weight_pairs[idx].second) / sum_weight;
 
         size_t level_index = 0;
 
