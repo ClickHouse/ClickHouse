@@ -599,7 +599,10 @@ catch (...)
 DiskObjectStoragePtr DiskLocal::getObjectStorage(const String & name_)
 {
     auto object_storage = std::make_shared<LocalObjectStorage>();
-    auto metadata_storage = std::make_shared<MetadataStorageFromLocalDisk>(std::static_pointer_cast<DiskLocal>(shared_from_this()));
+    auto metadata_storage = std::make_shared<MetadataStorageFromLocalDisk>(
+        std::static_pointer_cast<DiskLocal>(shared_from_this()),
+        object_storage);
+
     return std::make_shared<DiskObjectStorage>(
         name_,
         disk_path,

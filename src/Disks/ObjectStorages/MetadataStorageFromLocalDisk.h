@@ -12,7 +12,7 @@ class MetadataStorageFromLocalDisk : public IMetadataStorage
 {
 
 public:
-    explicit MetadataStorageFromLocalDisk(DiskPtr disk_);
+    explicit MetadataStorageFromLocalDisk(DiskPtr disk_, ObjectStoragePtr object_storage_);
 
     MetadataTransactionPtr createTransaction() const override;
 
@@ -48,6 +48,7 @@ public:
 
 private:
     DiskPtr disk;
+    ObjectStoragePtr object_storage;
 };
 
 class MetadataStorageFromLocalDiskTransaction final : public MetadataStorageFromDiskTransaction

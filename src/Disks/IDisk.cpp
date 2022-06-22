@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Disks/ObjectStorages/MetadataStorageFromRemoteDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromLocalDisk.h>
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
@@ -123,9 +124,14 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 MetadataStoragePtr IDisk::getMetadataStorage()
 {
     if (isRemote())
+    {
         return std::make_shared<MetadataStorageFromRemoteDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), "");
+    }
     else
-        return std::make_shared<MetadataStorageFromLocalDisk>(std::static_pointer_cast<IDisk>(shared_from_this()));
+    {
+        auto object_storage = std::make_shared<LocalObjectStorage>();
+        return std::make_shared<MetadataStorageFromLocalDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), object_storage);
+    }
 }
 
 }
