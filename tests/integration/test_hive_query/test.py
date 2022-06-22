@@ -28,7 +28,7 @@ def started_cluster():
         cluster.copy_file_to_container(
             "roottesthivequery_hdfs1_1",
             "/etc/clickhouse-server/extra_conf.d/prepare_hive_data.sh",
-            "/prepare_hive_data.sh",s
+            "/prepare_hive_data.sh",
         )
         cluster.exec_in_container(
             "roottesthivequery_hdfs1_1", ["bash", "-c", "bash /prepare_hive_data.sh"]
