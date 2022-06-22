@@ -122,10 +122,14 @@ class BackgroundSchedulePoolTaskHolder;
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
+    /// Names of predefined databases.
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
     static constexpr const char * INFORMATION_SCHEMA = "information_schema";
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
+
+    /// Returns true if a passed string is one of the predefined databases' names
+    static bool isPredefinedDatabaseName(const std::string_view & database_name);
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
