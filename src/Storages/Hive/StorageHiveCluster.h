@@ -20,6 +20,7 @@ namespace DB
  *
  */
 class HiveSettings;
+class StorageHive;
 class StorageHiveCluster : public IStorage, WithContext
 {
 public:
@@ -67,6 +68,7 @@ private:
     String hive_metastore_url;
     String hive_database;
     String hive_table;
+    std::shared_ptr<StorageHive> local_hive_storage;
 
     const ASTPtr partition_by_ast;
 

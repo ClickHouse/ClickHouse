@@ -16,6 +16,9 @@
 #include <Storages/Hive/HiveSourceTask.h>
 #include <Storages/Hive/StorageHive.h>
 #include <Storages/StorageFactory.h>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 namespace DB
 {
 
@@ -99,6 +102,7 @@ Pipe StorageHiveCluster::read(
         {
             for (const auto & node : replicas)
             {
+                LOG_TRACE(&Poco::Logger::get("StorageHiveCluster"), "setup connection:{}, database:{} vs. {}", node.host_name, context_->getGlobalContext()->getCurrentDatabase(), context_->getCurrentDatabase());
                 auto connection = std::make_shared<Connection>(
                     node.host_name,
                     node.port,
@@ -152,7 +156,7 @@ Pipe StorageHiveCluster::read(
     auto local_storage_settings = std::make_unique<HiveSettings>();
     local_storage_settings->applyChanges(*storage_settings);
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage_hive = std::make_shared<StorageHive>(
+    local_hive_storage = std::make_shared<StorageHive>(
         hive_metastore_url,
         hive_database,
         hive_table,
@@ -166,7 +170,7 @@ Pipe StorageHiveCluster::read(
         std::make_shared<HiveSourceFilesCollectorBuilder>(files_collector_builder),
         true);
 
-    return storage_hive->read(column_names_, metadata_snapshot_, query_info_, context_, processed_stage_, max_block_size_, num_streams_);
+    return local_hive_storage->read(column_names_, metadata_snapshot_, query_info_, context_, processed_stage_, max_block_size_, num_streams_);
 }
 
 QueryProcessingStage::Enum StorageHiveCluster::getQueryProcessingStage(
