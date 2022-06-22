@@ -249,9 +249,9 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
     return nullptr;
 }
 
-void KeeperStateManager::flushLogStore()
+void KeeperStateManager::flushAndShutDownLogStore()
 {
-    log_store->flush();
+    log_store->flushChangelogAndShutdown();
 }
 
 void KeeperStateManager::save_config(const nuraft::cluster_config & config)

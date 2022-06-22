@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
@@ -160,6 +161,12 @@ Names IDataType::getSubcolumnNames() const
 void IDataType::insertDefaultInto(IColumn & column) const
 {
     column.insertDefault();
+}
+
+void IDataType::insertManyDefaultsInto(IColumn & column, size_t n) const
+{
+    for (size_t i = 0; i < n; ++i)
+        insertDefaultInto(column);
 }
 
 void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const

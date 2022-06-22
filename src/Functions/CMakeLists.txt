@@ -13,6 +13,7 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
+        ch_contrib::wyhash
         ch_contrib::cityhash
         ch_contrib::farmhash
         clickhouse_dictionaries
@@ -22,6 +23,7 @@ target_link_libraries(clickhouse_functions
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
+        ch_contrib::hashidsxx
 
     PRIVATE
         ch_contrib::zlib

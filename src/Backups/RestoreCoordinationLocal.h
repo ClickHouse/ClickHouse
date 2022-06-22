@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
-#include <map>
 #include <mutex>
-#include <unordered_map>
+#include <set>
+#include <unordered_set>
+
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -15,20 +17,27 @@ public:
     RestoreCoordinationLocal();
     ~RestoreCoordinationLocal() override;
 
-    void setOrGetPathInBackupForZkPath(const String & zk_path_, String & path_in_backup_) override;
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) override;
 
-    bool acquireZkPathAndName(const String & zk_path_, const String & name_) override;
-    void setResultForZkPathAndName(const String & zk_path_, const String & name_, Result res_) override;
-    bool getResultForZkPathAndName(const String & zk_path_, const String & name_, Result & res_, std::chrono::milliseconds timeout_) const override;
+    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
+    void syncStageError(const String & current_host, const String & error_message) override;
+
+    /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
+    bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
+
+    /// Sets that this replica is going to restore a partition in a replicated table.
+    /// The function returns false if this partition is being already restored by another replica.
+    bool acquireInsertingDataIntoReplicatedTable(const String & table_zk_path) override;
+
+    /// Sets that this replica is going to restore a ReplicatedAccessStorage.
+    /// The function returns false if this access storage is being already restored by another replica.
+    bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) override;
 
 private:
-    std::optional<Result> & getResultRef(const String & zk_path_, const String & name_);
-    const std::optional<Result> & getResultRef(const String & zk_path_, const String & name_) const;
-
+    std::set<std::pair<String /* database_zk_path */, String /* table_name */>> acquired_tables_in_replicated_databases;
+    std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables;
     mutable std::mutex mutex;
-    std::unordered_map<String, String> paths_in_backup_by_zk_path;
-    std::map<std::pair<String, String>, std::optional<Result>> acquired;
-    mutable std::condition_variable result_changed;
 };
 
 }

@@ -3,7 +3,7 @@ sidebar_position: 38
 sidebar_label: DICTIONARY
 ---
 
-# CREATE DICTIONARY {#create-dictionary-query}
+# CREATE DICTIONARY
 
 Creates a new [external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) with given [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) and [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 

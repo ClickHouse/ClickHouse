@@ -1,5 +1,6 @@
 #include "FileCacheFactory.h"
-#include "FileCache.h"
+#include "IFileCache.h"
+#include "LRUFileCache.h"
 
 namespace DB
 {

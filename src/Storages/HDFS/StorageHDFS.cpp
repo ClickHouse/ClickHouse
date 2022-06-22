@@ -15,6 +15,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/CompressionMethod.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -33,6 +34,7 @@
 #include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
@@ -146,6 +148,7 @@ StorageHDFS::StorageHDFS(
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
 
@@ -194,8 +197,9 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         if (it == paths.end())
             return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
+        auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
         return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression);
+            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression, zstd_window_log_max);
     };
     return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 }
@@ -236,7 +240,7 @@ public:
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
-        HDFSFSPtr fs = createHDFSFS(builder.get());
+        auto fs = createHDFSFS(builder.get());
         for (const auto & uri : uris_)
         {
             path_and_uri = getPathFromUriAndUriWithoutPath(uri);
@@ -296,7 +300,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : SourceWithProgress(getHeader(block_for_format_, requested_virtual_columns_))
+    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -324,7 +328,8 @@ bool HDFSSource::initialize()
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression);
+    const auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression, zstd_window_log_max);
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -415,6 +420,13 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onException() override
+    {
+        if (!writer)
+            return;
+        onFinish();
+    }
+
     void onFinish() override
     {
         try
@@ -426,6 +438,7 @@ public:
         }
         catch (...)
         {
+            /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
             throw;
         }
@@ -471,9 +484,9 @@ private:
 };
 
 
-bool StorageHDFS::isColumnOriented() const
+bool StorageHDFS::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe StorageHDFS::read(
@@ -522,7 +535,7 @@ Pipe StorageHDFS::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();
@@ -534,8 +547,7 @@ Pipe StorageHDFS::read(
         if (fetch_columns.empty())
             fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -628,7 +640,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
     const String url = uris[0].substr(0, begin_of_path);
 
     HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", local_context->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder.get());
+    auto fs = createHDFSFS(builder.get());
 
     for (const auto & uri : uris)
     {

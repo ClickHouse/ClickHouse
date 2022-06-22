@@ -213,11 +213,14 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(
 {
     /// If there is a collected size of current Nested
     /// then insert array of this size as a default value.
-
-    if (path.empty())
+    if (path.empty() || array.empty())
         return false;
 
-    StringRef nested_key{path[0].key};
+    /// Last element is not Null, because otherwise this path wouldn't exist.
+    auto nested_key = getNameOfNested(path, array.back());
+    if (nested_key.empty())
+        return false;
+
     auto * mapped = ctx.nested_sizes_by_key.find(nested_key);
     if (!mapped)
         return false;
@@ -253,7 +256,18 @@ StringRef JSONDataParser<ParserImpl>::getNameOfNested(const PathInData::Parts & 
     if (value.getType() != Field::Types::Array || path.empty())
         return {};
 
-    return StringRef{path[0].key};
+    /// Find first key that is marked as nested,
+    /// because we may have tuple of Nested and there could be
+    /// several arrays with the same prefix, but with independent sizes.
+    /// Consider we have array element with type `k2 Tuple(k3 Nested(...), k5 Nested(...))`
+    /// Then subcolumns `k2.k3` and `k2.k5` may have indepented sizes and we should extract
+    /// `k3` and `k5` keys instead of `k2`.
+
+    for (const auto & part : path)
+        if (part.is_nested)
+            return StringRef{part.key};
+
+    return {};
 }
 
 #if USE_SIMDJSON

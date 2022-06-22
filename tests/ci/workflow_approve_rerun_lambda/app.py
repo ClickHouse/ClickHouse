@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
-import json
-import time
-import fnmatch
 from collections import namedtuple
-import jwt
+import fnmatch
+import json
+import os
+import time
 
+import jwt
 import requests  # type: ignore
 import boto3  # type: ignore
 
-API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
+API_URL = os.getenv("API_URL", "https://api.github.com/repos/ClickHouse/ClickHouse")
 
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
@@ -139,7 +140,10 @@ def get_installation_id(jwt_token):
     response = requests.get("https://api.github.com/app/installations", headers=headers)
     response.raise_for_status()
     data = response.json()
-    return data[0]["id"]
+    for installation in data:
+        if installation["account"]["login"] == "ClickHouse":
+            installation_id = installation["id"]
+    return installation_id
 
 
 def get_access_token(jwt_token, installation_id):

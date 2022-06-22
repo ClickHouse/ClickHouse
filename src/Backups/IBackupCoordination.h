@@ -11,6 +11,40 @@ namespace DB
 class IBackupCoordination
 {
 public:
+    virtual ~IBackupCoordination() = default;
+
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    virtual void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) = 0;
+
+    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
+    virtual void syncStageError(const String & current_host, const String & error_message) = 0;
+
+    struct PartNameAndChecksum
+    {
+        String part_name;
+        UInt128 checksum;
+    };
+
+    /// Adds part names which a specified replica of a replicated table is going to put to the backup.
+    /// Multiple replicas of the replicated table call this function and then the added part names can be returned by call of the function
+    /// getReplicatedPartNames().
+    /// Checksums are used only to control that parts under the same names on different replicas are the same.
+    virtual void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
+                                        const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
+
+    /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
+    /// This is the same list as it was added by call of the function addReplicatedPartNames() but without duplications and without
+    /// parts covered by another parts.
+    virtual Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const = 0;
+
+    /// Adds a data path in backup for a replicated table.
+    /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
+    /// getReplicatedDataPaths().
+    virtual void addReplicatedDataPath(const String & table_zk_path, const String & data_path) = 0;
+
+    /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
+    virtual Strings getReplicatedDataPaths(const String & table_zk_path) const = 0;
+
     struct FileInfo
     {
         String file_name;
@@ -32,8 +66,6 @@ public:
         UInt64 pos_in_archive = static_cast<UInt64>(-1);
     };
 
-    virtual ~IBackupCoordination() = default;
-
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
     virtual void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) = 0;
@@ -48,7 +80,8 @@ public:
     virtual void updateFileInfo(const FileInfo & file_info) = 0;
 
     virtual std::vector<FileInfo> getAllFileInfos() const = 0;
-    virtual Strings listFiles(const String & prefix, const String & terminator) const = 0;
+    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
+    virtual bool hasFiles(const String & directory) const = 0;
 
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
 

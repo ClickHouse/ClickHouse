@@ -21,19 +21,19 @@ public:
 
     FileDictionarySource(const FileDictionarySource & other);
 
-    Pipe loadAll() override;
+    QueryPipeline loadAll() override;
 
-    Pipe loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
     }
 
-    Pipe loadIds(const std::vector<UInt64> & /*ids*/) override
+    QueryPipeline loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
     }
 
-    Pipe loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    QueryPipeline loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }

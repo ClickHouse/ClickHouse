@@ -8,8 +8,7 @@ Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+        ReadFromMergeTree (default.test_order_by)
 SELECT
     timestamp,
     key
@@ -20,8 +19,7 @@ Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting
       Expression (Before ORDER BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+        ReadFromMergeTree (default.test_order_by)
 SELECT
     timestamp,
     key
@@ -34,8 +32,7 @@ Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting
       Expression (Before ORDER BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+        ReadFromMergeTree (default.test_order_by)
 SELECT
     timestamp,
     key

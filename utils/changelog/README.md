@@ -5,17 +5,14 @@ Generate github token:
 
 Dependencies:
 ```
-sudo apt-get install git curl jq python3 python3-fuzzywuzzy 
-```
-
-Update information about tags:
-```
-git fetch --tags
+sudo apt-get update
+sudo apt-get install git python3 python3-fuzzywuzzy python3-github
+python3 changelog.py -h
 ```
 
 Usage example:
 
 ```
-export GITHUB_USER=... GITHUB_TOKEN=ghp_...
-./changelog.sh v21.5.6.6-stable v21.6.2.7-prestable
+python3 changelog.py --output=changelog-v22.4.1.2305-prestable.md --gh-user-or-token="$GITHUB_TOKEN" v21.6.2.7-prestable
+python3 changelog.py --output=changelog-v22.4.1.2305-prestable.md --gh-user-or-token="$USER" --gh-password="$PASSWORD" v21.6.2.7-prestable
 ```

@@ -261,6 +261,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && part->is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus(error));
+            storage.incrementInsertedPartsProfileEvent(part->getType());
         }
         catch (...)
         {
@@ -305,7 +306,7 @@ void ReplicatedMergeTreeSink::commitPart(
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->relative_path;
+    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
