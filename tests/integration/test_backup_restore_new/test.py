@@ -711,3 +711,55 @@ def test_system_users_async():
         instance.query("SHOW CREATE USER u1")
         == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_c = 3\n"
     )
+
+
+def test_projection():
+    create_and_fill_table(n=3)
+
+    instance.query("ALTER TABLE test.table ADD PROJECTION prjmax (SELECT MAX(x))")
+    instance.query(f"INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.projection_parts WHERE database='test' AND table='table' AND name='prjmax'"
+        )
+        == "2\n"
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name), "data/test/table/1_5_5_0/data.bin"
+        )
+    )
+
+    assert os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            "data/test/table/1_5_5_0/prjmax.proj/data.bin",
+        )
+    )
+
+    instance.query("DROP TABLE test.table")
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.projection_parts WHERE database='test' AND table='table' AND name='prjmax'"
+        )
+        == "0\n"
+    )
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
+        [[0, "0"], [1, "1"], [2, "2"], [100, "a"], [101, "b"]]
+    )
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.projection_parts WHERE database='test' AND table='table' AND name='prjmax'"
+        )
+        == "2\n"
+    )
