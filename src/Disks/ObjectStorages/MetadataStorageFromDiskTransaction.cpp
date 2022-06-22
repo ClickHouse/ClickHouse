@@ -61,7 +61,7 @@ void MetadataStorageFromDiskTransaction::commit()
             catch (Exception & ex)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-                ex.addMessage(fmt::format("While committing operation #{}", i));
+                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
                 state = MetadataFromDiskTransactionState::FAILED;
                 rollback(i);
                 throw;

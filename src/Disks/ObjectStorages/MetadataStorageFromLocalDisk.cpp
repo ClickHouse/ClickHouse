@@ -10,8 +10,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-MetadataStorageFromLocalDisk::MetadataStorageFromLocalDisk(DiskPtr disk_)
+MetadataStorageFromLocalDisk::MetadataStorageFromLocalDisk(DiskPtr disk_, ObjectStoragePtr object_storage_)
     : disk(disk_)
+    , object_storage(object_storage_)
 {
 }
 

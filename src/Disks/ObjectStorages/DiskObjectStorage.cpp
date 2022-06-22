@@ -85,7 +85,7 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
     return std::make_shared<DiskObjectStorageTransaction>(
         *object_storage,
         *metadata_storage,
-        remote_fs_root_path,
+        object_storage_root_path,
         send_metadata ? metadata_helper.get() : nullptr);
 }
 

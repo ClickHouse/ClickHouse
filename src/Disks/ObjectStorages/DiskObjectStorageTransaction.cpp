@@ -96,6 +96,12 @@ struct RemoveObjectOperation final : public IDiskObjectStorageOperation
             uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
             auto remote_objects = metadata_storage.getRemotePaths(path);
 
+            /// FIXME:!!!
+            String full_path = fs::path(metadata_storage.getPath()) / path;
+            bool is_remote = object_storage.isRemote();
+            if (!is_remote)
+                object_storage.removeCacheIfExists(full_path);
+
             tx->unlinkMetadata(path);
 
             if (hardlink_count == 0)
@@ -132,7 +138,7 @@ struct RemoveObjectOperation final : public IDiskObjectStorageOperation
         if (remove_from_cache)
         {
             for (const auto & path_to_remove : paths_to_remove)
-                object_storage.removeFromCache(path_to_remove);
+                object_storage.removeCacheIfExists(path_to_remove);
         }
 
     }
@@ -213,7 +219,7 @@ struct RemoveRecursiveOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
-        if (!keep_all_batch_data)
+        if (!keep_all_batch_data && object_storage.isRemote())
         {
             std::vector<std::string> remove_from_remote;
             for (auto && [local_path, remote_paths] : paths_to_remove)
@@ -227,7 +233,7 @@ struct RemoveRecursiveOperation final : public IDiskObjectStorageOperation
         }
 
         for (const auto & path_to_remove : path_to_remove_from_cache)
-            object_storage.removeFromCache(path_to_remove);
+            object_storage.removeCacheIfExists(path_to_remove);
     }
 };
 
@@ -273,16 +279,13 @@ struct ReplaceFileOperation final : public IDiskObjectStorageOperation
 
 struct WriteFileOperation final : public IDiskObjectStorageOperation
 {
-    std::string path;
     std::string blob_path;
 
     WriteFileOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        const std::string & path_,
         const std::string & blob_path_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
-        , path(path_)
         , blob_path(blob_path_)
     {}
 
@@ -494,7 +497,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     auto blob_path = fs::path(remote_fs_root_path) / blob_name;
 
-    operations_to_execute.emplace_back(std::make_unique<WriteFileOperation>(object_storage, metadata_storage, path, blob_path));
+    operations_to_execute.emplace_back(std::make_unique<WriteFileOperation>(object_storage, metadata_storage, blob_path));
 
     auto create_metadata_callback = [tx = shared_from_this(), this, mode, path, blob_name, autocommit] (size_t count)
     {
