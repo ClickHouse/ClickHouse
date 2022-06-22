@@ -32,7 +32,7 @@ TIMEOUT=10
 clickhouse_client_loop_timeout $TIMEOUT create_drop_grant 2> /dev/null &
 wait
 
-$CLICKHOUSE_CLIENT --user kek_02243 -q "SELECT * FROM test" 2>&1| grep -Fa "Exception: " | grep -Eo ACCESS_DENIED | uniq
+$CLICKHOUSE_CLIENT --user kek_02243 -q "SELECT * FROM test" 2>&1| grep -Fa "Exception: " | grep -Eo "Code: 497" | uniq
 
 $CLICKHOUSE_CLIENT -q "DROP ROLE IF EXISTS test_role_02243"
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02243"
