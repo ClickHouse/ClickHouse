@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 
 namespace DB
 {
@@ -15,6 +14,16 @@ enum class MetadataFromDiskTransactionState
 };
 
 std::string toString(MetadataFromDiskTransactionState state);
+
+struct IMetadataOperation
+{
+    virtual void execute() = 0;
+    virtual void undo() = 0;
+    virtual void finalize() {}
+    virtual ~IMetadataOperation() = default;
+};
+
+using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
 
 /**
  *                                                               -> MetadataStorageFromRemoteDiskTransaction
@@ -31,6 +40,7 @@ public:
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
     void commit() final;
+
 
 protected:
     void addOperation(MetadataOperationPtr && operation);
