@@ -51,6 +51,8 @@ public:
 
     SortDescription getSortDescription() const { return result_description; }
 
+    void convertToFinishSorting(SortDescription prefix_description);
+
 private:
     void updateOutputStream() override;
 

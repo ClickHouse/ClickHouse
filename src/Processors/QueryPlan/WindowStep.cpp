@@ -143,4 +143,9 @@ void WindowStep::updateOutputStream()
     window_description.checkValid();
 }
 
+const WindowDescription & WindowStep::getWindowDescription() const
+{
+    return window_description;
+}
+
 }

@@ -7,9 +7,6 @@
 namespace DB
 {
 
-struct AggregatingTransformParams;
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
-
 struct GroupingSetsParams
 {
     GroupingSetsParams() = default;

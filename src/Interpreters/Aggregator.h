@@ -890,6 +890,11 @@ class NativeWriter;
 class Aggregator final
 {
 public:
+    using AggregateColumns = std::vector<ColumnRawPtrs>;
+    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
+    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
+    using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
+
     struct Params
     {
         /// What to count.
@@ -998,17 +1003,16 @@ public:
 
         Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
+        /// Remember the columns we will work with
+        ColumnRawPtrs makeRawKeyColumns(const Block & block) const;
+        AggregateColumnsConstData makeAggregateColumnsData(const Block & block) const;
+
         /// Returns keys and aggregated for EXPLAIN query
         void explain(WriteBuffer & out, size_t indent) const;
         void explain(JSONBuilder::JSONMap & map) const;
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
-
-    using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
-    using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
@@ -1168,6 +1172,14 @@ private:
         size_t row_end,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions) const;
+    void mergeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns) const;
+
+    void mergeOnBlockImpl(Block block, AggregatedDataVariants & result, bool no_more_keys) const;
 
     void executeImpl(
         AggregatedDataVariants & result,
@@ -1214,8 +1226,12 @@ private:
         AggregatedDataVariants & data_variants,
         size_t row_begin,
         size_t row_end,
-        AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena) const;
+        AggregateFunctionInstruction * aggregate_instructions) const;
+    void mergeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
@@ -1325,24 +1341,43 @@ private:
 
     template <bool no_more_keys, typename Method, typename Table>
     void mergeStreamsImplCase(
-        Block & block,
         Arena * aggregates_pool,
         Method & method,
         Table & data,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns) const;
 
     template <typename Method, typename Table>
     void mergeStreamsImpl(
-        Block & block,
+        Block block,
         Arena * aggregates_pool,
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
         bool no_more_keys) const;
+    template <typename Method, typename Table>
+    void mergeStreamsImpl(
+        Arena * aggregates_pool,
+        Method & method,
+        Table & data,
+        AggregateDataPtr overflow_row,
+        bool no_more_keys,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns) const;
 
-    void mergeWithoutKeyStreamsImpl(
-        Block & block,
+    void mergeBlockWithoutKeyStreamsImpl(
+        Block block,
         AggregatedDataVariants & result) const;
+    void mergeWithoutKeyStreamsImpl(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     template <typename Method>
     void mergeBucketImpl(
