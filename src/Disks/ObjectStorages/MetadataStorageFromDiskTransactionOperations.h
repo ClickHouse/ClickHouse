@@ -181,7 +181,6 @@ struct WriteFileOperation final : public IMetadataOperation
     void execute() override;
 
     void undo() override;
-
 private:
     std::string path;
     IDisk & disk;
