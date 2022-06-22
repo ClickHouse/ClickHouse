@@ -49,7 +49,8 @@ public:
 
     bool isRemote() const override { return true; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan_,
         const Names & column_names_,
         const StorageSnapshotPtr & metadata_snapshot_,
         SelectQueryInfo & query_info_,
@@ -68,7 +69,6 @@ private:
     String hive_metastore_url;
     String hive_database;
     String hive_table;
-    std::shared_ptr<StorageHive> local_hive_storage;
 
     const ASTPtr partition_by_ast;
 

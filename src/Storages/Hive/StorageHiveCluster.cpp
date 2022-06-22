@@ -56,7 +56,8 @@ StorageHiveCluster::StorageHiveCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageHiveCluster::read(
+void StorageHiveCluster::read(
+    QueryPlan & query_plan_,
     const Names & column_names_,
     const StorageSnapshotPtr & metadata_snapshot_,
     SelectQueryInfo & query_info_,
@@ -130,7 +131,8 @@ Pipe StorageHiveCluster::read(
             }
         }
         metadata_snapshot_->check(column_names_);
-        return Pipe::unitePipes(std::move(pipes));
+        readFromPipe(query_plan_, Pipe::unitePipes(std::move(pipes)), column_names_, metadata_snapshot_, query_info_, context_, getName());
+        return;
     }
 
     auto files_collector_ref = HiveSourceCollectorFactory::instance().getCollector(policy_name);
@@ -156,7 +158,7 @@ Pipe StorageHiveCluster::read(
     auto local_storage_settings = std::make_unique<HiveSettings>();
     local_storage_settings->applyChanges(*storage_settings);
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    local_hive_storage = std::make_shared<StorageHive>(
+    auto local_hive_storage = std::make_shared<StorageHive>(
         hive_metastore_url,
         hive_database,
         hive_table,
@@ -170,7 +172,8 @@ Pipe StorageHiveCluster::read(
         std::make_shared<HiveSourceFilesCollectorBuilder>(files_collector_builder),
         true);
 
-    return local_hive_storage->read(column_names_, metadata_snapshot_, query_info_, context_, processed_stage_, max_block_size_, num_streams_);
+    auto pipe = local_hive_storage->read(column_names_, metadata_snapshot_, query_info_, context_, processed_stage_, max_block_size_, num_streams_);
+    readFromPipe(query_plan_, std::move(pipe), column_names_, metadata_snapshot_, query_info_, context_, getName());
 }
 
 QueryProcessingStage::Enum StorageHiveCluster::getQueryProcessingStage(
