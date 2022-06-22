@@ -322,22 +322,45 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
                     backQuote(database_name), backQuote(table_name));
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context, bool & consistency) const
 {
-    /// Backup all the tables in this database.
-    /// Here we skip inner tables of materialized views.
-    auto skip_internal_tables = [](const String & table_name) { return !table_name.starts_with(".inner_id."); };
-    return getTablesIterator(backup_entries_collector.getContext(), skip_internal_tables);
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+
+    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
+    {
+        bool ok = false;
+
+        if (auto create_table_query = tryGetCreateTableQuery(it->name(), local_context))
+        {
+            const auto & create = create_table_query->as<const ASTCreateQuery &>();
+            if (create.getTable() == it->name())
+            {
+                auto storage = it->table();
+                storage->adjustCreateQueryForBackup(create_table_query, consistency);
+                if (consistency)
+                {
+                    res.emplace_back(create_table_query, storage);
+                    ok = true;
+                }
+            }
+        }
+
+        if (!ok)
+        {
+            consistency = false;
+            return {};
+        }
+    }
+
+    return res;
 }
 
-void DatabaseWithOwnTablesBase::checkCreateTableQueryForBackup(const ASTPtr &, const BackupEntriesCollector &) const
-{
-}
-
-void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer)
+void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination>, UInt64)
 {
     /// Creates a table by executing a "CREATE TABLE" query.
-    restorer.executeCreateQuery(create_table_query);
+    InterpreterCreateQuery interpreter{create_table_query, local_context};
+    interpreter.setInternal(true);
+    interpreter.execute();
 }
 
 }

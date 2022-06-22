@@ -923,7 +923,11 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
 }
 
 
-void DatabaseReplicated::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer)
+void DatabaseReplicated::createTableRestoredFromBackup(
+    const ASTPtr & create_table_query,
+    ContextMutablePtr local_context,
+    std::shared_ptr<IRestoreCoordination> restore_coordination,
+    UInt64 timeout_ms)
 {
     /// Because of the replication multiple nodes can try to restore the same tables again and failed with "Table already exists"
     /// because of some table could be restored already on other node and then replicated to this node.
@@ -931,29 +935,25 @@ void DatabaseReplicated::createTableRestoredFromBackup(const ASTPtr & create_tab
     /// IRestoreCoordination::acquireCreatingTableInReplicatedDatabase() and then for other nodes this function returns false which means
     /// this table is already being created by some other node.
     String table_name = create_table_query->as<const ASTCreateQuery &>().getTable();
-    if (restorer.getRestoreCoordination()->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name))
+    if (restore_coordination->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name))
     {
-        restorer.executeCreateQuery(create_table_query);
+        DatabaseAtomic::createTableRestoredFromBackup(create_table_query, local_context, restore_coordination, timeout_ms);
     }
 
     /// Wait until the table is actually created no matter if it's created by the current or another node and replicated to the
     /// current node afterwards. We have to wait because `RestorerFromBackup` is going to restore data of the table then.
     /// TODO: The following code doesn't look very reliable, probably we need to rewrite it somehow.
-    auto timeout = restorer.getTimeout();
-    bool use_timeout = (timeout.count() >= 0);
+    auto timeout = std::chrono::milliseconds{timeout_ms};
     auto start_time = std::chrono::steady_clock::now();
-    while (!isTableExist(table_name, restorer.getContext()))
+    while (!isTableExist(table_name, local_context))
     {
         waitForReplicaToProcessAllEntries(50);
 
-        if (use_timeout)
-        {
-            auto elapsed = std::chrono::steady_clock::now() - start_time;
-            if (elapsed > timeout)
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
-                                "Couldn't restore table {}.{} on other node or sync it (elapsed {})",
-                                backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), to_string(elapsed));
-        }
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed > timeout)
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                            "Couldn't restore table {}.{} on other node or sync it (elapsed {})",
+                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), to_string(elapsed));
     }
 }
 

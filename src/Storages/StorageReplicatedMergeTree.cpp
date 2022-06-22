@@ -8253,44 +8253,58 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-ASTPtr StorageReplicatedMergeTree::getCreateQueryForBackup(const ContextPtr & local_context, DatabasePtr * database) const
+void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query, bool & consistency) const
 {
-    ASTPtr query = MergeTreeData::getCreateQueryForBackup(local_context, database);
+    MergeTreeData::adjustCreateQueryForBackup(create_query, consistency);
 
     /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
     /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
     /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
-    auto & create = query->as<ASTCreateQuery &>();
-    if (create.storage && create.storage->engine && (create.uuid != UUIDHelpers::Nil))
+    auto & create = create_query->as<ASTCreateQuery &>();
+    
+    if (!create.storage || !create.storage->engine)
     {
-        auto & engine = *(create.storage->engine);
-        if (auto * engine_args_ast = typeid_cast<ASTExpressionList *>(engine.arguments.get()))
-        {
-            auto & engine_args = engine_args_ast->children;
-            if (engine_args.size() >= 2)
-            {
-                auto * zookeeper_path_ast = typeid_cast<ASTLiteral *>(engine_args[0].get());
-                auto * replica_name_ast = typeid_cast<ASTLiteral *>(engine_args[1].get());
-                if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
-                    replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
-                {
-                    String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
-                    String & replica_name_arg = replica_name_ast->value.get<String>();
-                    String table_uuid_str = toString(create.uuid);
-                    if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
-                        zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
-                    const auto & config = getContext()->getConfigRef();
-                    if ((zookeeper_path_arg == getDefaultZooKeeperPath(config)) && (replica_name_arg == getDefaultReplicaName(config))
-                        && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
-                    {
-                        engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
-                    }
-                }
-            }
-        }
+        /// The CREATE query doesn't correspond to this storage.
+        consistency = false;
+        return;
     }
 
-    return query;
+    auto & engine = *(create.storage->engine);
+    if (!engine.name.starts_with("Replicated") || !engine.name.ends_with("MergeTree"))
+    {
+        /// The CREATE query doesn't correspond to this storage.
+        consistency = false;
+        return;
+    }
+
+    if (create.uuid == UUIDHelpers::Nil)
+        return;
+
+    auto * engine_args_ast = typeid_cast<ASTExpressionList *>(engine.arguments.get());
+    if (!engine_args_ast)
+        return;
+
+    auto & engine_args = engine_args_ast->children;
+    if (engine_args.size() < 2)
+        return;
+
+    auto * zookeeper_path_ast = typeid_cast<ASTLiteral *>(engine_args[0].get());
+    auto * replica_name_ast = typeid_cast<ASTLiteral *>(engine_args[1].get());
+    if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
+        replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
+    {
+        String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
+        String & replica_name_arg = replica_name_ast->value.get<String>();
+        String table_uuid_str = toString(create.uuid);
+        if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
+            zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
+        const auto & config = getContext()->getConfigRef();
+        if ((zookeeper_path_arg == getDefaultZooKeeperPath(config)) && (replica_name_arg == getDefaultReplicaName(config))
+            && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
+        {
+            engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
+        }
+    }
 }
 
 void StorageReplicatedMergeTree::backupData(
@@ -8370,7 +8384,7 @@ void StorageReplicatedMergeTree::backupData(
                 backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
         }
     };
-    backup_entries_collector.addPostCollectingTask(post_collecting_task);
+    backup_entries_collector.addPostTask(post_collecting_task);
 }
 
 void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

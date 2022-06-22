@@ -1,6 +1,5 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
-#include <Backups/BackupEntriesCollector.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/quoteString.h>
 
@@ -26,29 +25,22 @@ ASTPtr IDatabase::getCreateDatabaseQueryForBackup() const
 {
     auto query = getCreateDatabaseQuery();
 
-    /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
+    /// We don't want to see any UUIDs in backup (after RESTORE the database will have another UUID anyway).
     auto & create = query->as<ASTCreateQuery &>();
     create.uuid = UUIDHelpers::Nil;
 
     return query;
 }
 
-DatabaseTablesIteratorPtr IDatabase::getTablesIteratorForBackup(const BackupEntriesCollector &) const
-{
-    /// IDatabase doesn't own any tables.
-    return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
-}
-
-void IDatabase::checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector &) const
+std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &, bool &) const
 {
     /// Cannot restore any table because IDatabase doesn't own any tables.
     throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Database engine {} does not support backups, cannot backup table {}.{}",
-                    getEngineName(), backQuoteIfNeed(getDatabaseName()),
-                    backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
+                    "Database engine {} does not support backups, cannot backup tables in database {}",
+                    getEngineName(), backQuoteIfNeed(getDatabaseName()));
 }
 
-void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup &)
+void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr, std::shared_ptr<IRestoreCoordination>, UInt64)
 {
     /// Cannot restore any table because IDatabase doesn't own any tables.
     throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,

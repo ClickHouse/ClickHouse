@@ -102,6 +102,7 @@ RestorerFromBackup::RestorerFromBackup(
     , backup(backup_)
     , context(context_)
     , timeout(timeout_)
+    , create_table_timeout_ms(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
 {
 }
@@ -674,7 +675,7 @@ void RestorerFromBackup::createTables()
                     table_key.name.getFullName(),
                     serializeAST(*create_table_query));
 
-                database->createTableRestoredFromBackup(create_table_query, *this);
+                database->createTableRestoredFromBackup(create_table_query, context, restore_coordination, create_table_timeout_ms);
             }
 
             table_info.created = true;
@@ -689,7 +690,9 @@ void RestorerFromBackup::createTables()
 
             if (!restore_settings.allow_different_table_def)
             {
-                ASTPtr create_table_query = storage->getCreateQueryForBackup(context, nullptr);
+                ASTPtr create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
+                bool consistency = true;
+                storage->adjustCreateQueryForBackup(create_table_query, consistency);
                 ASTPtr expected_create_query = table_info.create_table_query;
                 if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
                 {
