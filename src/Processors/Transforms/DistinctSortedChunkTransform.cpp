@@ -1,4 +1,4 @@
-#include <Processors/Transforms/DistinctPrimaryKeyTransform.h>
+#include <Processors/Transforms/DistinctSortedChunkTransform.h>
 
 namespace DB
 {
@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctPrimaryKeyTransform::DistinctPrimaryKeyTransform(
+DistinctSortedChunkTransform::DistinctSortedChunkTransform(
     const Block & header_,
     const SizeLimits & output_size_limits_,
     UInt64 limit_hint_,
@@ -46,7 +46,7 @@ DistinctPrimaryKeyTransform::DistinctPrimaryKeyTransform(
     current_key.reserve(sorted_columns.size());
 }
 
-void DistinctPrimaryKeyTransform::initChunkProcessing(const Columns & input_columns)
+void DistinctSortedChunkTransform::initChunkProcessing(const Columns & input_columns)
 {
     sorted_columns.clear();
     for (size_t pos : sorted_columns_pos)
@@ -60,7 +60,7 @@ void DistinctPrimaryKeyTransform::initChunkProcessing(const Columns & input_colu
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
 }
 
-size_t DistinctPrimaryKeyTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end)
+size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end)
 {
     size_t count = 0;
     switch (data.type)
@@ -81,7 +81,7 @@ size_t DistinctPrimaryKeyTransform::ordinaryDistinctOnRange(IColumn::Filter & fi
 }
 
 template <typename Method>
-size_t DistinctPrimaryKeyTransform::buildFilterForRange(
+size_t DistinctSortedChunkTransform::buildFilterForRange(
     Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, ClearableSetVariants & variants)
 {
     typename Method::State state(other_columns, other_columns_sizes, nullptr);
@@ -100,7 +100,7 @@ size_t DistinctPrimaryKeyTransform::buildFilterForRange(
     return count;
 }
 
-void DistinctPrimaryKeyTransform::setCurrentKey(const size_t row_pos)
+void DistinctSortedChunkTransform::setCurrentKey(const size_t row_pos)
 {
     current_key.clear();
     for (auto const & col : sorted_columns)
@@ -110,7 +110,7 @@ void DistinctPrimaryKeyTransform::setCurrentKey(const size_t row_pos)
     }
 }
 
-bool DistinctPrimaryKeyTransform::isCurrentKey(const size_t row_pos)
+bool DistinctSortedChunkTransform::isCurrentKey(const size_t row_pos)
 {
     for (size_t i = 0; i < sorted_columns.size(); ++i)
     {
@@ -121,7 +121,7 @@ bool DistinctPrimaryKeyTransform::isCurrentKey(const size_t row_pos)
     return true;
 }
 
-size_t DistinctPrimaryKeyTransform::getRangeEnd(size_t range_begin, size_t range_end)
+size_t DistinctSortedChunkTransform::getRangeEnd(size_t range_begin, size_t range_end)
 {
     size_t low = range_begin;
     size_t high = range_end - 1;
@@ -139,7 +139,7 @@ size_t DistinctPrimaryKeyTransform::getRangeEnd(size_t range_begin, size_t range
     return range_end;
 }
 
-size_t DistinctPrimaryKeyTransform::getStartPosition(const size_t chunk_rows)
+size_t DistinctSortedChunkTransform::getStartPosition(const size_t chunk_rows)
 {
     if (!current_key.empty()) // current_key is empty on very first transform() call
     {
@@ -149,7 +149,7 @@ size_t DistinctPrimaryKeyTransform::getStartPosition(const size_t chunk_rows)
     return 0;
 }
 
-void DistinctPrimaryKeyTransform::transform(Chunk & chunk)
+void DistinctSortedChunkTransform::transform(Chunk & chunk)
 {
     const size_t chunk_rows = chunk.getNumRows();
     size_t output_rows = 0;

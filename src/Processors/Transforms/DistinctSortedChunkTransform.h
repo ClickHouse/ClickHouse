@@ -10,21 +10,19 @@ namespace DB
 {
 
 ///
-/// DISTINCT optimization for MergeTree family engines
-/// Applied in case of DISTINCT is done over primary key(prefix) columns
-/// It leverages their sorting property
+/// DISTINCT optimization for sorted chunks
 ///
-class DistinctPrimaryKeyTransform : public ISimpleTransform
+class DistinctSortedChunkTransform : public ISimpleTransform
 {
 public:
-    DistinctPrimaryKeyTransform(
+    DistinctSortedChunkTransform(
         const Block & header_,
         const SizeLimits & output_size_limits_,
         UInt64 limit_hint_,
         const SortDescription & sorted_columns_descr_,
         const Names & source_columns_);
 
-    String getName() const override { return "DistinctPrimaryKeyTransform"; }
+    String getName() const override { return "DistinctSortedChunkTransform"; }
 
 protected:
     void transform(Chunk & chunk) override;
