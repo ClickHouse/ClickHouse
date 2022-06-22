@@ -187,7 +187,11 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
 
 
 def buildx_args(bucket_prefix: str, arch: str) -> List[str]:
-    args = [f"--platform=linux/{arch}", f"--label=build-url={GITHUB_RUN_URL}"]
+    args = [
+        f"--platform=linux/{arch}",
+        f"--label=build-url={GITHUB_RUN_URL}",
+        f"--label=com.clickhouse.build.githash={git.sha}",
+    ]
     if bucket_prefix:
         url = p.join(bucket_prefix, BUCKETS[arch])  # to prevent a double //
         args.append(f"--build-arg=REPOSITORY='{url}'")

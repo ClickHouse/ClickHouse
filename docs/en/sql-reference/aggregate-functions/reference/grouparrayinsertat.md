@@ -2,7 +2,7 @@
 sidebar_position: 112
 ---
 
-# groupArrayInsertAt {#grouparrayinsertat}
+# groupArrayInsertAt
 
 Inserts a value into the array at the specified position.
 

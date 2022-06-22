@@ -34,14 +34,19 @@ namespace ErrorCodes
 
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
-            return parseUserName(pos, expected, new_name);
+            String maybe_new_name;
+            if (!parseUserName(pos, expected, maybe_new_name))
+                return false;
+
+            new_name.emplace(std::move(maybe_new_name));
+            return true;
         });
     }
 
@@ -431,7 +436,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
     auto names_ref = names->names;
 
-    String new_name;
+    std::optional<String> new_name;
     std::optional<AuthenticationData> auth_data;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -487,7 +492,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            if (new_name.empty() && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
+            String maybe_new_name;
+            if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
                 continue;
 
             if (parseHosts(pos, expected, "ADD", new_hosts))

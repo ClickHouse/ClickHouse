@@ -119,7 +119,11 @@ TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && r
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
+    {
+        auto table = getTable();
+        table->flushAndShutdown();
         temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+    }
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -199,6 +203,12 @@ void DatabaseCatalog::shutdownImpl()
     databases.clear();
     db_uuid_map.clear();
     view_dependencies.clear();
+}
+
+bool DatabaseCatalog::isPredefinedDatabaseName(const std::string_view & database_name)
+{
+    return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
+        || database_name == INFORMATION_SCHEMA_UPPERCASE;
 }
 
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const

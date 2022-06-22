@@ -3,19 +3,19 @@ sidebar_position: 19
 sidebar_label: gRPC Interface
 ---
 
-# gRPC Interface {#grpc-interface}
+# gRPC Interface
 
 ## Introduction {#grpc-interface-introduction}
 
 ClickHouse supports [gRPC](https://grpc.io/) interface. It is an open source remote procedure call system that uses HTTP/2 and [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). The implementation of gRPC in ClickHouse supports:
 
--   SSL; 
--   authentication; 
--   sessions; 
--   compression; 
--   parallel queries through the same channel; 
--   cancellation of queries; 
--   getting progress and logs; 
+-   SSL;
+-   authentication;
+-   sessions;
+-   compression;
+-   parallel queries through the same channel;
+-   cancellation of queries;
+-   getting progress and logs;
 -   external tables.
 
 The specification of the interface is described in [clickhouse_grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
@@ -59,7 +59,7 @@ To use the gRPC interface set `grpc_port` in the main [server configuration](../
 ## Built-in Client {#grpc-client}
 
 You can write a client in any of the programming languages supported by gRPC using the provided [specification](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
-Or you can use a built-in Python client. It is placed in [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) in the repository. The built-in client requires [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart) Python modules. 
+Or you can use a built-in Python client. It is placed in [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) in the repository. The built-in client requires [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart) Python modules.
 
 The client supports the following arguments:
 

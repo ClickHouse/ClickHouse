@@ -294,8 +294,8 @@ void ThreadFuzzer::setup() const
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define MAKE_WRAPPER(RET, NAME, ...) \
-        extern "C" RET __##NAME(__VA_ARGS__); /* NOLINT */ \
-        extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
+        extern "C" RET __##NAME(__VA_ARGS__); \
+        extern "C" RET NAME(__VA_ARGS__) \
         { \
             injection( \
                 NAME##_before_yield_probability.load(std::memory_order_relaxed), \

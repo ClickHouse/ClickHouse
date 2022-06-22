@@ -11,7 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <IO/S3Common.h>
@@ -29,7 +29,7 @@ namespace DB
 
 class PullingPipelineExecutor;
 class StorageS3SequentialSource;
-class StorageS3Source : public SourceWithProgress, WithContext
+class StorageS3Source : public ISource, WithContext
 {
 public:
     class DisclosedGlobIterator
