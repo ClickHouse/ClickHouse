@@ -13,7 +13,7 @@ static ITransformingStep::Traits getTraits()
     {
         {
             .preserves_distinct_columns = false,
-            .returns_single_stream = true,
+            .returns_single_stream = false,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
         },
@@ -61,6 +61,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
         pipeline.addMergingAggregatedMemoryEfficientTransform(params, num_merge_threads);
     }
+
+    pipeline.resize(max_threads);
 }
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
