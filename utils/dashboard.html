@@ -201,6 +201,8 @@
 </div>
 </body>
 <script>
+    const user = '';
+    const password = '';
     const url = 'https://play.clickhouse.com/?user=play';
     const theme = 'light';
 
@@ -237,11 +239,16 @@
     ];
 
     /// Query parameters with predefined default values.
+    /// All other parameters will be automatically found in the queries.
     let params = {
         start: '2015-01-01',
         //word2: 'Coronavirus',
     };
 
+    /// uPlot objects will go here.
+    let plots = queries.map(e => null);
+
+    /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
     const query_param_regexp = /\{(\w+):[^}]+\}/g;
 
     /// Automatically parse more parameters from queires.
@@ -250,7 +257,6 @@
             const name = match[1];
             if (!params[name]) {
                 params[name] = '';
-                insertParam(name, '');
             };
         }
     }
@@ -279,7 +285,12 @@
         document.getElementById('params').appendChild(param_wrapper);
     }
 
-    function insertParams() {
+    function buildParams() {
+        let params_elem = document.getElementById('params');
+        while (params_elem.firstChild) {
+            params_elem.removeChild(params_elem.lastChild);
+        }
+
         for (let [name, value] of Object.entries(params)) {
             insertParam(name, value);
         }
@@ -293,11 +304,11 @@
     }
 
     function updateParams() {
-        [...document.getElementsByClassName('param')].forEach(e => { params[e.name] = e.value; console.log(e.name, e.value) });
+        [...document.getElementsByClassName('param')].forEach(e => { params[e.name] = e.value });
     }
 
-    insertParams();
     findParamsInQueries();
+    buildParams();
 
     function getParamsForURL() {
         let url = '';
@@ -307,7 +318,6 @@
         return url;
     }
 
-    let plots = [];
     let charts = document.getElementById('charts');
 
     function insertChart(i) {
@@ -347,6 +357,8 @@
             q.title = query_editor_title.value;
             q.query = query_editor_textarea.value;
             title_text.data = '';
+            findParamsInQuery(q.query);
+            buildParams();
             draw(i, chart, getParamsForURL(), q.query);
         }
 
@@ -397,7 +409,6 @@
         chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
         charts.appendChild(chart);
-        plots.push(null);
     };
 
     for (let i = 0; i < queries.length; ++i) {
@@ -407,6 +418,7 @@
     document.getElementById('add').addEventListener('click', e => {
         queries.push({ title: '', query: '' });
         insertChart(plots.length);
+        plots.push(null);
         resize();
     });
 
@@ -466,8 +478,23 @@
             plots[idx] = null;
         }
 
-        const response = await fetch(url + url_params, { method: "POST", body: query });
-        const data = await response.json();
+        let headers = {};
+        if (user || password) {
+            headers['Authorization'] = 'Basic ' + btoa(`${user ? user : 'default'}${password ? ':' + password : ''}`);
+        }
+
+        const response = await fetch(url + url_params, { method: "POST", body: query, headers: headers });
+        let data, error;
+        try {
+            data = await response.json();
+        } catch (e) {
+            console.log(e);
+        }
+
+        if (error) {
+            chart.querySelector('.title').firstChild.data = error;
+            return;
+        }
 
         if (!(Array.isArray(data) && data.length == 2 && Array.isArray(data[0]) && Array.isArray(data[1]) && data[0].length == data[1].length)) {
             return;
@@ -497,7 +524,7 @@
         /// Set title
         const title = queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] );
         console.log(title);
-        document.getElementsByClassName('chart')[idx].querySelector('.title').firstChild.data = title;
+        chart.querySelector('.title').firstChild.data = title;
     }
 
     async function drawAll() {
