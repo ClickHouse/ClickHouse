@@ -6,7 +6,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     FIND_CMD=gfind
 else
     FIND_CMD=find
-    GREP_CMP=grep
+    GREP_CMD=grep
 fi
 
 ROOT_PATH="$(git rev-parse --show-toplevel)"
