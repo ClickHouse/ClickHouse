@@ -54,13 +54,11 @@ private:
 class MetadataStorageFromLocalDiskTransaction final : public MetadataStorageFromDiskTransaction
 {
 private:
-    const MetadataStorageFromLocalDisk & metadata_storage_for_local;
     DiskPtr disk;
 
 public:
     explicit MetadataStorageFromLocalDiskTransaction(const MetadataStorageFromLocalDisk & metadata_storage_, DiskPtr disk_)
         : MetadataStorageFromDiskTransaction(metadata_storage_)
-        , metadata_storage_for_local(metadata_storage_)
         , disk(disk_)
     {}
 
