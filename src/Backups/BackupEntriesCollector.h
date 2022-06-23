@@ -120,6 +120,7 @@ private:
     {
         DatabasePtr database;
         ASTPtr create_database_query;
+        String metadata_path_in_backup;
 
         struct TableParams
         {
@@ -139,6 +140,7 @@ private:
         StoragePtr storage;
         TableLockHolder table_lock;
         ASTPtr create_table_query;
+        String metadata_path_in_backup;
         std::filesystem::path data_path_in_backup;
         std::optional<ASTs> partitions;
     };

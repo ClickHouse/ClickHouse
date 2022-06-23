@@ -48,15 +48,14 @@ public:
     std::shared_ptr<IRestoreCoordination> getRestoreCoordination() const { return restore_coordination; }
     std::chrono::seconds getTimeout() const { return timeout; }
     ContextMutablePtr getContext() const { return context; }
-    void executeCreateQuery(const ASTPtr & create_query) const;
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
     void addDataRestoreTask(DataRestoreTask && new_task);
     void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
-    /// Adds a new data path to restore access control.
-    void checkPathInBackupToRestoreAccess(const String & path);
+    /// Checks that a specified path is already registered to be used for restoring access control.
+    void checkPathInBackupIsRegisteredToRestoreAccess(const String & path);
 
     /// Reading a backup includes a few stages:
     enum class Stage
@@ -104,11 +103,14 @@ private:
     void run(bool only_check_access);
     void setStage(Stage new_stage, const String & error_message = {});
     void findRootPathsInBackup();
-    void collectDatabaseAndTableInfos();
-    void collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary_table, const std::optional<ASTs> & partitions);
-    void collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_no_database_metadata_in_backup);
-    void collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
-    void checkAccessForCollectedInfos() const;
+    
+    void findDatabasesAndTablesInBackup();
+    void findTableInBackup(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
+    void findDatabaseInBackup(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
+    void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
+    
+    void checkAccessForObjectsFoundInBackup() const;
+    
     void createDatabases();
     void createTables();
 
@@ -128,18 +130,10 @@ private:
         TableLockHolder table_lock;
     };
 
-    struct TableKey
-    {
-        QualifiedTableName name;
-        bool is_temporary = false;
-        bool operator ==(const TableKey & right) const;
-        bool operator <(const TableKey & right) const;
-    };
-
-    std::vector<TableKey> findTablesWithoutDependencies() const;
+    std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
 
     std::unordered_map<String, DatabaseInfo> database_infos;
-    std::map<TableKey, TableInfo> table_infos;
+    std::map<QualifiedTableName, TableInfo> table_infos;
     std::vector<DataRestoreTask> data_restore_tasks;
     std::shared_ptr<AccessRestoreTask> access_restore_task;
 };
