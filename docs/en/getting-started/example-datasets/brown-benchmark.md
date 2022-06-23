@@ -17,11 +17,12 @@ Unpack the data:
 xz -v -d mgbench{1..3}.csv.xz
 ```
 
-Create tables:
-```
+Create the database and tables:
+```sql
 CREATE DATABASE mgbench;
+```
 
-
+```sql
 CREATE TABLE mgbench.logs1 (
   log_time      DateTime,
   machine_name  LowCardinality(String),
@@ -47,8 +48,10 @@ CREATE TABLE mgbench.logs1 (
 )
 ENGINE = MergeTree()
 ORDER BY (machine_group, machine_name, log_time);
+```
 
 
+```sql
 CREATE TABLE mgbench.logs2 (
   log_time    DateTime,
   client_ip   IPv4,
@@ -58,8 +61,10 @@ CREATE TABLE mgbench.logs2 (
 )
 ENGINE = MergeTree()
 ORDER BY log_time;
+```
 
 
+```sql
 CREATE TABLE mgbench.logs3 (
   log_time     DateTime64,
   device_id    FixedString(15),
@@ -83,7 +88,7 @@ clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbe
 ```
 
 Run benchmark queries:
-```
+```sql
 -- Q1.1: What is the CPU/network utilization for each web server since midnight?
 
 SELECT machine_name,
@@ -101,26 +106,29 @@ FROM (
          COALESCE(cpu_user, 0.0) AS cpu,
          COALESCE(bytes_in, 0.0) AS net_in,
          COALESCE(bytes_out, 0.0) AS net_out
-  FROM logs1
+  FROM mgbench.logs1
   WHERE machine_name IN ('anansi','aragog','urd')
     AND log_time >= TIMESTAMP '2017-01-11 00:00:00'
 ) AS r
 GROUP BY machine_name;
+```
 
 
+```sql
 -- Q1.2: Which computer lab machines have been offline in the past day?
 
 SELECT machine_name,
        log_time
-FROM logs1
+FROM mgbench.logs1
 WHERE (machine_name LIKE 'cslab%' OR
        machine_name LIKE 'mslab%')
   AND load_one IS NULL
   AND log_time >= TIMESTAMP '2017-01-10 00:00:00'
 ORDER BY machine_name,
          log_time;
+```
 
-
+```sql
 -- Q1.3: What are the hourly average metrics during the past 10 days for a specific workstation?
 
 SELECT dt,
@@ -138,7 +146,7 @@ FROM (
          load_one,
          mem_free,
          swap_free
-  FROM logs1
+  FROM mgbench.logs1
   WHERE machine_name = 'babbage'
     AND load_fifteen IS NOT NULL
     AND load_five IS NOT NULL
@@ -151,13 +159,14 @@ GROUP BY dt,
          hr
 ORDER BY dt,
          hr;
+```
 
-
+```sql
 -- Q1.4: Over 1 month, how often was each server blocked on disk I/O?
 
 SELECT machine_name,
        COUNT(*) AS spikes
-FROM logs1
+FROM mgbench.logs1
 WHERE machine_group = 'Servers'
   AND cpu_wio > 0.99
   AND log_time >= TIMESTAMP '2016-12-01 00:00:00'
@@ -165,8 +174,9 @@ WHERE machine_group = 'Servers'
 GROUP BY machine_name
 ORDER BY spikes DESC
 LIMIT 10;
+```
 
-
+```sql
 -- Q1.5: Which externally reachable VMs have run low on memory?
 
 SELECT machine_name,
@@ -176,7 +186,7 @@ FROM (
   SELECT machine_name,
          CAST(log_time AS DATE) AS dt,
          mem_free
-  FROM logs1
+  FROM mgbench.logs1
   WHERE machine_group = 'DMZ'
     AND mem_free IS NOT NULL
 ) AS r
@@ -185,8 +195,9 @@ GROUP BY machine_name,
 HAVING MIN(mem_free) < 10000
 ORDER BY machine_name,
          dt;
+```
 
-
+```sql
 -- Q1.6: What is the total hourly network traffic across all file servers?
 
 SELECT dt,
@@ -199,7 +210,7 @@ FROM (
          EXTRACT(HOUR FROM log_time) AS hr,
          COALESCE(bytes_in, 0.0) / 1000000000.0 AS net_in,
          COALESCE(bytes_out, 0.0) / 1000000000.0 AS net_out
-  FROM logs1
+  FROM mgbench.logs1
   WHERE machine_name IN ('allsorts','andes','bigred','blackjack','bonbon',
       'cadbury','chiclets','cotton','crows','dove','fireball','hearts','huey',
       'lindt','milkduds','milkyway','mnm','necco','nerds','orbit','peeps',
@@ -210,28 +221,32 @@ GROUP BY dt,
          hr
 ORDER BY both_sum DESC
 LIMIT 10;
+```
 
-
+```sql
 -- Q2.1: Which requests have caused server errors within the past 2 weeks?
 
 SELECT *
-FROM logs2
+FROM mgbench.logs2
 WHERE status_code >= 500
   AND log_time >= TIMESTAMP '2012-12-18 00:00:00'
 ORDER BY log_time;
+```
 
-
+```sql
 -- Q2.2: During a specific 2-week period, was the user password file leaked?
 
 SELECT *
-FROM logs2
+FROM mgbench.logs2
 WHERE status_code >= 200
   AND status_code < 300
   AND request LIKE '%/etc/passwd%'
   AND log_time >= TIMESTAMP '2012-05-06 00:00:00'
   AND log_time < TIMESTAMP '2012-05-20 00:00:00';
+```
 
 
+```sql
 -- Q2.3: What was the average path depth for top-level requests in the past month?
 
 SELECT top_level,
@@ -242,7 +257,7 @@ FROM (
   FROM (
     SELECT POSITION(SUBSTRING(request FROM 2), '/') AS len,
            request
-    FROM logs2
+    FROM mgbench.logs2
     WHERE status_code >= 200
       AND status_code < 300
       AND log_time >= TIMESTAMP '2012-12-01 00:00:00'
@@ -254,19 +269,23 @@ WHERE top_level IN ('/about','/courses','/degrees','/events',
                     '/publications','/research','/teaching','/ugrad')
 GROUP BY top_level
 ORDER BY top_level;
+```
 
 
+```sql
 -- Q2.4: During the last 3 months, which clients have made an excessive number of requests?
 
 SELECT client_ip,
        COUNT(*) AS num_requests
-FROM logs2
+FROM mgbench.logs2
 WHERE log_time >= TIMESTAMP '2012-10-01 00:00:00'
 GROUP BY client_ip
 HAVING COUNT(*) >= 100000
 ORDER BY num_requests DESC;
+```
 
 
+```sql
 -- Q2.5: What are the daily unique visitors?
 
 SELECT dt,
@@ -274,12 +293,14 @@ SELECT dt,
 FROM (
   SELECT CAST(log_time AS DATE) AS dt,
          client_ip
-  FROM logs2
+  FROM mgbench.logs2
 ) AS r
 GROUP BY dt
 ORDER BY dt;
+```
 
 
+```sql
 -- Q2.6: What are the average and maximum data transfer rates (Gbps)?
 
 SELECT AVG(transfer) / 125000000.0 AS transfer_avg,
@@ -287,33 +308,39 @@ SELECT AVG(transfer) / 125000000.0 AS transfer_avg,
 FROM (
   SELECT log_time,
          SUM(object_size) AS transfer
-  FROM logs2
+  FROM mgbench.logs2
   GROUP BY log_time
 ) AS r;
+```
 
 
+```sql
 -- Q3.1: Did the indoor temperature reach freezing over the weekend?
 
 SELECT *
-FROM logs3
+FROM mgbench.logs3
 WHERE event_type = 'temperature'
   AND event_value <= 32.0
   AND log_time >= '2019-11-29 17:00:00.000';
+```
 
 
+```sql
 -- Q3.4: Over the past 6 months, how frequently were each door opened?
 
 SELECT device_name,
        device_floor,
        COUNT(*) AS ct
-FROM logs3
+FROM mgbench.logs3
 WHERE event_type = 'door_open'
   AND log_time >= '2019-06-01 00:00:00.000'
 GROUP BY device_name,
          device_floor
 ORDER BY ct DESC;
+```
 
 
+```sql
 -- Q3.5: Where in the building do large temperature variations occur in winter and summer?
 
 WITH temperature AS (
@@ -335,7 +362,7 @@ WITH temperature AS (
              device_type,
              device_floor,
              event_value
-      FROM logs3
+      FROM mgbench.logs3
       WHERE event_type = 'temperature'
     ) AS r
     GROUP BY dt,
@@ -357,7 +384,7 @@ SELECT DISTINCT device_name,
 FROM temperature
 WHERE dt >= DATE '2018-12-01'
   AND dt < DATE '2019-03-01'
-UNION
+UNION DISTINCT
 SELECT DISTINCT device_name,
        device_type,
        device_floor,
@@ -365,8 +392,10 @@ SELECT DISTINCT device_name,
 FROM temperature
 WHERE dt >= DATE '2019-06-01'
   AND dt < DATE '2019-09-01';
+```
 
 
+```sql
 -- Q3.6: For each device category, what are the monthly power consumption metrics?
 
 SELECT yr,
@@ -397,7 +426,7 @@ FROM (
            CASE WHEN device_name LIKE 'printer%' THEN event_value END AS printer,
            CASE WHEN device_name LIKE 'projector%' THEN event_value END AS projector,
            CASE WHEN device_name LIKE 'vending%' THEN event_value END AS vending
-    FROM logs3
+    FROM mgbench.logs3
     WHERE device_type = 'meter'
   ) AS r
   GROUP BY dt,
