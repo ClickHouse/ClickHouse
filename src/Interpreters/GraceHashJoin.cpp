@@ -335,6 +335,8 @@ GraceHashJoin::GraceHashJoin(
     LOG_TRACE(log, "Initialize {} buckets", initial_num_buckets);
 }
 
+GraceHashJoin::~GraceHashJoin() = default;
+
 bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
 {
     Block materialized = materializeBlock(block);
