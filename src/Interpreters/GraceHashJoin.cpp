@@ -320,6 +320,8 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets{context->getSettingsRef().grace_hash_join_max_buckets}
     , first_bucket{makeInMemoryJoin()}
 {
+    checkJoinKind();
+
     initial_num_buckets = roundUpToPowerOfTwoOrZero(initial_num_buckets);
     auto tmp = std::make_unique<Buckets>();
     for (size_t i = 0; i < initial_num_buckets; ++i)
@@ -328,6 +330,30 @@ GraceHashJoin::GraceHashJoin(
     }
     buckets.set(std::move(tmp));
     LOG_TRACE(log, "Initialize {} buckets", initial_num_buckets);
+}
+
+void GraceHashJoin::checkJoinKind()
+{
+    switch (table_join->kind())
+    {
+    case ASTTableJoin::Kind::Left:
+    case ASTTableJoin::Kind::Inner:
+        break;
+    default:
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only INNER & LEFT join variants");
+    }
+
+    switch (table_join->strictness())
+    {
+    case ASTTableJoin::Strictness::RightAny:
+    case ASTTableJoin::Strictness::All:
+    case ASTTableJoin::Strictness::Any:
+    case ASTTableJoin::Strictness::Semi:
+    case ASTTableJoin::Strictness::Anti:
+        break;
+    default:
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only ALL/ANY/SEMI/ANTI join strictness");
+    }
 }
 
 GraceHashJoin::~GraceHashJoin() = default;
