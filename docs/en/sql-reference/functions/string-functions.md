@@ -509,7 +509,7 @@ base58Decode(encoded[, alphabet_name])
 
 - `decoded` — [String](../../sql-reference/data-types/string.md) column or constant.
 - `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
-- `alphabet_name` — String constant. Specifies alphabet used for encoding. Possible values: `gmp`, `bitcoin`, `ripple`, `flickr`. Default: `gmp`.
+- `alphabet_name` — String constant. Specifies alphabet used for encoding. Possible values: `gmp`, `bitcoin`, `ripple`, `flickr`. Default: `bitcoin`.
 
 **Returned value**
 
