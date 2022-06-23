@@ -277,4 +277,12 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 如果 ZooKeeper 中的数据丢失或损坏，如上所述，你可以通过将数据转移到非复制表来保存数据。
 
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->
+**参考**
+
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size)
+-   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
+-   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
+-   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)
+
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->
