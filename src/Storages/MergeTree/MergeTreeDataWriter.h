@@ -54,6 +54,7 @@ public:
     struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
+        DataPartStorageBuilderPtr builder;
 
         struct Stream
         {
