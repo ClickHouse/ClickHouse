@@ -1,0 +1,1 @@
+DESCRIBE CACHE 's3disk';
