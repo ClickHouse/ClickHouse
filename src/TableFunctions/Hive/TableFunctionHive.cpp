@@ -44,10 +44,10 @@ namespace DB
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
 
         hive_metastore_url = checkAndGetLiteralArgument<String>(args[0], "hive_url");
-        hive_database = checkAndGetLiteralArgument<String>(args[0], "hive_database");
-        hive_table = checkAndGetLiteralArgument<String>(args[0], "hive_table");
-        table_structure = checkAndGetLiteralArgument<String>(args[0], "structure");
-        partition_by_def = checkAndGetLiteralArgument<String>(args[0], "partition_by_keys");
+        hive_database = checkAndGetLiteralArgument<String>(args[1], "hive_database");
+        hive_table = checkAndGetLiteralArgument<String>(args[2], "hive_table");
+        table_structure = checkAndGetLiteralArgument<String>(args[3], "structure");
+        partition_by_def = checkAndGetLiteralArgument<String>(args[4], "partition_by_keys");
 
         actual_columns = parseColumnsListFromString(table_structure, context_);
     }
