@@ -12,12 +12,12 @@ apt update
 apt install sudo python pip git
 pip3 install -r requirements.txt
 git config --global --add safe.directory /workspace
-./build.py --skip-multi-page --skip-blog --skip-docs --livereload 8080
+./build.py --livereload 8080
 ```
 
 ```
 cd ../docs/tools
-sudo apt install python-3 pip
+sudo apt install python3 pip
 pip3 install -r requirements.txt
 
 virtualenv build

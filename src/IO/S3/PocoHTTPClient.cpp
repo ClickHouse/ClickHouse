@@ -5,10 +5,13 @@
 #include "PocoHTTPClient.h"
 
 #include <utility>
+
+#include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/Stopwatch.h>
+
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
@@ -16,7 +19,6 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Common/logger_useful.h>
 #include <re2/re2.h>
 
 #include <boost/algorithm/string.hpp>
@@ -105,6 +107,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
+    , extra_headers(client_configuration.extra_headers)
 {
 }
 
@@ -206,7 +209,7 @@ void PocoHTTPClient::makeRequestInternal(
               * Effectively, `Poco::URI` chooses smaller subset of characters to encode,
               * whereas Amazon S3 and Google Cloud Storage expects another one.
               * In order to successfully execute a request, a path must be exact representation
-              * of decoded path used by `S3AuthSigner`.
+              * of decoded path used by `AWSAuthSigner`.
               * Therefore we shall encode some symbols "manually" to fit the signatures.
               */
 
@@ -243,8 +246,11 @@ void PocoHTTPClient::makeRequestInternal(
                     break;
             }
 
+            /// Headers coming from SDK are lower-cased.
             for (const auto & [header_name, header_value] : request.GetHeaders())
                 poco_request.set(header_name, header_value);
+            for (const auto & [header_name, header_value] : extra_headers)
+                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
 
             Poco::Net::HTTPResponse poco_response;
 

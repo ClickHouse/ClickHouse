@@ -8,10 +8,13 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
+#include <Storages/StorageS3Settings.h>
+
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
+
 
 namespace Aws::Http::Standard
 {
@@ -41,6 +44,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
     bool enable_s3_requests_logging;
+    HeaderCollection extra_headers;
 
     void updateSchemeAndRegion();
 
@@ -114,6 +118,7 @@ private:
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
     bool enable_s3_requests_logging;
+    const HeaderCollection extra_headers;
 };
 
 }
