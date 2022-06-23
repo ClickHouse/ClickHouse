@@ -226,6 +226,10 @@ if (TARGET OpenSSL::SSL)
     target_link_libraries(_aws_s3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
+if (APPLE) #FIXME
+    target_link_libraries(_aws_s3 PRIVATE "-framework Security")
+endif()
+
 target_link_libraries(_aws_s3 PRIVATE _aws_s3_checksums)
 
 # The library is large - avoid bloat.
