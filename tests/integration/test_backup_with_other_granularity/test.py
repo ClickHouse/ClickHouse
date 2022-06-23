@@ -202,7 +202,7 @@ def test_backup_from_old_version_config(started_cluster):
 
 def test_backup_and_alter(started_cluster):
     node4.query(
-        "CREATE DATABASE test ENGINE=Ordinary"
+        "CREATE DATABASE test ENGINE=Ordinary", settings={"allow_deprecated_database_ordinary": 1}
     )  # Different path in shadow/ with Atomic
 
     node4.query(
