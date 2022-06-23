@@ -14,8 +14,6 @@ struct S3Capabilities
     /// TODO: possibly we have to use Google SDK https://github.com/googleapis/google-cloud-cpp/tree/main/google/cloud/storage
     /// because looks like it miss a lot of features like:
     /// 1) batch delete
-    /// 2) list_v2
-    /// 3) multipart upload works differently
     bool support_batch_delete{true};
 
     /// Y.Cloud S3 implementation support proxy for connection
