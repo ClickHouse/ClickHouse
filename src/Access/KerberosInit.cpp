@@ -47,12 +47,12 @@ private:
     krb5_creds my_creds;
     krb5_keytab keytab = nullptr;
     krb5_principal defcache_princ = nullptr;
-    String fmtError(krb5_error_code code);
+    String fmtError(krb5_error_code code) const;
 };
 }
 
 
-String KerberosInit::fmtError(krb5_error_code code)
+String KerberosInit::fmtError(krb5_error_code code) const
 {
     const char *msg;
     msg = krb5_get_error_message(k5.ctx, code);
@@ -75,7 +75,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
 
     ret = krb5_init_context(&k5.ctx);
     if (ret)
-        throw Exception(fmt::format("Error while initializing Kerberos 5 library ({})", ret), ErrorCodes::KERBEROS_ERROR);
+        throw Exception(ErrorCodes::KERBEROS_ERROR, "Error while initializing Kerberos 5 library ({})", ret);
 
     if (!cache_name.empty())
     {
@@ -160,7 +160,8 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
     ret = krb5_get_renewed_creds(k5.ctx, &my_creds, k5.me, k5.out_cc, nullptr);
     if (ret)
     {
-        LOG_TRACE(log,"Renew failed ({}). Trying to get initial credentials", ret);
+        LOG_TRACE(log,"Renew failed {}", fmtError(ret));
+        LOG_TRACE(log,"Trying to get initial credentials");
         // Request KDC for an initial credentials using keytab.
         ret = krb5_get_init_creds_keytab(k5.ctx, &my_creds, k5.me, keytab, 0, nullptr, options);
         if (ret)
