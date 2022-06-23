@@ -32,6 +32,8 @@ set(thriftcpp_SOURCES
         "${LIBRARY_DIR}/src/thrift/transport/TServerSocket.cpp"
         "${LIBRARY_DIR}/src/thrift/transport/TTransportUtils.cpp"
         "${LIBRARY_DIR}/src/thrift/transport/TBufferTransports.cpp"
+        "${LIBRARY_DIR}/src/thrift/transport/SocketCommon.cpp"
+        "${LIBRARY_DIR}/src/thrift/transport/TWebSocketServer.cpp"
         "${LIBRARY_DIR}/src/thrift/server/TConnectedClient.cpp"
         "${LIBRARY_DIR}/src/thrift/server/TServerFramework.cpp"
         "${LIBRARY_DIR}/src/thrift/server/TSimpleServer.cpp"
