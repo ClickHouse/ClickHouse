@@ -13,16 +13,18 @@ using FileInfo = IBackupCoordination::FileInfo;
 BackupCoordinationLocal::BackupCoordinationLocal() = default;
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStatus(const String &, const String &)
+void BackupCoordinationLocal::setStatus(const String &, const String &, const String &)
 {
 }
 
-void BackupCoordinationLocal::setStatusAndWait(const String &, const String &, const Strings &)
+Strings BackupCoordinationLocal::setStatusAndWait(const String &, const String &, const String &, const Strings &)
 {
+    return {};
 }
 
-void BackupCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const Strings &, UInt64)
+Strings BackupCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const String &, const Strings &, UInt64)
 {
+    return {};
 }
 
 void BackupCoordinationLocal::addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)

@@ -63,13 +63,15 @@ class BackupCoordinationStatusSync
 public:
     BackupCoordinationStatusSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_);
 
-    void set(const String & current_host, const String & new_status);
-    void setAndWait(const String & current_host, const String & new_status, const Strings & other_hosts);
-    void setAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms);
+    void set(const String & current_host, const String & new_status, const String & message);
+    Strings setAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts);
+    Strings setAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms);
+
+    static constexpr const char * kErrorStatus = "error";
 
 private:
     void createRootNodes();
-    void setImpl(const String & current_host, const String & new_status, const Strings & other_hosts, const std::optional<UInt64> & timeout_ms);
+    Strings setImpl(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, const std::optional<UInt64> & timeout_ms);
 
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;

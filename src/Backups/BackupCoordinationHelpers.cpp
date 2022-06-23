@@ -258,50 +258,44 @@ void BackupCoordinationStatusSync::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path, "");
 }
 
-void BackupCoordinationStatusSync::set(const String & current_host, const String & new_status)
+void BackupCoordinationStatusSync::set(const String & current_host, const String & new_status, const String & message)
 {
-    setImpl(current_host, new_status, {}, {});
+    setImpl(current_host, new_status, message, {}, {});
 }
 
-void BackupCoordinationStatusSync::setAndWait(const String & current_host, const String & new_status, const Strings & other_hosts)
+Strings BackupCoordinationStatusSync::setAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
 {
-    setImpl(current_host, new_status, other_hosts, {});
+    return setImpl(current_host, new_status, message, all_hosts, {});
 }
 
-void BackupCoordinationStatusSync::setAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms)
+Strings BackupCoordinationStatusSync::setAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
 {
-    setImpl(current_host, new_status, other_hosts, timeout_ms);
+    return setImpl(current_host, new_status, message, all_hosts, timeout_ms);
 }
 
-void BackupCoordinationStatusSync::setImpl(const String & current_host, const String & new_status, const Strings & other_hosts, const std::optional<UInt64> & timeout_ms)
+Strings BackupCoordinationStatusSync::setImpl(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, const std::optional<UInt64> & timeout_ms)
 {
-   /// Put new status to ZooKeeper.
+    /// Put new status to ZooKeeper.
     auto zookeeper = get_zookeeper();
+    zookeeper->createIfNotExists(zookeeper_path + "/" + current_host + "|" + new_status, message);
 
-    String result_status = new_status;
-    String message;
-    std::string_view error_prefix = "error: ";
-    bool is_error_status = new_status.starts_with(error_prefix);
-    if (is_error_status)
-    {
-        message = new_status.substr(error_prefix.length());
-        result_status = "error";
-    }
+    if (all_hosts.empty() || (new_status == kErrorStatus))
+        return {};
 
-    zookeeper->createIfNotExists(zookeeper_path + "/" + current_host + "|" + result_status, message);
-
-    if (other_hosts.empty() || ((other_hosts.size() == 1) && (other_hosts.front() == current_host)) || is_error_status)
-        return;
-
+    if ((all_hosts.size() == 1) && (all_hosts.front() == current_host))
+        return {message};
+    
     /// Wait for other hosts.
 
-    /// Current stages of all hosts.
+    Strings ready_hosts_results;
+    ready_hosts_results.resize(all_hosts.size());
+
+    std::map<String, std::vector<size_t> /* index in `ready_hosts_results` */> unready_hosts;
+    for (size_t i = 0; i != all_hosts.size(); ++i)
+        unready_hosts[all_hosts[i]].push_back(i);
+
     std::optional<String> host_with_error;
     std::optional<String> error_message;
-
-    std::map<String, String> unready_hosts;
-    for (const String & host : other_hosts)
-        unready_hosts.emplace(host, "");
 
     /// Process ZooKeeper's nodes and set `all_hosts_ready` or `unready_host` or `error_message`.
     auto process_zk_nodes = [&](const Strings & zk_nodes)
@@ -316,18 +310,19 @@ void BackupCoordinationStatusSync::setImpl(const String & current_host, const St
                 throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected zk node {}", zookeeper_path + "/" + zk_node);
             String host = zk_node.substr(0, separator_pos);
             String status = zk_node.substr(separator_pos + 1);
-            if (status == "error")
+            if (status == kErrorStatus)
             {
                 host_with_error = host;
                 error_message = zookeeper->get(zookeeper_path + "/" + zk_node);
                 return;                
             }
             auto it = unready_hosts.find(host);
-            if (it != unready_hosts.end())
+            if ((it != unready_hosts.end()) && (status == new_status))
             {
-                it->second = status;
-                if (status == result_status)
-                    unready_hosts.erase(it);
+                String result = zookeeper->get(zookeeper_path + "/" + zk_node);
+                for (size_t i : it->second)
+                    ready_hosts_results[i] = result;
+                unready_hosts.erase(it);
             }
         }
     };
@@ -390,6 +385,8 @@ void BackupCoordinationStatusSync::setImpl(const String & current_host, const St
             unready_hosts.begin()->first,
             to_string(elapsed));
     }
+
+    return ready_hosts_results;
 }
 
 }

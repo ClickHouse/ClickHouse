@@ -7,16 +7,18 @@ namespace DB
 RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStatus(const String &, const String &)
+void RestoreCoordinationLocal::setStatus(const String &, const String &, const String &)
 {
 }
 
-void RestoreCoordinationLocal::setStatusAndWait(const String &, const String &, const Strings &)
+Strings RestoreCoordinationLocal::setStatusAndWait(const String &, const String &, const String &, const Strings &)
 {
+    return {};
 }
 
-void RestoreCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const Strings &, UInt64)
+Strings RestoreCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const String &, const Strings &, UInt64)
 {
+    return {};
 }
 
 bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)

@@ -1,6 +1,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupCoordination.h>
+#include <Backups/BackupCoordinationHelpers.h>
 #include <Backups/BackupUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -9,6 +10,7 @@
 #include <Storages/IStorage.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
+#include <base/sleep.h>
 #include <Common/escapeForFileName.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <filesystem>
@@ -29,23 +31,20 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Initial status.
-    constexpr const char kPreparingStatus[] = "preparing";
-
     /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
-    constexpr const char kGatheringMetadataStatus[] = "gathering metadata";
+    constexpr const char * kGatheringMetadataStatus = "gathering metadata";
 
     /// Making temporary hard links and prepare backup entries.
-    constexpr const char kExtractingDataFromTablesStatus[] = "extracting data from tables";
+    constexpr const char * kExtractingDataFromTablesStatus = "extracting data from tables";
 
     /// Running special tasks for replicated tables which can also prepare some backup entries.
-    constexpr const char kRunningPostTasksStatus[] = "running post-tasks";
+    constexpr const char * kRunningPostTasksStatus = "running post-tasks";
 
     /// Writing backup entries to the backup and removing temporary hard links.
-    constexpr const char kWritingBackupStatus[] = "writing backup";
+    constexpr const char * kWritingBackupStatus = "writing backup";
 
-    /// Prefix for error statuses.
-    constexpr const char kErrorStatus[] = "error: ";
+    /// Error status.
+    constexpr const char * kErrorStatus = BackupCoordinationStatusSync::kErrorStatus;
 
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
@@ -67,6 +66,19 @@ namespace
             str[0] = std::toupper(str[0]);
         return str;
     }
+
+    /// How long we should sleep after finding an inconsistency error.
+    std::chrono::milliseconds getSleepTimeAfterInconsistencyError(size_t pass)
+    {
+        size_t ms;
+        if (pass == 1) /* pass is 1-based */
+            ms = 0;
+        else if ((pass % 10) != 1)
+            ms = 0;
+        else
+            ms = 1000;
+        return std::chrono::milliseconds{ms};
+    }
 }
 
 
@@ -74,36 +86,37 @@ BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
-    const ContextPtr & context_,
-    std::chrono::seconds timeout_)
+    const ContextPtr & context_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
     , context(context_)
-    , timeout(timeout_)
+    , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 300000))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
-    , current_status(kPreparingStatus)
 {
 }
 
 BackupEntriesCollector::~BackupEntriesCollector() = default;
 
-BackupEntries BackupEntriesCollector::getBackupEntries()
+BackupEntries BackupEntriesCollector::run()
 {
     try
     {
-        /// getBackupEntries() must not be called multiple times.
-        if (current_status != kPreparingStatus)
+        /// run() can be called onle once.
+        if (!current_status.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
 
-        /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
-        calculateRootPathInBackup();
+        /// Find other hosts working along with us to execute this ON CLUSTER query.
+        all_hosts
+            = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
 
         /// Do renaming in the create queries according to the renaming config.
         renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
 
+        /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
+        calculateRootPathInBackup();
+
         /// Find databases and tables which we're going to put to the backup.
-        setStatus(kGatheringMetadataStatus);
         gatherMetadataAndCheckConsistency();
 
         /// Make backup entries for the definitions of the found databases.
@@ -129,7 +142,7 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
     {
         try
         {
-            setStatus(kErrorStatus + getCurrentExceptionMessage(false));
+            setStatus(kErrorStatus, getCurrentExceptionMessage(false));
         }
         catch (...)
         {
@@ -138,21 +151,34 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
     }
 }
 
-void BackupEntriesCollector::setStatus(const String & new_status)
+Strings BackupEntriesCollector::setStatus(const String & new_status, const String & message)
 {
-    bool is_error_status = new_status.starts_with(kErrorStatus);
-    if (is_error_status)
+    if (new_status == kErrorStatus)
     {
-        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), new_status);
-        backup_coordination->setStatus(backup_settings.host_id, new_status);
+        LOG_ERROR(log, "{} failed with error: {}", toUpperFirst(current_status), message);
+        backup_coordination->setStatus(backup_settings.host_id, new_status, message);
+        return {};
     }
     else
     {
         LOG_TRACE(log, "{}", toUpperFirst(new_status));
         current_status = new_status;
-        auto all_hosts
-            = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
-        backup_coordination->setStatusAndWait(backup_settings.host_id, new_status, all_hosts);
+        if (new_status.starts_with(kGatheringMetadataStatus))
+        {
+            auto now = std::chrono::steady_clock::now();
+            auto end_of_timeout = std::max(now, consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout);
+            
+            return backup_coordination->setStatusAndWaitFor(
+                backup_settings.host_id,
+                new_status,
+                message,
+                all_hosts,
+                std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - now).count());
+        }
+        else
+        {
+            return backup_coordination->setStatusAndWait(backup_settings.host_id, new_status, message, all_hosts);
+        }
     }
 }
 
@@ -173,43 +199,85 @@ void BackupEntriesCollector::calculateRootPathInBackup()
 /// Finds databases and tables which we will put to the backup.
 void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
 {
-    bool use_timeout = (timeout.count() >= 0);
-    auto start_time = std::chrono::steady_clock::now();
+    consistent_metadata_snapshot_start_time = std::chrono::steady_clock::now();
+    auto end_of_timeout = consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout;
+    setStatus(fmt::format("{} ({})", kGatheringMetadataStatus, 1));
 
     for (size_t pass = 1;; ++pass)
     {
-        try
+        String new_status = fmt::format("{} ({})", kGatheringMetadataStatus, pass + 1);
+        std::optional<Exception> inconsistency_error;
+        if (tryGatherMetadataAndCompareWithPrevious(inconsistency_error))
         {
-            /// Collect information about databases and tables specified in the BACKUP query.
-            database_infos.clear();
-            table_infos.clear();
-            gatherDatabasesMetadata();
-            gatherTablesMetadata();
-
-            /// We have to check consistency of collected information to protect from the case when some table or database is
-            /// renamed during this collecting making the collected information invalid.
-            auto comparing_error = compareWithPrevious();
-            if (!comparing_error)
-                break; /// no error, everything's fine
+            /// Gathered metadata and checked consistency, cool! But we have to check that other hosts cope with that too.
+            auto all_hosts_results = setStatus(new_status, "consistent");
             
-            if (pass >= 2) /// Two passes is minimum (we need to compare with table names with previous ones to be sure we don't miss anything).
-                throw *comparing_error;
-        }
-        catch (Exception & e)
-        {
-            if (e.code() != ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP)
-                throw;
+            std::optional<String> host_with_inconsistency;
+            std::optional<String> inconsistency_error_on_other_host;
+            for (size_t i = 0; i != all_hosts.size(); ++i)
+            {
+                if ((i < all_hosts_results.size()) && (all_hosts_results[i] != "consistent"))
+                {
+                    host_with_inconsistency = all_hosts[i];
+                    inconsistency_error_on_other_host = all_hosts_results[i];
+                    break;
+                }
+            }
 
-            auto elapsed = std::chrono::steady_clock::now() - start_time;
-            e.addMessage("Couldn't gather tables and databases to make a backup (pass #{}, elapsed {})", pass, to_string(elapsed));
-            if (use_timeout && (elapsed > timeout))
-                throw;
-            else
-                LOG_WARNING(log, "{}", e.displayText());
+            if (!host_with_inconsistency)
+                break; /// All hosts managed to gather metadata and everything is consistent, so we can go further to writing the backup.
+
+            inconsistency_error = Exception{
+                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                "Found inconsistency on host {}: {}",
+                *host_with_inconsistency,
+                *inconsistency_error_on_other_host};
         }
+        else
+        {
+            /// Failed to gather metadata or something wasn't consistent. We'll let other hosts know that and try again.
+            setStatus(new_status, inconsistency_error->displayText());
+        }
+
+        /// Two passes is minimum (we need to compare with table names with previous ones to be sure we don't miss anything).
+        if (pass >= 2)
+        {
+            if (std::chrono::steady_clock::now() > end_of_timeout)
+                inconsistency_error->rethrow();
+            else
+                LOG_WARNING(log, "{}", inconsistency_error->displayText());
+        }
+
+        auto sleep_time = getSleepTimeAfterInconsistencyError(pass);
+        if (sleep_time.count() > 0)
+            sleepForNanoseconds(std::chrono::duration_cast<std::chrono::nanoseconds>(sleep_time).count());
     }
 
     LOG_INFO(log, "Will backup {} databases and {} tables", database_infos.size(), table_infos.size());
+}
+
+bool BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(std::optional<Exception> & inconsistency_error)
+{
+    try
+    {
+        /// Collect information about databases and tables specified in the BACKUP query.
+        database_infos.clear();
+        table_infos.clear();
+        gatherDatabasesMetadata();
+        gatherTablesMetadata();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() != ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP)
+            throw;
+
+        inconsistency_error = e;
+        return false;
+    }
+
+    /// We have to check consistency of collected information to protect from the case when some table or database is
+    /// renamed during this collecting making the collected information invalid.
+    return compareWithPrevious(inconsistency_error);
 }
 
 void BackupEntriesCollector::gatherDatabasesMetadata()
@@ -465,7 +533,7 @@ void BackupEntriesCollector::lockTablesForReading()
 }
 
 /// Check consistency of collected information about databases and tables.
-std::optional<Exception> BackupEntriesCollector::compareWithPrevious()
+bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inconsistency_error)
 {
     /// We need to scan tables at least twice to be sure that we haven't missed any table which could be renamed
     /// while we were scanning.
@@ -476,60 +544,64 @@ std::optional<Exception> BackupEntriesCollector::compareWithPrevious()
 
     if (previous_database_names != database_names)
     {
-        std::optional<Exception> comparing_error;
+        bool error_message_ready = false;
         for (const auto & database_name : database_names)
         {
             if (!previous_database_names.contains(database_name))
             {
-                comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were added during scanning", backQuoteIfNeed(database_name)};
+                inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were added during scanning", backQuoteIfNeed(database_name)};
+                error_message_ready = true;
                 break;
             }
         }
-        if (!comparing_error)
+        if (!error_message_ready)
         {
             for (const auto & database_name : previous_database_names)
             {
                 if (!database_names.contains(database_name))
                 {
-                    comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were removed during scanning", backQuoteIfNeed(database_name)};
+                    inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were removed during scanning", backQuoteIfNeed(database_name)};
+                    error_message_ready = true;
                     break;
                 }
             }
         }
-        assert(comparing_error);
+        assert(error_message_ready);
         previous_database_names = std::move(database_names);
         previous_table_names = std::move(table_names);
-        return comparing_error;
+        return false;
     }
 
     if (previous_table_names != table_names)
     {
-        std::optional<Exception> comparing_error;
+        bool error_message_ready = false;
         for (const auto & table_name : table_names)
         {
             if (!previous_table_names.contains(table_name))
             {
-                comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were added during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
+                inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were added during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
+                error_message_ready = true;
                 break;
             }
         }
-        if (!comparing_error)
+        if (!error_message_ready)
         {
             for (const auto & table_name : previous_table_names)
             {
                 if (!table_names.contains(table_name))
                 {
-                    comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were removed during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
+                    inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were removed during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
+                    error_message_ready = true;
                     break;
                 }
             }
         }
-        assert(comparing_error);
+        assert(error_message_ready);
         previous_table_names = std::move(table_names);
-        return comparing_error;
+        return false;
     }
 
-    return {};
+    return true;
 }
 
 /// Make backup entries for all the definitions of all the databases found.

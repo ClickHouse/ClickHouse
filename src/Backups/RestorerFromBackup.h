@@ -26,27 +26,29 @@ public:
         const RestoreSettings & restore_settings_,
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
-        const ContextMutablePtr & context_,
-        std::chrono::seconds timeout_);
+        const ContextMutablePtr & context_);
 
     ~RestorerFromBackup();
 
-    /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
-    /// restoreMetadata() checks access rights internally so checkAccessRightsOnly() shouldn't be called first.
-    void restoreMetadata();
+    enum Mode
+    {
+        /// Restores databases and tables.
+        RESTORE,
 
-    /// Only checks access rights without restoring anything.
-    void checkAccessOnly();
+        /// Only checks access rights without restoring anything.
+        CHECK_ACCESS_ONLY
+    };
 
     using DataRestoreTask = std::function<void()>;
     using DataRestoreTasks = std::vector<DataRestoreTask>;
-    DataRestoreTasks getDataRestoreTasks();
+
+    /// Restores the metadata of databases and tables and returns tasks to restore the data of tables.
+    DataRestoreTasks run(Mode mode);
 
     BackupPtr getBackup() const { return backup; }
     const RestoreSettings & getRestoreSettings() const { return restore_settings; }
     bool isNonEmptyTableAllowed() const { return getRestoreSettings().allow_non_empty_tables; }
     std::shared_ptr<IRestoreCoordination> getRestoreCoordination() const { return restore_coordination; }
-    std::chrono::seconds getTimeout() const { return timeout; }
     ContextMutablePtr getContext() const { return context; }
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
@@ -69,15 +71,12 @@ private:
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
-    std::chrono::seconds timeout;
-    UInt64 create_table_timeout_ms;
+    std::chrono::milliseconds create_table_timeout;
     Poco::Logger * log;
 
-    String current_status;
-    std::vector<std::filesystem::path> root_paths_in_backup;
+    Strings all_hosts;
     DDLRenamingMap renaming_map;
-
-    void run(bool only_check_access);
+    std::vector<std::filesystem::path> root_paths_in_backup;
 
     void findRootPathsInBackup();
     
@@ -91,7 +90,9 @@ private:
     void createDatabases();
     void createTables();
 
-    void setStatus(const String & new_status);
+    DataRestoreTasks getDataRestoreTasks();
+
+    void setStatus(const String & new_status, const String & message = "");
 
     struct DatabaseInfo
     {
@@ -111,6 +112,7 @@ private:
 
     std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
 
+    String current_status;
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::map<QualifiedTableName, TableInfo> table_infos;
     std::vector<DataRestoreTask> data_restore_tasks;

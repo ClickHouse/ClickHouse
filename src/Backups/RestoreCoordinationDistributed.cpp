@@ -26,19 +26,19 @@ void RestoreCoordinationDistributed::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
 }
 
-void RestoreCoordinationDistributed::setStatus(const String & current_host, const String & new_status)
+void RestoreCoordinationDistributed::setStatus(const String & current_host, const String & new_status, const String & message)
 {
-    status_sync.set(current_host, new_status);
+    status_sync.set(current_host, new_status, message);
 }
 
-void RestoreCoordinationDistributed::setStatusAndWait(const String & current_host, const String & new_status, const Strings & other_hosts)
+Strings RestoreCoordinationDistributed::setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
 {
-    status_sync.setAndWait(current_host, new_status, other_hosts);
+    return status_sync.setAndWait(current_host, new_status, message, all_hosts);
 }
 
-void RestoreCoordinationDistributed::setStatusAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms)
+Strings RestoreCoordinationDistributed::setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
 {
-    status_sync.setAndWaitFor(current_host, new_status, other_hosts, timeout_ms);
+    return status_sync.setAndWaitFor(current_host, new_status, message, all_hosts, timeout_ms);
 }
 
 bool RestoreCoordinationDistributed::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)

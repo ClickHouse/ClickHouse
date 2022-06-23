@@ -1,5 +1,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/BackupCoordinationHelpers.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
@@ -39,23 +40,20 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Initial status.
-    constexpr const char kPreparingStatus[] = "preparing";
-
     /// Finding databases and tables in the backup which we're going to restore.
-    constexpr const char kFindingTablesInBackupStatus[] = "finding tables in backup";
+    constexpr const char * kFindingTablesInBackupStatus = "finding tables in backup";
 
     /// Creating databases or finding them and checking their definitions.
-    constexpr const char kCreatingDatabasesStatus[] = "creating databases";
+    constexpr const char * kCreatingDatabasesStatus = "creating databases";
 
     /// Creating tables or finding them and checking their definition.
-    constexpr const char kCreatingTablesStatus[] = "creating tables";
+    constexpr const char * kCreatingTablesStatus = "creating tables";
 
     /// Inserting restored data to tables.
-    constexpr const char kInsertingDataToTablesStatus[] = "inserting data to tables";
+    constexpr const char * kInsertingDataToTablesStatus = "inserting data to tables";
 
-    /// Prefix for error statuses.
-    constexpr const char kErrorStatus[] = "error: ";
+    /// Error status.
+    constexpr const char * kErrorStatus = BackupCoordinationStatusSync::kErrorStatus;
 
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
@@ -107,45 +105,36 @@ RestorerFromBackup::RestorerFromBackup(
     const RestoreSettings & restore_settings_,
     std::shared_ptr<IRestoreCoordination> restore_coordination_,
     const BackupPtr & backup_,
-    const ContextMutablePtr & context_,
-    std::chrono::seconds timeout_)
+    const ContextMutablePtr & context_)
     : restore_query_elements(restore_query_elements_)
     , restore_settings(restore_settings_)
     , restore_coordination(restore_coordination_)
     , backup(backup_)
     , context(context_)
-    , timeout(timeout_)
-    , create_table_timeout_ms(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
+    , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
-    , current_status(kPreparingStatus)
 {
 }
 
 RestorerFromBackup::~RestorerFromBackup() = default;
 
-void RestorerFromBackup::restoreMetadata()
-{
-    run(/* only_check_access= */ false);
-}
-
-void RestorerFromBackup::checkAccessOnly()
-{
-    run(/* only_check_access= */ true);
-}
-
-void RestorerFromBackup::run(bool only_check_access)
+RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 {
     try
     {
-        /// restoreMetadata() must not be called multiple times.
-        if (current_status != kPreparingStatus)
+        /// run() can be called onle once.
+        if (!current_status.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
 
-        /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
-        findRootPathsInBackup();
+        /// Find other hosts working along with us to execute this ON CLUSTER query.
+        all_hosts = BackupSettings::Util::filterHostIDs(
+            restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
         /// Do renaming in the create queries according to the renaming config.
         renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
+
+        /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
+        findRootPathsInBackup();
 
         /// Find all the databases and tables which we will read from the backup.
         setStatus(kFindingTablesInBackupStatus);
@@ -154,8 +143,8 @@ void RestorerFromBackup::run(bool only_check_access)
         /// Check access rights.
         checkAccessForObjectsFoundInBackup();
 
-        if (only_check_access)
-            return;
+        if (mode == Mode::CHECK_ACCESS_ONLY)
+            return {};
 
         /// Create databases using the create queries read from the backup.
         setStatus(kCreatingDatabasesStatus);
@@ -168,13 +157,14 @@ void RestorerFromBackup::run(bool only_check_access)
         /// All what's left is to insert data to tables.
         /// No more data restoring tasks are allowed after this point.
         setStatus(kInsertingDataToTablesStatus);
+        return getDataRestoreTasks();
     }
     catch (...)
     {
         try
         {
             /// Other hosts should know that we've encountered an error.
-            setStatus(kErrorStatus + getCurrentExceptionMessage(false));
+            setStatus(kErrorStatus, getCurrentExceptionMessage(false));
         }
         catch (...)
         {
@@ -183,55 +173,20 @@ void RestorerFromBackup::run(bool only_check_access)
     }
 }
 
-
-RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
+void RestorerFromBackup::setStatus(const String & new_status, const String & message)
 {
-    if (current_status != kInsertingDataToTablesStatus)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata wasn't restored");
-
-    if (data_restore_tasks.empty() && !access_restore_task)
-        return {};
-
-    LOG_TRACE(log, "Will insert data to tables");
-
-    /// Storages and table locks must exist while we're executing data restoring tasks.
-    auto storages = std::make_shared<std::vector<StoragePtr>>();
-    auto table_locks = std::make_shared<std::vector<TableLockHolder>>();
-    storages->reserve(table_infos.size());
-    table_locks->reserve(table_infos.size());
-    for (const auto & table_info : table_infos | boost::adaptors::map_values)
+    if (new_status == kErrorStatus)
     {
-        storages->push_back(table_info.storage);
-        table_locks->push_back(table_info.table_lock);
-    }
-
-    DataRestoreTasks res_tasks;
-    for (const auto & task : data_restore_tasks)
-        res_tasks.push_back([task, storages, table_locks] { task(); });
-
-    if (access_restore_task)
-        res_tasks.push_back([task = access_restore_task, access_control = &context->getAccessControl()] { task->restore(*access_control); });
-
-    return res_tasks;
-}
-
-void RestorerFromBackup::setStatus(const String & new_status)
-{
-    bool is_error_status = new_status.starts_with(kErrorStatus);
-    if (is_error_status)
-    {
-        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), new_status);
+        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), message);
         if (restore_coordination)
-            restore_coordination->setStatus(restore_settings.host_id, new_status);
+            restore_coordination->setStatus(restore_settings.host_id, new_status, message);
     }
     else
     {
         LOG_TRACE(log, "{}", toUpperFirst(new_status));
         current_status = new_status;
-        auto all_hosts
-            = BackupSettings::Util::filterHostIDs(restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
         if (restore_coordination)
-            restore_coordination->setStatusAndWait(restore_settings.host_id, new_status, all_hosts);
+            restore_coordination->setStatusAndWait(restore_settings.host_id, new_status, message, all_hosts);
     }
 }
 
@@ -677,13 +632,18 @@ void RestorerFromBackup::createTables()
                     create_table_query = create_table_query->clone();
                     create_table_query->as<ASTCreateQuery &>().if_not_exists = true;
                 }
+                
                 LOG_TRACE(
                     log,
                     "Creating {}: {}",
                     tableNameWithTypeToString(table_name.database, table_name.table, false),
                     serializeAST(*create_table_query));
 
-                database->createTableRestoredFromBackup(create_table_query, context, restore_coordination, create_table_timeout_ms);
+                database->createTableRestoredFromBackup(
+                    create_table_query,
+                    context,
+                    restore_coordination,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
             }
 
             table_info.created = true;
@@ -797,6 +757,34 @@ void RestorerFromBackup::checkPathInBackupIsRegisteredToRestoreAccess(const Stri
 {
     if (!access_restore_task || !access_restore_task->hasDataPath(path))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path to restore access was not added");
+}
+
+RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
+{
+    if (data_restore_tasks.empty() && !access_restore_task)
+        return {};
+
+    LOG_TRACE(log, "Will insert data to tables");
+
+    /// Storages and table locks must exist while we're executing data restoring tasks.
+    auto storages = std::make_shared<std::vector<StoragePtr>>();
+    auto table_locks = std::make_shared<std::vector<TableLockHolder>>();
+    storages->reserve(table_infos.size());
+    table_locks->reserve(table_infos.size());
+    for (const auto & table_info : table_infos | boost::adaptors::map_values)
+    {
+        storages->push_back(table_info.storage);
+        table_locks->push_back(table_info.table_lock);
+    }
+
+    DataRestoreTasks res_tasks;
+    for (const auto & task : data_restore_tasks)
+        res_tasks.push_back([task, storages, table_locks] { task(); });
+
+    if (access_restore_task)
+        res_tasks.push_back([task = access_restore_task, access_control = &context->getAccessControl()] { task->restore(*access_control); });
+
+    return res_tasks;
 }
 
 void RestorerFromBackup::throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine)
