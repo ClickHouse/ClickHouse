@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/executeQuery.h>
 
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
@@ -25,6 +26,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 static void executeCreateQuery(
     const String & query,
@@ -111,43 +117,33 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
         if (it->is_symlink())
             continue;
 
-        const auto current_file = it->path().filename().string();
-        if (!it->is_directory())
-        {
-            /// TODO: DETACH DATABASE PERMANENTLY ?
-            if (fs::path(current_file).extension() == ".sql")
-            {
-                String db_name = fs::path(current_file).stem();
-                if (!isSystemOrInformationSchema(db_name))
-                    databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
-            }
-
-            /// Temporary fails may be left from previous server runs.
-            if (fs::path(current_file).extension() == ".tmp")
-            {
-                LOG_WARNING(log, "Removing temporary file {}", it->path().string());
-                try
-                {
-                    fs::remove(it->path());
-                }
-                catch (...)
-                {
-                    /// It does not prevent server to startup.
-                    tryLogCurrentException(log);
-                }
-            }
-
+        if (it->is_directory())
             continue;
+
+        const auto current_file = it->path().filename().string();
+
+        /// TODO: DETACH DATABASE PERMANENTLY ?
+        if (fs::path(current_file).extension() == ".sql")
+        {
+            String db_name = fs::path(current_file).stem();
+            if (!isSystemOrInformationSchema(db_name))
+                databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
         }
 
-        /// For '.svn', '.gitignore' directory and similar.
-        if (current_file.at(0) == '.')
-            continue;
-
-        if (isSystemOrInformationSchema(current_file))
-            continue;
-
-        databases.emplace(unescapeForFileName(current_file), it->path().string());
+        /// Temporary fails may be left from previous server runs.
+        if (fs::path(current_file).extension() == ".tmp")
+        {
+            LOG_WARNING(log, "Removing temporary file {}", it->path().string());
+            try
+            {
+                fs::remove(it->path());
+            }
+            catch (...)
+            {
+                /// It does not prevent server to startup.
+                tryLogCurrentException(log);
+            }
+        }
     }
 
     /// clickhouse-local creates DatabaseMemory as default database by itself
@@ -185,10 +181,17 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 {
     String path = context->getPath() + "metadata/" + database_name;
     String metadata_file = path + ".sql";
-    if (fs::exists(fs::path(path)) || fs::exists(fs::path(metadata_file)))
+    if (fs::exists(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
         loadDatabase(context, database_name, path, true);
+    }
+    else if (fs::exists(fs::path(path)))
+    {
+        chassert(database_name == "system");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
+                                                     "Probably you are trying to upgrade from version older than 20.7. "
+                                                     "If so, you should upgrade through intermediate version.", database_name);
     }
     else
     {
@@ -198,6 +201,110 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
         database_create_query += " ENGINE=";
         database_create_query += default_engine;
         executeCreateQuery(database_create_query, context, database_name, "<no file>", true);
+    }
+}
+
+static void convertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const DatabasePtr & database)
+{
+    /// It's kind of C++ script that creates temporary table with Atomic engine,
+    /// moves all tables to it, drops old database and then renames new one to old name.
+
+    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
+
+    String name = database->getDatabaseName();
+
+    String tmp_name = fmt::format(".tmp_convert.{}.{}", name, thread_local_rng());
+
+    String name_quoted = backQuoteIfNeed(name);
+    String tmp_name_quoted = backQuoteIfNeed(tmp_name);
+
+    LOG_INFO(log, "Will convert database {} from Ordinary to Atomic", name_quoted);
+
+    String create_database_query = fmt::format("CREATE DATABASE IF NOT EXISTS {}", tmp_name_quoted);
+    auto res = executeQuery(create_database_query, context, true);
+    executeTrivialBlockIO(res, context);
+    res = {};
+    auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
+    assert(tmp_database->getEngineName() == "Atomic");
+
+    size_t num_tables = 0;
+    for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+    {
+        ++num_tables;
+        auto id = iterator->table()->getStorageID();
+        id.database_name = tmp_name;
+        iterator->table()->checkTableCanBeRenamed(id);
+    }
+
+    LOG_INFO(log, "Will move {} tables to {}", num_tables, tmp_name_quoted);
+
+    for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+    {
+        auto id = iterator->table()->getStorageID();
+        String qualified_quoted_name = id.getFullTableName();
+        id.database_name = tmp_name;
+        String tmp_qualified_quoted_name = id.getFullTableName();
+
+        String move_table_query = fmt::format("RENAME TABLE {} TO {}", qualified_quoted_name, tmp_qualified_quoted_name);
+        res = executeQuery(move_table_query, context, true);
+        executeTrivialBlockIO(res, context);
+        res = {};
+    }
+
+    LOG_INFO(log, "Moved all tables from {} to {}", name_quoted, tmp_name_quoted);
+
+    if (!database->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} is not empty after moving tables", name_quoted);
+
+    String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
+    res = executeQuery(drop_query, context, true);
+    executeTrivialBlockIO(res, context);
+    res = {};
+
+    String rename_query = fmt::format("RENAME DATABASE {} TO {}", tmp_name_quoted, name_quoted);
+    res = executeQuery(rename_query, context, true);
+    executeTrivialBlockIO(res, context);
+
+    LOG_INFO(log, "Finished database engine conversion of {}", name_quoted);
+}
+
+void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const DatabasePtr & database)
+{
+    if (database->getEngineName() != "Ordinary")
+        return;
+
+    if (context->getSettingsRef().allow_deprecated_database_ordinary)
+        return;
+
+    try
+    {
+        /// It's not quite correct to run DDL queries while database is not started up.
+        startupSystemTables();
+
+        auto local_context = Context::createCopy(context);
+        local_context->setSetting("check_table_dependencies", false);
+        convertOrdinaryDatabaseToAtomic(local_context, database);
+
+        /// Reload database just in case (and update logger name)
+        String detach_query = fmt::format("DETACH DATABASE {}", backQuoteIfNeed(DatabaseCatalog::SYSTEM_DATABASE));
+        auto res = executeQuery(detach_query, context, true);
+        executeTrivialBlockIO(res, context);
+        res = {};
+
+        loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
+        TablesLoader::Databases databases =
+        {
+            {DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::instance().getSystemDatabase()},
+        };
+        TablesLoader loader{context, databases, /* force_restore */ true, /* force_attach */ true};
+        loader.loadTables();
+
+        /// Will startup tables usual way
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While trying to convert {} to Atomic", database->getDatabaseName());
+        throw;
     }
 }
 

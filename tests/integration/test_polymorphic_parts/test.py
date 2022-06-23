@@ -495,7 +495,7 @@ def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
     with pytest.raises(Exception):
         node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=3)
 
-    node_old.restart_with_latest_version()
+    node_old.restart_with_latest_version(fix_metadata=True)
 
     node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=20)
 

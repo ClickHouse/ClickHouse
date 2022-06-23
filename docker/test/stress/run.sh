@@ -284,6 +284,11 @@ then
 
     rm -rf /var/lib/clickhouse/*
 
+    # Make BC check more funny by forcing Ordinary engine for system database
+    # New version will try to convert it to Atomic on startup
+    mkdir /var/lib/clickhouse/metadata
+    echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
+
     # Install previous release packages
     install_packages previous_release_package_folder
 
