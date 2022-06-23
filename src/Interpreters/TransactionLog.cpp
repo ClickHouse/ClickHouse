@@ -229,9 +229,8 @@ void TransactionLog::runUpdatingThread()
                 }
 
                 /// It's possible that we connected to different [Zoo]Keeper instance
-                /// so we may read a bit stale state. Run some writing request before loading log entries
-                /// to make that instance up-to-date.
-                zookeeper->set(zookeeper_path_log, "");
+                /// so we may read a bit stale state.
+                zookeeper->sync(zookeeper_path_log);
             }
 
             loadNewEntries();
