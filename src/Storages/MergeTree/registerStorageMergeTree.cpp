@@ -303,6 +303,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), getMergeTreeVerboseHelp(is_extended_storage_def));
         }
     }
+    else if (!args.attach && !args.local_context.lock()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
+                                                   "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause.");
+    }
 
     /// For Replicated.
     String zookeeper_path;
