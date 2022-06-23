@@ -30,6 +30,7 @@ SELECT * FROM t2;
 DROP DATABASE IF EXISTS test_01109_other_atomic;
 DROP DATABASE IF EXISTS test_01109_ordinary;
 CREATE DATABASE test_01109_other_atomic;
+set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test_01109_ordinary ENGINE=Ordinary;
 
 CREATE TABLE test_01109_other_atomic.t3 ENGINE=MergeTree() ORDER BY tuple()
