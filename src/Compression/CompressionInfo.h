@@ -44,7 +44,8 @@ enum class CompressionMethodByte : uint8_t
     DoubleDelta     = 0x94,
     Gorilla         = 0x95,
     AES_128_GCM_SIV = 0x96,
-    AES_256_GCM_SIV = 0x97
+    AES_256_GCM_SIV = 0x97,
+    FPC             = 0x98
 };
 
 }
