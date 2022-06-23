@@ -61,36 +61,19 @@ namespace ErrorCodes
 
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
-    bool created = false;
+    /// Creates store/xxx/ for Atomic
+    fs::create_directories(fs::path(metadata_path).parent_path());
 
-    try
-    {
-        /// Creates store/xxx/ for Atomic
-        fs::create_directories(fs::path(metadata_path).parent_path());
+    DatabasePtr impl = getImpl(create, metadata_path, context);
 
-        /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
-        /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
-        /// So we should remove metadata directory if database creation failed.
-        /// TODO remove this code
-        created = fs::create_directory(metadata_path);
+    if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
+        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
-        DatabasePtr impl = getImpl(create, metadata_path, context);
+    /// Attach database metadata
+    if (impl && create.comment)
+        impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
 
-        if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
-            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
-
-        // Attach database metadata
-        if (impl && create.comment)
-            impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
-
-        return impl;
-    }
-    catch (...)
-    {
-        if (created && fs::exists(metadata_path))
-            fs::remove_all(metadata_path);
-        throw;
-    }
+    return impl;
 }
 
 template <typename ValueType>
