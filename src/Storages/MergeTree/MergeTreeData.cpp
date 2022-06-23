@@ -281,14 +281,6 @@ MergeTreeData::MergeTreeData(
     /// Creating directories, if not exist.
     for (const auto & disk : getDisks())
     {
-        /// TODO: implement it the main issue in DataPartsExchange (not able to send directories metadata)
-        if (supportsReplication() && settings->allow_remote_fs_zero_copy_replication
-            && disk->supportZeroCopyReplication() && metadata_.hasProjections())
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections are not supported when zero-copy replication is enabled for table. "
-                            "Currently disk '{}' supports zero copy replication", disk->getName());
-        }
-
         if (disk->isBroken())
             continue;
 

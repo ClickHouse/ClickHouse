@@ -2396,7 +2396,7 @@ class ClickHouseCluster:
                 logging.debug("Setup hive")
                 subprocess_check_call(self.base_hive_cmd + common_opts)
                 self.up_called = True
-                time.sleep(300)
+                time.sleep(30)
 
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs

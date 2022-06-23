@@ -5,6 +5,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransaction.h>
+#include "MetadataStorageFromDiskTransactionOperations.h"
 
 namespace DB
 {
