@@ -7,6 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+set -e
+
 table_engines=(ReplicatedMergeTree)
 database_engines=(Ordinary Atomic)
 use_metadata_caches=(false true)
