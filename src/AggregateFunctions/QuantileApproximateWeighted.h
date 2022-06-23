@@ -166,11 +166,11 @@ struct QuantileApproximateWeighted
         if (level > xr)
             yl = yr;
 
-        auto dy = yr - yl;
+        UnderlyingType dy = yr - yl;
         auto dx = xr - xl;
 
         dx = dx == 0 ? 1 : dx;
-        auto dydx = dy / dx;
+        UnderlyingType dydx = dy / dx;
 
         g = yl + dydx * (level - xl);
 
@@ -270,11 +270,11 @@ struct QuantileApproximateWeighted
                 yl = yr;
 
 
-            auto dy = yr - yl;
+            UnderlyingType dy = yr - yl;
             auto dx = xr - xl;
 
             dx = dx == 0 ? 1 : dx;
-            auto dydx = dy / dx;
+            UnderlyingType dydx = dy / dx;
 
             g = yl + dydx * (level - xl);
 
