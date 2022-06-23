@@ -32,7 +32,7 @@ ASTPtr IDatabase::getCreateDatabaseQueryForBackup() const
     return query;
 }
 
-std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &, bool &) const
+std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
 {
     /// Cannot restore any table because IDatabase doesn't own any tables.
     throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE,

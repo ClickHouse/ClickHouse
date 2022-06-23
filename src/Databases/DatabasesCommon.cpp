@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
@@ -322,34 +323,23 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
                     backQuote(database_name), backQuote(table_name));
 }
 
-std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context, bool & consistency) const
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
 {
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
 
     for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
     {
-        bool ok = false;
+        auto create_table_query = tryGetCreateTableQuery(it->name(), local_context);
+        if (!create_table_query)
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for table {}.{}", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
 
-        if (auto create_table_query = tryGetCreateTableQuery(it->name(), local_context))
-        {
-            const auto & create = create_table_query->as<const ASTCreateQuery &>();
-            if (create.getTable() == it->name())
-            {
-                auto storage = it->table();
-                storage->adjustCreateQueryForBackup(create_table_query, consistency);
-                if (consistency)
-                {
-                    res.emplace_back(create_table_query, storage);
-                    ok = true;
-                }
-            }
-        }
+        const auto & create = create_table_query->as<const ASTCreateQuery &>();
+        if (create.getTable() != it->name())
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for table {}.{}", backQuoteIfNeed(create.getTable()), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
 
-        if (!ok)
-        {
-            consistency = false;
-            return {};
-        }
+        auto storage = it->table();
+        storage->adjustCreateQueryForBackup(create_table_query);
+        res.emplace_back(create_table_query, storage);
     }
 
     return res;

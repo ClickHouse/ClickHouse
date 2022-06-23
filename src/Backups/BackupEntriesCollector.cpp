@@ -21,7 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COLLECT_OBJECTS_FOR_BACKUP;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
     extern const int CANNOT_BACKUP_TABLE;
     extern const int TABLE_IS_DROPPED;
     extern const int LOGICAL_ERROR;
@@ -162,37 +162,37 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
     bool use_timeout = (timeout.count() >= 0);
     auto start_time = std::chrono::steady_clock::now();
 
-    int pass = 1;
-    for (;;)
+    for (size_t pass = 1;; ++pass)
     {
-        consistency = true;
-
-        /// Collect information about databases and tables specified in the BACKUP query.
-        gatherDatabasesMetadata();
-        gatherTablesMetadata();
-
-        /// We have to check consistency of collected information to protect from the case when some table or database is
-        /// renamed during this collecting making the collected information invalid.
-        checkConsistency();
-
-        if (consistency)
-            break;
-
-        /// Two passes is absolute minimum (see `previous_table_names` & `previous_database_names`).
-        auto elapsed = std::chrono::steady_clock::now() - start_time;
-        if ((pass >= 2) && use_timeout)
+        try
         {
-            if (elapsed > timeout)
-                throw Exception(
-                    ErrorCodes::CANNOT_COLLECT_OBJECTS_FOR_BACKUP,
-                    "Couldn't collect tables and databases to make a backup (pass #{}, elapsed {})",
-                    pass,
-                    to_string(elapsed));
-        }
+            /// Collect information about databases and tables specified in the BACKUP query.
+            database_infos.clear();
+            table_infos.clear();
+            gatherDatabasesMetadata();
+            gatherTablesMetadata();
 
-        if (pass >= 2)
-            LOG_WARNING(log, "Couldn't collect tables and databases to make a backup (pass #{}, elapsed {})", pass, to_string(elapsed));
-        ++pass;
+            /// We have to check consistency of collected information to protect from the case when some table or database is
+            /// renamed during this collecting making the collected information invalid.
+            auto comparing_error = compareWithPrevious();
+            if (!comparing_error)
+                break; /// no error, everything's fine
+            
+            if (pass >= 2) /// Two passes is minimum (we need to compare with table names with previous ones to be sure we don't miss anything).
+                throw *comparing_error;
+        }
+        catch (Exception & e)
+        {
+            if (e.code() != ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP)
+                throw;
+
+            auto elapsed = std::chrono::steady_clock::now() - start_time;
+            e.addMessage("Couldn't gather tables and databases to make a backup (pass #{}, elapsed {})", pass, to_string(elapsed));
+            if (use_timeout && (elapsed > timeout))
+                throw;
+            else
+                LOG_WARNING(log, "{}", e.displayText());
+        }
     }
 
     LOG_INFO(log, "Will backup {} databases and {} tables", database_infos.size(), table_infos.size());
@@ -200,8 +200,6 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
 
 void BackupEntriesCollector::gatherDatabasesMetadata()
 {
-    database_infos.clear();
-
     /// Collect information about databases and tables specified in the BACKUP query.
     for (const auto & element : backup_query_elements)
     {
@@ -264,16 +262,11 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                             /* partitions= */ {},
                             /* all_tables= */ true,
                             /* except_table_names= */ element.except_tables);
-                        if (!consistency)
-                            return;
                     }
                 }
                 break;
             }
         }
-
-        if (!consistency)
-            return;
     }
 }
 
@@ -318,20 +311,14 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         }
         catch (...)
         {
-            /// The database has been dropped recently.
-            consistency = false;
-            return;
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for database {}", database_name);
         }
         
         database_info.create_database_query = create_database_query;
         const auto & create = create_database_query->as<const ASTCreateQuery &>();
 
         if (create.getDatabase() != database_name)
-        {
-            /// The database has been renamed recently.
-            consistency = false;
-            return;
-        }
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for database {}", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(database_name));
     }
 
     if (table_name)
@@ -358,9 +345,6 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
 void BackupEntriesCollector::gatherTablesMetadata()
 {
-    if (!consistency)
-        return;
-
     table_infos.clear();
     for (const auto & [database_name, database_info] : database_infos)
     {
@@ -382,12 +366,8 @@ void BackupEntriesCollector::gatherTablesMetadata()
             return false;
         };
 
-        auto db_tables = database->getTablesForBackup(filter_by_table_name, context, consistency);
+        auto db_tables = database->getTablesForBackup(filter_by_table_name, context);
 
-        if (!consistency)
-            return;
-
-        /// Check that all tables were found.
         std::unordered_set<String> found_table_names;
         for (const auto & db_table : db_tables)
         {
@@ -395,13 +375,14 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             found_table_names.emplace(create.getTable());
 
-            if ((is_temporary_database && !create.temporary) || (!is_temporary_database && (create.getDatabase() != database_name)))
-            {
-                consistency = false;
-                return;
-            }
+            if (is_temporary_database && !create.temporary)
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a non-temporary create query for {}", tableNameWithTypeToString(database_name, create.getTable(), false));
+            
+            if (!is_temporary_database && (create.getDatabase() != database_name))
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected database name {} for {}", backQuoteIfNeed(create.getDatabase()), tableNameWithTypeToString(database_name, create.getTable(), false));
         }
 
+        /// Check that all tables were found.
         for (const auto & [table_name, table_info] : database_info.tables)
         {
             if (table_info.throw_if_table_not_found && !found_table_names.contains(table_name))
@@ -443,10 +424,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
 
 void BackupEntriesCollector::lockTablesForReading()
 {
-    if (!consistency)
-        return;
-
-    for (auto & table_info : table_infos | boost::adaptors::map_values)
+    for (auto & [table_name, table_info] : table_infos)
     {
         auto storage = table_info.storage;
         TableLockHolder table_lock;
@@ -460,19 +438,15 @@ void BackupEntriesCollector::lockTablesForReading()
             {
                 if (e.code() != ErrorCodes::TABLE_IS_DROPPED)
                     throw;
-                consistency = false;
-                return;
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} is dropped", tableNameWithTypeToString(table_name.database, table_name.table, true));
             }
         }
     }
 }
 
-/// Check for consistency of collected information about databases and tables.
-void BackupEntriesCollector::checkConsistency()
+/// Check consistency of collected information about databases and tables.
+std::optional<Exception> BackupEntriesCollector::compareWithPrevious()
 {
-    if (!consistency)
-        return; /// Already inconsistent, no more checks necessary
-
     /// We need to scan tables at least twice to be sure that we haven't missed any table which could be renamed
     /// while we were scanning.
     std::set<String> database_names;
@@ -480,12 +454,62 @@ void BackupEntriesCollector::checkConsistency()
     boost::range::copy(database_infos | boost::adaptors::map_keys, std::inserter(database_names, database_names.end()));
     boost::range::copy(table_infos | boost::adaptors::map_keys, std::inserter(table_names, table_names.end()));
 
-    if ((previous_database_names != database_names) || (previous_table_names != table_names))
+    if (previous_database_names != database_names)
     {
+        std::optional<Exception> comparing_error;
+        for (const auto & database_name : database_names)
+        {
+            if (!previous_database_names.contains(database_name))
+            {
+                comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were added during scanning", backQuoteIfNeed(database_name)};
+                break;
+            }
+        }
+        if (!comparing_error)
+        {
+            for (const auto & database_name : previous_database_names)
+            {
+                if (!database_names.contains(database_name))
+                {
+                    comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were removed during scanning", backQuoteIfNeed(database_name)};
+                    break;
+                }
+            }
+        }
+        assert(comparing_error);
         previous_database_names = std::move(database_names);
         previous_table_names = std::move(table_names);
-        consistency = false;
+        return comparing_error;
     }
+
+    if (previous_table_names != table_names)
+    {
+        std::optional<Exception> comparing_error;
+        for (const auto & table_name : table_names)
+        {
+            if (!previous_table_names.contains(table_name))
+            {
+                comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were added during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
+                break;
+            }
+        }
+        if (!comparing_error)
+        {
+            for (const auto & table_name : previous_table_names)
+            {
+                if (!table_names.contains(table_name))
+                {
+                    comparing_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were removed during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
+                    break;
+                }
+            }
+        }
+        assert(comparing_error);
+        previous_table_names = std::move(table_names);
+        return comparing_error;
+    }
+
+    return {};
 }
 
 /// Make backup entries for all the definitions of all the databases found.

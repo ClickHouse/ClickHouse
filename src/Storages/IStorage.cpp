@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -248,7 +249,7 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query, bool &) const
+void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
     create_query = create_query->clone();
 
@@ -260,6 +261,13 @@ void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query, bool &) const
     /// If this is a definition of a system table we'll remove columns and comment because they're reduntant for backups.
     if (isSystemStorage())
     {
+        if (!create.storage || !create.storage->engine)
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query without table engine for a system table {}", getStorageID().getFullTableName());
+
+        auto & engine = *(create.storage->engine);
+        if (!engine.name.starts_with("System"))
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with an unexpected table engine {} for a system table {}", engine.name, getStorageID().getFullTableName());
+
         create.reset(create.columns_list);
         create.reset(create.comment);
     }
