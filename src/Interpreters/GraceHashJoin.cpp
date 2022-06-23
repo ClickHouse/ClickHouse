@@ -227,13 +227,10 @@ public:
     {
     }
 
-    void addRightBlock(const Block & block) { return addBlockImpl(block, right_file_mutex, right_file); }
-
     void addLeftBlock(const Block & block) { return addBlockImpl(block, left_file_mutex, left_file); }
-
-    bool tryAddRightBlock(const Block & block) { return tryAddBlockImpl(block, right_file_mutex, right_file); }
-
+    void addRightBlock(const Block & block) { return addBlockImpl(block, right_file_mutex, right_file); }
     bool tryAddLeftBlock(const Block & block) { return tryAddBlockImpl(block, left_file_mutex, left_file); }
+    bool tryAddRightBlock(const Block & block) { return tryAddBlockImpl(block, right_file_mutex, right_file); }
 
     void startJoining()
     {
@@ -260,6 +257,8 @@ public:
     MergingBlockReader openLeftTableReader() const { return left_file.makeReader(); }
 
     MergingBlockReader openRightTableReader() const { return right_file.makeReader(); }
+
+    std::scoped_lock<std::mutex> lockJoin() { return std::scoped_lock{join_mutex}; }
 
 private:
     bool tryAddBlockImpl(const Block & block, std::mutex & mutex, FileBlockWriter & writer)
@@ -299,6 +298,7 @@ private:
     FileBlockWriter right_file;
     std::mutex left_file_mutex;
     std::mutex right_file_mutex;
+    std::mutex join_mutex; /// Protects external in-memory join
     const FileBucket * parent;
     std::atomic<State> state;
 };
@@ -307,11 +307,6 @@ class GraceHashJoin::InMemoryJoin : public HashJoin
 {
 public:
     using HashJoin::HashJoin;
-
-    std::scoped_lock<std::mutex> lock() & { return std::scoped_lock{mutex}; }
-
-private:
-    std::mutex mutex;
 };
 
 GraceHashJoin::GraceHashJoin(
@@ -599,7 +594,7 @@ void GraceHashJoin::addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_ind
 
     // Add block to the in-memory join
     {
-        auto guard = join->lock();
+        auto guard = snapshot->at(bucket_index)->lockJoin();
         join->addJoinedBlock(blocks[bucket_index], /*check_limits=*/false);
 
         // We need to rebuild block without bucket_index part in case of overflow.
