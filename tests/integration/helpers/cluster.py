@@ -3403,7 +3403,11 @@ class ClickHouseInstance:
             self.wait_start(time_left)
 
     def restart_with_latest_version(
-        self, stop_start_wait_sec=300, callback_onstop=None, signal=15, fix_metadata=False
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        fix_metadata=False,
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -3454,10 +3458,18 @@ class ClickHouseInstance:
             # Versions older than 20.7 might not create .sql file for system and default database
             # Create it manually if upgrading from older version
             self.exec_in_container(
-                ["bash", "-c", "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql"],
+                [
+                    "bash",
+                    "-c",
+                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
+                ],
             )
             self.exec_in_container(
-                ["bash", "-c", "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql"],
+                [
+                    "bash",
+                    "-c",
+                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
+                ],
             )
         self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
