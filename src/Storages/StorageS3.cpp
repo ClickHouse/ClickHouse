@@ -1151,7 +1151,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     auto file_iterator
         = createFileIterator(s3_configuration, {s3_configuration.uri.key}, is_key_with_globs, distributed_processing, ctx, nullptr, {});
 
-    ReadBufferIterator read_buffer_iterator = [&, first = false]() mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, first = true]() mutable -> std::unique_ptr<ReadBuffer>
     {
         auto key = (*file_iterator)();
 
