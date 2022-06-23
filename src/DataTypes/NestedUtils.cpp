@@ -121,7 +121,7 @@ Block flatten(const Block & block)
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
                 const ColumnTuple * column_tuple;
-                if(isColumnConst(*elem.column))
+                if (isColumnConst(*elem.column))
                     column_tuple = typeid_cast<const ColumnTuple *>(&assert_cast<const ColumnConst &>(*elem.column).getDataColumn());
                 else
                     column_tuple = typeid_cast<const ColumnTuple *>(elem.column.get());
@@ -309,12 +309,12 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
     auto new_column_name_prefix = Nested::concatenateName(column_name_prefix, nested_names.first);
     if (nested_names.second.empty())
     {
-        if (nested_table->has(new_column_name_prefix, case_insentive))
+        if (auto * column_ref = nested_table->findByName(new_column_name_prefix, case_insentive))
         {
-            ColumnWithTypeAndName column = *nested_table->findByName(new_column_name_prefix, case_insentive);
+            ColumnWithTypeAndName column = *column_ref;
             if (case_insentive)
                 column.name = original_column_name;
-            return {column};
+            return {std::move(column)};
         }
         else
         {
