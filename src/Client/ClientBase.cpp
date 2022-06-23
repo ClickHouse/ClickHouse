@@ -335,6 +335,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     const auto & settings = global_context->getSettingsRef();
     size_t max_length = 0;
 
+    auto begin = pos;
+
     if (!allow_multi_statements)
         max_length = settings.max_query_size;
 
@@ -368,8 +370,14 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
         if (!res)
         {
-            std::cerr << std::endl << message << std::endl << std::endl;
-            return nullptr;
+            if (sql_dialect != "kusto")
+                res = tryParseQuery(kql_parser, begin, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+
+            if (!res)
+            {
+                std::cerr << std::endl << message << std::endl << std::endl;
+                return nullptr;
+            }
         }
     }
     else
