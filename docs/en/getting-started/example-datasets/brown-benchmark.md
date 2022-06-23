@@ -23,6 +23,10 @@ CREATE DATABASE mgbench;
 ```
 
 ```sql
+USE mgbench;
+```
+
+```sql
 CREATE TABLE mgbench.logs1 (
   log_time      DateTime,
   machine_name  LowCardinality(String),
@@ -87,7 +91,12 @@ clickhouse-client --query "INSERT INTO mgbench.logs2 FORMAT CSVWithNames" < mgbe
 clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbench3.csv
 ```
 
-Run benchmark queries:
+## Run benchmark queries:
+
+```sql
+USE mgbench;
+```
+
 ```sql
 -- Q1.1: What is the CPU/network utilization for each web server since midnight?
 
@@ -106,7 +115,7 @@ FROM (
          COALESCE(cpu_user, 0.0) AS cpu,
          COALESCE(bytes_in, 0.0) AS net_in,
          COALESCE(bytes_out, 0.0) AS net_out
-  FROM mgbench.logs1
+  FROM logs1
   WHERE machine_name IN ('anansi','aragog','urd')
     AND log_time >= TIMESTAMP '2017-01-11 00:00:00'
 ) AS r
@@ -119,7 +128,7 @@ GROUP BY machine_name;
 
 SELECT machine_name,
        log_time
-FROM mgbench.logs1
+FROM logs1
 WHERE (machine_name LIKE 'cslab%' OR
        machine_name LIKE 'mslab%')
   AND load_one IS NULL
@@ -146,7 +155,7 @@ FROM (
          load_one,
          mem_free,
          swap_free
-  FROM mgbench.logs1
+  FROM logs1
   WHERE machine_name = 'babbage'
     AND load_fifteen IS NOT NULL
     AND load_five IS NOT NULL
@@ -166,7 +175,7 @@ ORDER BY dt,
 
 SELECT machine_name,
        COUNT(*) AS spikes
-FROM mgbench.logs1
+FROM logs1
 WHERE machine_group = 'Servers'
   AND cpu_wio > 0.99
   AND log_time >= TIMESTAMP '2016-12-01 00:00:00'
@@ -186,7 +195,7 @@ FROM (
   SELECT machine_name,
          CAST(log_time AS DATE) AS dt,
          mem_free
-  FROM mgbench.logs1
+  FROM logs1
   WHERE machine_group = 'DMZ'
     AND mem_free IS NOT NULL
 ) AS r
@@ -210,7 +219,7 @@ FROM (
          EXTRACT(HOUR FROM log_time) AS hr,
          COALESCE(bytes_in, 0.0) / 1000000000.0 AS net_in,
          COALESCE(bytes_out, 0.0) / 1000000000.0 AS net_out
-  FROM mgbench.logs1
+  FROM logs1
   WHERE machine_name IN ('allsorts','andes','bigred','blackjack','bonbon',
       'cadbury','chiclets','cotton','crows','dove','fireball','hearts','huey',
       'lindt','milkduds','milkyway','mnm','necco','nerds','orbit','peeps',
@@ -227,7 +236,7 @@ LIMIT 10;
 -- Q2.1: Which requests have caused server errors within the past 2 weeks?
 
 SELECT *
-FROM mgbench.logs2
+FROM logs2
 WHERE status_code >= 500
   AND log_time >= TIMESTAMP '2012-12-18 00:00:00'
 ORDER BY log_time;
@@ -237,7 +246,7 @@ ORDER BY log_time;
 -- Q2.2: During a specific 2-week period, was the user password file leaked?
 
 SELECT *
-FROM mgbench.logs2
+FROM logs2
 WHERE status_code >= 200
   AND status_code < 300
   AND request LIKE '%/etc/passwd%'
@@ -257,7 +266,7 @@ FROM (
   FROM (
     SELECT POSITION(SUBSTRING(request FROM 2), '/') AS len,
            request
-    FROM mgbench.logs2
+    FROM logs2
     WHERE status_code >= 200
       AND status_code < 300
       AND log_time >= TIMESTAMP '2012-12-01 00:00:00'
@@ -277,7 +286,7 @@ ORDER BY top_level;
 
 SELECT client_ip,
        COUNT(*) AS num_requests
-FROM mgbench.logs2
+FROM logs2
 WHERE log_time >= TIMESTAMP '2012-10-01 00:00:00'
 GROUP BY client_ip
 HAVING COUNT(*) >= 100000
@@ -293,7 +302,7 @@ SELECT dt,
 FROM (
   SELECT CAST(log_time AS DATE) AS dt,
          client_ip
-  FROM mgbench.logs2
+  FROM logs2
 ) AS r
 GROUP BY dt
 ORDER BY dt;
@@ -308,7 +317,7 @@ SELECT AVG(transfer) / 125000000.0 AS transfer_avg,
 FROM (
   SELECT log_time,
          SUM(object_size) AS transfer
-  FROM mgbench.logs2
+  FROM logs2
   GROUP BY log_time
 ) AS r;
 ```
@@ -318,7 +327,7 @@ FROM (
 -- Q3.1: Did the indoor temperature reach freezing over the weekend?
 
 SELECT *
-FROM mgbench.logs3
+FROM logs3
 WHERE event_type = 'temperature'
   AND event_value <= 32.0
   AND log_time >= '2019-11-29 17:00:00.000';
@@ -331,7 +340,7 @@ WHERE event_type = 'temperature'
 SELECT device_name,
        device_floor,
        COUNT(*) AS ct
-FROM mgbench.logs3
+FROM logs3
 WHERE event_type = 'door_open'
   AND log_time >= '2019-06-01 00:00:00.000'
 GROUP BY device_name,
@@ -339,6 +348,10 @@ GROUP BY device_name,
 ORDER BY ct DESC;
 ```
 
+Query 3.5 below uses a UNION.  Set the mode for combining SELECT query results. The setting is only used when shared with UNION without explicitly specifying the UNION ALL or UNION DISTINCT.
+```sql
+SET union_default_mode = 'DISTINCT'
+```
 
 ```sql
 -- Q3.5: Where in the building do large temperature variations occur in winter and summer?
@@ -362,7 +375,7 @@ WITH temperature AS (
              device_type,
              device_floor,
              event_value
-      FROM mgbench.logs3
+      FROM logs3
       WHERE event_type = 'temperature'
     ) AS r
     GROUP BY dt,
@@ -384,7 +397,7 @@ SELECT DISTINCT device_name,
 FROM temperature
 WHERE dt >= DATE '2018-12-01'
   AND dt < DATE '2019-03-01'
-UNION DISTINCT
+UNION
 SELECT DISTINCT device_name,
        device_type,
        device_floor,
@@ -426,7 +439,7 @@ FROM (
            CASE WHEN device_name LIKE 'printer%' THEN event_value END AS printer,
            CASE WHEN device_name LIKE 'projector%' THEN event_value END AS projector,
            CASE WHEN device_name LIKE 'vending%' THEN event_value END AS vending
-    FROM mgbench.logs3
+    FROM logs3
     WHERE device_type = 'meter'
   ) AS r
   GROUP BY dt,
