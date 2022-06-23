@@ -37,6 +37,8 @@ function(add_contrib cmake_folder)
 
         file(GLOB contrib_files "${base_folder}/*")
         if (NOT contrib_files)
+            # Checking out *all* submodules takes > 5 min. Therefore, the smoke build ("FastTest") in CI initializes only the set of
+            # submodules minimally needed for a build and we cannot assume here that all submodules are populated.
             message(STATUS "submodule ${base_folder} is missing or empty. to fix try run:")
             message(STATUS "    git submodule update --init")
             return()
