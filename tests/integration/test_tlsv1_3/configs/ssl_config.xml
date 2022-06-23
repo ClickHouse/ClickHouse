@@ -40,34 +40,6 @@
             <requireTLSv1_3>true</requireTLSv1_3>
             <verificationMode>relaxed</verificationMode>
         </client>
-
-<!--
-         <client>
-            <cacheSessions>false</cacheSessions>
-            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
-            <loadDefaultCAFile>true</loadDefaultCAFile>
-            <preferServerCiphers>true</preferServerCiphers>
-            <requireTLSv1>false</requireTLSv1>
-            <requireTLSv1_1>false</requireTLSv1_1>
-            <requireTLSv1_2>false</requireTLSv1_2>
-            <requireTLSv1_3>true</requireTLSv1_3>
-            <verificationMode>relaxed</verificationMode>
-        </client>
-        <server>
-            <cacheSessions>false</cacheSessions>
-            <certificateFile>/etc/clickhouse-server/ch-certificate/tls.crt</certificateFile>
-            <dhParamsFile>/etc/clickhouse-server/config.d/dhparam.pem</dhParamsFile>
-            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
-            <loadDefaultCAFile>true</loadDefaultCAFile>
-            <preferServerCiphers>true</preferServerCiphers>
-            <privateKeyFile>/etc/clickhouse-server/ch-certificate/tls.key</privateKeyFile>
-            <requireTLSv1>false</requireTLSv1>
-            <requireTLSv1_1>false</requireTLSv1_1>
-            <requireTLSv1_2>false</requireTLSv1_2>
-            <requireTLSv1_3>true</requireTLSv1_3>
-            <verificationMode>relaxed</verificationMode>
-        </server>
--->
     </openSSL>
 </clickhouse>
   
