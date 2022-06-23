@@ -1,5 +1,5 @@
-enable optimize_distinct_in_order
-distinct pipeline on empty table -> no optimization, source is ReadFromPreparedSource instead of ReadFromMergeTree
+-- enable optimize_distinct_in_order
+-- distinct pipeline on empty table -> no optimization, table is empty
 (Expression)
 ExpressionTransform
   (Distinct)
@@ -10,9 +10,9 @@ ExpressionTransform
       ExpressionTransform
         (ReadFromPreparedSource)
         NullSource 0 → 1
-insert into table to use ReadFromMergeTree source
-disable optimize_distinct_in_order
-pipeline does _not_ contain the optimization
+-- insert into table
+-- disable optimize_distinct_in_order
+-- distinct all primary key columns -> no optimization
 (Expression)
 ExpressionTransform
   (Distinct)
@@ -23,8 +23,8 @@ ExpressionTransform
       ExpressionTransform
         (ReadFromMergeTree)
         MergeTreeInOrder 0 → 1
-enable optimize_distinct_in_order
-distinct with all primary key columns -> optimization applied
+-- enable optimize_distinct_in_order
+-- distinct with all primary key columns -> pre-distinct optimization only
 (Expression)
 ExpressionTransform
   (Distinct)
@@ -34,9 +34,8 @@ ExpressionTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
-        Concat 2 → 1
-          MergeTreeInOrder × 2 0 → 1
-distinct with primary key prefix -> optimization applied
+        MergeTreeInOrder 0 → 1
+-- distinct with primary key prefix -> pre-distinct optimization only
 (Expression)
 ExpressionTransform
   (Distinct)
@@ -46,9 +45,38 @@ ExpressionTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
-        Concat 2 → 1
-          MergeTreeInOrder × 2 0 → 1
-distinct with non-primary key prefix -> no optimization
+        MergeTreeInOrder 0 → 1
+-- distinct with primary key prefix and order by on column in distinct -> pre-distinct and final distinct optimization
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctSortedTransform
+    (Sorting)
+    MergeSortingTransform
+      LimitsCheckingTransform
+        PartialSortingTransform
+          (Distinct)
+          DistinctSortedChunkTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromMergeTree)
+              MergeTreeInOrder 0 → 1
+-- distinct with primary key prefix and order by on column _not_ in distinct -> pre-distinct optimization only
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctTransform
+    (Sorting)
+    MergeSortingTransform
+      LimitsCheckingTransform
+        PartialSortingTransform
+          (Distinct)
+          DistinctSortedChunkTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromMergeTree)
+              MergeTreeInOrder 0 → 1
+-- distinct with non-primary key prefix -> no optimization
 (Expression)
 ExpressionTransform
   (Distinct)
@@ -58,15 +86,41 @@ ExpressionTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
-        Concat 2 → 1
-          MergeTreeInOrder × 2 0 → 1
-the same values in every chunk, distinct in order should skip entire chunks with the same key as previous one
-single-threaded distinct
+        MergeTreeInOrder 0 → 1
+-- distinct with non-primary key prefix and order by on column in distinct -> final distinct optimization only
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctSortedTransform
+    (Sorting)
+    MergeSortingTransform
+      LimitsCheckingTransform
+        PartialSortingTransform
+          (Distinct)
+          DistinctTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromMergeTree)
+              MergeTreeInOrder 0 → 1
+-- distinct with non-primary key prefix and order by on column _not_ in distinct -> no optimization
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctTransform
+    (Sorting)
+      (Distinct)
+      DistinctTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeInOrder 0 → 1
+-- the same values in every chunk, distinct in order should skip entire chunks with the same key as previous one
+-- single-threaded distinct
 0
-multi-threaded distinct
+-- multi-threaded distinct
 0
-skip part of chunk since it contains values from previous one
-single-threaded distinct
+-- skip part of chunk since it contains values from previous one
+-- single-threaded distinct
 0
 1
 2
@@ -77,7 +131,7 @@ single-threaded distinct
 7
 8
 9
-multi-threaded distinct
+-- multi-threaded distinct
 0
 1
 2
@@ -88,10 +142,16 @@ multi-threaded distinct
 7
 8
 9
-table with not only primary key columns
-distinct with key-prefix only
+-- create table with not only primary key columns
+-- distinct with primary key prefix only
 0
-distinct with full key
+-- distinct with full key
+0	0
+0	1
+0	2
+0	3
+0	4
+-- distinct with key prefix and non-sorted column
 0	0
 0	1
 0	2
@@ -102,9 +162,3 @@ distinct with full key
 0	7
 0	8
 0	9
-distinct with key prefix and non-sorted column
-0	0
-0	1
-0	2
-0	3
-0	4
