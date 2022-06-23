@@ -3,7 +3,6 @@
 #include <optional>
 
 #include <base/sort.h>
-#include <Backups/IRestoreTask.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -231,6 +230,12 @@ void StorageMergeTree::read(
     if (auto plan = reader.read(
         column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
         query_plan = std::move(*plan);
+
+    /// Now, copy of parts that is required for the query, stored in the processors,
+    /// while snapshot_data.parts includes all parts, even one that had been filtered out with partition pruning,
+    /// reset them to avoid holding them.
+    auto & snapshot_data = assert_cast<MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    snapshot_data.parts = {};
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
@@ -279,8 +284,9 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
 
-        auto parts_to_remove = getVisibleDataPartsVector(local_context);
-        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
+        auto data_parts_lock = lockParts();
+        auto parts_to_remove = getVisibleDataPartsVectorUnlocked(local_context, data_parts_lock);
+        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true, data_parts_lock);
 
         LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
@@ -364,7 +370,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
     if (is_mutation)
-        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->volume);
+        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->data_part_storage);
     else
     {
         IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -372,7 +378,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         for (auto & part_ptr : future_part->parts)
         {
             ttl_infos.update(part_ptr->ttl_infos);
-            max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
+            max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
         }
 
         reserved_space = storage.balancedReservation(
@@ -1470,16 +1476,17 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
+        auto data_parts_lock = lockParts();
         const auto * partition_ast = partition->as<ASTPartition>();
         if (partition_ast && partition_ast->all)
-            parts_to_remove = getVisibleDataPartsVector(local_context);
+            parts_to_remove = getVisibleDataPartsVectorUnlocked(local_context, data_parts_lock);
         else
         {
-            String partition_id = getPartitionIDFromQuery(partition, local_context);
-            parts_to_remove = getVisibleDataPartsVectorInPartition(local_context, partition_id);
+            String partition_id = getPartitionIDFromQuery(partition, local_context, &data_parts_lock);
+            parts_to_remove = getVisibleDataPartsVectorInPartition(local_context, partition_id, data_parts_lock);
         }
         /// TODO should we throw an exception if parts_to_remove is empty?
-        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
+        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true, data_parts_lock);
     }
 
     dropPartsImpl(std::move(parts_to_remove), detach);
@@ -1495,7 +1502,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->relative_path);
+            LOG_INFO(log, "Detaching {}", part->data_part_storage->getPartDirectory());
             part->makeCloneInDetached("", metadata_snapshot);
         }
     }
@@ -1738,29 +1745,23 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
     for (auto & part : data_parts)
     {
-        auto disk = part->volume->getDisk();
-        String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = fs::path(part_path) / "checksums.txt";
-        String tmp_checksums_path = fs::path(part_path) / "checksums.txt.tmp";
-        if (part->isStoredOnDisk() && !disk->exists(checksums_path))
+        String checksums_path = "checksums.txt";
+        String tmp_checksums_path = "checksums.txt.tmp";
+        if (part->isStoredOnDisk() && !part->data_part_storage->exists(checksums_path))
         {
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                auto out = disk->writeFile(tmp_checksums_path, 4096, WriteMode::Rewrite, local_context->getWriteSettings());
-                part->checksums.write(*out);
-                disk->moveFile(tmp_checksums_path, checksums_path);
+
+                part->data_part_storage->writeChecksums(part->checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
             {
-                if (disk->exists(tmp_checksums_path))
-                    disk->removeFile(tmp_checksums_path);
-
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
             }
@@ -1783,9 +1784,10 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 }
 
 
-RestoreTaskPtr StorageMergeTree::restoreData(ContextMutablePtr local_context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
+void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
-    return restoreDataParts(getPartitionIDsFromQuery(partitions, local_context), backup, data_path_in_backup, &increment);
+    for (auto part : parts)
+        renameTempPartAndAdd(part, NO_TRANSACTION_RAW, &increment);
 }
 
 
