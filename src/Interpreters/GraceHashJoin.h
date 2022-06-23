@@ -29,6 +29,8 @@ public:
     GraceHashJoin(
         ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_ = false);
 
+    ~GraceHashJoin() override;
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
