@@ -9,21 +9,13 @@ CREATE TABLE t2 (a Int16, b Nullable(Int64)) ENGINE = TinyLog;
 INSERT INTO t1 SELECT number as a, 100 + number as b FROM system.numbers LIMIT 1, 10;
 INSERT INTO t2 SELECT number - 5 as a, 200 + number - 5 as b FROM system.numbers LIMIT 1, 10;
 
-{% for join_type in ['hash', 'partial_merge', 'auto_merge', 'auto_grace_hash'] -%}
+{% for join_type in ['hash', 'partial_merge', 'auto', 'grace_hash'] -%}
 
 SELECT '=== {{ join_type }} ===';
-{% if join_type.startswith('auto') %}
-SET join_algorithm = 'auto';
-{% else %}
 SET join_algorithm = '{{ join_type }}';
-{% endif %}
 
-{% if join_type == 'auto_merge' -%}
+{% if join_type == 'auto' -%}
 SET max_bytes_in_join = 100;
-SET allow_grace_hash_join = false;
-{% elif join_type == 'auto_grace_hash' -%}
-SET max_rows_in_join = 10;
-SET allow_grace_hash_join = true;
 {% endif -%}
 
 SELECT '= full =';
