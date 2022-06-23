@@ -1,8 +1,10 @@
+#include <optional>
+#include <Core/QueryProcessingStage.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/MergingAggregatedTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -28,12 +30,14 @@ MergingAggregatedStep::MergingAggregatedStep(
     AggregatingTransformParamsPtr params_,
     bool memory_efficient_aggregation_,
     size_t max_threads_,
-    size_t memory_efficient_merge_threads_)
+    size_t memory_efficient_merge_threads_,
+    std::optional<QueryProcessingStage::Enum> processing_stage_)
     : ITransformingStep(input_stream_, params_->getHeader(), getTraits())
     , params(params_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
     , max_threads(max_threads_)
     , memory_efficient_merge_threads(memory_efficient_merge_threads_)
+    , processing_stage(processing_stage_)
 {
     /// Aggregation keys are distinct
     for (auto key : params->params.keys)
@@ -62,7 +66,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.addMergingAggregatedMemoryEfficientTransform(params, num_merge_threads);
     }
 
-    pipeline.resize(max_threads);
+    pipeline.resize(processing_stage.value_or(QueryProcessingStage::MAX) == QueryProcessingStage::WithMergeableState ? 1 : max_threads);
 }
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const

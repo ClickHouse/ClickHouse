@@ -71,21 +71,22 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
-#include <Functions/IFunction.h>
+#include <memory>
+#include <Columns/Collator.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
-#include <base/types.h>
-#include <base/sort.h>
-#include <Columns/Collator.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
-#include <Core/ColumnNumbers.h>
+#include <Core/QueryProcessingStage.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
 #include <base/map.h>
+#include <base/sort.h>
+#include <base/types.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
-#include <memory>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -1590,7 +1591,8 @@ static void executeMergeAggregatedImpl(
     bool has_grouping_sets,
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
-    const AggregateDescriptions & aggregates)
+    const AggregateDescriptions & aggregates,
+    std::optional<QueryProcessingStage::Enum> processing_stage = std::nullopt)
 {
     const auto & header_before_merge = query_plan.getCurrentDataStream().header;
 
@@ -1627,7 +1629,8 @@ static void executeMergeAggregatedImpl(
         std::move(transform_params),
         settings.distributed_aggregation_memory_efficient && is_remote_storage,
         settings.max_threads,
-        settings.aggregation_memory_efficient_merge_threads);
+        settings.aggregation_memory_efficient_merge_threads,
+        processing_stage);
 
     query_plan.addStep(std::move(merging_aggregated));
 }
@@ -2321,7 +2324,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         has_grouping_sets,
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
-        query_analyzer->aggregates());
+        query_analyzer->aggregates(),
+        options.to_stage);
 }
 
 
