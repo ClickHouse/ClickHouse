@@ -5,13 +5,13 @@
 #include <Formats/NativeWriter.h>
 #include <Formats/TemporaryFileStream.h>
 
-#include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ProtocolDefines.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
+#include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 
 #include <base/FnTraits.h>
 #include <fmt/format.h>
@@ -310,7 +310,10 @@ public:
 };
 
 GraceHashJoin::GraceHashJoin(
-    ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
+    ContextPtr context_,
+    std::shared_ptr<TableJoin> table_join_,
+    const Block & right_sample_block_,
+    bool any_take_last_row_)
     : log{&Poco::Logger::get("GraceHashJoin")}
     , context{context_}
     , table_join{std::move(table_join_)}
@@ -318,6 +321,7 @@ GraceHashJoin::GraceHashJoin(
     , any_take_last_row{any_take_last_row_}
     , initial_num_buckets{context->getSettingsRef().grace_hash_join_initial_buckets}
     , max_num_buckets{context->getSettingsRef().grace_hash_join_max_buckets}
+    , max_block_size{context->getSettingsRef().max_block_size}
     , first_bucket{makeInMemoryJoin()}
 {
     checkJoinKind();
@@ -336,23 +340,25 @@ void GraceHashJoin::checkJoinKind()
 {
     switch (table_join->kind())
     {
-    case ASTTableJoin::Kind::Left:
-    case ASTTableJoin::Kind::Inner:
-        break;
-    default:
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only INNER & LEFT join variants");
+        case ASTTableJoin::Kind::Inner:
+        case ASTTableJoin::Kind::Left:
+        case ASTTableJoin::Kind::Right:
+        case ASTTableJoin::Kind::Full:
+            break;
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only INNER/LEFT/RIGHT/FULL join variants");
     }
 
     switch (table_join->strictness())
     {
-    case ASTTableJoin::Strictness::RightAny:
-    case ASTTableJoin::Strictness::All:
-    case ASTTableJoin::Strictness::Any:
-    case ASTTableJoin::Strictness::Semi:
-    case ASTTableJoin::Strictness::Anti:
-        break;
-    default:
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only ALL/ANY/SEMI/ANTI join strictness");
+        case ASTTableJoin::Strictness::RightAny:
+        case ASTTableJoin::Strictness::All:
+        case ASTTableJoin::Strictness::Any:
+        case ASTTableJoin::Strictness::Semi:
+        case ASTTableJoin::Strictness::Anti:
+            break;
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. GraceHashJoin supports only ALL/ANY/SEMI/ANTI join strictness");
     }
 }
 
@@ -447,6 +453,14 @@ void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
+    if (need_left_sample_block.exchange(false))
+    {
+        left_sample_block = block.cloneEmpty();
+        output_sample_block = block.cloneEmpty();
+        ExtraBlockPtr not_processed;
+        first_bucket->joinBlock(output_sample_block, not_processed);
+    }
+
     if (block.rows() == 0)
     {
         ExtraBlockPtr not_processed;
@@ -514,9 +528,9 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
 
 std::shared_ptr<NotJoinedBlocks> GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
 {
-    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
-        return nullptr;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported join mode");
+    /// We do no support returning non joined blocks here.
+    /// They will be reported by getDelayedBlocks instead.
+    return nullptr;
 }
 
 class GraceHashJoin::DelayedBlocks : public IDelayedJoinedBlocksStream
@@ -527,12 +541,30 @@ public:
     {
     }
 
-    Block next() override { return parent->joinNextBlockInBucket(*this); }
+    Block next() override
+    {
+        Block result = parent->joinNextBlockInBucket(*this);
+        if (result)
+            return result;
+
+        if (process_not_joined)
+        {
+            not_joined_blocks = join->getNonJoinedBlocks(parent->left_sample_block, parent->output_sample_block, parent->max_block_size);
+            process_not_joined = false;
+        }
+
+        if (not_joined_blocks)
+            return not_joined_blocks->read();
+
+        return {};
+    }
 
     GraceHashJoin * parent;
     FileBucket * bucket;
     MergingBlockReader left_reader;
     InMemoryJoinPtr join;
+    bool process_not_joined = true;
+    std::shared_ptr<NotJoinedBlocks> not_joined_blocks;
 };
 
 std::unique_ptr<IDelayedJoinedBlocksStream> GraceHashJoin::getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor)

@@ -400,7 +400,7 @@
 1
 1
 1
-=== auto_merge ===
+=== auto ===
 = full =
 -4	0	196
 -3	0	197
@@ -601,7 +601,7 @@
 1
 1
 1
-=== auto_grace_hash ===
+=== grace_hash ===
 = full =
 -4	0	196
 -3	0	197
