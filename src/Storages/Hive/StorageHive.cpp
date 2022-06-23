@@ -1,4 +1,3 @@
-#include <optional>
 #include <Storages/Hive/StorageHive.h>
 
 #if USE_HIVE
