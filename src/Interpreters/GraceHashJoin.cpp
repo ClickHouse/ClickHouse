@@ -310,10 +310,7 @@ public:
 };
 
 GraceHashJoin::GraceHashJoin(
-    ContextPtr context_,
-    std::shared_ptr<TableJoin> table_join_,
-    const Block & right_sample_block_,
-    bool any_take_last_row_)
+    ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
     : log{&Poco::Logger::get("GraceHashJoin")}
     , context{context_}
     , table_join{std::move(table_join_)}
