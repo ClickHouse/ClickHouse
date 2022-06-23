@@ -258,7 +258,7 @@ public:
 
     MergingBlockReader openRightTableReader() const { return right_file.makeReader(); }
 
-    std::scoped_lock<std::mutex> lockJoin() { return std::scoped_lock{join_mutex}; }
+    std::mutex & joinMutex() { return join_mutex; }
 
 private:
     bool tryAddBlockImpl(const Block & block, std::mutex & mutex, FileBlockWriter & writer)
@@ -595,7 +595,7 @@ void GraceHashJoin::addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_ind
     // Add block to the in-memory join
     {
         auto bucket = snapshot->at(bucket_index);
-        auto guard = bucket->lockJoin();
+        std::scoped_lock guard{bucket->joinMutex()};
         join->addJoinedBlock(blocks[bucket_index], /*check_limits=*/false);
 
         // We need to rebuild block without bucket_index part in case of overflow.
