@@ -360,6 +360,9 @@ private:
 
     inline static ContextPtr global_context_instance;
 
+    /// A flag, used to mark if reader needs to apply deleted rows mask.
+    bool skip_deleted_mask = false;
+
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
@@ -911,6 +914,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool skipDeletedMask() const { return skip_deleted_mask; }
+    void setSkipDeletedMask(bool skip) { skip_deleted_mask = skip; }
 
     ActionLocksManagerPtr getActionLocksManager();
 

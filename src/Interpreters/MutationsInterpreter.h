@@ -79,6 +79,8 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    void SetSkipDeletedMask(bool skip) { skip_deleted_mask = skip; }
+
 private:
     ASTPtr prepare(bool dry_run);
     ASTPtr prepareLightweightDelete(bool dry_run);
@@ -103,6 +105,8 @@ private:
 
     /// True for lightweight delete.
     bool is_lightweight = false;
+    /// True for MutateSomePartColumns on part with lightweight.
+    bool skip_deleted_mask = false;
 
     ASTPtr mutation_ast;
 

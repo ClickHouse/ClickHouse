@@ -1041,7 +1041,18 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
     if (!select_interpreter)
-        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
+    {
+        /// Skip to apply deleted mask for MutateSomePartColumn cases when part has lightweight delete.
+        if (!is_lightweight && skip_deleted_mask)
+        {
+            auto context_for_reading = Context::createCopy(context);
+            context_for_reading->setSkipDeletedMask(skip_deleted_mask);
+            select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context_for_reading, storage, metadata_snapshot, select_limits);
+        }
+        else
+            select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
+    }
+
 
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);

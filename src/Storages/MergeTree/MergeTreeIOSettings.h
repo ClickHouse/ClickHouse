@@ -23,6 +23,8 @@ struct MergeTreeReaderSettings
     bool checksum_on_read = true;
     /// True if we read in order of sorting key.
     bool read_in_order = false;
+    /// Do not apply deleted mask for internal select from mutate some part columns.
+    bool skip_deleted_mask = false;
 };
 
 struct MergeTreeWriterSettings
