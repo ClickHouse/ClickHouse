@@ -129,7 +129,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getCacheReadBuffer(size_t of
 
     auto buf = createReadBufferFromFileBase(path, local_read_settings);
     auto * from_fd = dynamic_cast<ReadBufferFromFileDescriptor*>(buf.get());
-    if (from_fd && from_fd->size() == 0)
+    if (from_fd && from_fd->getFileSize() == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
     return buf;
@@ -371,7 +371,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getImplementationBuffer(File
         {
 #ifndef NDEBUG
             auto * file_reader = dynamic_cast<ReadBufferFromFileDescriptor *>(read_buffer_for_file_segment.get());
-            size_t file_size = file_reader->size();
+            size_t file_size = file_reader->getFileSize();
 
             if (file_size == 0 || range.left + file_size <= file_offset_of_buffer_end)
                 throw Exception(
@@ -803,7 +803,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 #ifndef NDEBUG
         if (auto * cache_file_reader = dynamic_cast<ReadBufferFromFileDescriptor *>(implementation_buffer.get()))
         {
-            auto cache_file_size = cache_file_reader->size();
+            auto cache_file_size = cache_file_reader->getFileSize();
             if (cache_file_size == 0)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {} (just before actual read)", cache_file_size);
@@ -917,7 +917,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
     {
         std::optional<size_t> cache_file_size;
         if (auto * cache_file_reader = dynamic_cast<ReadBufferFromFileDescriptor *>(implementation_buffer.get()))
-            cache_file_size = cache_file_reader->size();
+            cache_file_size = cache_file_reader->getFileSize();
 
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
