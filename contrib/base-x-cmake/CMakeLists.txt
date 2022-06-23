@@ -12,9 +12,8 @@ set (SRCS
         ${LIBRARY_DIR}/uinteger_t.hh
         )
 
-add_library(_base-x ${SRCS})
-
-target_include_directories(_base-x SYSTEM BEFORE PUBLIC ${LIBRARY_DIR})
+add_library(_base-x INTERFACE)
+target_include_directories(_base-x SYSTEM BEFORE INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/base-x")
 
 if (XCODE OR XCODE_VERSION)
     # https://gitlab.kitware.com/cmake/cmake/issues/17457
