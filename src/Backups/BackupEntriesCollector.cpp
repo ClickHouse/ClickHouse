@@ -29,27 +29,44 @@ namespace ErrorCodes
 
 namespace
 {
-    String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_char_uppercase)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            return fmt::format("{}emporary table {}", first_char_uppercase ? 'T' : 't', backQuoteIfNeed(table_name));
-        else
-            return fmt::format("{}able {}.{}", first_char_uppercase ? 'T' : 't', backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
-    }
-}
+    /// Initial status.
+    constexpr const char kPreparingStatus[] = "preparing";
 
-std::string_view BackupEntriesCollector::toString(Stage stage)
-{
-    switch (stage)
+    /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
+    constexpr const char kGatheringMetadataStatus[] = "gathering metadata";
+
+    /// Making temporary hard links and prepare backup entries.
+    constexpr const char kExtractingDataFromTablesStatus[] = "extracting data from tables";
+
+    /// Running special tasks for replicated tables which can also prepare some backup entries.
+    constexpr const char kRunningPostTasksStatus[] = "running post-tasks";
+
+    /// Writing backup entries to the backup and removing temporary hard links.
+    constexpr const char kWritingBackupStatus[] = "writing backup";
+
+    /// Prefix for error statuses.
+    constexpr const char kErrorStatus[] = "error: ";
+
+    /// Uppercases the first character of a passed string.
+    String toUpperFirst(const String & str)
     {
-        case Stage::kPreparing: return "Preparing";
-        case Stage::kFindingTables: return "Finding tables";
-        case Stage::kExtractingDataFromTables: return "Extracting data from tables";
-        case Stage::kRunningPostTasks: return "Running post tasks";
-        case Stage::kWritingBackup: return "Writing backup";
-        case Stage::kError: return "Error";
+        String res = str;
+        res[0] = std::toupper(res[0]);
+        return res;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup stage: {}", static_cast<int>(stage));
+
+    /// Outputs "table <name>" or "temporary table <name>"
+    String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_upper)
+    {
+        String str;
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            str = fmt::format("temporary table {}", backQuoteIfNeed(table_name));
+        else
+            str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
+        if (first_upper)
+            str[0] = std::toupper(str[0]);
+        return str;
+    }
 }
 
 
@@ -65,6 +82,7 @@ BackupEntriesCollector::BackupEntriesCollector(
     , context(context_)
     , timeout(timeout_)
     , log(&Poco::Logger::get("BackupEntriesCollector"))
+    , current_status(kPreparingStatus)
 {
 }
 
@@ -75,7 +93,7 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
     try
     {
         /// getBackupEntries() must not be called multiple times.
-        if (current_stage != Stage::kPreparing)
+        if (current_status != kPreparingStatus)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
 
         /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
@@ -85,7 +103,7 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
         renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
 
         /// Find databases and tables which we're going to put to the backup.
-        setStage(Stage::kFindingTables);
+        setStatus(kGatheringMetadataStatus);
         gatherMetadataAndCheckConsistency();
 
         /// Make backup entries for the definitions of the found databases.
@@ -95,15 +113,15 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
         makeBackupEntriesForTablesDefs();
 
         /// Make backup entries for the data of the found tables.
-        setStage(Stage::kExtractingDataFromTables);
+        setStatus(kExtractingDataFromTablesStatus);
         makeBackupEntriesForTablesData();
 
         /// Run all the tasks added with addPostCollectingTask().
-        setStage(Stage::kRunningPostTasks);
+        setStatus(kRunningPostTasksStatus);
         runPostTasks();
 
         /// No more backup entries or tasks are allowed after this point.
-        setStage(Stage::kWritingBackup);
+        setStatus(kWritingBackupStatus);
 
         return std::move(backup_entries);
     }
@@ -111,7 +129,7 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
     {
         try
         {
-            setStage(Stage::kError, getCurrentExceptionMessage(false));
+            setStatus(kErrorStatus + getCurrentExceptionMessage(false));
         }
         catch (...)
         {
@@ -120,24 +138,21 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
     }
 }
 
-void BackupEntriesCollector::setStage(Stage new_stage, const String & error_message)
+void BackupEntriesCollector::setStatus(const String & new_status)
 {
-    if (new_stage == Stage::kError)
-        LOG_ERROR(log, "{} failed with error: {}", toString(current_stage), error_message);
-    else
-        LOG_TRACE(log, "{}", toString(new_stage));
-
-    current_stage = new_stage;
-
-    if (new_stage == Stage::kError)
+    bool is_error_status = new_status.starts_with(kErrorStatus);
+    if (is_error_status)
     {
-        backup_coordination->syncStageError(backup_settings.host_id, error_message);
+        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), new_status);
+        backup_coordination->setStatus(backup_settings.host_id, new_status);
     }
     else
     {
+        LOG_TRACE(log, "{}", toUpperFirst(new_status));
+        current_status = new_status;
         auto all_hosts
             = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
-        backup_coordination->syncStage(backup_settings.host_id, static_cast<int>(new_stage), all_hosts, timeout);
+        backup_coordination->setStatusAndWait(backup_settings.host_id, new_status, all_hosts);
     }
 }
 
@@ -575,28 +590,28 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
 void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
 {
-    if (current_stage == Stage::kWritingBackup)
+    if (current_status == kWritingBackupStatus)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     backup_entries.emplace_back(file_name, backup_entry);
 }
 
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
-    if (current_stage == Stage::kWritingBackup)
+    if (current_status == kWritingBackupStatus)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     insertAtEnd(backup_entries, backup_entries_);
 }
 
 void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 {
-    if (current_stage == Stage::kWritingBackup)
+    if (current_status == kWritingBackupStatus)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
 }
 
 void BackupEntriesCollector::addPostTask(std::function<void()> task)
 {
-    if (current_stage == Stage::kWritingBackup)
+    if (current_status == kWritingBackupStatus)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding post tasks is not allowed");
     post_tasks.push(std::move(task));
 }

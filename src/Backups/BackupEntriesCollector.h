@@ -51,35 +51,10 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
-    /// Writing a backup includes a few stages:
-    enum class Stage
-    {
-        /// Initial stage.
-        kPreparing,
-
-        /// Finding all tables and databases which we're going to put to the backup.
-        kFindingTables,
-
-        /// Making temporary hard links and prepare backup entries.
-        kExtractingDataFromTables,
-
-        /// Running special tasks for replicated databases or tables which can also prepare some backup entries.
-        kRunningPostTasks,
-
-        /// Writing backup entries to the backup and removing temporary hard links.
-        kWritingBackup,
-
-        /// An error happens during any of the stages above, the backup won't be written.
-        kError,
-    };
-    static std::string_view toString(Stage stage);
-
     /// Throws an exception that a specified table engine doesn't support partitions.
     [[noreturn]] static void throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine);
 
 private:
-    void setStage(Stage new_stage, const String & error_message = {});
-
     void calculateRootPathInBackup();
 
     void gatherMetadataAndCheckConsistency();
@@ -105,6 +80,8 @@ private:
     void makeBackupEntriesForTablesData();
     void runPostTasks();
 
+    void setStatus(const String & new_status);
+
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
     std::shared_ptr<IBackupCoordination> backup_coordination;
@@ -112,7 +89,7 @@ private:
     std::chrono::seconds timeout;
     Poco::Logger * log;
 
-    Stage current_stage = Stage::kPreparing;
+    String current_status;
     std::filesystem::path root_path_in_backup;
     DDLRenamingMap renaming_map;
 

@@ -243,7 +243,7 @@ void BackupCoordinationReplicatedPartNames::preparePartNames() const
 
 
 /// Helps to wait until all hosts come to a specified stage.
-BackupCoordinationStageSync::BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
+BackupCoordinationStatusSync::BackupCoordinationStatusSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , log(log_)
@@ -251,20 +251,46 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(const String & zookeepe
     createRootNodes();
 }
 
-void BackupCoordinationStageSync::createRootNodes()
+void BackupCoordinationStatusSync::createRootNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
 }
 
-void BackupCoordinationStageSync::syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout)
+void BackupCoordinationStatusSync::set(const String & current_host, const String & new_status)
 {
-   /// Put new stage to ZooKeeper.
-    auto zookeeper = get_zookeeper();
-    zookeeper->createIfNotExists(zookeeper_path + "/" + current_host + "|" + std::to_string(new_stage), "");
+    setImpl(current_host, new_status, {}, {});
+}
 
-    if (wait_hosts.empty() || ((wait_hosts.size() == 1) && (wait_hosts.front() == current_host)))
+void BackupCoordinationStatusSync::setAndWait(const String & current_host, const String & new_status, const Strings & other_hosts)
+{
+    setImpl(current_host, new_status, other_hosts, {});
+}
+
+void BackupCoordinationStatusSync::setAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms)
+{
+    setImpl(current_host, new_status, other_hosts, timeout_ms);
+}
+
+void BackupCoordinationStatusSync::setImpl(const String & current_host, const String & new_status, const Strings & other_hosts, const std::optional<UInt64> & timeout_ms)
+{
+   /// Put new status to ZooKeeper.
+    auto zookeeper = get_zookeeper();
+
+    String result_status = new_status;
+    String message;
+    std::string_view error_prefix = "error: ";
+    bool is_error_status = new_status.starts_with(error_prefix);
+    if (is_error_status)
+    {
+        message = new_status.substr(error_prefix.length());
+        result_status = "error";
+    }
+
+    zookeeper->createIfNotExists(zookeeper_path + "/" + current_host + "|" + result_status, message);
+
+    if (other_hosts.empty() || ((other_hosts.size() == 1) && (other_hosts.front() == current_host)) || is_error_status)
         return;
 
     /// Wait for other hosts.
@@ -273,41 +299,35 @@ void BackupCoordinationStageSync::syncStage(const String & current_host, int new
     std::optional<String> host_with_error;
     std::optional<String> error_message;
 
-    std::map<String, std::optional<int>> unready_hosts;
-    for (const String & host : wait_hosts)
-        unready_hosts.emplace(host, std::optional<int>{});
+    std::map<String, String> unready_hosts;
+    for (const String & host : other_hosts)
+        unready_hosts.emplace(host, "");
 
     /// Process ZooKeeper's nodes and set `all_hosts_ready` or `unready_host` or `error_message`.
     auto process_zk_nodes = [&](const Strings & zk_nodes)
     {
         for (const String & zk_node : zk_nodes)
         {
-            if (zk_node == "error")
+            if (zk_node.starts_with("remove_watch-"))
+                continue;
+
+            size_t separator_pos = zk_node.find('|');
+            if (separator_pos == String::npos)
+                throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected zk node {}", zookeeper_path + "/" + zk_node);
+            String host = zk_node.substr(0, separator_pos);
+            String status = zk_node.substr(separator_pos + 1);
+            if (status == "error")
             {
-                String str = zookeeper->get(zookeeper_path + "/" + zk_node);
-                size_t separator_pos = str.find('|');
-                if (separator_pos == String::npos)
-                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected value of zk node {}: {}", zookeeper_path + "/" + zk_node, str);
-                host_with_error = str.substr(0, separator_pos);
-                error_message = str.substr(separator_pos + 1);
-                return;
+                host_with_error = host;
+                error_message = zookeeper->get(zookeeper_path + "/" + zk_node);
+                return;                
             }
-            else if (!zk_node.starts_with("remove_watch-"))
+            auto it = unready_hosts.find(host);
+            if (it != unready_hosts.end())
             {
-                size_t separator_pos = zk_node.find('|');
-                if (separator_pos == String::npos)
-                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected zk node {}", zookeeper_path + "/" + zk_node);
-                String host = zk_node.substr(0, separator_pos);
-                int found_stage = parseFromString<int>(zk_node.substr(separator_pos + 1));
-                auto it = unready_hosts.find(host);
-                if (it != unready_hosts.end())
-                {
-                    auto & stage = it->second;
-                    if (!stage || (stage < found_stage))
-                        stage = found_stage;
-                    if (stage >= new_stage)
-                        unready_hosts.erase(it);
-                }
+                it->second = status;
+                if (status == result_status)
+                    unready_hosts.erase(it);
             }
         }
     };
@@ -324,7 +344,8 @@ void BackupCoordinationStageSync::syncStage(const String & current_host, int new
 
     auto watch_triggered = [&] { return !watch_set; };
 
-    bool use_timeout = (timeout.count() >= 0);
+    bool use_timeout = timeout_ms.has_value();
+    std::chrono::milliseconds timeout{timeout_ms.value_or(0)};
     std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     std::chrono::steady_clock::duration elapsed;
     std::mutex dummy_mutex;
@@ -369,12 +390,6 @@ void BackupCoordinationStageSync::syncStage(const String & current_host, int new
             unready_hosts.begin()->first,
             to_string(elapsed));
     }
-}
-
-void BackupCoordinationStageSync::syncStageError(const String & current_host, const String & error_message)
-{
-    auto zookeeper = get_zookeeper();
-    zookeeper->createIfNotExists(zookeeper_path + "/error", current_host + "|" + error_message);
 }
 
 }

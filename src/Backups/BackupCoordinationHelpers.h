@@ -58,16 +58,18 @@ private:
 
 
 /// Helps to wait until all hosts come to a specified stage.
-class BackupCoordinationStageSync
+class BackupCoordinationStatusSync
 {
 public:
-    BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_);
+    BackupCoordinationStatusSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_);
 
-    void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout);
-    void syncStageError(const String & current_host, const String & error_message);
+    void set(const String & current_host, const String & new_status);
+    void setAndWait(const String & current_host, const String & new_status, const Strings & other_hosts);
+    void setAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms);
 
 private:
     void createRootNodes();
+    void setImpl(const String & current_host, const String & new_status, const Strings & other_hosts, const std::optional<UInt64> & timeout_ms);
 
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;

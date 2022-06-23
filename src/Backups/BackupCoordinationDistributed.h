@@ -14,8 +14,9 @@ public:
     BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
     ~BackupCoordinationDistributed() override;
 
-    void syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout) override;
-    void syncStageError(const String & current_host, const String & error_message) override;
+    void setStatus(const String & current_host, const String & new_status) override;
+    void setStatusAndWait(const String & current_host, const String & new_status, const Strings & other_hosts) override;
+    void setStatusAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms) override;
 
     void addReplicatedPartNames(
         const String & table_zk_path,
@@ -51,7 +52,7 @@ private:
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
 
-    BackupCoordinationStageSync stage_sync;
+    BackupCoordinationStatusSync status_sync;
 
     mutable std::mutex mutex;
     mutable std::optional<BackupCoordinationReplicatedPartNames> replicated_part_names;

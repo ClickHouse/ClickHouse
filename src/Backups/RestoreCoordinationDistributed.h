@@ -14,11 +14,10 @@ public:
     RestoreCoordinationDistributed(const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper);
     ~RestoreCoordinationDistributed() override;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    void syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout) override;
-
-    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
-    void syncStageError(const String & current_host, const String & error_message) override;
+    /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
+    void setStatus(const String & current_host, const String & new_status) override;
+    void setStatusAndWait(const String & current_host, const String & new_status, const Strings & other_hosts) override;
+    void setStatusAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -42,7 +41,7 @@ private:
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
-    BackupCoordinationStageSync stage_sync;
+    BackupCoordinationStatusSync status_sync;
 };
 
 }

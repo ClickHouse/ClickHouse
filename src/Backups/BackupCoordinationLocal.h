@@ -19,8 +19,9 @@ public:
     BackupCoordinationLocal();
     ~BackupCoordinationLocal() override;
 
-    void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) override;
-    void syncStageError(const String & current_host, const String & error_message) override;
+    void setStatus(const String & current_host, const String & new_status) override;
+    void setStatusAndWait(const String & current_host, const String & new_status, const Strings & other_hosts) override;
+    void setStatusAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms) override;
 
     void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
                                 const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
