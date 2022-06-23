@@ -2790,7 +2790,8 @@ bool MergeTreeData::renameTempPartAndAdd(
     SimpleIncrement * increment,
     Transaction * out_transaction,
     MergeTreeDeduplicationLog * deduplication_log,
-    std::string_view deduplication_token)
+    std::string_view deduplication_token,
+    DataPartStorageBuilderPtr part_builder)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2799,7 +2800,7 @@ bool MergeTreeData::renameTempPartAndAdd(
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
+        if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token, part_builder))
             return false;
     }
     if (!covered_parts.empty())
@@ -2818,11 +2819,18 @@ bool MergeTreeData::renameTempPartAndReplace(
     std::unique_lock<std::mutex> & lock,
     DataPartsVector * out_covered_parts,
     MergeTreeDeduplicationLog * deduplication_log,
-    std::string_view deduplication_token)
+    std::string_view deduplication_token,
+    DataPartStorageBuilderPtr part_builder)
 {
+
+    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part_name);
+
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
+
+    if (part_builder)
+        part_builder->commit();
 
     if (txn)
         transactions_enabled.store(true);
@@ -2852,8 +2860,6 @@ bool MergeTreeData::renameTempPartAndReplace(
     }
     else /// Parts from ReplicatedMergeTree already have names
         part_name = part->name;
-
-    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part_name);
 
     if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
     {
@@ -2960,7 +2966,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment,
-    Transaction * out_transaction, MergeTreeDeduplicationLog * deduplication_log)
+    Transaction * out_transaction, MergeTreeDeduplicationLog * deduplication_log, DataPartStorageBuilderPtr part_builder)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2969,7 +2975,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log);
+        renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log, "", part_builder);
     }
     return covered_parts;
 }

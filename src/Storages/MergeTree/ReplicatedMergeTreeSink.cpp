@@ -254,7 +254,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id);
+            commitPart(zookeeper, part, partition.block_id, partition.temp_part.builder);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -289,7 +289,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "");
+        commitPart(zookeeper, part, "", nullptr);
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -301,7 +301,10 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
 
 void ReplicatedMergeTreeSink::commitPart(
-    zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
+    zkutil::ZooKeeperPtr & zookeeper,
+    MergeTreeData::MutableDataPartPtr & part,
+    const String & block_id,
+    DataPartStorageBuilderPtr part_builder)
 {
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
@@ -476,7 +479,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
         try
         {
-            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction);
+            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction, nullptr, "", part_builder);
         }
         catch (const Exception & e)
         {

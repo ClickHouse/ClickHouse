@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Disks/IDisk.h>
 #include <memory>
 #include <string>
 
@@ -158,10 +159,13 @@ public:
 
     DataPartStoragePtr getStorage() const override;
 
+    void commit() override;
+
 private:
     VolumePtr volume;
     std::string root_path;
     std::string part_dir;
+    DiskTransactionPtr transaction;
 };
 
 }

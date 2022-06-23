@@ -243,6 +243,8 @@ public:
     virtual std::shared_ptr<IDataPartStorageBuilder> getProjection(const std::string & name) const = 0;
 
     virtual DataPartStoragePtr getStorage() const = 0;
+
+    virtual void commit() = 0;
 };
 
 using DataPartStorageBuilderPtr = std::shared_ptr<IDataPartStorageBuilder>;

@@ -560,14 +560,16 @@ public:
         SimpleIncrement * increment = nullptr,
         Transaction * out_transaction = nullptr,
         MergeTreeDeduplicationLog * deduplication_log = nullptr,
-        std::string_view deduplication_token = std::string_view());
+        std::string_view deduplication_token = std::string_view(),
+        DataPartStorageBuilderPtr part_builder = nullptr);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     /// If out_transaction == nullptr, marks covered parts as Outdated.
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment = nullptr,
-        Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
+        Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        DataPartStorageBuilderPtr part_builder = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
     /// FIXME Transactions: remove add_to_txn flag, maybe merge MergeTreeTransaction and Transaction
@@ -579,7 +581,8 @@ public:
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts = nullptr,
         MergeTreeDeduplicationLog * deduplication_log = nullptr,
-        std::string_view deduplication_token = std::string_view());
+        std::string_view deduplication_token = std::string_view(),
+        DataPartStorageBuilderPtr part_builder = nullptr);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
