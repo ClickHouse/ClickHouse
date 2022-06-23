@@ -37,6 +37,7 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 namespace DB
 {
@@ -938,9 +939,9 @@ void registerStorageHive(StorageFactory & factory)
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-            const String & hive_metastore_url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-            const String & hive_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            const String & hive_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & hive_metastore_url = checkAndGetLiteralArgument<String>(engine_args[0], "hive_metastore_url");
+            const String & hive_database = checkAndGetLiteralArgument<String>(engine_args[1], "hive_database");
+            const String & hive_table = checkAndGetLiteralArgument<String>(engine_args[2], "hive_table");
             return std::make_shared<StorageHive>(
                 hive_metastore_url,
                 hive_database,
