@@ -166,13 +166,32 @@ struct QuantileApproximateWeighted
         if (level > xr)
             yl = yr;
 
-        UnderlyingType dy = yr - yl;
-        auto dx = xr - xl;
+        UnderlyingType dy;
+
+        if (yr - yl > std::numeric_limits<UnderlyingType>::max())
+            dy = std::numeric_limits<UnderlyingType>::max();
+        else if (yr - yl < std::numeric_limits<UnderlyingType>::min())
+            dy = std::numeric_limits<UnderlyingType>::min();
+        else
+            dy = yr - yl;
+
+        Float64 dx;
+
+        if (xr - xl > std::numeric_limits<Float64>::max())
+            dx = std::numeric_limits<Float64>::max();
+        else if (xr - xl < std::numeric_limits<Float64>::min())
+            dx = std::numeric_limits<Float64>::min();
+        else
+            dx = xr - xl;
 
         dx = dx == 0 ? 1 : dx;
-        UnderlyingType dydx = dy / dx;
 
-        g = yl + dydx * (level - xl);
+        if ((yl + (dy / dx) * (level - xl)) > std::numeric_limits<UnderlyingType>::max())
+            g = std::numeric_limits<UnderlyingType>::max();
+        else if (yl + (dy / dx) * (level - xl) < std::numeric_limits<UnderlyingType>::min())
+            g = std::numeric_limits<UnderlyingType>::min();
+        else
+            g = yl + (dy / dx) * (level - xl);
 
         return g;
     }
@@ -269,14 +288,32 @@ struct QuantileApproximateWeighted
             if (level > xr)
                 yl = yr;
 
+            UnderlyingType dy;
 
-            UnderlyingType dy = yr - yl;
-            auto dx = xr - xl;
+            if (yr - yl > std::numeric_limits<UnderlyingType>::max())
+                dy = std::numeric_limits<UnderlyingType>::max();
+            else if (yr - yl < std::numeric_limits<UnderlyingType>::min())
+                dy = std::numeric_limits<UnderlyingType>::min();
+            else
+                dy = yr - yl;
+
+            Float64 dx;
+
+            if (xr - xl > std::numeric_limits<Float64>::max())
+                dx = std::numeric_limits<Float64>::max();
+            else if (xr - xl < std::numeric_limits<Float64>::min())
+                dx = std::numeric_limits<Float64>::min();
+            else
+                dx = xr - xl;
 
             dx = dx == 0 ? 1 : dx;
-            UnderlyingType dydx = dy / dx;
 
-            g = yl + dydx * (level - xl);
+            if ((yl + (dy / dx) * (level - xl)) > std::numeric_limits<UnderlyingType>::max())
+                g = std::numeric_limits<UnderlyingType>::max();
+            else if ((yl + (dy / dx) * (level - xl)) < std::numeric_limits<UnderlyingType>::min())
+                g = std::numeric_limits<UnderlyingType>::min();
+            else
+                g = yl + (dy / dx) * (level - xl);
 
             result[indices[level_index]] = g;
             ++level_index;
