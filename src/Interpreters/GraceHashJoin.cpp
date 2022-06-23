@@ -453,7 +453,7 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not
             Block & block_shard = blocks[bucket];
             if (block_shard.rows() == 0)
                 return true;
-            return !snapshot->at(bucket)->tryAddLeftBlock(block_shard);
+            return snapshot->at(bucket)->tryAddLeftBlock(block_shard);
         });
 }
 
