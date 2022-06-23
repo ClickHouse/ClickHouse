@@ -42,18 +42,19 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/QueryLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/TransactionLog.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/executeQuery.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -68,6 +69,7 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
+#include <memory>
 #include <random>
 
 
@@ -416,7 +418,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
             chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query because current transaction failed. Expecting ROLLBACK statement.");
+                throw Exception(
+                    ErrorCodes::INVALID_TRANSACTION,
+                    "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
@@ -498,6 +502,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
 
     String query_for_logging;
+    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
 
     try
     {
@@ -626,6 +631,27 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else
         {
+            /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
+            if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
+            {
+                try
+                {
+                    /// If there is no session (which is the default for the HTTP Handler), set up one just for this as it is necessary
+                    /// to control the transaction lifetime
+                    if (!context->hasSessionContext())
+                        context->makeSessionContext();
+
+                    auto tc = std::make_shared<InterpreterTransactionControlQuery>(ast, context);
+                    tc->executeBegin(context->getSessionContext());
+                    implicit_txn_control = std::move(tc);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("while starting a transaction with 'implicit_transaction'");
+                    throw;
+                }
+            }
+
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
             if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
@@ -813,15 +839,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, context, ast,
-                 log_queries,
-                 log_queries_min_type = settings.log_queries_min_type,
-                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 log_processors_profiles = settings.log_processors_profiles,
-                 status_info_to_query_log,
-                 pulling_pipeline = pipeline.pulling()
-            ]
-                (QueryPipeline & query_pipeline) mutable
+            auto finish_callback = [elem,
+                                    context,
+                                    ast,
+                                    log_queries,
+                                    log_queries_min_type = settings.log_queries_min_type,
+                                    log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                                    log_processors_profiles = settings.log_processors_profiles,
+                                    status_info_to_query_log,
+                                    implicit_txn_control,
+                                    pulling_pipeline = pipeline.pulling()](QueryPipeline & query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 
@@ -942,15 +969,30 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     opentelemetry_span_log->add(span);
                 }
+
+                if (implicit_txn_control)
+                {
+                    implicit_txn_control->executeCommit(context->getSessionContext());
+                    implicit_txn_control.reset();
+                }
             };
 
-            auto exception_callback = [elem, context, ast,
-                 log_queries,
-                 log_queries_min_type = settings.log_queries_min_type,
-                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 quota(quota), status_info_to_query_log] () mutable
+            auto exception_callback = [elem,
+                                       context,
+                                       ast,
+                                       log_queries,
+                                       log_queries_min_type = settings.log_queries_min_type,
+                                       log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                                       quota(quota),
+                                       status_info_to_query_log,
+                                       implicit_txn_control]() mutable
             {
-                if (auto txn = context->getCurrentTransaction())
+                if (implicit_txn_control)
+                {
+                    implicit_txn_control->executeRollback(context->getSessionContext());
+                    implicit_txn_control.reset();
+                }
+                else if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
                 if (quota)
@@ -1000,7 +1042,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
-
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -1009,8 +1050,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        if (auto txn = context->getCurrentTransaction())
+        if (implicit_txn_control)
+        {
+            implicit_txn_control->executeRollback(context->getSessionContext());
+            implicit_txn_control.reset();
+        }
+        else if (auto txn = context->getCurrentTransaction())
+        {
             txn->onException();
+        }
 
         if (!internal)
         {
