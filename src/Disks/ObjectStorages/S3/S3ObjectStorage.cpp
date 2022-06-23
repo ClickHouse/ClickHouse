@@ -228,32 +228,12 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
 {
     auto client_ptr = client.get();
 
-    // If chunk size is 0, only use single delete request
-    // This allows us to work with GCS, which doesn't support DeleteObjects
-    if (!s3_capabilities.support_batch_delete)
-    {
-        Aws::S3::Model::DeleteObjectRequest request;
-        request.SetBucket(bucket);
-        request.SetKey(path);
-        auto outcome = client_ptr->DeleteObject(request);
+    Aws::S3::Model::DeleteObjectRequest request;
+    request.SetBucket(bucket);
+    request.SetKey(path);
+    auto outcome = client_ptr->DeleteObject(request);
 
-        throwIfUnexpectedError(outcome, if_exists);
-    }
-    else
-    {
-        /// TODO: For AWS we prefer to use multiobject operation even for single object
-        /// maybe we shouldn't?
-        Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(path);
-        Aws::S3::Model::Delete delkeys;
-        delkeys.SetObjects({obj});
-        Aws::S3::Model::DeleteObjectsRequest request;
-        request.SetBucket(bucket);
-        request.SetDelete(delkeys);
-        auto outcome = client_ptr->DeleteObjects(request);
-
-        throwIfUnexpectedError(outcome, if_exists);
-    }
+    throwIfUnexpectedError(outcome, if_exists);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const PathsWithSize & paths, bool if_exists)
@@ -489,6 +469,11 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
 {
     s3_settings.set(getSettings(config, config_prefix, context));
     client.set(getClient(config, config_prefix, context));
+}
+
+void S3ObjectStorage::setCapabilitiesSupportBatchDelete(bool value)
+{
+    s3_capabilities.support_batch_delete = value;
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)

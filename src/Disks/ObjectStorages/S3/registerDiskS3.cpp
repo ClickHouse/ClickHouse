@@ -65,7 +65,24 @@ void checkReadAccess(const String & disk_name, IDisk & disk)
         throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
 }
 
-void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
+void checkRemoveAccess(IDisk & disk)
+{
+    disk.removeFile("test_acl");
+}
+
+bool checkBatchRemoveAccess(IDisk & disk)
+{
+    try
+    {
+        checkWriteAccess(disk);
+        disk.removeRecursive("test_acl");
+        return true;
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
+}
 
 }
 
@@ -91,7 +108,7 @@ void registerDiskS3(DiskFactory & factory)
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
 
-        ObjectStoragePtr s3_storage = std::make_unique<S3ObjectStorage>(
+        auto s3_storage = std::make_unique<S3ObjectStorage>(
             std::move(cache), getClient(config, config_prefix, context),
             getSettings(config, config_prefix, context),
             uri.version_id, s3_capabilities, uri.bucket);
@@ -115,6 +132,11 @@ void registerDiskS3(DiskFactory & factory)
             checkWriteAccess(*s3disk);
             checkReadAccess(name, *s3disk);
             checkRemoveAccess(*s3disk);
+
+            if (s3_capabilities.support_batch_delete && !checkBatchRemoveAccess(*s3disk))
+            {
+                s3_storage->setCapabilitiesSupportBatchDelete(false);
+            }
         }
 
         s3disk->startup(context);

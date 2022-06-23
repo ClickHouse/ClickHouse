@@ -113,6 +113,8 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
+    void setCapabilitiesSupportBatchDelete(bool value);
+
     String getObjectsNamespace() const override { return bucket; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
@@ -151,7 +153,7 @@ private:
 
     MultiVersion<Aws::S3::S3Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
-    const S3Capabilities s3_capabilities;
+    S3Capabilities s3_capabilities;
 
     const String version_id;
 };
