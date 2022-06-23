@@ -396,7 +396,7 @@ void MetadataStorageFromDiskTransaction::commit()
             }
             catch (Exception & ex)
             {
-                ex.addMessage(fmt::format("While committing operation #{}", i));
+                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
                 state = MetadataFromDiskTransactionState::FAILED;
                 rollback(i);
                 throw;
@@ -469,6 +469,11 @@ bool MetadataStorageFromDisk::isDirectory(const std::string & path) const
 Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & path) const
 {
     return disk->getLastModified(path);
+}
+
+time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
+{
+    return disk->getLastChanged(path);
 }
 
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const

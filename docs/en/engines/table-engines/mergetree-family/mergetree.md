@@ -66,7 +66,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
-    ClickHouse uses the sorting key as a primary key if the primary key is not defined obviously by the `PRIMARY KEY` clause.
+    ClickHouse uses the sorting key as a primary key if the primary key is not defined explicitly by the `PRIMARY KEY` clause.
 
     Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
 

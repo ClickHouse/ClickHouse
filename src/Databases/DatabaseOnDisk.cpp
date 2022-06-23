@@ -117,11 +117,10 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-    {
-        WriteBufferFromOwnString query_buf;
-        formatAST(*query, query_buf, true);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
+
+    /// Clean the query from temporary flags.
+    cleanupObjectDefinitionFromTemporaryFlags(*create);
 
     if (!create->is_dictionary)
         create->attach = true;
@@ -129,20 +128,6 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->temporary);
     create->database.reset();
-    create->as_database.clear();
-    create->as_table.clear();
-    create->if_not_exists = false;
-    create->is_populate = false;
-    create->replace_view = false;
-    create->replace_table = false;
-    create->create_or_replace = false;
-
-    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create->isView())
-        create->select = nullptr;
-
-    create->format = nullptr;
-    create->out_file = nullptr;
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -465,11 +450,11 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
-        else if (is_system_storage)
-            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
-        else if (throw_on_error)
+        else if (!is_system_storage && throw_on_error)
             throw;
     }
+    if (!ast && is_system_storage)
+        ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
     return ast;
 }
 
@@ -713,6 +698,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     /// setup create table query storage info.
     auto ast_engine = std::make_shared<ASTFunction>();
     ast_engine->name = storage->getName();
+    ast_engine->no_empty_args = true;
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 

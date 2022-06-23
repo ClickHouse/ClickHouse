@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <iostream>
 
 #include "types.h"
 
@@ -21,7 +22,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
     size_t decompressed_size = ZSTD_decompressDCtx(dctx, output + out_offset, output_size, input + in_offset, input_size);
     if (ZSTD_isError(decompressed_size))
     {
-        fprintf(stderr, "Error (ZSTD): %zu %s\n", decompressed_size, ZSTD_getErrorName(decompressed_size));
+        std::cerr << "Error (ZSTD):" << decompressed_size << " " << ZSTD_getErrorName(decompressed_size) << std::endl;
         return 1;
     }
     return 0;
@@ -40,7 +41,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     ZSTD_DCtx * dctx = ZSTD_createDCtx();
     if (dctx == nullptr)
     {
-        fprintf(stderr, "Error (ZSTD): failed to create decompression context\n");
+        std::cerr << "Error (ZSTD): failed to create decompression context" << std::endl;
         return 1;
     }
     pid_t pid;
@@ -52,7 +53,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         size = ZSTD_findFrameCompressedSize(input + in_pointer, max_block_size);
         if (ZSTD_isError(size))
         {
-            fprintf(stderr, "Error (ZSTD): %td %s\n", size, ZSTD_getErrorName(size));
+            std::cerr << "Error (ZSTD): " << size << " " << ZSTD_getErrorName(size) << std::endl;
             error_happened = true;
             break;
         }
@@ -60,7 +61,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         decompressed_size = ZSTD_getFrameContentSize(input + in_pointer, max_block_size);
         if (ZSTD_isError(decompressed_size))
         {
-            fprintf(stderr, "Error (ZSTD): %td %s\n", decompressed_size, ZSTD_getErrorName(decompressed_size));
+            std::cerr << "Error (ZSTD): " << decompressed_size << " " << ZSTD_getErrorName(decompressed_size) << std::endl;
             error_happened = true;
             break;
         }
@@ -171,8 +172,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
     if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
     {
-        fprintf(stderr, "Not enough space for decompression. Have %tu, need %zu.",
-                fs_info.f_blocks * info_in.st_blksize, decompressed_full_size);
+        std::cerr << "Not enough space for decompression. Have " << fs_info.f_blocks * info_in.st_blksize << ", need " << decompressed_full_size << std::endl;
         return 1;
     }
 

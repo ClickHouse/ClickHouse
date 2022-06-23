@@ -9,9 +9,9 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
-#include <avro/DataFile.hh>
-#include <avro/Schema.hh>
-#include <avro/ValidSchema.hh>
+#include <DataFile.hh>
+#include <Schema.hh>
+#include <ValidSchema.hh>
 
 
 namespace DB
