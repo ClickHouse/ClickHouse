@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterDescribeCacheQuery.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Parsers/ASTDescribeCacheQuery.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -6,6 +7,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/IFileCache.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/Block.h>
 
 namespace DB
@@ -28,7 +30,7 @@ static Block getSampleBlock()
 
 BlockIO InterpreterDescribeCacheQuery::execute()
 {
-    ColumnsDescription columns;
+    getContext()->checkAccess(AccessType::SHOW_CACHES);
 
     const auto & ast = query_ptr->as<ASTDescribeCacheQuery &>();
     Block sample_block = getSampleBlock();

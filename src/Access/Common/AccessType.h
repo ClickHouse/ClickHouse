@@ -25,6 +25,7 @@ enum class AccessType
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
     M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, CHECK, DESCRIBE */\
+    M(SHOW_CACHES, "", GROUP, ALL) \
     \
     M(SELECT, "", COLUMN, ALL) \
     M(INSERT, "", COLUMN, ALL) \
