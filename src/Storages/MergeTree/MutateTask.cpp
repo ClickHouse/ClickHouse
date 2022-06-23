@@ -604,6 +604,7 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
+    new_data_part->loadDeletedRowMask();
     new_data_part->setBytesOnDisk(new_data_part->data_part_storage->calculateTotalSizeOnDisk());
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
@@ -1509,8 +1510,6 @@ private:
         if (has_deleted_rows)
         {
             ctx->new_data_part->writeLightWeightDeletedMask(new_bitmap);
-            ctx->new_data_part->has_lightweight_delete = true;
-            ctx->new_data_part->deleted_rows_mask = new_bitmap;
         }
     }
 
@@ -1646,6 +1645,8 @@ bool MutateTask::prepare()
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
+    bool need_mutate_all_columns = !isWidePart(ctx->source_part);
+
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
@@ -1653,6 +1654,11 @@ bool MutateTask::prepare()
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
+
+        /// Skip to apply deleted mask when reading for MutateSomePartColumns.
+        need_mutate_all_columns = need_mutate_all_columns || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter->isAffectingAllColumns());
+        if(!need_mutate_all_columns && ctx->source_part->hasLightweightDelete() && !ctx->is_lightweight_mutation)
+            ctx->interpreter->SetSkipDeletedMask(true);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
@@ -1703,8 +1709,7 @@ bool MutateTask::prepare()
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    if (!isWidePart(ctx->source_part)
-        || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
+    if (need_mutate_all_columns)
     {
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
