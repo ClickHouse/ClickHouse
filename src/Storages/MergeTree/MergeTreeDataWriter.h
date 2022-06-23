@@ -74,6 +74,7 @@ public:
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
         const IMergeTreeDataPart * parent_part);
 
     /// For mutation: MATERIALIZE PROJECTION.
@@ -82,6 +83,7 @@ public:
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
         const IMergeTreeDataPart * parent_part,
         size_t block_num);
 
@@ -91,6 +93,7 @@ public:
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
         const IMergeTreeDataPart * parent_part);
 
     static Block mergeBlock(
@@ -105,6 +108,7 @@ private:
         const String & part_name,
         MergeTreeDataPartType part_type,
         const String & relative_path,
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
         bool is_temp,
         const IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,

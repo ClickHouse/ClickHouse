@@ -234,15 +234,15 @@ public:
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const DataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     /// Create part, that already exists on filesystem.
     /// After this methods 'loadColumnsChecksumsIndexes' must be called.
     MutableDataPartPtr createPart(const String & name,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const DataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const DataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -419,6 +419,9 @@ public:
         SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
+    static ReservationPtr tryReserveSpace(UInt64 expected_size, const DataPartStoragePtr & data_part_storage);
+    static ReservationPtr reserveSpace(UInt64 expected_size, const DataPartStoragePtr & data_part_storage);
+    static ReservationPtr reserveSpace(UInt64 expected_size, const DataPartStorageBuilderPtr & data_part_storage_builder);
 
     static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
 
@@ -973,7 +976,7 @@ public:
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree
-    virtual bool tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return false; }
+    virtual DataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
