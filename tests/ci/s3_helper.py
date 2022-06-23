@@ -9,7 +9,7 @@ from multiprocessing.dummy import Pool
 
 import boto3  # type: ignore
 
-from env_helper import S3_TEST_REPORTS_BUCKET, S3_BUILDS_BUCKET, RUNNER_TEMP, CI
+from env_helper import S3_TEST_REPORTS_BUCKET, S3_BUILDS_BUCKET, S3_REGION, S3_HOST, RUNNER_TEMP, CI
 from compress_files import compress_file_fast
 
 
@@ -33,9 +33,10 @@ def _flatten_list(lst):
 
 
 class S3Helper:
-    def __init__(self, host):
-        self.session = boto3.session.Session(region_name="us-east-1")
+    def __init__(self, host=S3_HOST):
+        self.session = boto3.session.Session(region_name=S3_REGION)
         self.client = self.session.client("s3", endpoint_url=host)
+        self.host = host
 
     def _upload_file_to_s3(self, bucket_name, file_path, s3_path):
         logging.debug(
@@ -99,8 +100,8 @@ class S3Helper:
         # last two replacements are specifics of AWS urls:
         # https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
         return (
-            "https://s3.amazonaws.com/{bucket}/{path}".format(
-                bucket=bucket_name, path=s3_path
+            "https://{host}/{bucket}/{path}".format(
+                host=self.host, bucket=bucket_name, path=s3_path
             )
             .replace("+", "%2B")
             .replace(" ", "%20")
@@ -175,8 +176,8 @@ class S3Helper:
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
-            return "https://s3.amazonaws.com/{bucket}/{path}".format(
-                bucket=bucket_name, path=s3_path
+            return "https://{host}/{bucket}/{path}".format(
+                host=self.host, bucket=bucket_name, path=s3_path
             )
 
         p = Pool(256)

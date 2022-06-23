@@ -2,21 +2,31 @@
 import time
 import logging
 import json
+import os
 
 import requests  # type: ignore
 from get_robot_token import get_parameter_from_ssm
 
 
 class ClickHouseHelper:
-    def __init__(self, url=None):
+    def __init__(self, url=None, use_env=False):
         if url is None:
-            url = get_parameter_from_ssm("clickhouse-test-stat-url")
+            if use_env:
+                url = os.getenv("clickhouse_test_stat_url")
+            else:
+                url = get_parameter_from_ssm("clickhouse-test-stat-url")
 
         self.url = url
-        self.auth = {
-            "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
-            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
-        }
+        if use_env:
+            self.auth = {
+                "X-ClickHouse-User": os.getenv("clickhouse_test_stat_login"),
+                "X-ClickHouse-Key": os.getenv("clickhouse_test_stat_password"),
+            }
+        else:
+            self.auth = {
+                "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
+                "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
+            }
 
     @staticmethod
     def _insert_json_str_info_impl(url, auth, db, table, json_str):

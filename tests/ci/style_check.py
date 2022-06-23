@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import subprocess
 import os
 import csv
 import sys
-
 from github import Github
 
 from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from s3_helper import S3Helper
 from pr_info import PRInfo
-from get_robot_token import get_best_robot_token
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
@@ -63,6 +63,40 @@ def process_result(result_folder):
         return state, description, test_results, additional_files
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Check code style"
+                    "Example for local running: "
+                    "python docker_images_check.py --use-env ",
+    )
+    parser.add_argument(
+        "--use-env",
+        action="store_true",
+        dest="use_env",
+        default=argparse.SUPPRESS,
+        help="Use environmental variables instead of SSM",
+    )
+    parser.add_argument(
+        "--docker-user",
+        type=str,
+        default="robotclickhouse",
+        help="Username to use for docker registry",
+    )
+    parser.add_argument(
+        "--docker-password",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Use docker password as argument rather than ssm",
+    )
+    parser.add_argument(
+        "--docker-host",
+        type=str,
+        default="docker.io",
+        help="The docker host to use for images eg. docker.io",
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -73,7 +107,20 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    args = parse_args()
+    docker_password = ''
+    if args.docker_password:
+        docker_password = args.docker_password
+    else:
+        docker_password = get_parameter_from_ssm("dockerhub_robot_password")
+    subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
+        "docker login {} --username '{}' --password-stdin".format(args.docker_host, args.docker_user),
+        input=docker_password,
+        encoding="utf-8",
+        shell=True,
+    )
+
+    gh = Github(get_best_robot_token(use_env=args.use_env))
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -83,8 +130,8 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/style-test")
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    docker_image = get_image_with_version(temp_path, "{}/clickhouse/style-test".format(docker_host))
+    s3_helper = S3Helper()
 
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
@@ -99,7 +146,7 @@ if __name__ == "__main__":
     )
 
     state, description, test_results, additional_files = process_result(temp_path)
-    ch_helper = ClickHouseHelper()
+    ch_helper = ClickHouseHelper(use_env=args.use_env)
     mark_flaky_tests(ch_helper, NAME, test_results)
 
     report_url = upload_results(
