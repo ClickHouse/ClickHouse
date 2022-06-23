@@ -138,8 +138,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 
     if (engine_name == "Ordinary")
+    {
+        if (!create.attach && !context->getSettingsRef().allow_deprecated_database_ordinary)
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Ordinary database engine is deprecated");
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
-    else if (engine_name == "Atomic")
+    }
+
+    if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name, context);

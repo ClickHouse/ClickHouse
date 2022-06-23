@@ -43,7 +43,7 @@ public:
     void dropTable(
         ContextPtr context,
         const String & table_name,
-        bool no_delay) override;
+        bool sync) override;
 
     void renameTable(
         ContextPtr context,
