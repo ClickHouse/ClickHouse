@@ -162,6 +162,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     query.as_table.clear();
     query.if_not_exists = false;
     query.is_populate = false;
+    query.is_create_empty = false;
     query.replace_view = false;
     query.replace_table = false;
     query.create_or_replace = false;
