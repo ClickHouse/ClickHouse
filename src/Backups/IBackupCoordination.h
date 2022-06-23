@@ -13,11 +13,10 @@ class IBackupCoordination
 public:
     virtual ~IBackupCoordination() = default;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) = 0;
-
-    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
-    virtual void syncStageError(const String & current_host, const String & error_message) = 0;
+    /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
+    virtual void setStatus(const String & current_host, const String & new_status) = 0;
+    virtual void setStatusAndWait(const String & current_host, const String & new_status, const Strings & other_hosts) = 0;
+    virtual void setStatusAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms) = 0;
 
     struct PartNameAndChecksum
     {

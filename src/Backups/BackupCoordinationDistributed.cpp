@@ -131,7 +131,7 @@ namespace
 BackupCoordinationDistributed::BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , stage_sync(zookeeper_path_ + "/stage", get_zookeeper_, &Poco::Logger::get("BackupCoordination"))
+    , status_sync(zookeeper_path_ + "/status", get_zookeeper_, &Poco::Logger::get("BackupCoordination"))
 {
     createRootNodes();
 }
@@ -157,14 +157,19 @@ void BackupCoordinationDistributed::removeAllNodes()
 }
 
 
-void BackupCoordinationDistributed::syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout)
+void BackupCoordinationDistributed::setStatus(const String & current_host, const String & new_status)
 {
-    stage_sync.syncStage(current_host, new_stage, wait_hosts, timeout);
+    status_sync.set(current_host, new_status);
 }
 
-void BackupCoordinationDistributed::syncStageError(const String & current_host, const String & error_message)
+void BackupCoordinationDistributed::setStatusAndWait(const String & current_host, const String & new_status, const Strings & other_hosts)
 {
-    stage_sync.syncStageError(current_host, error_message);
+    status_sync.setAndWait(current_host, new_status, other_hosts);
+}
+
+void BackupCoordinationDistributed::setStatusAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms)
+{
+    status_sync.setAndWaitFor(current_host, new_status, other_hosts, timeout_ms);
 }
 
 

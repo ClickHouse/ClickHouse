@@ -39,12 +39,43 @@ namespace ErrorCodes
 
 namespace
 {
-    String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_char_uppercase)
+    /// Initial status.
+    constexpr const char kPreparingStatus[] = "preparing";
+
+    /// Finding databases and tables in the backup which we're going to restore.
+    constexpr const char kFindingTablesInBackupStatus[] = "finding tables in backup";
+
+    /// Creating databases or finding them and checking their definitions.
+    constexpr const char kCreatingDatabasesStatus[] = "creating databases";
+
+    /// Creating tables or finding them and checking their definition.
+    constexpr const char kCreatingTablesStatus[] = "creating tables";
+
+    /// Inserting restored data to tables.
+    constexpr const char kInsertingDataToTablesStatus[] = "inserting data to tables";
+
+    /// Prefix for error statuses.
+    constexpr const char kErrorStatus[] = "error: ";
+
+    /// Uppercases the first character of a passed string.
+    String toUpperFirst(const String & str)
     {
+        String res = str;
+        res[0] = std::toupper(res[0]);
+        return res;
+    }
+
+    /// Outputs "table <name>" or "temporary table <name>"
+    String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_upper)
+    {
+        String str;
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            return fmt::format("{}emporary table {}", first_char_uppercase ? 'T' : 't', backQuoteIfNeed(table_name));
+            str = fmt::format("temporary table {}", backQuoteIfNeed(table_name));
         else
-            return fmt::format("{}able {}.{}", first_char_uppercase ? 'T' : 't', backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
+            str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
+        if (first_upper)
+            str[0] = std::toupper(str[0]);
+        return str;
     }
 
     String tryGetTableEngine(const IAST & ast)
@@ -70,20 +101,6 @@ namespace
     }
 }
 
-std::string_view RestorerFromBackup::toString(Stage stage)
-{
-    switch (stage)
-    {
-        case Stage::kPreparing: return "Preparing";
-        case Stage::kFindingTablesInBackup: return "Finding tables in backup";
-        case Stage::kCreatingDatabases: return "Creating databases";
-        case Stage::kCreatingTables: return "Creating tables";
-        case Stage::kInsertingDataToTables: return "Inserting data to tables";
-        case Stage::kError: return "Error";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown restore stage: {}", static_cast<int>(stage));
-}
-
 
 RestorerFromBackup::RestorerFromBackup(
     const ASTBackupQuery::Elements & restore_query_elements_,
@@ -100,6 +117,7 @@ RestorerFromBackup::RestorerFromBackup(
     , timeout(timeout_)
     , create_table_timeout_ms(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
+    , current_status(kPreparingStatus)
 {
 }
 
@@ -120,7 +138,7 @@ void RestorerFromBackup::run(bool only_check_access)
     try
     {
         /// restoreMetadata() must not be called multiple times.
-        if (current_stage != Stage::kPreparing)
+        if (current_status != kPreparingStatus)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
 
         /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
@@ -130,7 +148,7 @@ void RestorerFromBackup::run(bool only_check_access)
         renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
 
         /// Find all the databases and tables which we will read from the backup.
-        setStage(Stage::kFindingTablesInBackup);
+        setStatus(kFindingTablesInBackupStatus);
         findDatabasesAndTablesInBackup();
 
         /// Check access rights.
@@ -140,23 +158,23 @@ void RestorerFromBackup::run(bool only_check_access)
             return;
 
         /// Create databases using the create queries read from the backup.
-        setStage(Stage::kCreatingDatabases);
+        setStatus(kCreatingDatabasesStatus);
         createDatabases();
 
         /// Create tables using the create queries read from the backup.
-        setStage(Stage::kCreatingTables);
+        setStatus(kCreatingTablesStatus);
         createTables();
 
         /// All what's left is to insert data to tables.
         /// No more data restoring tasks are allowed after this point.
-        setStage(Stage::kInsertingDataToTables);
+        setStatus(kInsertingDataToTablesStatus);
     }
     catch (...)
     {
         try
         {
             /// Other hosts should know that we've encountered an error.
-            setStage(Stage::kError, getCurrentExceptionMessage(false));
+            setStatus(kErrorStatus + getCurrentExceptionMessage(false));
         }
         catch (...)
         {
@@ -168,7 +186,7 @@ void RestorerFromBackup::run(bool only_check_access)
 
 RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
 {
-    if (current_stage != Stage::kInsertingDataToTables)
+    if (current_status != kInsertingDataToTablesStatus)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata wasn't restored");
 
     if (data_restore_tasks.empty() && !access_restore_task)
@@ -197,27 +215,23 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
     return res_tasks;
 }
 
-void RestorerFromBackup::setStage(Stage new_stage, const String & error_message)
+void RestorerFromBackup::setStatus(const String & new_status)
 {
-    if (new_stage == Stage::kError)
-        LOG_ERROR(log, "{} failed with error: {}", toString(current_stage), error_message);
-    else
-        LOG_TRACE(log, "{}", toString(new_stage));
-
-    current_stage = new_stage;
-
-    if (!restore_coordination)
-        return;
-
-    if (new_stage == Stage::kError)
+    bool is_error_status = new_status.starts_with(kErrorStatus);
+    if (is_error_status)
     {
-        restore_coordination->syncStageError(restore_settings.host_id, error_message);
+        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), new_status);
+        if (restore_coordination)
+            restore_coordination->setStatus(restore_settings.host_id, new_status);
     }
     else
     {
+        LOG_TRACE(log, "{}", toUpperFirst(new_status));
+        current_status = new_status;
         auto all_hosts
             = BackupSettings::Util::filterHostIDs(restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
-        restore_coordination->syncStage(restore_settings.host_id, static_cast<int>(new_stage), all_hosts, timeout);
+        if (restore_coordination)
+            restore_coordination->setStatusAndWait(restore_settings.host_id, new_status, all_hosts);
     }
 }
 
@@ -767,14 +781,14 @@ std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencie
 
 void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 {
-    if (current_stage == Stage::kInsertingDataToTables)
+    if (current_status == kInsertingDataToTablesStatus)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding data-restoring tasks is not allowed");
     data_restore_tasks.push_back(std::move(new_task));
 }
 
 void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
 {
-    if (current_stage == Stage::kInsertingDataToTables)
+    if (current_status == kInsertingDataToTablesStatus)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding data-restoring tasks is not allowed");
     insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }

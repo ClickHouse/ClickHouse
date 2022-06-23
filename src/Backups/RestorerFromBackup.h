@@ -57,29 +57,6 @@ public:
     /// Checks that a specified path is already registered to be used for restoring access control.
     void checkPathInBackupIsRegisteredToRestoreAccess(const String & path);
 
-    /// Reading a backup includes a few stages:
-    enum class Stage
-    {
-        /// Initial stage.
-        kPreparing,
-
-        /// Finding databases and tables in the backup which we're going to restore.
-        kFindingTablesInBackup,
-
-        /// Creating databases or finding them and checking their definitions.
-        kCreatingDatabases,
-
-        /// Creating tables or finding them and checking their definition.
-        kCreatingTables,
-
-        /// Inserting restored data to tables.
-        kInsertingDataToTables,
-
-        /// An error happens during any of the stages above, the backup is not restored properly.
-        kError = -1,
-    };
-    static std::string_view toString(Stage stage);
-
     /// Throws an exception that a specified table engine doesn't support partitions.
     [[noreturn]] static void throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine);
 
@@ -96,12 +73,12 @@ private:
     UInt64 create_table_timeout_ms;
     Poco::Logger * log;
 
-    Stage current_stage = Stage::kPreparing;
+    String current_status;
     std::vector<std::filesystem::path> root_paths_in_backup;
     DDLRenamingMap renaming_map;
 
     void run(bool only_check_access);
-    void setStage(Stage new_stage, const String & error_message = {});
+
     void findRootPathsInBackup();
     
     void findDatabasesAndTablesInBackup();
@@ -113,6 +90,8 @@ private:
     
     void createDatabases();
     void createTables();
+
+    void setStatus(const String & new_status);
 
     struct DatabaseInfo
     {
