@@ -190,6 +190,8 @@ struct QuantileApproximateWeighted
             g = std::numeric_limits<UnderlyingType>::max();
         else if (yl + (dy / dx) * (level - xl) < std::numeric_limits<UnderlyingType>::min())
             g = std::numeric_limits<UnderlyingType>::min();
+        else if (isNaN(yl + (dy / dx) * (level - xl)))
+            g = std::numeric_limits<UnderlyingType>::quiet_NaN();
         else
             g = yl + (dy / dx) * (level - xl);
 
@@ -312,6 +314,8 @@ struct QuantileApproximateWeighted
                 g = std::numeric_limits<UnderlyingType>::max();
             else if ((yl + (dy / dx) * (level - xl)) < std::numeric_limits<UnderlyingType>::min())
                 g = std::numeric_limits<UnderlyingType>::min();
+            else if (isNaN(yl + (dy / dx) * (level - xl)))
+                g = std::numeric_limits<UnderlyingType>::quiet_NaN();
             else
                 g = yl + (dy / dx) * (level - xl);
 
