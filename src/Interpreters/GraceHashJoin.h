@@ -54,6 +54,10 @@ public:
     std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor) override;
 
 private:
+    /// Check that the curren join kind is supported.
+    /// Throw exception if it is not.
+    void checkJoinKind();
+
     /// Split block into multiple shards by hash.
     template <bool right>
     Blocks scatterBlock(const Block & block, size_t shards) const;

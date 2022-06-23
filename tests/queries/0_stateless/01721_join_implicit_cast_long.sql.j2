@@ -16,6 +16,8 @@ SET join_algorithm = '{{ join_type }}';
 
 {% if join_type == 'auto' -%}
 SET max_bytes_in_join = 100;
+{% else %}
+SET max_bytes_in_join = '100M';
 {% endif -%}
 
 SELECT '= full =';
