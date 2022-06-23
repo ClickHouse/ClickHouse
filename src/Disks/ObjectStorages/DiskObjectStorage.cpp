@@ -486,7 +486,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     const WriteSettings & settings)
 {
     auto transaction = createTransaction();
-    auto result = transaction->writeFile(path, buf_size, mode, settings);
+    auto result = transaction->writeFile(
+        path,
+        buf_size,
+        mode,
+        updateSettingsForReadWrite(path, settings));
 
     return result;
 }

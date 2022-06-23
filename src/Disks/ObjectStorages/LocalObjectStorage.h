@@ -4,6 +4,10 @@
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -11,7 +15,7 @@ namespace DB
 class LocalObjectStorage : public IObjectStorage
 {
 public:
-    LocalObjectStorage() = default;
+    LocalObjectStorage();
 
     bool exists(const std::string & path) const override;
 
@@ -83,6 +87,7 @@ public:
     bool isRemote() const override { return false; }
 
 private:
+    Poco::Logger * log;
 };
 
 }
