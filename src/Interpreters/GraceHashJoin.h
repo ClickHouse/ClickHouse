@@ -54,7 +54,7 @@ public:
     std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor) override;
 
 private:
-    /// Check that the curren join kind is supported.
+    /// Check that the current join kind is supported.
     /// Throw exception if it is not.
     void checkJoinKind();
 
