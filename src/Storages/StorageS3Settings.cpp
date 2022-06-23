@@ -83,7 +83,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             rw_settings.max_single_part_upload_size = get_uint_for_key(key, "max_single_part_upload_size", true, settings.s3_max_single_part_upload_size);
             rw_settings.max_connections = get_uint_for_key(key, "max_connections", true, settings.s3_max_connections);
 
-            s3_settings.emplace(endpoint, S3Settings{std::move(auth_settings), rw_settings});
+            s3_settings.emplace(endpoint, S3Settings{std::move(auth_settings), std::move(rw_settings)});
         }
     }
 }

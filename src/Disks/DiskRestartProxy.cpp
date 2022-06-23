@@ -171,7 +171,7 @@ void DiskRestartProxy::moveDirectory(const String & from_path, const String & to
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
-DiskDirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::iterateDirectory(path);
@@ -207,7 +207,7 @@ void DiskRestartProxy::copyDirectoryContent(const String & from_dir, const std::
     DiskDecorator::copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
-void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file_names)
+void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file_names) const
 {
     ReadLock lock (mutex);
     DiskDecorator::listFiles(path, file_names);
@@ -276,7 +276,7 @@ void DiskRestartProxy::setLastModified(const String & path, const Poco::Timestam
     DiskDecorator::setLastModified(path, timestamp);
 }
 
-Poco::Timestamp DiskRestartProxy::getLastModified(const String & path)
+Poco::Timestamp DiskRestartProxy::getLastModified(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getLastModified(path);

@@ -26,7 +26,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     std::optional<ParallelReadingExtension> extension_)
     : MergeTreeBaseSelectProcessor{
         storage_snapshot_->getSampleBlockForColumns(required_columns_),
-        storage_, storage_snapshot_, prewhere_info_, actions_settings, max_block_size_rows_,
+        storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
     required_columns{std::move(required_columns_)},
@@ -64,11 +64,11 @@ void MergeTreeSelectProcessor::initializeReaders()
     owned_mark_cache = storage.getContext()->getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, storage_snapshot->getMetadataForQuery(),
-        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
 
     if (prewhere_info)
         pre_reader = data_part->getReader(task_columns.pre_columns, storage_snapshot->getMetadataForQuery(),
-            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
 
 }
 

@@ -175,6 +175,8 @@ public:
     static Configuration getConfiguration(ASTs & args, ContextPtr context);
     static Configuration parseConfigurationFromNamedCollection(ConfigurationFromNamedCollection & configuration_from_config);
     static void setHeadersInConfiguration(ASTs & args, ContextPtr context, Configuration & configuration);
+
+    static ASTs::iterator collectHeaders(ASTs & url_function_args, Configuration & configuration, ContextPtr context);
 };
 
 

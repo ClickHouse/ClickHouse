@@ -209,6 +209,10 @@ public:
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
 
+    std::string sync(const std::string & path);
+
+    Coordination::Error trySync(const std::string & path, std::string & returned_path);
+
     Int64 getClientID();
 
     /// Remove the node with the subtree. If someone concurrently adds or removes a node
@@ -239,6 +243,10 @@ public:
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
+
+    /// Wait for the ephemeral node created in previous session to disappear.
+    /// Throws LOGICAL_ERROR if node still exists after 2x session_timeout.
+    void waitForEphemeralToDisappearIfAny(const std::string & path);
 
     /// Async interface (a small subset of operations is implemented).
     ///
@@ -290,6 +298,11 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
 
+    using FutureSync = std::future<Coordination::SyncResponse>;
+    FutureSync asyncSync(const std::string & path);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureSync asyncTrySyncNoThrow(const std::string & path);
+
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
     ///
@@ -325,6 +338,7 @@ private:
         const std::string & path, Strings & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
+    Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
