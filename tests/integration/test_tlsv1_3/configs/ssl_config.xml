@@ -28,7 +28,6 @@
             <requireTLSv1_3>true</requireTLSv1_3>
             <verificationMode>relaxed</verificationMode>
         </server>
-
         <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
             <cacheSessions>false</cacheSessions>
             <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
