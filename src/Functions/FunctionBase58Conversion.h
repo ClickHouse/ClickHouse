@@ -61,7 +61,18 @@ struct Base58Encode
             /// This way we do exponential resizes and one final resize after whole operation is complete
             encoded.clear();
             if (srclen)
-                encoder.encode(encoded, source, srclen);
+                try
+                {
+                    encoder.encode(encoded, source, srclen);
+                }
+                catch (const std::invalid_argument& e)
+                {
+                    throw Exception(e.what(), ErrorCodes::BAD_ARGUMENTS);
+                }
+                catch (const std::domain_error& e)
+                {
+                    throw Exception(e.what(), ErrorCodes::BAD_ARGUMENTS);
+                }
             size_t outlen = encoded.size();
 
             if (processed_size + outlen >= current_allocated_size)
@@ -126,7 +137,18 @@ struct Base58Decode
             /// This way we do exponential resizes and one final resize after whole operation is complete
             decoded.clear();
             if (srclen)
-                decoder.decode(decoded, source, srclen);
+                try
+                {
+                    decoder.decode(decoded, source, srclen);
+                }
+                catch (const std::invalid_argument& e)
+                {
+                    throw Exception(e.what(), ErrorCodes::BAD_ARGUMENTS);
+                }
+                catch (const std::domain_error& e)
+                {
+                    throw Exception(e.what(), ErrorCodes::BAD_ARGUMENTS);
+                }
             size_t outlen = decoded.size();
 
             if (processed_size + outlen >= current_allocated_size)
