@@ -124,6 +124,23 @@
     #endif
 #endif
 
+// Macros for Clang Thread Safety Analysis (TSA). They can be safely ignored by other compilers.
+// Feel free to extend, but please stay close to https://clang.llvm.org/docs/ThreadSafetyAnalysis.html#mutexheader
+#if defined(__clang__)
+#    define TSA_GUARDED_BY(...) __attribute__((guarded_by(__VA_ARGS__)))                       // data is protected by given capability
+#    define TSA_PT_GUARDED_BY(...) __attribute__((pt_guarded_by(__VA_ARGS__)))                 // pointed-to data is protected by the given capability
+#    define TSA_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))                // thread needs exclusive possession of given capability
+#    define TSA_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))  // thread needs shared possession of given capability
+#    define TSA_ACQUIRED_AFTER(...) __attribute__((acquired_after(__VA_ARGS__)))               // annotated lock must be locked after given lock
+#    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           // disable TSA for a function
+#else
+#    define TSA_GUARDED_BY(...)
+#    define TSA_PT_GUARDED_BY(...)
+#    define TSA_REQUIRES(...)
+#    define TSA_REQUIRES_SHARED(...)
+#    define TSA_NO_THREAD_SAFETY_ANALYSIS
+#endif
+
 /// A template function for suppressing warnings about unused variables or function results.
 template <typename... Args>
 constexpr void UNUSED(Args &&... args [[maybe_unused]])

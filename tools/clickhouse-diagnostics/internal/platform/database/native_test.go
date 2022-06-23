@@ -67,7 +67,7 @@ func TestReadTableNamesForDatabase(t *testing.T) {
 	t.Run("client can read tables for a database", func(t *testing.T) {
 		tables, err := clickhouseClient.ReadTableNamesForDatabase("system")
 		require.Nil(t, err)
-		require.Equal(t, 70, len(tables))
+		require.GreaterOrEqual(t, len(tables), 70)
 		require.Contains(t, tables, "merge_tree_settings")
 	})
 }

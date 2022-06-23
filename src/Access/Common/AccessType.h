@@ -99,6 +99,7 @@ enum class AccessType
     \
     M(TRUNCATE, "TRUNCATE TABLE", TABLE, ALL) \
     M(OPTIMIZE, "OPTIMIZE TABLE", TABLE, ALL) \
+    M(BACKUP, "", TABLE, ALL) /* allows to backup tables */\
     \
     M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user
                                       (anyone can kill his own queries) */\

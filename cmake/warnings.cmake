@@ -19,7 +19,6 @@ if (COMPILER_CLANG)
     # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
     # We want to get everything out of the compiler for code quality.
     add_warning(everything)
-
     add_warning(pedantic)
     no_warning(vla-extension)
     no_warning(zero-length-array)
@@ -51,6 +50,7 @@ if (COMPILER_CLANG)
     no_warning(vla)
     no_warning(weak-template-vtables)
     no_warning(weak-vtables)
+    no_warning(thread-safety-negative) # experimental flag, too many false positives
     # TODO Enable conversion, sign-conversion, double-promotion warnings.
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler
