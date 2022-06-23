@@ -2754,14 +2754,14 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
         create table
             rabbit_in (val String)
             engine=RabbitMQ
-            settings rabbitmq_host_port = 'localhost:5672',
+            settings rabbitmq_host_port = 'rabbit1:5672',
                      rabbitmq_exchange_name = 'xhep',
                      rabbitmq_format = 'MsgPack',
                      rabbitmq_num_consumers = 1;
         create table
             rabbit_out (val String)
             engine=RabbitMQ
-            settings rabbitmq_host_port = 'localhost:5672',
+            settings rabbitmq_host_port = 'rabbit1:5672',
                      rabbitmq_exchange_name = 'xhep',
                      rabbitmq_format = 'MsgPack',
                      rabbitmq_num_consumers = 1;
