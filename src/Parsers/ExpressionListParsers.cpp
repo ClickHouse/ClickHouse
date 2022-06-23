@@ -679,13 +679,17 @@ public:
     {
     }
 
-    Operator(String func_name_, Int32 priority_, Int32 arity_ = 2) : func_name(func_name_), priority(priority_), arity(arity_)
+    Operator(String func_name_,
+             Int32 priority_,
+             Int32 arity_ = 2,
+             bool any_all_ = false) : func_name(func_name_), priority(priority_), arity(arity_), any_all(any_all_)
     {
     }
 
     String func_name;
     Int32 priority;
     Int32 arity;
+    bool any_all;
 };
 
 enum Action
@@ -710,9 +714,17 @@ public:
         return true;
     }
 
-    void pushOperator(Operator op)
+    void pushOperator(Operator op, bool count = true)
     {
+        if (count && op.func_name != "and" && op.func_name != "or" && op.func_name != "concat")
+        {
+            ++depth_diff;
+            ++depth_total;
+        }
+
         operators.push_back(std::move(op));
+
+        // LOG_FATAL(&Poco::Logger::root(), "#push {}: diff = {}, total = {}", op.func_name, depth_diff, depth_total);
     }
 
     bool popOperand(ASTPtr & op)
@@ -840,6 +852,13 @@ public:
         else
             pushOperand(node);
 
+        // LOG_FATAL(&Poco::Logger::root(), "#wrap-before: diff = {}, total = {}", depth_diff, depth_total);
+
+        depth_diff -= depth_total;
+        depth_total = 0;
+
+        // LOG_FATAL(&Poco::Logger::root(), "#wrap-after: diff = {}, total = {}", depth_diff, depth_total);
+
         return res;
     }
 
@@ -925,6 +944,16 @@ public:
         return open_between > 0;
     }
 
+    void syncDepth(IParser::Pos & pos)
+    {
+        // LOG_FATAL(&Poco::Logger::root(), "#sync: diff = {}", depth_diff);
+        for (; depth_diff > 0; --depth_diff)
+            pos.increaseDepth();
+
+        for (; depth_diff < 0; ++depth_diff)
+            pos.decreaseDepth();
+    }
+
 protected:
     std::vector<Operator> operators;
     ASTs operands;
@@ -932,6 +961,8 @@ protected:
     int state = 0;
 
     int open_between = 0;
+    int depth_diff = 1;
+    int depth_total = 1;
 };
 
 class FunctionLayer : public Layer
@@ -2016,14 +2047,14 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {"%",             Operator("modulo",    30)},
         {"MOD",           Operator("modulo",    30)},
         {"DIV",           Operator("intDiv",    30)},
-        {"==",            Operator("equals",    10)},          // Base logic
-        {"!=",            Operator("notEquals", 10)},
-        {"<>",            Operator("notEquals", 10)},
-        {"<=",            Operator("lessOrEquals", 10)},
-        {">=",            Operator("greaterOrEquals", 10)},
-        {"<",             Operator("less",      10)},
-        {">",             Operator("greater",   10)},
-        {"=",             Operator("equals",    10)},
+        {"==",            Operator("equals",    10, 2, true)},          // Base logic
+        {"!=",            Operator("notEquals", 10, 2, true)},
+        {"<>",            Operator("notEquals", 10, 2, true)},
+        {"<=",            Operator("lessOrEquals", 10, 2, true)},
+        {">=",            Operator("greaterOrEquals", 10, 2, true)},
+        {"<",             Operator("less",      10, 2, true)},
+        {">",             Operator("greater",   10, 2, true)},
+        {"=",             Operator("equals",    10, 2, true)},
         {"AND",           Operator("and",       5)},              // AND OR
         {"OR",            Operator("or",        4)},
         {"||",            Operator("concat",    11)},          // concat() func
@@ -2077,6 +2108,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!storage.back()->parse(pos, expected, next))
             return false;
 
+        storage.back()->syncDepth(pos);
+
         if (storage.back()->isFinished())
         {
             next = Action::OPERATOR;
@@ -2096,10 +2129,53 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ASTPtr tmp;
 
             /// Special case for cast expression
-            if (ParseCastExpression(pos, tmp, expected))
+            Operator prev_op;
+            bool parse_cast = true;
+            bool any_all = true;
+            if (storage.back()->popOperator(prev_op))
+            {
+                storage.back()->pushOperator(prev_op, false);
+                if (prev_op.func_name == "tupleElement")
+                    parse_cast = false;
+                any_all = prev_op.any_all;
+            }
+            if (parse_cast && ParseCastExpression(pos, tmp, expected))
             {
                 storage.back()->pushOperand(std::move(tmp));
                 continue;
+            }
+
+            if (any_all)
+            {
+                auto old_pos = pos;
+                SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+
+                if (ParserKeyword("ANY").ignore(pos, expected) && ParserSubquery().parse(pos, tmp, expected))
+                    subquery_function_type = SubqueryFunctionType::ANY;
+                else if (ParserKeyword("ALL").ignore(pos, expected) && ParserSubquery().parse(pos, tmp, expected))
+                    subquery_function_type = SubqueryFunctionType::ALL;
+
+                if (subquery_function_type != SubqueryFunctionType::NONE)
+                {
+                    ASTPtr function, argument;
+
+                    if (!storage.back()->popOperator(prev_op))
+                        return false;
+                    if (!storage.back()->popOperand(argument))
+                        return false;
+
+                    function = makeASTFunction(prev_op.func_name, argument, tmp);
+
+                    if (!modifyAST(function, subquery_function_type))
+                        return false;
+
+                    storage.back()->pushOperand(std::move(function));
+                    continue;
+                }
+                else
+                {
+                    pos = old_pos;
+                }
             }
 
             /// Try to find any unary operators
@@ -2174,6 +2250,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
                         || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
                         storage.push_back(std::make_unique<DateDiffLayer>());
+                    else if (function_name_lowercase == "grouping")
+                        storage.push_back(std::make_unique<FunctionLayer>(function_name_lowercase));
                     else
                         storage.push_back(std::make_unique<FunctionLayer>(function_name));
                 }
@@ -2326,6 +2404,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!storage.back()->getResult(node))
         return false;
+
+    storage.back()->syncDepth(pos);
 
     return true;
 }
