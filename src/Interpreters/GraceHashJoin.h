@@ -19,12 +19,17 @@ class GraceHashJoin final : public IJoin
 {
     class FileBucket;
     class DelayedBlocks;
+    class InMemoryJoin;
+
     using Buckets = std::vector<std::shared_ptr<FileBucket>>;
     using BucketsSnapshot = std::shared_ptr<const Buckets>;
+    using InMemoryJoinPtr = std::unique_ptr<InMemoryJoin>;
 
 public:
     GraceHashJoin(
         ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_ = false);
+
+    ~GraceHashJoin() override;
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
@@ -39,6 +44,8 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
 
+    bool supportParallelJoin() const override { return true; }
+
     std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
@@ -47,9 +54,6 @@ public:
     std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor) override;
 
 private:
-    using InMemoryJoin = HashJoin;
-    using InMemoryJoinPtr = std::unique_ptr<InMemoryJoin>;
-
     /// Split block into multiple shards by hash.
     template <bool right>
     Blocks scatterBlock(const Block & block, size_t shards) const;
@@ -85,6 +89,8 @@ private:
     size_t max_num_buckets;
 
     InMemoryJoinPtr first_bucket;
+    std::mutex first_bucket_mutex;
+
     MultiVersion<Buckets> buckets;
     std::mutex rehash_mutex;
     std::atomic<bool> started_reading_delayed_blocks{false};

@@ -5,13 +5,15 @@
 #include <Formats/NativeWriter.h>
 #include <Formats/TemporaryFileStream.h>
 
+#include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Core/ProtocolDefines.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
-#include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
 
+#include <base/FnTraits.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -32,7 +34,7 @@ namespace
         explicit FileBlockReader(const TemporaryFileOnDisk & file, const Block & header)
             : file_reader{file.getDisk()->readFile(file.getPath())}
             , compressed_reader{*file_reader}
-            , block_reader{compressed_reader, header, 0}
+            , block_reader{compressed_reader, header, DBMS_TCP_PROTOCOL_VERSION}
         {
         }
 
@@ -83,7 +85,7 @@ namespace
     class MergingBlockReader
     {
     public:
-        explicit MergingBlockReader(FileBlockReaderPtr reader_, size_t desired_block_size = DEFAULT_BLOCK_SIZE)
+        explicit MergingBlockReader(FileBlockReaderPtr reader_, size_t desired_block_size = DEFAULT_BLOCK_SIZE * 8)
             : reader{std::move(reader_)}, accumulator{desired_block_size}
         {
         }
@@ -167,7 +169,7 @@ namespace
         void reset(const Block & sample)
         {
             header = sample.cloneEmpty();
-            output.emplace(compressed_writer, 0, header);
+            output.emplace(compressed_writer, DBMS_TCP_PROTOCOL_VERSION, header);
         }
 
         Block header;
@@ -179,6 +181,29 @@ namespace
         std::atomic<bool> finished{false};
         size_t num_blocks = 0;
     };
+
+    std::deque<size_t> generateRandomPermutation(size_t from, size_t to)
+    {
+        size_t size = to - from;
+        std::deque<size_t> indices(size);
+        std::iota(indices.begin(), indices.end(), from);
+        std::shuffle(indices.begin(), indices.end(), thread_local_rng);
+        return indices;
+    }
+
+    // Try to apply @callback in the order specified in @indices
+    // Until it returns true for each index in the @indices.
+    void retryForEach(std::deque<size_t> indices, Fn<bool(size_t)> auto callback)
+    {
+        while (!indices.empty())
+        {
+            size_t bucket = indices.front();
+            indices.pop_front();
+
+            if (!callback(bucket))
+                indices.push_back(bucket);
+        }
+    }
 
 }
 
@@ -202,30 +227,10 @@ public:
     {
     }
 
-    void addRightBlock(const Block & block)
-    {
-        ensureState(State::WRITING_BLOCKS);
-        right_file.write(block);
-    }
-
-    bool tryAddLeftBlock(const Block & block)
-    {
-        ensureState(State::WRITING_BLOCKS);
-        std::unique_lock lock{left_file_mutex, std::try_to_lock};
-        if (!lock.owns_lock())
-        {
-            return false;
-        }
-        left_file.write(block);
-        return true;
-    }
-
-    void addLeftBlock(const Block & block)
-    {
-        ensureState(State::WRITING_BLOCKS);
-        std::unique_lock lock{left_file_mutex};
-        left_file.write(block);
-    }
+    void addLeftBlock(const Block & block) { return addBlockImpl(block, left_file_mutex, left_file); }
+    void addRightBlock(const Block & block) { return addBlockImpl(block, right_file_mutex, right_file); }
+    bool tryAddLeftBlock(const Block & block) { return tryAddBlockImpl(block, left_file_mutex, left_file); }
+    bool tryAddRightBlock(const Block & block) { return tryAddBlockImpl(block, right_file_mutex, right_file); }
 
     void startJoining()
     {
@@ -253,7 +258,28 @@ public:
 
     MergingBlockReader openRightTableReader() const { return right_file.makeReader(); }
 
+    std::scoped_lock<std::mutex> lockJoin() { return std::scoped_lock{join_mutex}; }
+
 private:
+    bool tryAddBlockImpl(const Block & block, std::mutex & mutex, FileBlockWriter & writer)
+    {
+        ensureState(State::WRITING_BLOCKS);
+        std::unique_lock lock{mutex, std::try_to_lock};
+        if (!lock.owns_lock())
+        {
+            return false;
+        }
+        writer.write(block);
+        return true;
+    }
+
+    void addBlockImpl(const Block & block, std::mutex & mutex, FileBlockWriter & writer)
+    {
+        ensureState(State::WRITING_BLOCKS);
+        std::unique_lock lock{mutex};
+        writer.write(block);
+    }
+
     void transition(State expected, State desired)
     {
         State prev = state.exchange(desired);
@@ -271,8 +297,16 @@ private:
     FileBlockWriter left_file;
     FileBlockWriter right_file;
     std::mutex left_file_mutex;
+    std::mutex right_file_mutex;
+    std::mutex join_mutex; /// Protects external in-memory join
     const FileBucket * parent;
     std::atomic<State> state;
+};
+
+class GraceHashJoin::InMemoryJoin : public HashJoin
+{
+public:
+    using HashJoin::HashJoin;
 };
 
 GraceHashJoin::GraceHashJoin(
@@ -295,6 +329,8 @@ GraceHashJoin::GraceHashJoin(
     buckets.set(std::move(tmp));
     LOG_TRACE(log, "Initialize {} buckets", initial_num_buckets);
 }
+
+GraceHashJoin::~GraceHashJoin() = default;
 
 bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
 {
@@ -344,7 +380,8 @@ GraceHashJoin::BucketsSnapshot GraceHashJoin::rehash(size_t desired_size)
 
     if (next_size > max_num_buckets)
     {
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many grace hash join buckets, consider increasing max_rows_in_join/max_bytes_in_join");
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED, "Too many grace hash join buckets, consider increasing max_rows_in_join/max_bytes_in_join");
     }
 
     next_snapshot->reserve(next_size);
@@ -402,24 +439,17 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not
     if (not_processed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported hash join type");
 
-    std::deque<size_t> indices(snapshot->size() - 1);
-    std::iota(indices.begin(), indices.end(), 1);
-    std::shuffle(indices.begin(), indices.end(), thread_local_rng);
-    while (!indices.empty())
-    {
-        size_t bucket = indices.front();
-        indices.pop_front();
-
-        Block & block_shard = blocks[bucket];
-        if (block_shard.rows() == 0)
+    // We need to skip the first bucket that is already joined in memory, so we start with 1.
+    auto indices = generateRandomPermutation(1, snapshot->size());
+    retryForEach(
+        indices,
+        [&](size_t bucket)
         {
-            continue;
-        }
-        if (!snapshot->at(bucket)->tryAddLeftBlock(block_shard))
-        {
-            indices.push_back(bucket);
-        }
-    }
+            Block & block_shard = blocks[bucket];
+            if (block_shard.rows() == 0)
+                return true;
+            return snapshot->at(bucket)->tryAddLeftBlock(block_shard);
+        });
 }
 
 size_t GraceHashJoin::getTotalRowCount() const
@@ -541,9 +571,9 @@ Block GraceHashJoin::joinNextBlockInBucket(DelayedBlocks & iterator)
     return block;
 }
 
-std::unique_ptr<HashJoin> GraceHashJoin::makeInMemoryJoin()
+std::unique_ptr<GraceHashJoin::InMemoryJoin> GraceHashJoin::makeInMemoryJoin()
 {
-    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row);
+    return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row);
 }
 
 void GraceHashJoin::fillInMemoryJoin(InMemoryJoinPtr & join, FileBucket * bucket)
@@ -562,31 +592,44 @@ void GraceHashJoin::addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_ind
     BucketsSnapshot snapshot = buckets.get();
     Blocks blocks = scatterBlock<true>(block, snapshot->size());
 
-    join->addJoinedBlock(blocks[bucket_index], /*check_limits=*/false);
-
-    // We need to rebuild block without bucket_index part in case of overflow.
-    bool overflow = !fitsInMemory(join.get());
-    Block to_write;
-    if (overflow)
+    // Add block to the in-memory join
     {
-        blocks.erase(blocks.begin() + bucket_index);
-        to_write = concatenateBlocks(blocks);
+        auto guard = snapshot->at(bucket_index)->lockJoin();
+        join->addJoinedBlock(blocks[bucket_index], /*check_limits=*/false);
+
+        // We need to rebuild block without bucket_index part in case of overflow.
+        bool overflow = !fitsInMemory(join.get());
+        Block to_write;
+        if (overflow)
+        {
+            blocks.erase(blocks.begin() + bucket_index);
+            to_write = concatenateBlocks(blocks);
+        }
+
+        while (overflow)
+        {
+            snapshot = rehash(snapshot->size() * 2);
+            rehashInMemoryJoin(join, snapshot, bucket_index);
+            blocks = scatterBlock<true>(to_write, snapshot->size());
+            overflow = !fitsInMemory(join.get());
+        }
     }
 
-    while (overflow)
-    {
-        snapshot = rehash(snapshot->size() * 2);
-        rehashInMemoryJoin(join, snapshot, bucket_index);
-        blocks = scatterBlock<true>(to_write, snapshot->size());
-        overflow = !fitsInMemory(join.get());
-    }
+    if (blocks.empty())
+        // All blocks were added to the @join
+        return;
 
-    assert(blocks.empty() || blocks.size() == snapshot->size());
-    for (size_t i = 1; i < blocks.size(); ++i)
-    {
-        if (i != bucket_index && blocks[i].rows())
-            snapshot->at(i)->addRightBlock(blocks[i]);
-    }
+    // Write the rest of the blocks to the disk buckets
+    assert(blocks.size() == snapshot->size());
+    auto indices = generateRandomPermutation(1, snapshot->size());
+    retryForEach(
+        indices,
+        [&](size_t bucket)
+        {
+            if (bucket == bucket_index || !blocks[bucket].rows())
+                return true;
+            return snapshot->at(bucket)->tryAddRightBlock(blocks[bucket]);
+        });
 }
 
 template <bool right>
