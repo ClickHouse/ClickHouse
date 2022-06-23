@@ -223,20 +223,14 @@ public:
     virtual std::string getRelativePath() const = 0;
 
     virtual bool exists() const = 0;
-    virtual bool exists(const std::string & name) const = 0;
 
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
 
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const = 0;
-
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & name, size_t buf_size, const WriteSettings & settings) = 0;
 
     virtual void removeFile(const String & name) = 0;
+    virtual void removeFileIfExists(const String & name) = 0;
     virtual void removeRecursive() = 0;
     virtual void removeSharedRecursive(bool keep_in_remote_fs) = 0;
 

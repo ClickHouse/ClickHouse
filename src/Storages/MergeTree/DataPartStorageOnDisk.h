@@ -130,7 +130,6 @@ public:
     void setRelativePath(const std::string & path) override;
 
     bool exists() const override;
-    bool exists(const std::string & name) const override;
 
     void createDirectories() override;
     void createProjection(const std::string & name) override;
@@ -139,18 +138,13 @@ public:
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
         const WriteSettings & settings) override;
 
     void removeFile(const String & name) override;
+    void removeFileIfExists(const String & name) override;
     void removeRecursive() override;
     void removeSharedRecursive(bool keep_in_remote_fs) override;
 

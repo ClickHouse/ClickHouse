@@ -773,15 +773,6 @@ DataPartStorageBuilderOnDisk::DataPartStorageBuilderOnDisk(VolumePtr volume_, st
 {
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageBuilderOnDisk::readFile(
-    const std::string & name,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
-    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
-}
-
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageBuilderOnDisk::writeFile(
     const String & name,
     size_t buf_size,
@@ -793,6 +784,11 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageBuilderOnDisk::writeFile
 void DataPartStorageBuilderOnDisk::removeFile(const String & name)
 {
     return volume->getDisk()->removeFile(fs::path(root_path) / part_dir / name);
+}
+
+void DataPartStorageBuilderOnDisk::removeFileIfExists(const String & name)
+{
+    return volume->getDisk()->removeFileIfExists(fs::path(root_path) / part_dir / name);
 }
 
 void DataPartStorageBuilderOnDisk::removeRecursive()
@@ -827,12 +823,6 @@ void DataPartStorageBuilderOnDisk::createHardLinkFrom(const IDataPartStorage & s
 bool DataPartStorageBuilderOnDisk::exists() const
 {
     return volume->getDisk()->exists(fs::path(root_path) / part_dir);
-}
-
-
-bool DataPartStorageBuilderOnDisk::exists(const std::string & name) const
-{
-    return volume->getDisk()->exists(fs::path(root_path) / part_dir / name);
 }
 
 std::string DataPartStorageBuilderOnDisk::getFullPath() const
