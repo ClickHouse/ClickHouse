@@ -29,6 +29,7 @@ select count() from summing_merge_tree_aggregate_function;
 drop table summing_merge_tree_aggregate_function;
 
 ---- sum + uniq + uniqExact
+set allow_deprecated_syntax_for_merge_tree=1;
 create table summing_merge_tree_aggregate_function (
     d materialized today(),
     k UInt64,
