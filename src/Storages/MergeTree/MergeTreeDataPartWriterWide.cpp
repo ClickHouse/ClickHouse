@@ -149,9 +149,16 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     /// If we didn't finished last granule than we will continue to write it from new block
     if (!last_granule.is_complete)
     {
-        if (settings.can_use_adaptive_granularity && settings.blocks_are_granules_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete granules are not allowed while blocks are granules size. "
-                "Mark number {} (rows {}), rows written in last mark {}, rows to write in last mark from block {} (from row {}), total marks currently {}",
+        /// It is okay to have incomplete granulas if granularity is not set,
+        /// this is the case of Vertical merges,
+        /// when columns of the primary key written with Horizontal merge and calculates granularity,
+        /// which will be passed afterwards for further MergedColumnOnlyOutputStream,
+        /// which cannot have incomplete granulas.
+        if (settings.can_use_adaptive_granularity && settings.blocks_are_granules_size && !compute_granularity)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Incomplete granules are not allowed while blocks are granules size and granularity is set. "
+                "Mark number {} (rows {}), rows written in last mark {}, "
+                "rows to write in last mark from block {} (from row {}), total marks currently {}",
                 last_granule.mark_number, index_granularity.getMarkRows(last_granule.mark_number), rows_written_in_last_mark,
                 last_granule.rows_to_write, last_granule.start_row, index_granularity.getMarksCount());
 
