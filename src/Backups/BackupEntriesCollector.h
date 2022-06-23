@@ -98,7 +98,7 @@ private:
 
     void gatherTablesMetadata();
     void lockTablesForReading();
-    void checkConsistency();
+    std::optional<Exception> compareWithPrevious();
 
     void makeBackupEntriesForDatabasesDefs();
     void makeBackupEntriesForTablesDefs();
@@ -147,7 +147,6 @@ private:
     std::map<QualifiedTableName, TableInfo> table_infos;
     std::set<String> previous_database_names;
     std::set<QualifiedTableName> previous_table_names;
-    bool consistency = false;
 
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;

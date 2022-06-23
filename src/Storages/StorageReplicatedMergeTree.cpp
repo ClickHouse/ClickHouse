@@ -158,6 +158,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
     extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 namespace ActionLocks
@@ -8253,9 +8254,9 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query, bool & consistency) const
+void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    MergeTreeData::adjustCreateQueryForBackup(create_query, consistency);
+    MergeTreeData::adjustCreateQueryForBackup(create_query);
 
     /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
     /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
@@ -8263,19 +8264,11 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
     auto & create = create_query->as<ASTCreateQuery &>();
     
     if (!create.storage || !create.storage->engine)
-    {
-        /// The CREATE query doesn't correspond to this storage.
-        consistency = false;
-        return;
-    }
+        throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query without table engine for a replicated table {}", getStorageID().getFullTableName());
 
     auto & engine = *(create.storage->engine);
     if (!engine.name.starts_with("Replicated") || !engine.name.ends_with("MergeTree"))
-    {
-        /// The CREATE query doesn't correspond to this storage.
-        consistency = false;
-        return;
-    }
+        throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with an unexpected table engine {} for a replicated table {}", engine.name, getStorageID().getFullTableName());
 
     if (create.uuid == UUIDHelpers::Nil)
         return;

@@ -336,7 +336,7 @@ public:
     virtual ASTPtr getCreateDatabaseQueryForBackup() const;
 
     /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
-    virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context, bool & consistency) const;
+    virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
 
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
