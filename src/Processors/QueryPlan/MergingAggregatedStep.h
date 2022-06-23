@@ -19,7 +19,7 @@ public:
         bool memory_efficient_aggregation_,
         size_t max_threads_,
         size_t memory_efficient_merge_threads_,
-        std::optional<QueryProcessingStage::Enum> processing_stage_);
+        bool should_produce_results_in_order_of_bucket_number_);
 
     String getName() const override { return "MergingAggregated"; }
 
@@ -33,7 +33,10 @@ private:
     bool memory_efficient_aggregation;
     size_t max_threads;
     size_t memory_efficient_merge_threads;
-    std::optional<QueryProcessingStage::Enum> processing_stage;
+
+    /// Used to determine, should we resize pipeline to 1 at the end.
+    /// Needed in case of distributed memory efficient aggregation over another distributed aggregation.
+    const bool should_produce_results_in_order_of_bucket_number;
 };
 
 }

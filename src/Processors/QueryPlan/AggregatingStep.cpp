@@ -79,7 +79,7 @@ AggregatingStep::AggregatingStep(
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_,
-    std::optional<QueryProcessingStage::Enum> processing_stage_)
+    bool should_produce_results_in_order_of_bucket_number_)
     : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
@@ -92,7 +92,7 @@ AggregatingStep::AggregatingStep(
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
-    , processing_stage(processing_stage_)
+    , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
 {
 }
 
@@ -357,10 +357,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
 
-        // Needed for GroupingAggregatedTransform in distributed case. Strictly speaking, we should also check that `distributed_aggregation_memory_efficient` will be used.
-        const bool should_have_one_output_stream
-            = processing_stage.value_or(QueryProcessingStage::MAX) == QueryProcessingStage::WithMergeableState;
-        pipeline.resize(should_have_one_output_stream ? 1 : pipeline.getNumStreams(), true /* force */);
+        /// No need to do this in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : pipeline.getNumStreams(), true /* force */);
 
         aggregating = collector.detachProcessors(0);
     }

@@ -1592,7 +1592,7 @@ static void executeMergeAggregatedImpl(
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
     const AggregateDescriptions & aggregates,
-    std::optional<QueryProcessingStage::Enum> processing_stage = std::nullopt)
+    bool should_produce_results_in_order_of_bucket_number)
 {
     const auto & header_before_merge = query_plan.getCurrentDataStream().header;
 
@@ -1630,7 +1630,7 @@ static void executeMergeAggregatedImpl(
         settings.distributed_aggregation_memory_efficient && is_remote_storage,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
-        processing_stage);
+        should_produce_results_in_order_of_bucket_number);
 
     query_plan.addStep(std::move(merging_aggregated));
 }
@@ -1691,6 +1691,9 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 query_plan.addStep(std::move(expression_before_aggregation));
             }
 
+            // Let's just choose the safe option since we don't have enough information here.
+            const bool should_produce_results_in_order_of_bucket_number = true;
+
             executeMergeAggregatedImpl(
                 query_plan,
                 query_info.projection->aggregate_overflow_row,
@@ -1699,7 +1702,8 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 false,
                 context_->getSettingsRef(),
                 query_info.projection->aggregation_keys,
-                query_info.projection->aggregate_descriptions);
+                query_info.projection->aggregate_descriptions,
+                should_produce_results_in_order_of_bucket_number);
         }
     }
 }
@@ -2290,6 +2294,9 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
 
+    const bool should_produce_results_in_order_of_bucket_number
+        = options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
+
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentDataStream(),
         std::move(aggregator_params),
@@ -2303,7 +2310,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         storage_has_evenly_distributed_read,
         std::move(group_by_info),
         std::move(group_by_sort_description),
-        options.to_stage);
+        should_produce_results_in_order_of_bucket_number);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -2316,6 +2323,9 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
         return;
 
+    const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
+        && context->getSettingsRef().distributed_aggregation_memory_efficient;
+
     executeMergeAggregatedImpl(
         query_plan,
         overflow_row,
@@ -2325,7 +2335,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregates(),
-        options.to_stage);
+        should_produce_results_in_order_of_bucket_number);
 }
 
 
