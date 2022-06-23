@@ -1,6 +1,7 @@
 -- Tags: no-parallel
 
 DROP DATABASE IF EXISTS some_tests;
+set allow_deprecated_database_ordinary=1;
 CREATE DATABASE some_tests ENGINE=Ordinary; -- Different inner table name with Atomic
 
 create table some_tests.my_table ENGINE = MergeTree(day, (day), 8192) as select today() as day, 'mystring' as str;

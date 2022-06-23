@@ -109,13 +109,13 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     return table;
 }
 
-void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
+void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
     if (table)
-        table->dropInnerTableIfAny(no_delay, local_context);
+        table->dropInnerTableIfAny(sync, local_context);
     else
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                         backQuote(database_name), backQuote(table_name));
@@ -145,7 +145,7 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, sync);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
