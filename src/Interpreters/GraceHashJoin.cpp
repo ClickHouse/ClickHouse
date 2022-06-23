@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
