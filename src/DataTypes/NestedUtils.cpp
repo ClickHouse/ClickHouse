@@ -1,4 +1,4 @@
-#include <cstring>
+#include <string.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -15,8 +15,6 @@
 
 #include <Parsers/IAST.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
-
 
 namespace DB
 {
@@ -32,30 +30,15 @@ namespace Nested
 
 std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name)
 {
-    if (nested_table_name.empty())
-        return nested_field_name;
-
-    if (nested_field_name.empty())
-        return nested_table_name;
-
     return nested_table_name + "." + nested_field_name;
 }
 
 
 /** Name can be treated as compound if it contains dot (.) in the middle.
   */
-std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
+std::pair<std::string, std::string> splitName(const std::string & name)
 {
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
-        return {name, {}};
-
-    return {name.substr(0, idx), name.substr(idx + 1)};
-}
-
-std::pair<std::string_view, std::string_view> splitName(const std::string_view & name, bool reverse)
-{
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
+    auto idx = name.find_first_of('.');
     if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
         return {name, {}};
 
@@ -158,7 +141,7 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
     for (const auto & name_type : names_and_types)
-        if (!isArray(name_type.type) || !nested_types.contains(splitName(name_type.name).first))
+        if (!isArray(name_type.type) || !nested_types.count(splitName(name_type.name).first))
             res.push_back(name_type);
 
     for (const auto & name_type : nested_types)
@@ -226,22 +209,6 @@ void validateArraySizes(const Block & block)
             }
         }
     }
-}
-
-
-std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case)
-{
-    std::unordered_set<String> nested_table_names;
-    for (const auto & name : block.getNames())
-    {
-        auto nested_table_name = Nested::extractTableName(name);
-        if (to_lower_case)
-            boost::to_lower(nested_table_name);
-
-        if (!nested_table_name.empty())
-            nested_table_names.insert(std::move(nested_table_name));
-    }
-    return nested_table_names;
 }
 
 }

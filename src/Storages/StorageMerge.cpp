@@ -1,5 +1,5 @@
-#include <QueryPipeline/narrowPipe.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataStreams/narrowBlockInputStreams.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -13,7 +13,6 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -22,17 +21,13 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
-#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
 #include <Databases/IDatabase.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -47,7 +42,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 StorageMerge::StorageMerge(
@@ -66,7 +60,7 @@ StorageMerge::StorageMerge(
     , database_is_regexp(database_is_regexp_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_.empty() ? getColumnsDescriptionFromSourceTables() : columns_);
+    storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
@@ -87,17 +81,9 @@ StorageMerge::StorageMerge(
     , database_is_regexp(database_is_regexp_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_.empty() ? getColumnsDescriptionFromSourceTables() : columns_);
+    storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-}
-
-ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables() const
-{
-    auto table = getFirstTable([](auto && t) { return t; });
-    if (!table)
-        throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
-    return table->getInMemoryMetadataPtr()->getColumns();
 }
 
 template <typename F>
@@ -120,15 +106,6 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
     return {};
 }
 
-template <typename F>
-void StorageMerge::forEachTable(F && func) const
-{
-    getFirstTable([&func](const auto & table)
-    {
-        func(table);
-        return false;
-    });
-}
 
 bool StorageMerge::isRemote() const
 {
@@ -136,16 +113,6 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
-bool StorageMerge::canMoveConditionsToPrewhere() const
-{
-    /// NOTE: This check is used during query analysis as condition for applying
-    /// "move to PREWHERE" optimization. However, it contains a logical race:
-    /// If new table that matches regexp for current storage and doesn't support PREWHERE
-    /// will appear after this check and before calling "read" method, the optimized query may fail.
-    /// Since it's quite rare case, we just ignore this possibility.
-
-    return getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
-}
 
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
@@ -173,13 +140,13 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, Cont
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageMetadataPtr &,
     SelectQueryInfo & query_info) const
 {
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
     ///
-    /// Since in case of JOIN query on shards will receive query without JOIN (and their columns).
+    /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
     /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.
@@ -192,8 +159,6 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     size_t selected_table_size = 0;
 
-    /// TODO: Find a way to support projections for StorageMerge
-    query_info.ignore_projections = true;
     for (const auto & iterator : database_table_iterators)
     {
         while (iterator->isValid())
@@ -204,8 +169,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                 ++selected_table_size;
                 stage_in_source_tables = std::max(
                     stage_in_source_tables,
-                    table->getQueryProcessingStage(local_context, to_stage,
-                        table->getStorageSnapshot(table->getInMemoryMetadataPtr(), local_context), query_info));
+                    table->getQueryProcessingStage(local_context, to_stage, table->getInMemoryMetadataPtr(), query_info));
             }
 
             iterator->next();
@@ -238,10 +202,9 @@ SelectQueryInfo StorageMerge::getModifiedQueryInfo(
 }
 
 
-void StorageMerge::read(
-    QueryPlan & query_plan,
+Pipe StorageMerge::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
@@ -257,9 +220,9 @@ void StorageMerge::read(
 
     for (const auto & column_name : column_names)
     {
-        if (column_name == "_database" && isVirtualColumn(column_name, storage_snapshot->metadata))
+        if (column_name == "_database" && isVirtualColumn(column_name, metadata_snapshot))
             has_database_virtual_column = true;
-        else if (column_name == "_table" && isVirtualColumn(column_name, storage_snapshot->metadata))
+        else if (column_name == "_table" && isVirtualColumn(column_name, metadata_snapshot))
             has_table_virtual_column = true;
         else
             real_column_names.push_back(column_name);
@@ -269,10 +232,10 @@ void StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("optimize_move_to_prewhere", false);
+    modified_context->setSetting("optimize_move_to_prewhere", Field{false});
 
     /// What will be result structure depending on query processed stage in source tables?
-    Block header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
+    Block header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
 
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
@@ -280,16 +243,11 @@ void StorageMerge::read(
     StorageListWithLocks selected_tables
         = getSelectedTables(local_context, query_info.query, has_database_virtual_column, has_table_virtual_column);
 
-    query_plan.addInterpreterContext(modified_context);
-
-    QueryPlanResourceHolder resources;
-
     if (selected_tables.empty())
     {
         auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, getStorageID(), false);
         /// FIXME: do we support sampling in this case?
-        auto pipe = createSources(
-            resources,
+        return createSources(
             {},
             modified_query_info,
             processed_stage,
@@ -302,14 +260,11 @@ void StorageMerge::read(
             0,
             has_database_virtual_column,
             has_table_virtual_column);
-
-        IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, local_context, getName());
-        return;
     }
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
-        = std::min(static_cast<unsigned>(tables_count), std::max(1U, static_cast<unsigned>(local_context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+        = std::min(unsigned(tables_count), std::max(1U, unsigned(local_context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
@@ -340,7 +295,7 @@ void StorageMerge::read(
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(static_cast<size_t>(1), current_streams);
+        current_streams = std::max(size_t(1), current_streams);
 
         const auto & storage = std::get<1>(table);
 
@@ -351,11 +306,9 @@ void StorageMerge::read(
         Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
-        auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, local_context);
 
         auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, storage->getStorageID(), storage->as<StorageMerge>());
-        auto syntax_result = TreeRewriter(local_context).analyzeSelect(
-            modified_query_info.query, TreeRewriterResult({}, storage, nested_storage_snaphsot));
+        auto syntax_result = TreeRewriter(local_context).analyzeSelect(modified_query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
 
         Names column_names_as_aliases;
         bool with_aliases = processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty();
@@ -390,8 +343,7 @@ void StorageMerge::read(
             }
 
             syntax_result = TreeRewriter(local_context).analyze(
-                required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage->getStorageSnapshot(storage_metadata_snapshot, local_context));
-
+                required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage_metadata_snapshot);
             auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, local_context).getActionsDAG(true);
 
             column_names_as_aliases = alias_actions->getRequiredColumns().getNames();
@@ -400,8 +352,7 @@ void StorageMerge::read(
         }
 
         auto source_pipe = createSources(
-            resources,
-            nested_storage_snaphsot,
+            storage_metadata_snapshot,
             modified_query_info,
             processed_stage,
             max_block_size,
@@ -414,13 +365,7 @@ void StorageMerge::read(
             has_database_virtual_column,
             has_table_virtual_column);
 
-        if (!source_pipe.empty())
-        {
-            query_plan.addStorageHolder(std::get<1>(table));
-            query_plan.addTableLock(std::get<2>(table));
-
-            pipes.emplace_back(std::move(source_pipe));
-        }
+        pipes.emplace_back(std::move(source_pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -431,13 +376,11 @@ void StorageMerge::read(
         // because narrowPipe doesn't preserve order.
         narrowPipe(pipe, num_streams);
 
-    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, local_context, getName());
-    query_plan.addResources(std::move(resources));
+    return pipe;
 }
 
 Pipe StorageMerge::createSources(
-    QueryPlanResourceHolder & resources,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & modified_query_info,
     const QueryProcessingStage::Enum & processed_stage,
     const UInt64 max_block_size,
@@ -451,57 +394,45 @@ Pipe StorageMerge::createSources(
     bool has_table_virtual_column,
     bool concat_streams)
 {
-    const auto & [database_name, storage, _, table_name] = storage_with_lock;
+    const auto & [database_name, storage, struct_lock, table_name] = storage_with_lock;
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     Pipe pipe;
 
     if (!storage)
     {
-        auto builder = InterpreterSelectQuery(
+        pipe = QueryPipeline::getPipe(InterpreterSelectQuery(
             modified_query_info.query, modified_context,
-            Pipe(std::make_shared<SourceFromSingleChunk>(header)),
-            SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline();
+            std::make_shared<OneBlockInputStream>(header),
+            SelectQueryOptions(processed_stage).analyze()).execute().pipeline);
 
-        pipe = QueryPipelineBuilder::getPipe(std::move(builder), resources);
-
+        pipe.addInterpreterContext(modified_context);
         return pipe;
     }
 
     if (!modified_select.final() && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
-        /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
+        /// However, it's needed for MaterializeMySQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
     }
 
     auto storage_stage
-        = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, storage_snapshot, modified_query_info);
+        = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, metadata_snapshot, modified_query_info);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(metadata_snapshot->getColumns().getAllPhysical()));
 
-        QueryPlan plan;
-        storage->read(
-            plan,
+        pipe = storage->read(
             real_column_names,
-            storage_snapshot,
+            metadata_snapshot,
             modified_query_info,
             modified_context,
             processed_stage,
             max_block_size,
             UInt32(streams_num));
-
-        if (!plan.isInitialized())
-            return {};
-
-        auto builder = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(modified_context),
-            BuildQueryPipelineSettings::fromContext(modified_context));
-
-        pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
     else if (processed_stage > storage_stage)
     {
@@ -511,12 +442,10 @@ Pipe StorageMerge::createSources(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
-        /// TODO: Find a way to support projections for StorageMerge
-        InterpreterSelectQuery interpreter{
-            modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections()};
+        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
 
 
-        pipe = QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline(), resources);
+        pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -528,17 +457,11 @@ Pipe StorageMerge::createSources(
     if (!pipe.empty())
     {
         if (concat_streams && pipe.numOutputPorts() > 1)
-        {
             // It's possible to have many tables read from merge, resize(1) might open too many files at the same time.
             // Using concat instead.
             pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
-        }
 
-        /// Add virtual columns if we don't already have them.
-
-        Block pipe_header = pipe.getHeader();
-
-        if (has_database_virtual_column && !pipe_header.has("_database"))
+        if (has_database_virtual_column)
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -556,7 +479,7 @@ Pipe StorageMerge::createSources(
             });
         }
 
-        if (has_table_virtual_column && !pipe_header.has("_table"))
+        if (has_table_virtual_column)
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
@@ -576,7 +499,11 @@ Pipe StorageMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, modified_query_info.query, pipe, processed_stage);
+        convertingSourceStream(header, metadata_snapshot, aliases, modified_context, modified_query_info.query, pipe, processed_stage);
+
+        pipe.addTableLock(struct_lock);
+        pipe.addStorageHolder(storage);
+        pipe.addInterpreterContext(modified_context);
     }
 
     return pipe;
@@ -666,7 +593,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & datab
         if (source_databases_and_tables)
         {
             if (auto it = source_databases_and_tables->find(database_name); it != source_databases_and_tables->end())
-                return it->second.contains(table_name_);
+                return it->second.count(table_name_);
             else
                 return false;
         }
@@ -717,11 +644,10 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_TABLE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
@@ -737,7 +663,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
 }
 
 void StorageMerge::alter(
-    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+    const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
 {
     auto table_id = getStorageID();
 
@@ -764,7 +690,7 @@ void StorageMerge::convertingSourceStream(
     for (const auto & alias : aliases)
     {
         pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
-        ASTPtr expr = alias.expression;
+        ASTPtr expr = std::move(alias.expression);
         auto syntax_result = TreeRewriter(local_context).analyze(expr, pipe_columns);
         auto expression_analyzer = ExpressionAnalyzer{alias.expression, syntax_result, local_context};
 
@@ -782,15 +708,13 @@ void StorageMerge::convertingSourceStream(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(pipe.getHeader().getColumnsWithTypeAndName(),
                                                                      header.getColumnsWithTypeAndName(),
                                                                      ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag,
-            ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-
+        auto actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });
     }
+
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
@@ -804,7 +728,7 @@ void StorageMerge::convertingSourceStream(
             ColumnWithTypeAndName header_column = header.getByPosition(column_index);
             ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
             /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
-            /// the where expression maybe invalid because of ConvertingTransform.
+            /// the where expression maybe invalid because of convertingBlockInputStream.
             /// So we need to throw exception.
             if (!header_column.type->equals(*before_column.type.get()))
             {
@@ -828,15 +752,11 @@ void StorageMerge::convertingSourceStream(
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
-    ColumnSizeByName column_sizes;
 
-    forEachTable([&](const auto & table)
-    {
-        for (const auto & [name, size] : table->getColumnSizes())
-            column_sizes[name].add(size);
-    });
-
-    return column_sizes;
+    auto first_materialize_mysql = getFirstTable([](const StoragePtr & table) { return table && table->getName() == "MaterializeMySQL"; });
+    if (!first_materialize_mysql)
+        return {};
+    return first_materialize_mysql->getColumnSizes();
 }
 
 
@@ -884,11 +804,8 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return std::make_shared<StorageMerge>(
+        return StorageMerge::create(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
-    },
-    {
-        .supports_schema_inference = true
     });
 }
 

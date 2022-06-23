@@ -13,8 +13,6 @@ namespace DB
 {
 
 class ASTAlterCommand;
-class IDatabase;
-using DatabasePtr = std::shared_ptr<IDatabase>;
 
 /// Operation from the ALTER query (except for manipulation with PART/PARTITION).
 /// Adding Nested columns is not expanded to add individual columns.
@@ -44,9 +42,6 @@ struct AlterCommand
         MODIFY_QUERY,
         RENAME_COLUMN,
         REMOVE_TTL,
-        MODIFY_DATABASE_SETTING,
-        COMMENT_TABLE,
-        REMOVE_SAMPLE_BY,
     };
 
     /// Which property user wants to remove from column
@@ -77,7 +72,7 @@ struct AlterCommand
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
 
-    /// For COMMENT column or table
+    /// For COMMENT column
     std::optional<String> comment;
 
     /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.
@@ -173,6 +168,9 @@ struct AlterCommand
     std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 };
 
+/// Return string representation of AlterCommand::Type
+String alterTypeToString(const AlterCommand::Type type);
+
 class Context;
 
 /// Vector of AlterCommand with several additional functions
@@ -186,7 +184,7 @@ public:
     /// Checks that all columns exist and dependencies between them.
     /// This check is lightweight and base only on metadata.
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
-    void validate(const StoragePtr & table, ContextPtr context) const;
+    void validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)

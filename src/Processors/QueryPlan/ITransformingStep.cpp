@@ -1,13 +1,13 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 
 namespace DB
 {
 
 ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_)
-    : transform_traits(traits.transform_traits)
+    : transform_traits(std::move(traits.transform_traits))
     , collect_processors(collect_processors_)
-    , data_stream_traits(traits.data_stream_traits)
+    , data_stream_traits(std::move(traits.data_stream_traits))
 {
     input_streams.emplace_back(std::move(input_stream));
     output_stream = createOutputStream(input_streams.front(), std::move(output_header), data_stream_traits);
@@ -36,7 +36,7 @@ DataStream ITransformingStep::createOutputStream(
 }
 
 
-QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (collect_processors)
     {
@@ -68,11 +68,6 @@ void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet 
 void ITransformingStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
-}
-
-void ITransformingStep::appendExtraProcessors(const Processors & extra_processors)
-{
-    processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
 }

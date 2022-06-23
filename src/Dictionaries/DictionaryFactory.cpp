@@ -5,7 +5,7 @@
 #include "DictionaryStructure.h"
 #include "getDictionaryConfigurationFromAST.h"
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -31,7 +31,7 @@ DictionaryPtr DictionaryFactory::create(
     const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    ContextPtr global_context,
+    ContextPtr context,
     bool created_from_ddl) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -45,8 +45,11 @@ DictionaryPtr DictionaryFactory::create(
     const DictionaryStructure dict_struct{config, config_prefix};
 
     DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(
-        name, config, config_prefix + ".source", dict_struct, global_context, config.getString(config_prefix + ".database", ""), created_from_ddl);
+        name, config, config_prefix + ".source", dict_struct, context, config.getString(config_prefix + ".database", ""), created_from_ddl);
     LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
+
+    if (context->hasQueryContext() && context->getSettingsRef().log_queries)
+        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, name);
 
     const auto & layout_type = keys.front();
 
@@ -55,11 +58,7 @@ DictionaryPtr DictionaryFactory::create(
         if (found != registered_layouts.end())
         {
             const auto & layout_creator = found->second.layout_create_function;
-            auto result = layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
-            if (config.hasProperty(config_prefix + ".comment"))
-                result->setDictionaryComment(config.getString(config_prefix + ".comment"));
-
-            return result;
+            return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), context, created_from_ddl);
         }
     }
 
@@ -69,10 +68,10 @@ DictionaryPtr DictionaryFactory::create(
         layout_type);
 }
 
-DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextPtr global_context) const
+DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextPtr context) const
 {
-    auto configuration = getDictionaryConfigurationFromAST(ast, global_context);
-    return DictionaryFactory::create(name, *configuration, "dictionary", global_context, true);
+    auto configuration = getDictionaryConfigurationFromAST(ast, context);
+    return DictionaryFactory::create(name, *configuration, "dictionary", context, true);
 }
 
 bool DictionaryFactory::isComplex(const std::string & layout_type) const

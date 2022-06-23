@@ -1,4 +1,6 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
+#include <Common/MemorySanitizer.h>
+#include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 
 
@@ -18,7 +20,8 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
         size_t buf_size,
         char * existing_memory,
         size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
+    , out(std::move(out_))
 {
     zstr.zalloc = nullptr;
     zstr.zfree = nullptr;
@@ -41,6 +44,27 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
 
     if (rc != Z_OK)
         throw Exception(std::string("deflateInit2 failed: ") + zError(rc) + "; zlib version: " + ZLIB_VERSION, ErrorCodes::ZLIB_DEFLATE_FAILED);
+}
+
+ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
+{
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+
+    finish();
+
+    try
+    {
+        int rc = deflateEnd(&zstr);
+        if (rc != Z_OK)
+            throw Exception(std::string("deflateEnd failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
+    }
+    catch (...)
+    {
+        /// It is OK not to terminate under an error from deflateEnd()
+        /// since all data already written to the stream.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void ZlibDeflatingWriteBuffer::nextImpl()
@@ -75,19 +99,27 @@ void ZlibDeflatingWriteBuffer::nextImpl()
     }
 }
 
-ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
+void ZlibDeflatingWriteBuffer::finish()
 {
+    if (finished)
+        return;
+
     try
     {
-        finalize();
+        finishImpl();
+        out->finalize();
+        finished = true;
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// Do not try to flush next time after exception.
+        out->position() = out->buffer().begin();
+        finished = true;
+        throw;
     }
 }
 
-void ZlibDeflatingWriteBuffer::finalizeBefore()
+void ZlibDeflatingWriteBuffer::finishImpl()
 {
     next();
 
@@ -121,23 +153,7 @@ void ZlibDeflatingWriteBuffer::finalizeBefore()
         }
 
         if (rc != Z_OK)
-            throw Exception(std::string("deflate finalizeImpl() failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
-    }
-}
-
-void ZlibDeflatingWriteBuffer::finalizeAfter()
-{
-    try
-    {
-        int rc = deflateEnd(&zstr);
-        if (rc != Z_OK)
-            throw Exception(std::string("deflateEnd failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
-    }
-    catch (...)
-    {
-        /// It is OK not to terminate under an error from deflateEnd()
-        /// since all data already written to the stream.
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw Exception(std::string("deflate finish failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
 }
 

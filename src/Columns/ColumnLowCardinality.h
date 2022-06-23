@@ -64,7 +64,6 @@ public:
         return getDictionary().getDataAtWithTerminatingZero(getIndexes().getUInt(n));
     }
 
-    bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
     UInt64 getUInt(size_t n) const override { return getDictionary().getUInt(getIndexes().getUInt(n)); }
     Int64 getInt(size_t n) const override { return getDictionary().getInt(getIndexes().getUInt(n)); }
@@ -111,11 +110,6 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
-    void expand(const Filter & mask, bool inverted) override
-    {
-        idx.getPositionsPtr()->expand(mask, inverted);
-    }
-
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
@@ -136,17 +130,13 @@ public:
 
     bool hasEqualValues() const override;
 
-    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
+    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const override;
 
-    void getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -179,20 +169,10 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (const auto * rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+        if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
             return idx.getPositions()->structureEquals(*rhs_low_cardinality->idx.getPositions())
                 && dictionary.getColumnUnique().structureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
         return false;
-    }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getIndexes().getRatioOfDefaultRows(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
@@ -207,14 +187,12 @@ public:
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
-    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
-    ColumnPtr & getDictionaryPtr() { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 
@@ -347,7 +325,10 @@ private:
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
-    void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+    void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    template <typename Cmp>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
 };
 
 

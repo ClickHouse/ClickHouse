@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Interpreters/IExternalLoadable.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
@@ -8,31 +7,46 @@
 namespace DB
 {
 
-class CatBoostLibHolder;
-class CatBoostWrapperAPI;
-class CatBoostModelImpl;
+/// CatBoost wrapper interface functions.
+struct CatBoostWrapperAPI;
+class CatBoostWrapperAPIProvider
+{
+public:
+    virtual ~CatBoostWrapperAPIProvider() = default;
+    virtual const CatBoostWrapperAPI & getAPI() const = 0;
+};
+
+/// CatBoost model interface.
+class ICatBoostModel
+{
+public:
+    virtual ~ICatBoostModel() = default;
+    /// Evaluate model. Use first `float_features_count` columns as float features,
+    /// the others `cat_features_count` as categorical features.
+    virtual ColumnPtr evaluate(const ColumnRawPtrs & columns) const = 0;
+
+    virtual size_t getFloatFeaturesCount() const = 0;
+    virtual size_t getCatFeaturesCount() const = 0;
+    virtual size_t getTreeCount() const = 0;
+};
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /// General ML model evaluator interface.
-class IMLModel : public IExternalLoadable
+class IModel : public IExternalLoadable
 {
 public:
-    IMLModel() = default;
     virtual ColumnPtr evaluate(const ColumnRawPtrs & columns) const = 0;
     virtual std::string getTypeName() const = 0;
     virtual DataTypePtr getReturnType() const = 0;
-    virtual ~IMLModel() override = default;
 };
 
-class CatBoostModel : public IMLModel
+class CatBoostModel : public IModel
 {
 public:
     CatBoostModel(std::string name, std::string model_path,
                   std::string lib_path, const ExternalLoadableLifetime & lifetime);
-
-    ~CatBoostModel() override;
 
     ColumnPtr evaluate(const ColumnRawPtrs & columns) const override;
     std::string getTypeName() const override { return "catboost"; }
@@ -44,28 +58,29 @@ public:
 
     /// IExternalLoadable interface.
 
-    const ExternalLoadableLifetime & getLifetime() const override { return lifetime; }
+    const ExternalLoadableLifetime & getLifetime() const override;
 
-    std::string getLoadableName() const override { return name; }
+    const std::string & getLoadableName() const override { return name; }
 
     bool supportUpdates() const override { return true; }
 
-    bool isModified() const override { return true; }
+    bool isModified() const override;
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
-    {
-        return std::make_shared<CatBoostModel>(name, model_path, lib_path, lifetime);
-    }
+    std::shared_ptr<const IExternalLoadable> clone() const override;
 
 private:
     const std::string name;
     std::string model_path;
     std::string lib_path;
     ExternalLoadableLifetime lifetime;
-    std::shared_ptr<CatBoostLibHolder> api_provider;
+    std::shared_ptr<CatBoostWrapperAPIProvider> api_provider;
     const CatBoostWrapperAPI * api;
 
-    std::unique_ptr<CatBoostModelImpl> model;
+    std::unique_ptr<ICatBoostModel> model;
+
+    size_t float_features_count;
+    size_t cat_features_count;
+    size_t tree_count;
 
     void init();
 };

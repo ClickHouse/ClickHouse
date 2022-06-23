@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 39
-sidebar_label: "\u6982\u8FF0"
+toc_priority: 39
+toc_title: "\u6982\u8FF0"
 ---
 
 # 外部字典 {#dicts-external-dicts}
@@ -28,7 +28,7 @@ ClickHouse:
 字典配置文件具有以下格式:
 
 ``` xml
-<clickhouse>
+<yandex>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
     <!--Optional element. File name with substitutions-->
@@ -40,14 +40,14 @@ ClickHouse:
         <!-- There can be any number of <dictionary> sections in the configuration file. -->
     </dictionary>
 
-</clickhouse>
+</yandex>
 ```
 
 你可以 [配置](external-dicts-dict.md) 同一文件中的任意数量的字典。
 
 [字典的DDL查询](../../statements/create.md#create-dictionary-query) 在服务器配置中不需要任何其他记录。 它们允许使用字典作为一流的实体，如表或视图。
 
-    :::info "注意"
+!!! attention "注意"
     您可以通过在一个小字典中描述它来转换小字典的值 `SELECT` 查询（见 [变换](../../../sql-reference/functions/other-functions.md) 功能）。 此功能与外部字典无关。
 
 ## 另请参阅 {#ext-dicts-see-also}
@@ -59,4 +59,4 @@ ClickHouse:
 -   [字典键和字段](external-dicts-dict-structure.md)
 -   [使用外部字典的函数](../../../sql-reference/functions/ext-dict-functions.md)
 
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->

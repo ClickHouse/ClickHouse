@@ -1,6 +1,6 @@
 ---
-sidebar_position: 38
-sidebar_label: "Операторы"
+toc_priority: 38
+toc_title: "Операторы"
 ---
 
 # Операторы {#operatory}
@@ -18,17 +18,11 @@ sidebar_label: "Операторы"
 
 `-a` - функция `negate(a)`.
 
-Для чисел в кортеже также может быть использована [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
-
 ## Операторы умножения и деления {#operatory-umnozheniia-i-deleniia}
 
 `a * b` - функция `multiply(a, b)`
 
-Для умножения кортежа на число также может быть использована [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), для скалярного произведения: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
-
 `a / b` - функция `divide(a, b)`
-
-Для деления кортежа на число также может быть использована [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
 
 `a % b` - функция `modulo(a, b)`
 
@@ -36,11 +30,7 @@ sidebar_label: "Операторы"
 
 `a + b` - функция `plus(a, b)`
 
-Для сложения кортежей также может быть использована [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
-
 `a - b` - функция `minus(a, b)`
-
-Для вычитания кортежей также может быть использована [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
 
 ## Операторы сравнения {#operatory-sravneniia}
 
@@ -72,7 +62,7 @@ sidebar_label: "Операторы"
 
 ## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
-Смотрите [операторы IN](../../sql-reference/operators/in.md#select-in-operators) и оператор [EXISTS](../../sql-reference/operators/exists.md).
+*Смотрите раздел [Операторы IN](../../sql-reference/operators/in.md#select-in-operators).*
 
 `a IN ...` - функция `in(a, b)`
 
@@ -81,53 +71,6 @@ sidebar_label: "Операторы"
 `a GLOBAL IN ...` - функция `globalIn(a, b)`
 
 `a GLOBAL NOT IN ...` - функция `globalNotIn(a, b)`
-
-`a = ANY (subquery)` – функция `in(a, subquery)`.  
-
-`a != ANY (subquery)` – равнозначно `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
-
-`a = ALL (subquery)` – равнозначно `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
-
-`a != ALL (subquery)` – функция `notIn(a, subquery)`. 
-
-
-**Примеры**
-
-Запрос с ALL:
-
-``` sql
-SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
-```
-
-Результат:
-
-``` text
-┌─a─┐
-│ 6 │
-│ 7 │
-│ 8 │
-│ 9 │
-└───┘
-```
-
-Запрос с ANY:
-
-``` sql
-SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
-```
-
-Результат:
-
-``` text
-┌─a─┐
-│ 4 │
-│ 5 │
-│ 6 │
-│ 7 │
-│ 8 │
-│ 9 │
-└───┘
-```
 
 ## Оператор для работы с датами и временем {#operators-datetime}
 
@@ -211,7 +154,7 @@ FROM test.Orders;
 
 В качестве значения оператора `INTERVAL` вы можете также использовать строковый литерал. Например, выражение `INTERVAL 1 HOUR` идентично выражению `INTERVAL '1 hour'` или `INTERVAL '1' hour`.
 
-:::danger "Внимание"
+!!! warning "Внимание"
     Интервалы различных типов нельзя объединять. Нельзя использовать выражения вида `INTERVAL 4 DAY 1 HOUR`. Вместо этого интервалы можно выразить в единицах меньших или равных наименьшей единице интервала, Например, `INTERVAL 25 HOUR`. Также можно выполнять последовательные операции как показано в примере ниже.
 
 Примеры:
@@ -248,9 +191,9 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 
 Вы можете изменить дату, не используя синтаксис `INTERVAL`, а просто добавив или отняв секунды, минуты и часы. Например, чтобы передвинуть дату на один день вперед, можно прибавить к ней значение `60*60*24`.
 
-    :::note "Примечание"
-    Синтаксис `INTERVAL` или функция `addDays` предпочтительнее для работы с датами. Сложение с числом (например, синтаксис `now() + ...`) не учитывает региональные настройки времени, например, переход на летнее время.
-    :::
+!!! note "Примечание"
+    Синтаксис `INTERVAL` или функция `addDays` предпочтительнее для работы с датами. Сложение с числом (например, синтаксис `now() + ...`) не учитывает региональные настройки времени, например, переход на летнее время. 
+
 Пример:
 
 ``` sql
@@ -301,9 +244,9 @@ END
 В случае указания `x` - функция `transform(x, [a, ...], [b, ...], c)`. Иначе — `multiIf(a, b, ..., c)`.
 При отсутствии секции `ELSE c`, значением по умолчанию будет `NULL`.
 
-    :::note "Примечание"
+!!! note "Примечание"
     Функция `transform` не умеет работать с `NULL`.
-    :::
+
 ## Оператор склеивания строк {#operator-skleivaniia-strok}
 
 `s1 || s2` - функция `concat(s1, s2)`

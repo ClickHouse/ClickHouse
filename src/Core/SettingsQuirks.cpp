@@ -3,11 +3,8 @@
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <cstdlib>
-
-namespace
-{
 
 /// Detect does epoll_wait with nested epoll fds works correctly.
 /// Polling nested epoll fds from epoll_wait is required for async_socket_for_remote and use_hedged_requests.
@@ -34,15 +31,6 @@ bool nestedEpollWorks(Poco::Logger * log)
     return true;
 }
 
-/// See also QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS in Core/Defines.h
-#if !defined(SANITIZER)
-bool queryProfilerWorks() { return true; }
-#else
-bool queryProfilerWorks() { return false; }
-#endif
-
-}
-
 namespace DB
 {
 
@@ -62,22 +50,6 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
             settings.use_hedged_requests = false;
             if (log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
-        }
-    }
-
-    if (!queryProfilerWorks())
-    {
-        if (settings.query_profiler_real_time_period_ns)
-        {
-            settings.query_profiler_real_time_period_ns = 0;
-            if (log)
-                LOG_WARNING(log, "query_profiler_real_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
-        }
-        if (settings.query_profiler_cpu_time_period_ns)
-        {
-            settings.query_profiler_cpu_time_period_ns = 0;
-            if (log)
-                LOG_WARNING(log, "query_profiler_cpu_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
     }
 }

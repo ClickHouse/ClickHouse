@@ -1,6 +1,6 @@
-#include <IO/Operators.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Common/quoteString.h>
+
 
 namespace DB
 {
@@ -20,7 +20,7 @@ void ASTProjectionDeclaration::formatImpl(const FormatSettings & settings, Forma
     settings.ostr << backQuoteIfNeed(name);
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
     std::string nl_or_nothing = settings.one_line ? "" : "\n";
-    settings.ostr << settings.nl_or_ws << indent_str << "(" << nl_or_nothing;
+    settings.ostr << nl_or_nothing << indent_str << "(" << nl_or_nothing;
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
     ++frame_nested.indent;

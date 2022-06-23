@@ -1,7 +1,7 @@
 #include <Storages/System/StorageSystemZeros.h>
 
-#include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -23,11 +23,11 @@ using ZerosStatePtr = std::shared_ptr<ZerosState>;
 /// Source which generates zeros.
 /// Uses state to share the number of generated rows between threads.
 /// If state is nullptr, then limit is ignored.
-class ZerosSource : public ISource
+class ZerosSource : public SourceWithProgress
 {
 public:
     ZerosSource(UInt64 block_size, UInt64 limit_, ZerosStatePtr state_)
-            : ISource(createHeader()), limit(limit_), state(std::move(state_))
+            : SourceWithProgress(createHeader()), limit(limit_), state(std::move(state_))
     {
         column = createColumn(block_size);
     }
@@ -54,7 +54,7 @@ protected:
             }
         }
 
-        progress(column->size(), column->byteSize());
+        progress({column->size(), column->byteSize()});
 
         return { Columns {std::move(column_ptr)}, column_size };
     }
@@ -92,14 +92,14 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 
 Pipe StorageSystemZeros::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo &,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     bool use_multiple_streams = multithreaded;
 

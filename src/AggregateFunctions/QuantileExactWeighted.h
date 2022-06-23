@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/sort.h>
-
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
@@ -32,7 +30,7 @@ struct QuantileExactWeighted
     };
 
     using Weight = UInt64;
-    using UnderlyingType = NativeType<Value>;
+    using UnderlyingType = typename NativeType<Value>::Type;
     using Hasher = std::conditional_t<std::is_same_v<Value, Decimal128>, Int128Hash, HashCRC32<UnderlyingType>>;
 
     /// When creating, the hash table must be small.
@@ -103,7 +101,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 threshold = std::ceil(sum_weight * level);
         Float64 accumulated = 0;
@@ -153,7 +151,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 accumulated = 0;
 

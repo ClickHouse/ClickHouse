@@ -1,10 +1,9 @@
 ---
-sidebar_label: New York Taxi Data
-sidebar_position: 2
-description: Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009
+toc_priority: 20
+toc_title: New York Taxi Data
 ---
 
-# New York Taxi Data 
+# New York Taxi Data {#new-york-taxi-data}
 
 This dataset can be obtained in two ways:
 
@@ -284,16 +283,15 @@ Among other things, you can run the OPTIMIZE query on MergeTree. But it’s not 
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
-:::info    
-If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
-:::
+!!! info "Info"
+    If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
 
 ## Results on Single Server {#results-on-single-server}
 
@@ -334,7 +332,7 @@ ORDER BY year, count(*) DESC
 
 The following server was used:
 
-Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical cores total, 128 GiB RAM, 8x6 TB HD on hardware RAID-5
+Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical kernels total,128 GiB RAM,8x6 TB HD on hardware RAID-5
 
 Execution time is the best of three runs. But starting from the second run, queries read data from the file system cache. No further caching occurs: the data is read out and processed in each run.
 
@@ -377,17 +375,14 @@ Q3: 0.051 sec.
 Q4: 0.072 sec.
 
 In this case, the query processing time is determined above all by network latency.
-We ran queries using a client located in a different datacenter than where the cluster was located, which added about 20 ms of latency.
+We ran queries using a client located in a Yandex datacenter in Finland on a cluster in Russia, which added about 20 ms of latency.
 
 ## Summary {#summary}
 
 | servers | Q1    | Q2    | Q3    | Q4    |
 |---------|-------|-------|-------|-------|
-| 1, E5-2650v2          | 0.490 | 1.224 | 2.104 | 3.593 |
-| 3, E5-2650v2          | 0.212 | 0.438 | 0.733 | 1.241 |
-| 1, AWS c5n.4xlarge    | 0.249 | 1.279 | 1.738 | 3.527 |
-| 1, AWS c5n.9xlarge    | 0.130 | 0.584 | 0.777 | 1.811 |
-| 3, AWS c5n.9xlarge    | 0.057 | 0.231 | 0.285 | 0.641 |
-| 140, E5-2650v2        | 0.028 | 0.043 | 0.051 | 0.072 |
+| 1       | 0.490 | 1.224 | 2.104 | 3.593 |
+| 3       | 0.212 | 0.438 | 0.733 | 1.241 |
+| 140     | 0.028 | 0.043 | 0.051 | 0.072 |
 
-[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->

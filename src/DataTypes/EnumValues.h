@@ -29,7 +29,7 @@ private:
     void fillMaps();
 
 public:
-    explicit EnumValues(const Values & values_);
+    EnumValues(const Values & values_);
 
     const Values & getValues() const { return values; }
 
@@ -42,21 +42,9 @@ public:
         return it;
     }
 
-    /// throws exception if value is not valid
     const StringRef & getNameForValue(const T & value) const
     {
         return findByValue(value)->second;
-    }
-
-    /// returns false if value is not valid
-    bool getNameForValue(const T & value, StringRef & result) const
-    {
-        const auto it = value_to_name_map.find(value);
-        if (it == std::end(value_to_name_map))
-            return false;
-
-        result = it->second;
-        return true;
     }
 
     T getValue(StringRef field_name, bool try_treat_as_id = false) const;
@@ -80,10 +68,6 @@ public:
     }
 
     Names getAllRegisteredNames() const override;
-
-    std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
-
-    std::unordered_set<T> getSetOfAllValues() const;
 };
 
 }

@@ -1,9 +1,0 @@
-self-hosted-runner:
-  labels:
-    - builder
-    - func-tester
-    - func-tester-aarch64
-    - fuzzer-unit-tester
-    - stress-tester
-    - style-checker
-    - style-checker-aarch64

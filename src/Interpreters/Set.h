@@ -2,13 +2,13 @@
 
 #include <shared_mutex>
 #include <Core/Block.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -42,10 +42,10 @@ public:
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    void setHeader(const ColumnsWithTypeAndName & header);
+    void setHeader(const Block & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const ColumnsWithTypeAndName & columns);
+    bool insertFromBlock(const Block & block);
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
 
@@ -54,7 +54,7 @@ public:
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
+    ColumnPtr execute(const Block & block, bool negative) const;
 
     bool empty() const;
     size_t getTotalRowCount() const;
@@ -178,19 +178,29 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   * Single field is stored in column for more optimal inplace comparisons with other regular columns.
   * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
   */
-struct FieldValue
+class ValueWithInfinity
 {
-    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+public:
+    enum Type
+    {
+        MINUS_INFINITY = -1,
+        NORMAL = 0,
+        PLUS_INFINITY = 1
+    };
+
+    ValueWithInfinity(MutableColumnPtr && column_)
+        : column(std::move(column_)), type(NORMAL) {}
+
     void update(const Field & x);
+    void update(Type type_) { type = type_; }
 
-    bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
-    bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
-    bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
+    const IColumn & getColumnIfFinite() const;
 
-    Field value; // Null, -Inf, +Inf
+    Type getType() const { return type; }
 
-    // If value is Null, uses the actual value in column
+private:
     MutableColumnPtr column;
+    Type type;
 };
 
 
@@ -214,7 +224,7 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
@@ -222,7 +232,7 @@ private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
-    using FieldValues = std::vector<FieldValue>;
+    using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
 };
 
 }

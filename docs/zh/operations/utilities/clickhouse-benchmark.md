@@ -1,6 +1,6 @@
 ---
-sidebar_position: 61
-sidebar_label: "性能测试"
+toc_priority: 61
+toc_title: "性能测试"
 ---
 
 # 性能测试 {#clickhouse-benchmark}
@@ -89,11 +89,11 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 
     -   ClickHouse服务器的连接信息。
     -   已处理的查询数。
-    -   QPS：服务端每秒处理的查询数量
-    -   RPS：服务器每秒读取多少行
-    -   MiB/s：服务器每秒读取多少字节的数据
-    -   结果RPS：服务端每秒生成多少行的结果集数据
-    -   结果MiB/s.服务端每秒生成多少字节的结果集数据
+    -   QPS：服务端每秒处理的查询数量 
+    -   RPS：服务器每秒读取多少行 
+    -   MiB/s：服务器每秒读取多少字节的数据 
+    -   结果RPS：服务端每秒生成多少行的结果集数据 
+    -   结果MiB/s.服务端每秒生成多少字节的结果集数据  
 
 -   查询执行时间的百分比。
 

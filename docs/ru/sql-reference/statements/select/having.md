@@ -1,5 +1,5 @@
 ---
-sidebar_label: HAVING
+toc_title: HAVING
 ---
 
 # Секция HAVING {#having-clause}

@@ -1,14 +1,13 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/ExtractExpressionInfoVisitor.h>
-#include <Interpreters/PredicateRewriteVisitor.h>
-#include <Interpreters/getTableExpressions.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IAST.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
 
 
 namespace DB
@@ -40,7 +39,7 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!select_query.tables() || select_query.tables()->children.empty())
         return false;
 
-    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList().first)
+    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList())
         return false;
 
     const auto & tables_predicates = extractTablesPredicates(select_query.where(), select_query.prewhere());

@@ -18,14 +18,12 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/filesystem/directory_iterator.cpp"
 "${LIBCXX_SOURCE_DIR}/src/filesystem/int128_builtins.cpp"
 "${LIBCXX_SOURCE_DIR}/src/filesystem/operations.cpp"
-"${LIBCXX_SOURCE_DIR}/src/format.cpp"
 "${LIBCXX_SOURCE_DIR}/src/functional.cpp"
 "${LIBCXX_SOURCE_DIR}/src/future.cpp"
 "${LIBCXX_SOURCE_DIR}/src/hash.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ios.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ios.instantiations.cpp"
 "${LIBCXX_SOURCE_DIR}/src/iostream.cpp"
-"${LIBCXX_SOURCE_DIR}/src/legacy_pointer_safety.cpp"
 "${LIBCXX_SOURCE_DIR}/src/locale.cpp"
 "${LIBCXX_SOURCE_DIR}/src/memory.cpp"
 "${LIBCXX_SOURCE_DIR}/src/mutex.cpp"
@@ -35,9 +33,6 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/random.cpp"
 "${LIBCXX_SOURCE_DIR}/src/random_shuffle.cpp"
 "${LIBCXX_SOURCE_DIR}/src/regex.cpp"
-"${LIBCXX_SOURCE_DIR}/src/ryu/d2fixed.cpp"
-"${LIBCXX_SOURCE_DIR}/src/ryu/d2s.cpp"
-"${LIBCXX_SOURCE_DIR}/src/ryu/f2s.cpp"
 "${LIBCXX_SOURCE_DIR}/src/shared_mutex.cpp"
 "${LIBCXX_SOURCE_DIR}/src/stdexcept.cpp"
 "${LIBCXX_SOURCE_DIR}/src/string.cpp"
@@ -52,20 +47,13 @@ set(SRCS
 )
 
 add_library(cxx ${SRCS})
-set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
 
-target_include_directories(cxx SYSTEM BEFORE PUBLIC
-        $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}>/src)
+target_include_directories(cxx SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 
 # Enable capturing stack traces for all exceptions.
 if (USE_UNWIND)
     target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
-endif ()
-
-if (USE_MUSL)
-    target_compile_definitions(cxx PUBLIC -D_LIBCPP_HAS_MUSL_LIBC=1)
 endif ()
 
 # Override the deduced attribute support that causes error.
@@ -79,11 +67,6 @@ target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 target_compile_options(cxx PRIVATE -w)
 
 target_link_libraries(cxx PUBLIC cxxabi)
-
-# For __udivmodti4, __divmodti4.
-if (OS_DARWIN AND COMPILER_GCC)
-    target_link_libraries(cxx PRIVATE gcc)
-endif ()
 
 install(
     TARGETS cxx

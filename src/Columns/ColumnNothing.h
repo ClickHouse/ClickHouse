@@ -11,7 +11,7 @@ class ColumnNothing final : public COWHelper<IColumnDummy, ColumnNothing>
 private:
     friend class COWHelper<IColumnDummy, ColumnNothing>;
 
-    explicit ColumnNothing(size_t s_)
+    ColumnNothing(size_t s_)
     {
         s = s_;
     }

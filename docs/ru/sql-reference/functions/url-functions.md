@@ -1,6 +1,6 @@
 ---
-sidebar_position: 54
-sidebar_label: "Функции для работы с URL"
+toc_priority: 54
+toc_title: "Функции для работы с URL"
 ---
 
 # Функции для работы с URL {#funktsii-dlia-raboty-s-url}
@@ -267,7 +267,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 Результат:
 
-```text
+```text 
 ┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
 │ foo                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -279,7 +279,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 ### port(URL[, default_port = 0]) {#port}
 
-Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL)
+Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL) 
 
 ### path {#path}
 

@@ -1,5 +1,5 @@
 #pragma once
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -22,7 +22,7 @@ class MySQLClient
 {
 public:
     MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_);
-    MySQLClient(MySQLClient && other) noexcept;
+    MySQLClient(MySQLClient && other);
 
     void connect();
     void disconnect();
@@ -33,7 +33,7 @@ public:
     /// Start replication stream by GTID.
     /// replicate_db: replication database schema, events from other databases will be ignored.
     /// gtid: executed gtid sets format like 'hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh:x-y'.
-    void startBinlogDumpGTID(UInt32 slave_id, String replicate_db, std::unordered_set<String> replicate_tables, String gtid, const String & binlog_checksum);
+    void startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid, const String & binlog_checksum);
 
     BinlogEventPtr readOneBinlogEvent(UInt64 milliseconds = 0);
     Position getPosition() const { return replication.getPosition(); }
@@ -56,7 +56,7 @@ private:
     std::shared_ptr<WriteBuffer> out;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::optional<Poco::Net::SocketAddress> address;
-    MySQLProtocol::PacketEndpointPtr packet_endpoint;
+    std::shared_ptr<PacketEndpoint> packet_endpoint;
 
     void handshake();
     void registerSlaveOnMaster(UInt32 slave_id);

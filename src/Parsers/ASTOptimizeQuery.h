@@ -25,7 +25,7 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override
     {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "");
+        return "OptimizeQuery" + (delim + database) + delim + table + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "");
     }
 
     ASTPtr clone() const override
@@ -50,9 +50,9 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &new_database) const override
     {
-        return removeOnCluster<ASTOptimizeQuery>(clone(), params.default_database);
+        return removeOnCluster<ASTOptimizeQuery>(clone(), new_database);
     }
 };
 

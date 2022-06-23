@@ -16,17 +16,10 @@ struct ContextHolder
     }
 
     ContextHolder(ContextHolder &&) = default;
-
-    void destroy()
-    {
-        context->shutdown();
-        context.reset();
-        shared_context.reset();
-    }
 };
 
-const ContextHolder & getContext();
-
-ContextHolder & getMutableContext();
-
-void destroyContext();
+inline const ContextHolder & getContext()
+{
+    static ContextHolder holder;
+    return holder;
+}

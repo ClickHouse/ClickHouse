@@ -20,7 +20,7 @@ namespace ErrorCodes
 struct FirstSignificantSubdomainCustomLookup
 {
     const TLDList & tld_list;
-    explicit FirstSignificantSubdomainCustomLookup(const std::string & tld_list_name)
+    FirstSignificantSubdomainCustomLookup(const std::string & tld_list_name)
         : tld_list(TLDListsHolder::getInstance().getTldList(tld_list_name))
     {
     }
@@ -40,10 +40,6 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -69,7 +65,9 @@ public:
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
         FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*arguments[0].column))
+        /// FIXME: convertToFullColumnIfConst() is suboptimal
+        auto column = arguments[0].column->convertToFullColumnIfConst();
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*column))
         {
             auto col_res = ColumnString::create();
             vector(tld_lookup, col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());

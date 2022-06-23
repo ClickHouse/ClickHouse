@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationTupleElement.h>
 
 namespace DB
 {
@@ -9,20 +9,18 @@ namespace DB
 class SerializationTuple final : public SimpleTextSerialization
 {
 public:
-    using ElementSerializationPtr = std::shared_ptr<const SerializationNamed>;
+    using ElementSerializationPtr = std::shared_ptr<const SerializationTupleElement>;
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
     SerializationTuple(const ElementSerializations & elems_, bool have_explicit_names_)
-        : elems(elems_), have_explicit_names(have_explicit_names_)
-    {
-    }
+        : elems(elems_), have_explicit_names(have_explicit_names_) {}
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -33,10 +31,7 @@ public:
 
     /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void enumerateStreams(
-        SubstreamPath & path,
-        const StreamCallback & callback,
-        const SubstreamData & data) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
@@ -63,8 +58,6 @@ public:
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
             SubstreamsCache * cache) const override;
-
-    const ElementSerializations & getElementsSerializations() const { return elems; }
 
 private:
     ElementSerializations elems;

@@ -21,7 +21,7 @@ Float64 lgamma_wrapper(Float64 arg)
 }
 
 struct LGammaName { static constexpr auto name = "lgamma"; };
-using FunctionLGamma = FunctionMathUnary<UnaryFunctionVectorized<LGammaName, lgamma_wrapper>>;
+using FunctionLGamma = FunctionMathUnary<UnaryFunctionPlain<LGammaName, lgamma_wrapper>>;
 
 }
 

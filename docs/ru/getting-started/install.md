@@ -1,6 +1,6 @@
 ---
-sidebar_position: 11
-sidebar_label: "Установка"
+toc_priority: 11
+toc_title: "Установка"
 ---
 
 # Установка {#ustanovka}
@@ -24,54 +24,13 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu. Для установки пакетов выполните:
 
 ``` bash
-sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you've set up a password.
+{% include 'install/deb.sh' %}
 ```
 
-<details markdown="1">
+Также эти пакеты можно скачать и установить вручную отсюда: https://repo.clickhouse.tech/deb/stable/main/.
 
-<summary>Устаревший способ установки deb-пакетов</summary>
+Если вы хотите использовать наиболее свежую версию, замените `stable` на `testing` (рекомендуется для тестовых окружений).
 
-``` bash
-sudo apt-get install apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
-```
-
-</details>
-
-Чтобы использовать различные [версии ClickHouse](../faq/operations/production.md) в зависимости от ваших потребностей, вы можете заменить `stable` на `lts` или `testing`.
-
-Также вы можете вручную скачать и установить пакеты из [репозитория](https://packages.clickhouse.com/deb/pool/stable).
-
-#### Пакеты {#packages}
-
--   `clickhouse-common-static` — Устанавливает исполняемые файлы ClickHouse.
--   `clickhouse-server` — Создает символические ссылки для `clickhouse-server` и устанавливает конфигурационные файлы.
--   `clickhouse-client` — Создает символические ссылки для `clickhouse-client` и других клиентских инструментов и устанавливает конфигурационные файлы `clickhouse-client`.
--   `clickhouse-common-static-dbg` — Устанавливает исполняемые файлы ClickHouse собранные с отладочной информацией.
-
-    :::note "Внимание"
-    Если вам нужно установить ClickHouse определенной версии, вы должны установить все пакеты одной версии:
-    `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
-    :::
 ### Из RPM пакетов {#from-rpm-packages}
 
 Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm` пакеты для CentOS, RedHat и всех остальных дистрибутивов Linux, основанных на rpm.
@@ -79,29 +38,10 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 Сначала нужно подключить официальный репозиторий:
 
 ``` bash
-sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
-sudo yum install -y clickhouse-server clickhouse-client
-
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
-```
-
-<details markdown="1">
-
-<summary>Устаревший способ установки rpm-пакетов</summary>
-
-``` bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/clickhouse.repo
-sudo yum install clickhouse-server clickhouse-client
-
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
-
-</details>
 
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
 
@@ -111,49 +51,21 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-Также есть возможность установить пакеты вручную, скачав отсюда: https://packages.clickhouse.com/rpm/stable.
+Также есть возможность установить пакеты вручную, скачав отсюда: https://repo.clickhouse.tech/rpm/stable/x86_64.
 
 ### Из Tgz архивов {#from-tgz-archives}
 
 Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz` архивов для всех дистрибутивов, где невозможна установка `deb` и `rpm` пакетов.
 
-Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://packages.clickhouse.com/tgz/.
+Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://repo.clickhouse.tech/tgz/.
 После этого архивы нужно распаковать и воспользоваться скриптами установки. Пример установки самой свежей версии:
 
 ``` bash
-LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
-    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
-export LATEST_VERSION
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz"
-
-tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
-sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
-
-tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
-sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
-
-tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
-sudo /etc/init.d/clickhouse-server start
-
-tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
-sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
-```
-
-<details markdown="1">
-
-<summary>Устаревший способ установки из архивов tgz</summary>
-
-``` bash
-export LATEST_VERSION=$(curl -s https://repo.clickhouse.com/tgz/stable/ | \
-    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz
+export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
 
 tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
@@ -168,20 +80,19 @@ sudo /etc/init.d/clickhouse-server start
 tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
 sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
-</details>
 
 Для production окружений рекомендуется использовать последнюю `stable`-версию. Её номер также можно найти на github с на вкладке https://github.com/ClickHouse/ClickHouse/tags c постфиксом `-stable`.
 
 ### Из Docker образа {#from-docker-image}
 
-Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
+Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
 
 ### Из единого бинарного файла {#from-single-binary}
 
-Для установки ClickHouse под Linux можно использовать единый переносимый бинарный файл из последнего коммита ветки `master`: [https://builds.clickhouse.com/master/amd64/clickhouse].
+Для установки ClickHouse под Linux можно использовать единый переносимый бинарный файл из последнего коммита ветки `master`: [https://builds.clickhouse.tech/master/amd64/clickhouse].
 
 ``` bash
-curl -O 'https://builds.clickhouse.com/master/amd64/clickhouse' && chmod a+x clickhouse
+curl -O 'https://builds.clickhouse.tech/master/amd64/clickhouse' && chmod a+x clickhouse
 sudo ./clickhouse install
 ```
 
@@ -189,11 +100,11 @@ sudo ./clickhouse install
 
 Для других операционных систем и архитектуры AArch64 сборки ClickHouse предоставляются в виде кросс-компилированного бинарного файла из последнего коммита ветки `master` (с задержкой в несколько часов).
 
--   [macOS](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
--   [FreeBSD](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
--   [AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+- [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
+- [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+- [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
 
-После скачивания можно воспользоваться `clickhouse client` для подключения к серверу или `clickhouse local` для обработки локальных данных.
+После скачивания можно воспользоваться `clickhouse client` для подключения к серверу или `clickhouse local` для обработки локальных данных. 
 
 Чтобы установить ClickHouse в рамках всей системы (с необходимыми конфигурационными файлами, настройками пользователей и т.д.), выполните `sudo ./clickhouse install`. Затем выполните команды `clickhouse start` (чтобы запустить сервер) и `clickhouse-client` (чтобы подключиться к нему).
 
@@ -266,10 +177,9 @@ SELECT 1
 
 1 rows in set. Elapsed: 0.003 sec.
 
-
 :)
 ```
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](tutorial.md).
+Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).

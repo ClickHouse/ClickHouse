@@ -1,6 +1,6 @@
--- Tags: long
-
 -- { echo }
+
+set allow_experimental_window_functions = 1;
 
 -- just something basic
 select number, count() over (partition by intDiv(number, 3) order by number rows unbounded preceding) from numbers(10);
@@ -15,10 +15,10 @@ select number, abs(number) over (partition by toString(intDiv(number, 3)) rows u
 select number, avg(number) over (order by number rows unbounded preceding) from numbers(10);
 
 -- no order by
-select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by number rows unbounded preceding) from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) from numbers(10);
 
 -- can add an alias after window spec
-select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by number rows unbounded preceding) q from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10);
 
 -- can't reference it yet -- the window functions are calculated at the
 -- last stage of select, after all other functions.
@@ -83,14 +83,14 @@ select sum(number) over w1, sum(number) over w2
 from numbers(10)
 window
     w1 as (rows unbounded preceding),
-    w2 as (partition by intDiv(number, 3) as value order by number rows unbounded preceding)
+    w2 as (partition by intDiv(number, 3) rows unbounded preceding)
 ;
 
 -- FIXME both functions should use the same window, but they don't. Add an
 -- EXPLAIN test for this.
 select
     sum(number) over w1,
-    sum(number) over (partition by intDiv(number, 3) as value order by number rows unbounded preceding)
+    sum(number) over (partition by intDiv(number, 3) rows unbounded preceding)
 from numbers(10)
 window
     w1 as (partition by intDiv(number, 3) rows unbounded preceding)
@@ -105,35 +105,35 @@ select sum(number) over () from numbers(3);
 -- interesting corner cases.
 select number, intDiv(number, 3) p, mod(number, 2) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 5
 ;
 
 select number, intDiv(number, 5) p, mod(number, 3) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 2
 ;
 
 select number, intDiv(number, 5) p, mod(number, 2) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 3
 ;
 
 select number, intDiv(number, 3) p, mod(number, 5) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 2
 ;
 
 select number, intDiv(number, 2) p, mod(number, 5) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 3
 ;
@@ -351,7 +351,7 @@ select number, p, o,
     row_number() over w
 from (select number, intDiv(number, 5) p, mod(number, 3) o
     from numbers(31) order by o, number) t
-window w as (partition by p order by o, number)
+window w as (partition by p order by o)
 order by p, o, number
 settings max_block_size = 2;
 
@@ -379,19 +379,7 @@ settings max_block_size = 3;
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
 select lagInFrameOrNull(1) over (); -- { serverError 36 }
--- this is the same as `select max(Null::Nullable(Nothing))`
 select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
--- to make lagInFrame return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    lagInFrame(toNullable(number), 1) OVER w,
-    lagInFrame(toNullable(number), 2) OVER w,
-    lagInFrame(number, 1) OVER w,
-    lagInFrame(number, 2) OVER w
-FROM numbers(4)
-WINDOW w AS (ORDER BY number ASC)
-;
 
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
@@ -402,70 +390,6 @@ from numbers(10)
 window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
-
--- nth_value without specific frame range given
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number)
-order by number
-;
-
--- nth_value with frame range specified
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number range between 1 preceding and 1 following)
-order by number
-;
-
--- to make nth_value return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    nth_value(toNullable(number), 1) OVER w as firstValue,
-    nth_value(toNullable(number), 3) OVER w as thridValue
-FROM numbers(5)
-WINDOW w AS (ORDER BY number ASC)
-;
-
--- nth_value UBsan
-SELECT nth_value(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, 0) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-SELECT nth_value(1, 1) OVER ();
-
--- lagInFrame UBsan
-SELECT lagInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT lagInFrame(1, 0) OVER ();
-SELECT lagInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT lagInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-SELECT lagInFrame(1, 1) OVER ();
-
--- leadInFrame UBsan
-SELECT leadInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT leadInFrame(1, 0) OVER ();
-SELECT leadInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT leadInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-SELECT leadInFrame(1, 1) OVER ();
-
--- nth_value Msan
-SELECT nth_value(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
-
--- lagInFrame Msan
-SELECT lagInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
-
--- leadInFrame Msan
-SELECT leadInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
 
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
@@ -494,26 +418,6 @@ from (
     from numbers_mt(10000)
 ) settings max_block_size = 7;
 
--- a test with aggregate function which is -state type
-select bitmapCardinality(bs)
-from
-    (
-        select groupBitmapMergeState(bm) over (order by k asc rows between unbounded preceding and current row) as bs
-        from
-            (
-                select
-                    groupBitmapState(number) as bm, k
-                from
-                    (
-                        select
-                            number,
-                            number % 3 as k
-                        from numbers(3)
-                    )
-                group by k
-            )
-    );
-
 -- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
 -- under UBSan. Should be limited to at most INT_MAX.
 select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
@@ -528,7 +432,7 @@ select count() over () where null;
 select number, count() over (w1 rows unbounded preceding) from numbers(10)
 window
     w0 as (partition by intDiv(number, 5) as p),
-    w1 as (w0 order by mod(number, 3) as o, number)
+    w1 as (w0 order by mod(number, 3) as o)
 order by p, o, number
 ;
 

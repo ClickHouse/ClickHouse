@@ -29,7 +29,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 在终端命令行输入下列指令：
 
-    git clone git@guthub.com:your_github_username/ClickHouse.git
+    git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 请注意，您需要将*your_github_username* 替换成实际使用的账户名!
@@ -71,7 +71,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 在git中使用子模块可能会很痛苦。 接下来的命令将有助于管理它:
 
-    # ! each command accepts
+    # ! each command accepts --recursive
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -84,16 +84,16 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 接下来的命令将帮助您将所有子模块重置为初始状态（！华林！ -里面的任何chenges将被删除):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync
+    git submodule sync --recursive
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init
+    git submodule update --init --recursive
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync
-    git submodule foreach git submodule update --init
+    git submodule foreach git submodule sync --recursive
+    git submodule foreach git submodule update --init --recursive
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -224,11 +224,11 @@ KDevelop和QTCreator是另外两款适合开发ClickHouse的替代IDE。尽管�
 
 # 编写代码 {#bian-xie-dai-ma}
 
-ClickHouse的架构描述可以在此处查看：https://clickhouse.com/docs/en/development/architecture/
+ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en/development/architecture/
 
-代码风格指引：https://clickhouse.com/docs/en/development/style/
+代码风格指引：https://clickhouse.tech/docs/en/development/style/
 
-编写测试用例：https://clickhouse.com/docs/en/development/tests/
+编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
 任务列表：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
@@ -238,8 +238,8 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.com/docs/en/
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz
@@ -259,7 +259,7 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.com/docs/en/
 
 即使工作尚未完成，也可以创建拉取请求。在这种情况下，请在标题的开头加上«WIP»（正在进行中），以便后续更改。这对于协同审查和讨论更改以及运行所有可用测试用例很有用。提供有关变更的简短描述很重要，这将在后续用于生成重新发布变更日志。
 
-ClickHouse成员一旦在您的拉取请求上贴上«可以测试»标签，就会开始测试。一些初始检查项（例如，代码类型）的结果会在几分钟内反馈。构建的检查结果将在半小时内完成。而主要的测试用例集结果将在一小时内报告给您。
+Yandex成员一旦在您的拉取请求上贴上«可以测试»标签，就会开始测试。一些初始检查项（例如，代码类型）的结果会在几分钟内反馈。构建的检查结果将在半小时内完成。而主要的测试用例集结果将在一小时内报告给您。
 
 系统将分别为您的拉取请求准备ClickHouse二进制版本。若要检索这些构建信息，请在检查列表中单击« ClickHouse构建检查»旁边的«详细信息»链接。在这里，您会找到指向ClickHouse的.deb软件包的直接链接，此外，甚至可以将其部署在生产服务器上（如果您不担心）。
 

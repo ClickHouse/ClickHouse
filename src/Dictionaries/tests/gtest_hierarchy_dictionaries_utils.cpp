@@ -151,15 +151,13 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         parent_to_child[1].emplace_back(3);
         parent_to_child[2].emplace_back(4);
 
-        auto parent_to_child_index = std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
-
         PaddedPODArray<UInt64> keys = {0, 1, 2, 3, 4};
 
         {
             size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
-                *parent_to_child_index,
+                parent_to_child,
                 DB::detail::GetAllDescendantsStrategy(),
                 keys_found);
 
@@ -177,7 +175,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
             size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
-                *parent_to_child_index,
+                parent_to_child,
                 DB::detail::GetDescendantsAtSpecificLevelStrategy{1},
                 keys_found);
 
@@ -197,15 +195,13 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         parent_to_child[1].emplace_back(2);
         parent_to_child[2].emplace_back(1);
 
-        auto parent_to_child_index = std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
-
         PaddedPODArray<UInt64> keys = {1, 2, 3};
 
         {
             size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
-                *parent_to_child_index,
+                parent_to_child,
                 DB::detail::GetAllDescendantsStrategy(),
                 keys_found);
 
@@ -223,7 +219,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
             size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
-                *parent_to_child_index,
+                parent_to_child,
                 DB::detail::GetDescendantsAtSpecificLevelStrategy{1},
                 keys_found);
 

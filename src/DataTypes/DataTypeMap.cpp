@@ -1,15 +1,23 @@
-#include <base/map.h>
+#include <common/map.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnArray.h>
 #include <Core/Field.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Common/quoteString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 
 
@@ -45,9 +53,12 @@ DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & valu
 
 void DataTypeMap::assertKeyType() const
 {
-    if (!checkKeyType(key_type))
+    if (!key_type->isValueRepresentedByInteger()
+        && !isStringOrFixedString(*key_type)
+        && !WhichDataType(key_type).isNothing()
+        && !WhichDataType(key_type).isUUID())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Type of Map key must be a type, that can be represented by integer or String or FixedString (possibly LowCardinality) or UUID,"
+            "Type of Map key must be a type, that can be represented by integer or string or UUID,"
             " but {} given", key_type->getName());
 }
 
@@ -55,9 +66,30 @@ void DataTypeMap::assertKeyType() const
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getName() << ", " << value_type->getName() << ")";
+    s << "Map(" << key_type->getName() << "," << value_type->getName() << ")";
 
     return s.str();
+}
+
+static const IColumn & extractNestedColumn(const IColumn & column)
+{
+    return assert_cast<const ColumnMap &>(column).getNestedColumn();
+}
+
+DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    return nested->tryGetSubcolumnType(subcolumn_name);
+}
+
+ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
+{
+    return nested->getSubcolumn(subcolumn_name, extractNestedColumn(column));
+}
+
+SerializationPtr DataTypeMap::getSubcolumnSerialization(
+    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
+{
+    return nested->getSubcolumnSerialization(subcolumn_name, base_serialization_getter);
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const
@@ -85,25 +117,6 @@ bool DataTypeMap::equals(const IDataType & rhs) const
 
     const DataTypeMap & rhs_map = static_cast<const DataTypeMap &>(rhs);
     return nested->equals(*rhs_map.nested);
-}
-
-bool DataTypeMap::checkKeyType(DataTypePtr key_type)
-{
-    if (key_type->getTypeId() == TypeIndex::LowCardinality)
-    {
-        const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*key_type);
-        if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
-            return false;
-    }
-    else if (!key_type->isValueRepresentedByInteger()
-             && !isStringOrFixedString(*key_type)
-             && !WhichDataType(key_type).isNothing()
-             && !WhichDataType(key_type).isUUID())
-    {
-        return false;
-    }
-
-    return true;
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

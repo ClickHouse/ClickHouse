@@ -6,9 +6,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SymbolIndex.h>
-#include <Common/Stopwatch.h>
 
-#include <Common/config_version.h>
+#if !defined(ARCADIA_BUILD)
+#   include <Common/config_version.h>
+#endif
 
 
 namespace DB
@@ -82,7 +83,7 @@ void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, co
 
         stack_trace.toStringEveryLine([&trace_full](const std::string & line) { trace_full.push_back(line); });
 
-        CrashLogElement element{static_cast<time_t>(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
+        CrashLogElement element{time_t(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
         crash_log_owned->add(element);
     }
 }

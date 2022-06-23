@@ -7,8 +7,15 @@
 #include <Common/StringSearcher.h>
 #include <re2/re2.h>
 
-#include <Common/config.h>
-#include <re2_st/re2.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_RE2_ST
+#    include <re2_st/re2.h>
+#else
+#    define re2_st re2
+#endif
 
 
 /** Uses two ways to optimize a regular expression:
@@ -55,7 +62,7 @@ public:
     using RegexType = std::conditional_t<thread_safe, re2::RE2, re2_st::RE2>;
     using StringPieceType = std::conditional_t<thread_safe, re2::StringPiece, re2_st::StringPiece>;
 
-    OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0); /// NOLINT
+    OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0);
 
     bool match(const std::string & subject) const
     {
@@ -86,6 +93,8 @@ public:
     /// Get the regexp re2 or nullptr if the pattern is trivial (for output to the log).
     const std::unique_ptr<RegexType> & getRE2() const { return re2; }
 
+    static void analyze(const std::string & regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
+
     void getAnalyzeResult(std::string & out_required_substring, bool & out_is_trivial, bool & out_required_substring_is_prefix) const
     {
         out_required_substring = required_substring;
@@ -102,9 +111,6 @@ private:
     std::optional<DB::StringSearcher<false, true>> case_insensitive_substring_searcher;
     std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
-
-    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 };
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
-using OptimizedRegularExpressionSingleThreaded = OptimizedRegularExpressionImpl<false>;

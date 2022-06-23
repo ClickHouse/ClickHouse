@@ -15,7 +15,8 @@ namespace DB
 class ASTLiteral : public ASTWithAlias
 {
 public:
-    explicit ASTLiteral(Field value_) : value(std::move(value_)) {}
+    explicit ASTLiteral(Field && value_) : value(value_) {}
+    explicit ASTLiteral(const Field & value_) : value(value_) {}
 
     Field value;
 
@@ -39,7 +40,7 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
 
-    ASTPtr clone() const override;
+    ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 

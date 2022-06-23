@@ -4,8 +4,8 @@ import json
 import sys
 
 TYPE_PARQUET_CONVERTED_TO_CLICKHOUSE = {
-    "TIMESTAMP_MICROS": "DateTime('Asia/Istanbul')",
-    "TIMESTAMP_MILLIS": "DateTime('Asia/Istanbul')",
+    "TIMESTAMP_MICROS": "DateTime",
+    "TIMESTAMP_MILLIS": "DateTime",
     "UTF8": "String",
 }
 
@@ -16,18 +16,15 @@ TYPE_PARQUET_PHYSICAL_TO_CLICKHOUSE = {
     "FLOAT": "Float32",
     "DOUBLE": "Float64",
     "BYTE_ARRAY": "String",
-    "INT96": "Int64",  # TODO!
+    "INT96": "Int64", # TODO!
 }
-
 
 def read_file(filename):
     with open(filename, "rb") as f:
         return f.read().decode("raw_unicode_escape")
 
-
 def get_column_name(column):
     return column["Name"].split(".", 1)[0]
-
 
 def resolve_clickhouse_column_type(column):
     column_name = get_column_name(column)
@@ -38,46 +35,23 @@ def resolve_clickhouse_column_type(column):
         precision = int(logical_type["precision"])
         scale = int(logical_type["scale"])
         if precision < 1 or precision > 76:
-            raise RuntimeError(
-                "Column {} has invalid Decimal precision {}".format(
-                    column_name, precision
-                )
-            )
+            raise RuntimeError("Column {} has invalid Decimal precision {}".format(column_name, precision))
         if precision > 38:
-            raise RuntimeError(
-                "Column {} has unsupported Decimal precision {}".format(
-                    column_name, precision
-                )
-            )
+            raise RuntimeError("Column {} has unsupported Decimal precision {}".format(column_name, precision))
         if scale < 0 or scale > precision:
-            raise RuntimeError(
-                "Column {} has invalid Decimal scale {} for precision {}".format(
-                    column_name, scale, precision
-                )
-            )
+            raise RuntimeError("Column {} has invalid Decimal scale {} for precision {}".format(column_name, scale, precision))
         return "Decimal({}, {})".format(precision, scale)
     if converted_type and converted_type != "NONE":
         result_type = TYPE_PARQUET_CONVERTED_TO_CLICKHOUSE.get(converted_type)
         if result_type:
             return result_type
-        raise RuntimeError(
-            "Column {} has unknown ConvertedType: {}".format(
-                column_name, converted_type
-            )
-        )
+        raise RuntimeError("Column {} has unknown ConvertedType: {}".format(column_name, converted_type))
     if physical_type and physical_type != "NONE":
         result_type = TYPE_PARQUET_PHYSICAL_TO_CLICKHOUSE.get(physical_type)
         if result_type:
             return result_type
-        raise RuntimeError(
-            "Column {} has unknown PhysicalType: {}".format(column_name, physical_type)
-        )
-    raise RuntimeError(
-        "Column {} has invalid types: ConvertedType={}, PhysicalType={}".format(
-            column_name, converted_type, physical_type
-        )
-    )
-
+        raise RuntimeError("Column {} has unknown PhysicalType: {}".format(column_name, physical_type))
+    raise RuntimeError("Column {} has invalid types: ConvertedType={}, PhysicalType={}".format(column_name, converted_type, physical_type))
 
 def dump_columns(obj):
     descr_by_column_name = {}
@@ -104,21 +78,10 @@ def dump_columns(obj):
         else:
             return "Tuple({})".format(", ".join(types))
 
-    print(
-        ", ".join(
-            map(
-                lambda descr: "`{}` {}".format(
-                    descr["name"], _format_type(descr["types"])
-                ),
-                columns_descr,
-            )
-        )
-    )
-
+    print(", ".join(map(lambda descr: "`{}` {}".format(descr["name"], _format_type(descr["types"])), columns_descr)))
 
 def dump_columns_from_file(filename):
     dump_columns(json.loads(read_file(filename), strict=False))
-
 
 if __name__ == "__main__":
     filename = sys.argv[1]

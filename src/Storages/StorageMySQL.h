@@ -1,18 +1,17 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_MYSQL
 
+#include <common/shared_ptr_helper.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/PoolWithFailover.h>
 
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
@@ -21,8 +20,9 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL final : public IStorage, WithContext
+class StorageMySQL final : public shared_ptr_helper<StorageMySQL>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageMySQL>;
 public:
     StorageMySQL(
         const StorageID & table_id_,
@@ -41,19 +41,17 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    static StorageMySQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings);
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
-    friend class StorageMySQLSink;
+    friend class StorageMySQLBlockOutputStream;
 
     std::string remote_database_name;
     std::string remote_table_name;
@@ -63,8 +61,6 @@ private:
     MySQLSettings mysql_settings;
 
     mysqlxx::PoolWithFailoverPtr pool;
-
-    Poco::Logger * log;
 };
 
 }

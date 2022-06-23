@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-s3-storage
-
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -30,6 +28,7 @@ $CLICKHOUSE_CLIENT $settings -q "$touching_many_parts_query" &> /dev/null
 
 $CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
 
-$CLICKHOUSE_CLIENT $settings -q "SELECT ProfileEvents['FileOpen'] as opened_files FROM system.query_log WHERE query='$touching_many_parts_query' and current_database = currentDatabase() ORDER BY event_time DESC, opened_files DESC LIMIT 1;"
+
+$CLICKHOUSE_CLIENT $settings -q "SELECT ProfileEvents['FileOpen'] FROM system.query_log WHERE query='$touching_many_parts_query' and current_database = currentDatabase()  ORDER BY event_time DESC LIMIT 1;"
 
 $CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS merge_tree_table;"

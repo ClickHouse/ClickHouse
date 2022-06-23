@@ -11,12 +11,9 @@ private:
     SerializationPtr nested;
 
 public:
-    explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
+    SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
-    void enumerateStreams(
-        SubstreamPath & path,
-        const StreamCallback & callback,
-        const SubstreamData & data) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
@@ -60,7 +57,7 @@ public:
       * 1. \N
       * 2. empty string (without quotes)
       * 3. NULL
-      * We support all of them (however, second variant is supported by CSVRowInputFormat, not by deserializeTextCSV).
+      * We support all of them (however, second variant is supported by CSVRowInputStream, not by deserializeTextCSV).
       * (see also input_format_defaults_for_omitted_fields and input_format_csv_unquoted_null_literal_as_null settings)
       * In CSV, non-NULL string value, starting with \N characters, must be placed in quotes, to avoid ambiguity.
       */
@@ -70,9 +67,6 @@ public:
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
-    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
     /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
     /// If ReturnType is void, deserialize Nullable(T)
@@ -86,22 +80,6 @@ public:
     static ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
     template <typename ReturnType = bool>
     static ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
-    template <typename ReturnType = bool>
-    static ReturnType deserializeTextRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
-    template <typename ReturnType = bool, bool escaped>
-    static ReturnType deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
-
-private:
-    struct SubcolumnCreator : public ISubcolumnCreator
-    {
-        const ColumnPtr null_map;
-
-        explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
-
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
-    };
 };
 
 }

@@ -1,7 +1,6 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -52,18 +51,7 @@ ColumnWithTypeAndName getPreparedSetInfo(const SetPtr & prepared_set)
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
-bool hashMatchesFilter(const BloomFilterPtr& bloom_filter, UInt64 hash, size_t hash_functions)
-{
-    return std::all_of(BloomFilterHash::bf_hash_seed,
-                       BloomFilterHash::bf_hash_seed + hash_functions,
-                       [&](const auto &hash_seed)
-                       {
-                           return bloom_filter->findHashWithSeed(hash,
-                                                                 hash_seed);
-                       });
-}
-
-bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions, bool match_all)
+bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions)
 {
     const auto * const_column = typeid_cast<const ColumnConst *>(hash_column);
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
@@ -73,34 +61,26 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 
     if (const_column)
     {
-        return hashMatchesFilter(bloom_filter,
-                                 const_column->getValue<UInt64>(),
-                                 hash_functions);
-    }
-
-    const ColumnUInt64::Container & hashes = non_const_column->getData();
-
-    if (match_all)
-    {
-        return std::all_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
+        for (size_t index = 0; index < hash_functions; ++index)
+            if (!bloom_filter->findHashWithSeed(const_column->getValue<UInt64>(), BloomFilterHash::bf_hash_seed[index]))
+                return false;
+        return true;
     }
     else
     {
-        return std::any_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
+        bool missing_rows = true;
+        const ColumnUInt64::Container & data = non_const_column->getData();
+
+        for (size_t index = 0, size = data.size(); missing_rows && index < size; ++index)
+        {
+            bool match_row = true;
+            for (size_t hash_index = 0; match_row && hash_index < hash_functions; ++hash_index)
+                match_row = bloom_filter->findHashWithSeed(data[index], BloomFilterHash::bf_hash_seed[hash_index]);
+
+            missing_rows = !match_row;
+        }
+
+        return !missing_rows;
     }
 }
 
@@ -129,7 +109,6 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
             || element.function == RPNElement::FUNCTION_NOT_EQUALS
             || element.function == RPNElement::FUNCTION_HAS
             || element.function == RPNElement::FUNCTION_HAS_ANY
-            || element.function == RPNElement::FUNCTION_HAS_ALL
             || element.function == RPNElement::FUNCTION_IN
             || element.function == RPNElement::FUNCTION_NOT_IN
             || element.function == RPNElement::ALWAYS_FALSE)
@@ -177,22 +156,16 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             || element.function == RPNElement::FUNCTION_EQUALS
             || element.function == RPNElement::FUNCTION_NOT_EQUALS
             || element.function == RPNElement::FUNCTION_HAS
-            || element.function == RPNElement::FUNCTION_HAS_ANY
-            || element.function == RPNElement::FUNCTION_HAS_ALL)
+            || element.function == RPNElement::FUNCTION_HAS_ANY)
         {
             bool match_rows = true;
-            bool match_all = element.function == RPNElement::FUNCTION_HAS_ALL;
             const auto & predicate = element.predicate;
             for (size_t index = 0; match_rows && index < predicate.size(); ++index)
             {
                 const auto & query_index_hash = predicate[index];
                 const auto & filter = filters[query_index_hash.first];
                 const ColumnPtr & hash_column = query_index_hash.second;
-
-                match_rows = maybeTrueOnBloomFilter(&*hash_column,
-                                                    filter,
-                                                    hash_functions,
-                                                    match_all);
+                match_rows = maybeTrueOnBloomFilter(&*hash_column, filter, hash_functions);
             }
 
             rpn_stack.emplace_back(match_rows, true);
@@ -276,21 +249,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
 
         if (functionIsInOrGlobalInOperator(function->name))
         {
-            auto prepared_set = getPreparedSet(arguments[1]);
-
-            if (prepared_set)
+            if (const auto & prepared_set = getPreparedSet(arguments[1]))
             {
                 if (traverseASTIn(function->name, arguments[0], prepared_set, out))
                     maybe_useful = true;
             }
         }
-        else if (function->name == "equals" ||
-                 function->name == "notEquals" ||
-                 function->name == "has" ||
-                 function->name == "mapContains" ||
-                 function->name == "indexOf" ||
-                 function->name == "hasAny" ||
-                 function->name == "hasAll")
+        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has" || function->name == "indexOf" || function->name == "hasAny")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -311,22 +276,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
-    const String & function_name,
-    const ASTPtr & key_ast,
-    const SetPtr & prepared_set,
-    RPNElement & out)
+    const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out)
 {
     const auto prepared_info = getPreparedSetInfo(prepared_set);
-    return traverseASTIn(function_name, key_ast, prepared_set, prepared_info.type, prepared_info.column, out);
+    return traverseASTIn(function_name, key_ast, prepared_info.type, prepared_info.column, out);
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
-    const String & function_name,
-    const ASTPtr & key_ast,
-    const SetPtr & prepared_set,
-    const DataTypePtr & type,
-    const ColumnPtr & column,
-    RPNElement & out)
+    const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out)
 {
     if (header.has(key_ast->getColumnName()))
     {
@@ -363,85 +320,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
             const auto & sub_data_types = tuple_data_type->getElements();
 
             for (size_t index = 0; index < arguments.size(); ++index)
-                match_with_subtype |= traverseASTIn(function_name, arguments[index], nullptr, sub_data_types[index], sub_columns[index], out);
+                match_with_subtype |= traverseASTIn(function_name, arguments[index], sub_data_types[index], sub_columns[index], out);
 
             return match_with_subtype;
-        }
-
-        if (function->name == "arrayElement")
-        {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] IN ('') because if key does not exists in map
-              * we return default value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
-              */
-
-            if (!prepared_set)
-                return false;
-
-            auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-            ColumnWithTypeAndName default_column_with_type_to_check { default_column_to_check, type, "" };
-            ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
-            auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
-            const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
-            bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
-            if (set_contain_default_value)
-                return false;
-
-            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
-            if (!column_ast_identifier)
-                return false;
-
-            const auto & col_name = column_ast_identifier->name();
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", col_name);
-
-            if (header.has(map_keys_index_column_name))
-            {
-                /// For mapKeys we serialize key argument with bloom filter
-
-                auto & argument = function->arguments.get()->children[1];
-
-                if (const auto * literal = argument->as<ASTLiteral>())
-                {
-                    size_t position = header.getPositionByName(map_keys_index_column_name);
-                    const DataTypePtr & index_type = header.getByPosition(position).type;
-
-                    auto element_key = literal->value;
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key)));
-                }
-                else
-                {
-                    return false;
-                }
-            }
-            else if (header.has(map_values_index_column_name))
-            {
-                /// For mapValues we serialize set with bloom filter
-
-                size_t row_size = column->size();
-                size_t position = header.getPositionByName(map_values_index_column_name);
-                const DataTypePtr & index_type = header.getByPosition(position).type;
-                const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
-                const auto & array_nested_type = array_type.getNestedType();
-                const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
-            }
-            else
-            {
-                return false;
-            }
-
-            if (function_name == "in"  || function_name == "globalIn")
-                out.function = RPNElement::FUNCTION_IN;
-
-            if (function_name == "notIn"  || function_name == "globalNotIn")
-                out.function = RPNElement::FUNCTION_NOT_IN;
-
-            return true;
         }
     }
 
@@ -507,12 +388,7 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
 
 
 bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
-    const String & function_name,
-    const ASTPtr & key_ast,
-    const DataTypePtr & value_type,
-    const Field & value_field,
-    RPNElement & out,
-    const ASTPtr & parent)
+    const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent)
 {
     if (header.has(key_ast->getColumnName()))
     {
@@ -536,7 +412,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
             }
         }
-        else if (function_name == "hasAny" || function_name == "hasAll")
+        else if (function_name == "hasAny")
         {
             if (!array_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
@@ -552,7 +428,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
                 for (const auto & f : value_field.get<Array>())
                 {
-                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
+                    if ((f.isNull() && !is_nullable) || f.IsDecimal(f.getType()))
                         return false;
 
                     mutable_column->insert(convertFieldToType(f, *actual_type, value_type.get()));
@@ -561,9 +437,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 column = std::move(mutable_column);
             }
 
-            out.function = function_name == "hasAny" ?
-                RPNElement::FUNCTION_HAS_ANY :
-                RPNElement::FUNCTION_HAS_ALL;
+            out.function = RPNElement::FUNCTION_HAS_ANY;
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
         }
         else
@@ -576,33 +450,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
-
-        return true;
-    }
-
-    if (function_name == "mapContains" || function_name == "has")
-    {
-        const auto * key_ast_identifier = key_ast.get()->as<const ASTIdentifier>();
-        if (!key_ast_identifier)
-            return false;
-
-        const auto & col_name = key_ast_identifier->name();
-        auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-
-        if (!header.has(map_keys_index_column_name))
-            return false;
-
-        size_t position = header.getPositionByName(map_keys_index_column_name);
-        const DataTypePtr & index_type = header.getByPosition(position).type;
-        const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
-
-        if (!array_type)
-            return false;
-
-        out.function = RPNElement::FUNCTION_HAS;
-        const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
 
         return true;
     }
@@ -627,59 +474,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 match_with_subtype |= traverseASTEquals(function_name, arguments[index], subtypes[index], tuple[index], out, key_ast);
 
             return match_with_subtype;
-        }
-
-        if (function->name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
-        {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
-              * we return default value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
-              */
-            if (value_field == value_type->getDefault())
-                return false;
-
-            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
-            if (!column_ast_identifier)
-                return false;
-
-            const auto & col_name = column_ast_identifier->name();
-
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", col_name);
-
-            size_t position = 0;
-            Field const_value = value_field;
-
-            if (header.has(map_keys_index_column_name))
-            {
-                position = header.getPositionByName(map_keys_index_column_name);
-
-                auto & argument = function->arguments.get()->children[1];
-
-                if (const auto * literal = argument->as<ASTLiteral>())
-                    const_value = literal->value;
-                else
-                    return false;
-            }
-            else if (header.has(map_values_index_column_name))
-            {
-                position = header.getPositionByName(map_values_index_column_name);
-            }
-            else
-            {
-                return false;
-            }
-
-            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-
-            const auto & index_type = header.getByPosition(position).type;
-            const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
-
-            return true;
         }
     }
 

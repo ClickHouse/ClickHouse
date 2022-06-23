@@ -9,20 +9,26 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event ExternalSortWritePart;
+    extern const Event ExternalSortMerge;
+}
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
-MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Chunks nonempty_chunks;
@@ -31,12 +37,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         if (chunk.getNumRows() == 0)
             continue;
 
-        /// Convert to full column, because sparse column has
-        /// access to element in O(log(K)), where K is number of non-default rows,
-        /// which can be inefficient.
-        convertToFullIfSparse(chunk);
-
-        cursors.emplace_back(header, chunk.getColumns(), description);
+        cursors.emplace_back(chunk.getColumns(), description);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
@@ -127,18 +128,27 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
     return Chunk(std::move(merged_columns), merged_rows);
 }
 
+
 SortingTransform::SortingTransform(
     const Block & header,
     const SortDescription & description_,
-    size_t max_merged_block_size_,
-    UInt64 limit_,
-    bool increase_sort_description_compile_attempts)
+    size_t max_merged_block_size_, UInt64 limit_)
     : IProcessor({header}, {header})
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
 {
     const auto & sample = inputs.front().getHeader();
+
+    /// Replace column names to column position in sort_description.
+    for (auto & column_description : description)
+    {
+        if (!column_description.column_name.empty())
+        {
+            column_description.column_number = sample.getPositionByName(column_description.column_name);
+            column_description.column_name.clear();
+        }
+    }
 
     /// Remove constants from header and map old indexes to new.
     size_t num_columns = sample.columns();
@@ -155,27 +165,21 @@ SortingTransform::SortingTransform(
         }
     }
 
-    DataTypes sort_description_types;
-    sort_description_types.reserve(description.size());
-
     /// Remove constants from column_description and remap positions.
     SortDescription description_without_constants;
     description_without_constants.reserve(description.size());
     for (const auto & column_description : description)
     {
-        auto old_pos = header.getPositionByName(column_description.column_name);
+        auto old_pos = column_description.column_number;
         auto new_pos = map[old_pos];
-
         if (new_pos < num_columns)
         {
-            sort_description_types.emplace_back(sample.safeGetByPosition(old_pos).type);
             description_without_constants.push_back(column_description);
+            description_without_constants.back().column_number = new_pos;
         }
     }
 
     description.swap(description_without_constants);
-
-    compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attemps*/);
 }
 
 SortingTransform::~SortingTransform() = default;

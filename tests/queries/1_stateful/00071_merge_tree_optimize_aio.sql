@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS test.hits_snippet;
 
-CREATE TABLE test.hits_snippet(EventTime DateTime('Asia/Dubai'),  EventDate Date,  CounterID UInt32,  UserID UInt64,  URL String,  Referer String) ENGINE = MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
+CREATE TABLE test.hits_snippet(EventTime DateTime,  EventDate Date,  CounterID UInt32,  UserID UInt64,  URL String,  Referer String) ENGINE = MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
 
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 4096;

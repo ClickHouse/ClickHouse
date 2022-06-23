@@ -4,7 +4,6 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
-#include <utility>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -18,42 +17,13 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-using MergeTreeIndexVersion = uint8_t;
-struct MergeTreeIndexFormat
-{
-    MergeTreeIndexVersion version;
-    const char* extension;
-
-    explicit operator bool() const { return version != 0; }
-};
-
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
     virtual ~IMergeTreeIndexGranule() = default;
 
-    /// Serialize always last version.
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
-
-    /// Version of the index to deserialize:
-    ///
-    /// - 2 -- minmax index for proper Nullable support,
-    /// - 1 -- everything else.
-    ///
-    /// Implementation is responsible for version check,
-    /// and throw LOGICAL_ERROR in case of unsupported version.
-    ///
-    /// See also:
-    /// - IMergeTreeIndex::getSerializedFileExtension()
-    /// - IMergeTreeIndex::getDeserializedFormat()
-    /// - MergeTreeDataMergerMutator::collectFilesToSkip()
-    /// - MergeTreeDataMergerMutator::collectFilesForRenames()
-    virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+    virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
     virtual bool empty() const = 0;
 };
@@ -92,67 +62,19 @@ public:
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
-using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
-
-struct IMergeTreeIndex;
-using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
-
-/// IndexCondition that checks several indexes at the same time.
-class IMergeTreeIndexMergedCondition
-{
-public:
-    explicit IMergeTreeIndexMergedCondition(size_t granularity_)
-        : granularity(granularity_)
-    {
-    }
-
-    virtual ~IMergeTreeIndexMergedCondition() = default;
-
-    virtual void addIndex(const MergeTreeIndexPtr & index) = 0;
-    virtual bool alwaysUnknownOrTrue() const = 0;
-    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const = 0;
-
-protected:
-    const size_t granularity;
-};
-
-using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
-using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedCondition>;
 
 
 struct IMergeTreeIndex
 {
-    explicit IMergeTreeIndex(const IndexDescription & index_)
+    IMergeTreeIndex(const IndexDescription & index_)
         : index(index_)
     {
     }
 
     virtual ~IMergeTreeIndex() = default;
 
-    /// Returns filename without extension.
+    /// gets filename without extension
     String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
-    size_t getGranularity() const { return index.granularity; }
-
-    virtual bool isMergeable() const { return false; }
-
-    /// Returns extension for serialization.
-    /// Reimplement if you want new index format.
-    ///
-    /// NOTE: In case getSerializedFileExtension() is reimplemented,
-    /// getDeserializedFormat() should be reimplemented too,
-    /// and check all previous extensions too
-    /// (to avoid breaking backward compatibility).
-    virtual const char* getSerializedFileExtension() const { return ".idx"; }
-
-    /// Returns extension for deserialization.
-    ///
-    /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
-    {
-        if (disk->exists(relative_path_prefix + ".idx"))
-            return {1, ".idx"};
-        return {0 /*unknown*/, ""};
-    }
 
     /// Checks whether the column is in data skipping index.
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
@@ -162,14 +84,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
-
-    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
-        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "MergedCondition is not implemented for index of type {}", index.type);
-    }
+            const SelectQueryInfo & query_info, ContextPtr context) const = 0;
 
     Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
@@ -219,8 +134,5 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
 void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
-
-MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
-void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
 }

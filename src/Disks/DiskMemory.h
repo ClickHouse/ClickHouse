@@ -22,7 +22,7 @@ class WriteBufferFromFileBase;
 class DiskMemory : public IDisk
 {
 public:
-    explicit DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
+    DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
 
     const String & getName() const override { return name; }
 
@@ -64,15 +64,16 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        WriteMode mode) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -89,15 +90,13 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType getType() const override { return DiskType::RAM; }
-    bool isRemote() const override { return false; }
-
-    bool supportZeroCopyReplication() const override { return false; }
+    DiskType::Type getType() const override { return DiskType::Type::RAM; }
 
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);
 
+private:
     friend class WriteIndirectBuffer;
 
     enum class FileType
@@ -112,7 +111,7 @@ private:
         String data;
 
         FileData(FileType type_, String data_) : type(type_), data(std::move(data_)) {}
-        explicit FileData(FileType type_) : type(type_) {}
+        explicit FileData(FileType type_) : type(type_), data("") {}
     };
     using Files = std::unordered_map<String, FileData>; /// file path -> file data
 

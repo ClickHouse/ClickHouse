@@ -1,11 +1,11 @@
-#include <ctime>
+#include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <base/getThreadId.h>
-#include <base/types.h>
+#include <common/getThreadId.h>
+#include <common/types.h>
 
 
 namespace DB

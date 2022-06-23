@@ -90,7 +90,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
 }
 
 void StorageSystemProjectionParts::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -125,7 +125,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(parent_part->getTypeName());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part_state == State::Active);
+            columns[res_index++]->insert(part_state == State::Committed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
@@ -282,7 +282,7 @@ void StorageSystemProjectionParts::processNextStorage(
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
-            columns[res_index++]->insert(IMergeTreeDataPart::stateString(part_state));
+            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
     }
 }
 

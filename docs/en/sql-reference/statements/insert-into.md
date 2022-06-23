@@ -1,13 +1,13 @@
 ---
-sidebar_position: 33
-sidebar_label: INSERT INTO
+toc_priority: 33
+toc_title: INSERT INTO
 ---
 
-# INSERT INTO Statement 
+## INSERT INTO Statement {#insert}
 
-Inserts data into a table.
+Adding data.
 
-**Syntax**
+Basic query format:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
@@ -55,11 +55,7 @@ SELECT * FROM insert_select_testtable;
 └───┴───┴───┘
 ```
 
-In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default. It is also possible to use `DEFAULT` keyword to insert default values:
-
-``` sql
-INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
-```
+In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default.
 
 If a list of columns does not include all existing columns, the rest of the columns are filled with:
 
@@ -88,15 +84,13 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces)”.
+You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces/index.md#interfaces)”.
 
-### Constraints
+### Constraints {#constraints}
 
 If table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-### Inserting the Results of `SELECT`
-
-**Syntax**
+### Inserting the Results of `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
@@ -111,71 +105,9 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 `FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
 
-To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.
+To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.   
 
-### Inserting Data from a File
-
-**Syntax**
-
-``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
-```
-
-Use the syntax above to insert data from a file stored on a **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause. 
-
-Compressed files are supported. Compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
-
-This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
-
-**Example**
-
-Execute the following queries using [command-line client](../../interfaces/cli.md):
-
-```bash
-echo 1,A > input.csv ; echo 2,B >> input.csv
-clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
-clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
-clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
-```
-
-Result:
-
-```text
-┌─id─┬─text─┐
-│  1 │ A    │
-│  2 │ B    │
-└────┴──────┘
-```
-
-### Inserting into Table Function
-
-Data can be inserted into tables referenced by [table functions](../../sql-reference/table-functions/index.md).
-
-**Syntax**
-``` sql
-INSERT INTO [TABLE] FUNCTION table_func ...
-```
-
-**Example**
-
-[remote](../../sql-reference/table-functions/index.md#remote) table function is used in the following queries:
-
-``` sql
-CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
-INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table) 
-    VALUES (100, 'inserted via remote()');
-SELECT * FROM simple_table;
-```
-
-Result:
-
-``` text
-┌──id─┬─text──────────────────┐
-│ 100 │ inserted via remote() │
-└─────┴───────────────────────┘
-```
-
-### Performance Considerations
+### Performance Considerations {#performance-considerations}
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 
@@ -187,14 +119,3 @@ Performance will not decrease if:
 -   Data is added in real time.
 -   You upload data that is usually sorted by time.
 
-It's also possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To enable the asynchronous mode, switch on the [async_insert](../../operations/settings/settings.md#async-insert) setting. Note that asynchronous insertions are supported only over HTTP protocol, and deduplication is not supported for them.
-
-**See Also**
-
--   [async_insert](../../operations/settings/settings.md#async-insert)
--   [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
--   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
--   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
--   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
--   [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
--   [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)

@@ -1,13 +1,13 @@
 ---
-sidebar_position: 52
-sidebar_label: Array(T)
+toc_priority: 52
+toc_title: Array(T)
 ---
 
-# Array(t)
+# Array(t) {#data-type-array}
 
-An array of `T`-type items, with the starting array index as 1. `T` can be any data type, including an array.
+An array of `T`-type items. `T` can be any data type, including an array.
 
-## Creating an Array
+## Creating an Array {#creating-an-array}
 
 You can use a function to create an array:
 
@@ -43,9 +43,9 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-## Working with Data Types
+## Working with Data Types {#working-with-data-types}
 
-The maximum size of an array is limited to one million elements.
+The maximum size of an array is limited to one million elements. 
 
 When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) or literal [NULL](../../sql-reference/syntax.md#null-literal) values, the type of an array element also becomes [Nullable](../../sql-reference/data-types/nullable.md).
 
@@ -74,7 +74,7 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-## Array Size
+## Array Size {#array-size}
 
 It is possible to find the size of an array by using the `size0` subcolumn without reading the whole column. For multi-dimensional arrays you can use `sizeN-1`, where `N` is the wanted dimension.
 

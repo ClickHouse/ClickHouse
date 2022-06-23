@@ -27,6 +27,7 @@ public:
     /// NOTE Bad for hash tables with more than 2^32 cells.
     static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
 
+public:
     using key_type = typename Impl::key_type;
     using mapped_type = typename Impl::mapped_type;
     using value_type = typename Impl::value_type;
@@ -37,10 +38,10 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    TwoLevelStringHashTable() = default;
+    TwoLevelStringHashTable() {}
 
     template <typename Source>
-    explicit TwoLevelStringHashTable(const Source & src)
+    TwoLevelStringHashTable(const Source & src)
     {
         if (src.m0.hasZero())
             impls[0].m0.setHasZero(*src.m0.zeroValue());
@@ -113,7 +114,7 @@ public:
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
                     memcpy(&n[0], p, 8);
-                    n[0] &= -1ULL >> s;
+                    n[0] &= -1ul >> s;
                 }
                 else
                 {

@@ -1,94 +1,34 @@
--- { echoOn }
-
--- remote(system.one)
-SELECT 'remote(system.one)';
 remote(system.one)
-SELECT * FROM remote('127.0.0.1', system.one);
-0
-SELECT * FROM remote('127.0.0.{1,2}', system.one);
 0
 0
-SELECT _shard_num, * FROM remote('127.0.0.1', system.one);
+0
 1	0
-SELECT _shard_num, * FROM remote('127.0.0.{1,2}', system.one) order by _shard_num;
 1	0
 2	0
-SELECT _shard_num, * FROM remote('127.0.0.{1,2}', system.one) WHERE _shard_num = 1;
 1	0
--- dist_1 using test_shard_localhost
-SELECT 'dist_1';
 dist_1
-SELECT _shard_num FROM dist_1 order by _shard_num;
+1
+1	10
+10
 1
 1
-SELECT _shard_num FROM dist_1 order by _shard_num;
-1
-1
-SELECT _shard_num, key FROM dist_1 order by _shard_num;
 1	10
 1	20
-SELECT key FROM dist_1;
 10
 20
-SELECT _shard_num FROM dist_1 order by _shard_num;
-1
-1
-SELECT _shard_num, key FROM dist_1 order by _shard_num, key;
-1	10
-1	20
-SELECT key FROM dist_1;
-10
-20
--- dist_2 using test_cluster_two_shards_localhost
-SELECT 'dist_2';
 dist_2
-SELECT _shard_num FROM dist_2 order by _shard_num;
 1
 2
-SELECT _shard_num FROM dist_2 order by _shard_num;
-1
-2
-SELECT _shard_num, key FROM dist_2 order by _shard_num, key;
 1	100
 2	100
-SELECT key FROM dist_2;
 100
 100
--- multiple _shard_num
-SELECT 'remote(Distributed)';
 remote(Distributed)
-SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key;
 1	100
-2	100
--- JOIN system.clusters
-SELECT 'JOIN system.clusters';
+1	100
 JOIN system.clusters
-SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
-FROM (SELECT *, _shard_num FROM dist_1) a
-JOIN system.clusters b
-ON a._shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost';
 1	10	localhost	1	9000
 1	20	localhost	1	9000
-SELECT _shard_num, key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
-FROM dist_1 a
-JOIN system.clusters b
-ON _shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 403 }
-SELECT 'Rewrite with alias';
-Rewrite with alias
-SELECT a._shard_num, key FROM dist_1 a;
-1	10
-1	20
--- the same with JOIN, just in case
-SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
-FROM dist_1 a
-JOIN system.clusters b
-ON a._shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 47; }
-SELECT 'dist_3';
 dist_3
-SELECT * FROM dist_3;
 100	foo
-SELECT _shard_num, * FROM dist_3 order by _shard_num;
 foo	100	foo

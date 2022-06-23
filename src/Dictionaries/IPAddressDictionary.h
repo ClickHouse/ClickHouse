@@ -10,8 +10,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
-#include <base/StringRef.h>
-#include <Common/logger_useful.h>
+#include <common/StringRef.h>
+#include <common/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -26,7 +26,7 @@ public:
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_, /// NOLINT
+        const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
@@ -56,7 +56,7 @@ public:
         return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -64,12 +64,10 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.getAttribute(attribute_name).injective;
+        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
-
-    void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -80,7 +78,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
 
@@ -114,7 +112,6 @@ private:
             Decimal64,
             Decimal128,
             Decimal256,
-            DateTime64,
             Float32,
             Float64,
             UUID,
@@ -138,7 +135,6 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
-            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
@@ -160,7 +156,7 @@ private:
     template <typename T>
     static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value); /// NOLINT
+    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
     template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(
@@ -177,7 +173,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
+    void setAttributeValueImpl(Attribute & attribute, const T value);
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 

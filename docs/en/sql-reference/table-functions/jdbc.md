@@ -1,9 +1,9 @@
 ---
-sidebar_position: 43
-sidebar_label: jdbc
+toc_priority: 43
+toc_title: jdbc
 ---
 
-# jdbc
+# jdbc {#table-function-jdbc}
 
 `jdbc(datasource, schema, table)` - returns table that is connected via JDBC driver.
 
@@ -25,7 +25,7 @@ SELECT * FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1
 ```
 
 ``` sql
-SELECT *
+SELECT * 
 FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
 ```
 
@@ -35,4 +35,4 @@ FROM jdbc('mysql-dev?datasource_column', 'show databases') a
 INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
 ```
 
-[Original article](https://clickhouse.com/docs/en/query_language/table_functions/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->

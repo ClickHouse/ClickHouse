@@ -26,20 +26,19 @@ namespace
 
 const std::unordered_set<std::string_view> keywords
 {
-    "CREATE",       "DATABASE",   "IF",       "NOT",      "EXISTS",    "TEMPORARY", "TABLE",       "ON",         "CLUSTER",     "DEFAULT",
-    "MATERIALIZED", "EPHEMERAL",  "ALIAS",    "ENGINE",   "AS",        "VIEW",      "POPULATE",    "SETTINGS",   "ATTACH",      "DETACH",
-    "DROP",         "RENAME",     "TO",       "ALTER",    "ADD",       "MODIFY",    "CLEAR",       "COLUMN",     "AFTER",       "COPY",
-    "PROJECT",      "PRIMARY",    "KEY",      "CHECK",    "PARTITION", "PART",      "FREEZE",      "FETCH",      "FROM",        "SHOW",
-    "INTO",         "OUTFILE",    "FORMAT",   "TABLES",   "DATABASES", "LIKE",      "PROCESSLIST", "CASE",       "WHEN",        "THEN",
-    "ELSE",         "END",        "DESCRIBE", "DESC",     "USE",       "SET",       "OPTIMIZE",    "FINAL",      "DEDUPLICATE", "INSERT",
-    "VALUES",       "SELECT",     "DISTINCT", "SAMPLE",   "ARRAY",     "JOIN",      "GLOBAL",      "LOCAL",      "ANY",         "ALL",
-    "INNER",        "LEFT",       "RIGHT",    "FULL",     "OUTER",     "CROSS",     "USING",       "PREWHERE",   "WHERE",       "GROUP",
-    "BY",           "WITH",       "TOTALS",   "HAVING",   "ORDER",     "COLLATE",   "LIMIT",       "UNION",      "AND",         "OR",
-    "ASC",          "IN",         "KILL",     "QUERY",    "SYNC",      "ASYNC",     "TEST",        "BETWEEN",    "TRUNCATE",    "USER",
-    "ROLE",         "PROFILE",    "QUOTA",    "POLICY",   "ROW",       "GRANT",     "REVOKE",      "OPTION",     "ADMIN",       "EXCEPT",
-    "REPLACE",      "IDENTIFIED", "HOST",     "NAME",     "READONLY",  "WRITABLE",  "PERMISSIVE",  "FOR",        "RESTRICTIVE", "RANDOMIZED",
-    "INTERVAL",     "LIMITS",     "ONLY",     "TRACKING", "IP",        "REGEXP",    "ILIKE",       "DICTIONARY", "OFFSET",      "TRIM",
-    "LTRIM",        "RTRIM",      "BOTH",     "LEADING",  "TRAILING"
+    "CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
+    "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
+    "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
+    "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
+    "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
+    "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
+    "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
+    "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
+    "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
+    "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
+    "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
+    "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
+    "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",    "DICTIONARY"
 };
 
 const std::unordered_set<std::string_view> keep_words
@@ -637,7 +636,7 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
     {
         std::string_view word(word_begin, src_pos - word_begin);
 
-        if (keep_words.contains(word))
+        if (keep_words.count(word))
         {
             result.write(word.data(), word.size());
         }
@@ -889,7 +888,7 @@ void obfuscateQueries(
             std::string whole_token_uppercase(whole_token);
             Poco::toUpperInPlace(whole_token_uppercase);
 
-            if (keywords.contains(whole_token_uppercase)
+            if (keywords.count(whole_token_uppercase)
                 || known_identifier_func(whole_token))
             {
                 /// Keep keywords as is.
@@ -907,13 +906,7 @@ void obfuscateQueries(
 
             /// Write quotes and the obfuscated content inside.
             result.write(*token.begin);
-
-            /// If it is long, just replace it with hash. Long identifiers in queries are usually auto-generated.
-            if (token.size() > 32)
-                writeIntText(sipHash64(token.begin + 1, token.size() - 2), result);
-            else
-                obfuscateIdentifier({token.begin + 1, token.size() - 2}, result, obfuscate_map, used_nouns, hash_func);
-
+            obfuscateIdentifier({token.begin + 1, token.size() - 2}, result, obfuscate_map, used_nouns, hash_func);
             result.write(token.end[-1]);
         }
         else if (token.type == TokenType::Number)

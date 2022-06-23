@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Sources/NullSource.h>
 
 namespace DB
@@ -10,7 +10,7 @@ ReadNothingStep::ReadNothingStep(Block output_header)
 {
 }
 
-void ReadNothingStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadNothingStep::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
 }

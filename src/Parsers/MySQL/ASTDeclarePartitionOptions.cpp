@@ -1,10 +1,9 @@
 #include <Parsers/MySQL/ASTDeclarePartitionOptions.h>
 
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/MySQL/ASTDeclarePartition.h>
 
 namespace DB

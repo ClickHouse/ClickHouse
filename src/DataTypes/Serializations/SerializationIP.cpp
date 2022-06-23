@@ -1,13 +1,8 @@
 #include <DataTypes/Serializations/SerializationIP.h>
-
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnFixedString.h>
 #include <Common/Exception.h>
 #include <Common/formatIPv6.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
-#include <Formats/FormatSettings.h>
-
+#include <Functions/FunctionsCoding.h>
 
 namespace DB
 {
@@ -38,7 +33,7 @@ void SerializationIPv4::serializeText(const IColumn & column, size_t row_num, Wr
     ostr.write(buffer, strlen(buffer));
 }
 
-void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
+void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnUInt32 * col = typeid_cast<ColumnUInt32 *>(&column);
     if (!col)
@@ -49,17 +44,12 @@ void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, con
     char buffer[IPV4_MAX_TEXT_LENGTH + 1] = {'\0'};
     istr.read(buffer, sizeof(buffer) - 1);
     UInt32 ipv4_value = 0;
-
-    bool parse_result = parseIPv4(buffer, reinterpret_cast<unsigned char *>(&ipv4_value));
-    if (!parse_result && !settings.input_format_ipv4_default_on_conversion_error)
+    if (!parseIPv4(buffer, reinterpret_cast<unsigned char *>(&ipv4_value)))
     {
-        throw Exception("Invalid IPv4 value", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+        throw Exception("Invalid IPv4 value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
     }
 
     col->insert(ipv4_value);
-
-    if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "IPv4");
 }
 
 SerializationIPv6::SerializationIPv6(const SerializationPtr & nested_)
@@ -81,7 +71,7 @@ void SerializationIPv6::serializeText(const IColumn & column, size_t row_num, Wr
     ostr.write(buffer, strlen(buffer));
 }
 
-void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
+void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnFixedString * col = typeid_cast<ColumnFixedString *>(&column);
     if (!col)
@@ -93,17 +83,12 @@ void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, con
     istr.read(buffer, sizeof(buffer) - 1);
 
     std::string ipv6_value(IPV6_BINARY_LENGTH, '\0');
-
-    bool parse_result = parseIPv6(buffer, reinterpret_cast<unsigned char *>(ipv6_value.data()));
-    if (!parse_result && !settings.input_format_ipv6_default_on_conversion_error)
+    if (!parseIPv6(buffer, reinterpret_cast<unsigned char *>(ipv6_value.data())))
     {
-        throw Exception("Invalid IPv6 value", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+        throw Exception("Invalid IPv6 value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
     }
 
     col->insertString(ipv6_value);
-
-    if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "IPv6");
 }
 
 }

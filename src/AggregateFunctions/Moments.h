@@ -2,9 +2,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <boost/math/distributions/students_t.hpp>
-#include <boost/math/distributions/normal.hpp>
-#include <cfloat>
 
 
 namespace DB
@@ -359,120 +356,6 @@ struct TTestMoments
     void read(ReadBuffer & buf)
     {
         readPODBinary(*this, buf);
-    }
-
-    Float64 getMeanX() const
-    {
-        return x1 / nx;
-    }
-
-    Float64 getMeanY() const
-    {
-        return y1 / ny;
-    }
-
-    Float64 getStandardError() const
-    {
-        /// The original formulae looks like  \frac{1}{size_x - 1} \sum_{i = 1}^{size_x}{(x_i - \bar{x}) ^ 2}
-        /// But we made some mathematical transformations not to store original sequences.
-        /// Also we dropped sqrt, because later it will be squared later.
-        Float64 mean_x = getMeanX();
-        Float64 mean_y = getMeanY();
-
-        Float64 sx2 = (x2 + nx * mean_x * mean_x - 2 * mean_x * x1) / (nx - 1);
-        Float64 sy2 = (y2 + ny * mean_y * mean_y - 2 * mean_y * y1) / (ny - 1);
-
-        return sqrt(sx2 / nx + sy2 / ny);
-    }
-
-    std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom) const
-    {
-        Float64 mean_x = getMeanX();
-        Float64 mean_y = getMeanY();
-        Float64 se = getStandardError();
-
-        boost::math::students_t dist(degrees_of_freedom);
-        Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));
-        Float64 mean_diff = mean_x - mean_y;
-        Float64 ci_low = mean_diff - t * se;
-        Float64 ci_high = mean_diff + t * se;
-
-        return {ci_low, ci_high};
-    }
-
-    bool isEssentiallyConstant() const
-    {
-        return getStandardError() < 10 * DBL_EPSILON * std::max(std::abs(getMeanX()), std::abs(getMeanY()));
-    }
-};
-
-template <typename T>
-struct ZTestMoments
-{
-    T nx{};
-    T ny{};
-    T x1{};
-    T y1{};
-
-    void addX(T value)
-    {
-        ++nx;
-        x1 += value;
-    }
-
-    void addY(T value)
-    {
-        ++ny;
-        y1 += value;
-    }
-
-    void merge(const ZTestMoments & rhs)
-    {
-        nx += rhs.nx;
-        ny += rhs.ny;
-        x1 += rhs.x1;
-        y1 += rhs.y1;
-    }
-
-    void write(WriteBuffer & buf) const
-    {
-        writePODBinary(*this, buf);
-    }
-
-    void read(ReadBuffer & buf)
-    {
-        readPODBinary(*this, buf);
-    }
-
-    Float64 getMeanX() const
-    {
-        return x1 / nx;
-    }
-
-    Float64 getMeanY() const
-    {
-        return y1 / ny;
-    }
-
-    Float64 getStandardError(Float64 pop_var_x, Float64 pop_var_y) const
-    {
-        /// \sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}
-        return std::sqrt(pop_var_x / nx + pop_var_y / ny);
-    }
-
-    std::pair<Float64, Float64> getConfidenceIntervals(Float64 pop_var_x, Float64 pop_var_y, Float64 confidence_level) const
-    {
-        /// (\bar{x_{1}} - \bar{x_{2}}) \pm zscore \times \sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}
-        Float64 mean_x = getMeanX();
-        Float64 mean_y = getMeanY();
-
-        Float64 z = boost::math::quantile(boost::math::complement(
-            boost::math::normal(0.0f, 1.0f), (1.0f - confidence_level) / 2.0f));
-        Float64 se = getStandardError(pop_var_x, pop_var_y);
-        Float64 ci_low = (mean_x - mean_y) - z * se;
-        Float64 ci_high = (mean_x - mean_y) + z * se;
-
-        return {ci_low, ci_high};
     }
 };
 

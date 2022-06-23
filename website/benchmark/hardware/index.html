@@ -6,18 +6,18 @@
     'results.js?' + rev_short,
     '../benchmark.js?' + rev_short]
 %}
-{% set url = 'https://clickhouse.com/benchmark/hardware/' %}
+{% set url = 'https://clickhouse.tech/benchmark/hardware/' %}
 {% set no_footer = True %}
 
 {% block content %}
 <div class="container-fluid py-3">
 
 <div class="row mb-3">
-    <div class="col d-flex align-items-center">
+    <div class="col">
         <a href="/" title="Main page" class="float-left mr-3">
-            <img src="/docs/images/logo.svg" alt="ClickHouse" />
+            <img src="/images/logo.svg" alt="ClickHouse" />
         </a>
-        <h1 class="h2 mb-0">{{ title }}</h1>
+        <h1>{{ title }}</h1>
     </div>
 </div>
 
@@ -27,22 +27,22 @@
 
 <div class="row mb-3">
     <div class="col">
-        <h2 class="h4 my-3">Relative query processing time <span class="text-muted">(lower is better)</span></h2>
+        <h3 class="my-3">Relative query processing time <span class="text-muted">(lower is better)</span></h3>
         <div id="diagram"></div>
     </div>
 </div>
 
 <div class="row mb-3">
     <div class="col">
-        <h2 class="h4 my-3">Full results</h2>
+        <h3 class="my-3">Full results</h3>
         <div id="comparison_table"></div>
     </div>
 </div>
 
 <div class="row">
     <div class="col">
-        <h2 class="h4 my-3">Comments</h2>
-        <p>Submit your own results: <a href="https://clickhouse.com/docs/en/operations/performance-test/">https://clickhouse.com/docs/en/operations/performance-test/</a></p>
+        <h3 class="my-3">Comments</h3>
+        <p>Submit your own results: <a href="https://clickhouse.tech/docs/en/operations/performance-test/">https://clickhouse.tech/docs/en/operations/performance-test/</a></p>
         <p>
 Results for Lenovo B580 Laptop are from <b>Ragıp Ünal</b>. 16GB RAM 1600 GHz, 240GB SSD, Intel(R) Core(TM) i5-3210M CPU @ 2.50GHz (2 Core / 4 HT)<br/>
 Results for Time4vps.eu are from <b>Ragıp Ünal</b>.<br/>
@@ -77,26 +77,6 @@ Results for 2x AMD EPYC 7F72 3.2 Ghz (Total 96 Cores, IBM Cloud's Bare Metal Ser
 Results for 2x AMD EPYC 7742 (128 physical cores, 1 TB DDR4-3200 RAM) from <b>Yedige Davletgaliyev</b> and <b>Nikita Zhavoronkov</b> of blockchair.com.<br/>
 Results for ASUS A15 (Ryzen laptop) are from <b>Kimmo Linna</b>.<br/>
 Results for MacBook Air M1 are from <b>Denis Glazachev</b>.<br/>
-Results for Xeon Gold 6140 are from <b>Shiv Iyer</b> (ChistaDATA Labs).<br/>
-Comparison of EBS and EFS is from <b>Ramazan Polat</b>.<br/>
-Results for Hetzner and Scaleway are from <b>Anthony Najjar Simon</b> (Panelbear).<br/>
-Results for GCP are from <b>Vy Nguyen Tan</b>.<br/>
-Results for ThinkPad P15 are from <b>Mikhail Shiryaev</b>.<br/>
-Results for RockPi4 are from <b>Kirill Zholnay</b>.<br/>
-Results for Xeon 6266C are from <b>David in Shanghai</b>.<br/>
-Results for SSDNodes and Cavium are from <b>Lorenzo QXIP</b>.<br/>
-Results for AMD EPYC 7662 64-Core Processor are from <b>Evgeniy Kuts</b>.<br/>
-Results for scaleway GP1-S 8x x86 64bit 32GB ram 300gb NVMe are from <b>Dag Vilmar Tveit</b>.<br/>
-Results for scaleway GP1-M 16x x86 64bit 64GB ram 600gb NVMe are from <b>Dag Vilmar Tveit</b>.<br/>
-Results for Intel(R) Core(TM) i5-4440 CPU @ 3.10GHz are from <b>Peter, Chun-Sheng, Li</b>.<br/>
-Results for MacBook Pro M1 are from <b>Filatenkov Arthur</b>.<br/>
-Results for AWS instance type im4gn.4xlarge are from <b>Ananth Gundabattula</b> (Darwinium).<br/>
-Results for AWS instance type im4gn.8xlarge are from <b>Ananth Gundabattula</b> (Darwinium).<br/>
-Results for AWS instance type im4gn.16xlarge are from <b>Ananth Gundabattula</b> (Darwinium).<br/>
-Results for AWS instance type i3.2xlarge are from <b>Ananth Gundabattula</b> (Darwinium).<br/>
-Results for 2x EPYC 7702 on ZFS mirror NVME are from <b>Alibek A</b>.<br/>
-Results for Intel 11th Gen Core i9-11900KF are from <b>Tim Xian</b>.<br/>
-Results for AWS instance type m5a.4xlarge are from <b>Daniel Chimeno</b>.<br/>
 </p>
     </div>
 </div>

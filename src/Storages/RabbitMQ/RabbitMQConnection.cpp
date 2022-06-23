@@ -1,6 +1,6 @@
 #include "RabbitMQConnection.h"
 
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -85,18 +85,10 @@ bool RabbitMQConnection::isConnectedImpl() const
 
 void RabbitMQConnection::connectImpl()
 {
-    if (configuration.connection_string.empty())
-    {
-        LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
-        AMQP::Login login(configuration.username, configuration.password);
-        AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
-    }
-    else
-    {
-        AMQP::Address address(configuration.connection_string);
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
-    }
+    LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
+    AMQP::Login login(configuration.username, configuration.password);
+    AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost);
+    connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
 
     auto cnt_retries = 0;
     while (true)

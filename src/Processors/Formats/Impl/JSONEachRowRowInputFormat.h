@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -18,7 +17,7 @@ class ReadBuffer;
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
-class JSONEachRowRowInputFormat final : public IRowInputFormat
+class JSONEachRowRowInputFormat : public IRowInputFormat
 {
 public:
     JSONEachRowRowInputFormat(
@@ -29,16 +28,16 @@ public:
         bool yield_strings_);
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
-    void resetParser() override;
 
-private:
     void readPrefix() override;
     void readSuffix() override;
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    void resetParser() override;
 
+private:
     const String & columnName(size_t i) const;
     size_t columnIndex(const StringRef & name, size_t key_index);
     bool advanceToNextKey(size_t key_index);
@@ -83,19 +82,6 @@ private:
     bool allow_new_rows = true;
 
     bool yield_strings;
-};
-
-class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
-{
-public:
-    JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings);
-
-private:
-    NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
-
-    bool json_strings;
-    bool first_row = true;
-    bool data_in_square_brackets = false;
 };
 
 }

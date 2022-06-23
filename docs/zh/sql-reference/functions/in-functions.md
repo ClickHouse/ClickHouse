@@ -1,6 +1,6 @@
 ---
-sidebar_position: 60
-sidebar_label: IN 运算符
+toc_priority: 60
+toc_title: IN 运算符
 ---
 
 # IN运算符相关函数 {#inyun-suan-fu-xiang-guan-han-shu}
@@ -21,4 +21,4 @@ sidebar_label: IN 运算符
 ’N’是列索引，从1开始。N必须是正整数常量，并且不大于元组的大小。
 执行该函数没有任何成本。
 
-[原始文章](https://clickhouse.com/docs/en/query_language/functions/in_functions/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/functions/in_functions/) <!--hide-->

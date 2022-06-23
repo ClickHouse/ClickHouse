@@ -1,10 +1,8 @@
 #pragma once
 
 #include <cmath>
-#include <Common/Exception.h>
 #include <Common/RadixSort.h>
 #include <Common/PODArray.h>
-#include <Core/AccurateComparison.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
@@ -16,9 +14,8 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int DECIMAL_OVERFLOW;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 
@@ -347,7 +344,7 @@ public:
         compress();
 
         if (centroids.size() == 1)
-            return checkOverflow<ResultType>(centroids.front().mean);
+            return centroids.front().mean;
 
         Float64 x = level * count;
         Float64 prev_x = 0;
@@ -366,11 +363,11 @@ public:
                 Float64 right = current_x - 0.5 * (c.count == 1);
 
                 if (x <= left)
-                    return checkOverflow<ResultType>(prev_mean);
+                    return prev_mean;
                 else if (x >= right)
-                    return checkOverflow<ResultType>(c.mean);
+                    return c.mean;
                 else
-                    return checkOverflow<ResultType>(interpolate(x, left, prev_mean, right, c.mean));
+                    return interpolate(x, left, prev_mean, right, c.mean);
             }
 
             sum += c.count;
@@ -379,7 +376,7 @@ public:
             prev_x = current_x;
         }
 
-        return checkOverflow<ResultType>(centroids.back().mean);
+        return centroids.back().mean;
     }
 
     /** Get multiple quantiles (`size` parts).
@@ -469,16 +466,6 @@ public:
     void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float32 * result)
     {
         getManyImpl(levels, indices, size, result);
-    }
-
-private:
-    template <typename ResultType>
-    static ResultType checkOverflow(Value val)
-    {
-        ResultType result;
-        if (accurate::convertNumeric(val, result))
-            return result;
-        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 };
 

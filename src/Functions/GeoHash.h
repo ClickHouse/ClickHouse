@@ -2,7 +2,7 @@
 
 #include <map>
 #include <vector>
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -37,8 +37,8 @@ struct GeohashesInBoxPreparedArgs
 };
 
 GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
-    Float64 longitude_min,
-    Float64 latitude_min,
+    const Float64 longitude_min,
+    const Float64 latitude_min,
     Float64 longitude_max,
     Float64 latitude_max,
     uint8_t precision);

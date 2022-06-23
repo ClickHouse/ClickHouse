@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Common/DateLUTImpl.h>
+#include <common/DateLUTImpl.h>
 #include <Core/Field.h>
 
 
@@ -21,7 +21,7 @@ namespace
 
 
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
-  * Example: Pacific/Pitcairn.
+  * Example: Europe/Moscow.
   */
 class FunctionTimezoneOf : public IFunction
 {
@@ -31,8 +31,6 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOf>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
@@ -74,3 +72,4 @@ void registerFunctionTimezoneOf(FunctionFactory & factory)
 }
 
 }
+

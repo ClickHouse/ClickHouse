@@ -1,5 +1,3 @@
--- Tags: long, no-parallel
-
 SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS database_for_dict;
@@ -44,7 +42,7 @@ LAYOUT(IP_TRIE())
 LIFETIME(MIN 10 MAX 100);
 
 -- fuzzer
-SELECT '127.0.0.0/24' = dictGetString('database_for_dict.dict_ipv4_trie', 'prefixprefixprefixprefix', tuple(IPv4StringToNumOrDefault('127.0.0.0127.0.0.0'))); -- { serverError 36 }
+SELECT '127.0.0.0/24' = dictGetString('database_for_dict.dict_ipv4_trie', 'prefixprefixprefixprefix', tuple(IPv4StringToNum('127.0.0.0127.0.0.0'))); -- { serverError 36 }
 
 SELECT 0 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('0.0.0.0')));
 SELECT 1 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('128.0.0.0')));
@@ -117,8 +115,8 @@ WHERE prefix == '127.0.0.2/32';
 SELECT 37 == COUNT(*) FROM database_for_dict.table_from_ipv4_trie_dict;
 SELECT 37 == COUNT(DISTINCT prefix) FROM database_for_dict.table_from_ipv4_trie_dict;
 
-DROP TABLE IF EXISTS database_for_dict.table_from_ipv4_trie_dict;
 DROP DICTIONARY IF EXISTS database_for_dict.dict_ipv4_trie;
+DROP TABLE IF EXISTS database_for_dict.table_from_ipv4_trie_dict;
 DROP TABLE IF EXISTS database_for_dict.table_ipv4_trie;
 
 SELECT '***ipv4 trie dict mask***';
@@ -462,8 +460,8 @@ WHERE prefix == '2620:0:870::/48';
 
 SELECT 134 == COUNT(*) FROM database_for_dict.table_from_ip_trie_dict;
 
-DROP TABLE IF EXISTS database_for_dict.table_from_ip_trie_dict;
 DROP DICTIONARY IF EXISTS database_for_dict.dict_ip_trie;
+DROP TABLE IF EXISTS database_for_dict.table_from_ip_trie_dict;
 DROP TABLE IF EXISTS database_for_dict.table_ip_trie;
 
 SELECT '***ipv6 trie dict mask***';

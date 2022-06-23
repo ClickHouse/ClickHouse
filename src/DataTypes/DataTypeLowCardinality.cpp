@@ -6,7 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
-#include <base/TypeLists.h>
+#include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -53,8 +53,8 @@ namespace
         {
         }
 
-        template <typename T>
-        void operator()(Id<T>)
+        template <typename T, size_t>
+        void operator()()
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
                 column = creator(static_cast<ColumnVector<T> *>(nullptr));
@@ -78,8 +78,6 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnFixedString *>(nullptr));
     else if (which.isDate())
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
-    else if (which.isDate32())
-        return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     else if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
     else if (which.isUUID())
@@ -89,7 +87,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     else if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
+        TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);

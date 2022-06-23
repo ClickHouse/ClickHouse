@@ -1,14 +1,14 @@
 #include <Access/RolesOrUsersSet.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/formatAST.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
-#include <base/sort.h>
 
 
 namespace DB
@@ -22,8 +22,8 @@ namespace ErrorCodes
 RolesOrUsersSet::RolesOrUsersSet() = default;
 RolesOrUsersSet::RolesOrUsersSet(const RolesOrUsersSet & src) = default;
 RolesOrUsersSet & RolesOrUsersSet::operator =(const RolesOrUsersSet & src) = default;
-RolesOrUsersSet::RolesOrUsersSet(RolesOrUsersSet && src) noexcept = default;
-RolesOrUsersSet & RolesOrUsersSet::operator =(RolesOrUsersSet && src) noexcept = default;
+RolesOrUsersSet::RolesOrUsersSet(RolesOrUsersSet && src) = default;
+RolesOrUsersSet & RolesOrUsersSet::operator =(RolesOrUsersSet && src) = default;
 
 
 RolesOrUsersSet::RolesOrUsersSet(AllTag)
@@ -53,40 +53,40 @@ RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const std::opti
     init(ast, nullptr, current_user_id);
 }
 
-RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager)
 {
-    init(ast, &access_control);
+    init(ast, &manager);
 }
 
-RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const std::optional<UUID> & current_user_id)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id)
 {
-    init(ast, &access_control, current_user_id);
+    init(ast, &manager, current_user_id);
 }
 
-void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl * access_control, const std::optional<UUID> & current_user_id)
+void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControlManager * manager, const std::optional<UUID> & current_user_id)
 {
     all = ast.all;
 
-    auto name_to_id = [&ast, access_control](const String & name) -> UUID
+    auto name_to_id = [&ast, manager](const String & name) -> UUID
     {
         if (ast.id_mode)
             return parse<UUID>(name);
-        assert(access_control);
+        assert(manager);
         if (ast.allow_users && ast.allow_roles)
         {
-            auto id = access_control->find<User>(name);
+            auto id = manager->find<User>(name);
             if (id)
                 return *id;
-            return access_control->getID<Role>(name);
+            return manager->getID<Role>(name);
         }
         else if (ast.allow_users)
         {
-            return access_control->getID<User>(name);
+            return manager->getID<User>(name);
         }
         else
         {
             assert(ast.allow_roles);
-            return access_control->getID<Role>(name);
+            return manager->getID<Role>(name);
         }
     };
 
@@ -132,7 +132,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
             ast->names.emplace_back(::DB::toString(id));
-        ::sort(ast->names.begin(), ast->names.end());
+        boost::range::sort(ast->names);
     }
 
     if (!except_ids.empty())
@@ -140,14 +140,14 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
             ast->except_names.emplace_back(::DB::toString(except_id));
-        ::sort(ast->except_names.begin(), ast->except_names.end());
+        boost::range::sort(ast->except_names);
     }
 
     return ast;
 }
 
 
-std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControlManager & manager) const
 {
     auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->all = all;
@@ -157,11 +157,11 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
         {
-            auto name = access_control.tryReadName(id);
+            auto name = manager.tryReadName(id);
             if (name)
                 ast->names.emplace_back(std::move(*name));
         }
-        ::sort(ast->names.begin(), ast->names.end());
+        boost::range::sort(ast->names);
     }
 
     if (!except_ids.empty())
@@ -169,11 +169,11 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
         {
-            auto except_name = access_control.tryReadName(except_id);
+            auto except_name = manager.tryReadName(except_id);
             if (except_name)
                 ast->except_names.emplace_back(std::move(*except_name));
         }
-        ::sort(ast->except_names.begin(), ast->except_names.end());
+        boost::range::sort(ast->except_names);
     }
 
     return ast;
@@ -187,9 +187,9 @@ String RolesOrUsersSet::toString() const
 }
 
 
-String RolesOrUsersSet::toStringWithNames(const AccessControl & access_control) const
+String RolesOrUsersSet::toStringWithNames(const AccessControlManager & manager) const
 {
-    auto ast = toASTWithNames(access_control);
+    auto ast = toASTWithNames(manager);
     return serializeAST(*ast);
 }
 
@@ -253,25 +253,25 @@ bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_s
 std::vector<UUID> RolesOrUsersSet::getMatchingIDs() const
 {
     if (all)
-        throw Exception("getAllMatchingIDs() can't get ALL ids without access_control", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("getAllMatchingIDs() can't get ALL ids without manager", ErrorCodes::LOGICAL_ERROR);
     std::vector<UUID> res;
     boost::range::set_difference(ids, except_ids, std::back_inserter(res));
     return res;
 }
 
 
-std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControl & access_control) const
+std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControlManager & manager) const
 {
     if (!all)
         return getMatchingIDs();
 
     std::vector<UUID> res;
-    for (const UUID & id : access_control.findAll<User>())
+    for (const UUID & id : manager.findAll<User>())
     {
         if (match(id))
             res.push_back(id);
     }
-    for (const UUID & id : access_control.findAll<Role>())
+    for (const UUID & id : manager.findAll<Role>())
     {
         if (match(id))
             res.push_back(id);

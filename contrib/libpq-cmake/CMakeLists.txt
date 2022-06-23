@@ -1,7 +1,3 @@
-if (NOT ENABLE_LIBPQXX)
-    return()
-endif()
-
 set(LIBPQ_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpq")
 
 set(SRCS
@@ -57,12 +53,10 @@ set(SRCS
         "${LIBPQ_SOURCE_DIR}/port/explicit_bzero.c"
         )
 
-add_library(_libpq ${SRCS})
+add_library(libpq ${SRCS})
 
-target_include_directories (_libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
-target_include_directories (_libpq SYSTEM PUBLIC "${LIBPQ_SOURCE_DIR}/include")
-target_include_directories (_libpq SYSTEM PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
+target_include_directories (libpq PUBLIC ${LIBPQ_SOURCE_DIR})
+target_include_directories (libpq PUBLIC "${LIBPQ_SOURCE_DIR}/include")
+target_include_directories (libpq PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
 
-target_link_libraries (_libpq PRIVATE OpenSSL::SSL)
-
-add_library(ch_contrib::libpq ALIAS _libpq)
+target_link_libraries (libpq PRIVATE ssl)

@@ -1,7 +1,7 @@
 CREATE TEMPORARY TABLE constrained
 (
     `URL` String,
-    CONSTRAINT identity CHECK domainWithoutWWW(URL) = domainWithoutWWW(URL),
+    CONSTRAINT is_yandex CHECK domainWithoutWWW(URL) = domainWithoutWWW(URL),
     CONSTRAINT is_utf8 CHECK isValidUTF8(URL)
 );
 

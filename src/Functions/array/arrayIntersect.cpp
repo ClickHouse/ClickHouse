@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -20,9 +19,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <base/TypeLists.h>
+#include <Core/TypeListNumber.h>
 #include <Interpreters/castColumn.h>
-#include <base/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -46,7 +45,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -106,8 +104,8 @@ private:
         NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
             : arrays(arrays_), data_type(data_type_), result(result_) {}
 
-        template <class T>
-        void operator()(Id<T>);
+        template <typename T, size_t>
+        void operator()();
     };
 
     struct DecimalExecutor
@@ -119,8 +117,8 @@ private:
         DecimalExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
             : arrays(arrays_), data_type(data_type_), result(result_) {}
 
-        template <class T>
-        void operator()(Id<T>);
+        template <typename T, size_t>
+        void operator()();
     };
 };
 
@@ -403,14 +401,11 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
-    TypeListUtils::forEach(TypeListIntAndFloat{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
-    TypeListUtils::forEach(TypeListDecimal{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListNativeNumbers::forEach(NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListDecimalNumbers::forEach(DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
     using DateMap = ClearableHashMapWithStackMemory<DataTypeDate::FieldType,
         size_t, DefaultHash<DataTypeDate::FieldType>, INITIAL_SIZE_DEGREE>;
-
-    using Date32Map = ClearableHashMapWithStackMemory<DataTypeDate32::FieldType,
-    size_t, DefaultHash<DataTypeDate32::FieldType>, INITIAL_SIZE_DEGREE>;
 
     using DateTimeMap = ClearableHashMapWithStackMemory<
         DataTypeDateTime::FieldType, size_t,
@@ -426,8 +421,6 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 
         if (which.isDate())
             result_column = execute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column));
-        else if (which.isDate32())
-            result_column = execute<Date32Map, ColumnVector<DataTypeDate32::FieldType>, true>(arrays, std::move(column));
         else if (which.isDateTime())
             result_column = execute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
         else if (which.isString())
@@ -444,8 +437,8 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
     return result_column;
 }
 
-template <class T>
-void FunctionArrayIntersect::NumberExecutor::operator()(Id<T>)
+template <typename T, size_t>
+void FunctionArrayIntersect::NumberExecutor::operator()()
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
@@ -454,8 +447,8 @@ void FunctionArrayIntersect::NumberExecutor::operator()(Id<T>)
         result = execute<Container, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
 }
 
-template <class T>
-void FunctionArrayIntersect::DecimalExecutor::operator()(Id<T>)
+template <typename T, size_t>
+void FunctionArrayIntersect::DecimalExecutor::operator()()
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
@@ -477,7 +470,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     columns.reserve(args);
     for (const auto & arg : arrays.args)
     {
-        if constexpr (std::is_same_v<ColumnType, IColumn>)
+        if constexpr (std::is_same<ColumnType, IColumn>::value)
             columns.push_back(arg.nested_column);
         else
             columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
@@ -530,7 +523,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     {
                         value = &map[columns[arg_num]->getElement(i)];
                     }
-                    else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+                    else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
                         value = &map[columns[arg_num]->getDataAt(i)];
                     else
                     {
@@ -566,7 +559,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 ++result_offset;
                 if constexpr (is_numeric_column)
                     result_data.insertValue(pair.getKey());
-                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+                else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
                     result_data.insertData(pair.getKey().data, pair.getKey().size);
                 else
                     result_data.deserializeAndInsertFromArena(pair.getKey().data);

@@ -29,19 +29,19 @@ RawBLOBRowInputFormat::RawBLOBRowInputFormat(const Block & header_, ReadBuffer &
 
 bool RawBLOBRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (in->eof())
+    if (in.eof())
         return false;
 
     /// One excessive copy.
     String blob;
-    readStringUntilEOF(blob, *in);
+    readStringUntilEOF(blob, in);
     columns.at(0)->insertData(blob.data(), blob.size());
     return false;
 }
 
-void registerInputFormatRawBLOB(FormatFactory & factory)
+void registerInputFormatProcessorRawBLOB(FormatFactory & factory)
 {
-    factory.registerInputFormat("RawBLOB", [](
+    factory.registerInputFormatProcessor("RawBLOB", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
@@ -51,13 +51,5 @@ void registerInputFormatRawBLOB(FormatFactory & factory)
     });
 }
 
-void registerRawBLOBSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("RawBLOB", [](
-            const FormatSettings &)
-    {
-        return std::make_shared<RawBLOBSchemaReader>();
-    });
 }
 
-}

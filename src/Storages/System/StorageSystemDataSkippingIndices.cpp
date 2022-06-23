@@ -8,8 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/queryToString.h>
-#include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
@@ -26,14 +25,11 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "type", std::make_shared<DataTypeString>() },
             { "expr", std::make_shared<DataTypeString>() },
             { "granularity", std::make_shared<DataTypeUInt64>() },
-            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "marks", std::make_shared<DataTypeUInt64>()}
         }));
     setInMemoryMetadata(storage_metadata);
 }
 
-class DataSkippingIndicesSource : public ISource
+class DataSkippingIndicesSource : public SourceWithProgress
 {
 public:
     DataSkippingIndicesSource(
@@ -42,7 +38,7 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
-        : ISource(header)
+        : SourceWithProgress(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
@@ -101,7 +97,6 @@ protected:
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
-                auto secondary_index_sizes = table->getSecondaryIndexSizes();
                 for (const auto & index : indices)
                 {
                     ++rows_count;
@@ -132,21 +127,6 @@ protected:
                     // 'granularity' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
-
-                    auto & secondary_index_size = secondary_index_sizes[index.name];
-
-                    // 'compressed bytes' column
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_compressed);
-
-                    // 'uncompressed bytes' column
-
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
-
-                    /// 'marks' column
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.marks);
                 }
             }
         }
@@ -166,24 +146,24 @@ private:
 
 Pipe StorageSystemDataSkippingIndices::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
     unsigned int /* num_streams */)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block sample_block = metadata_snapshot->getSampleBlock();
     Block header;
 
     std::vector<UInt8> columns_mask(sample_block.columns());
     for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
     {
-        if (names_set.contains(sample_block.getByPosition(i).name))
+        if (names_set.count(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             header.insert(sample_block.getByPosition(i));

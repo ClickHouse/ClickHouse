@@ -1,8 +1,8 @@
 ---
-sidebar_position: 141
+toc_priority: 141
 ---
 
-# deltaSumTimestamp
+# deltaSumTimestamp {#agg_functions-deltasumtimestamp}
 
 Adds the difference between consecutive rows. If the difference is negative, it is ignored.
 
@@ -32,7 +32,7 @@ Type: [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.
 Query:
 
 ```sql
-SELECT deltaSumTimestamp(value, timestamp)
+SELECT deltaSumTimestamp(value, timestamp) 
 FROM (SELECT number AS timestamp, [0, 4, 8, 3, 0, 0, 0, 1, 3, 5][number] AS value FROM numbers(1, 10));
 ```
 

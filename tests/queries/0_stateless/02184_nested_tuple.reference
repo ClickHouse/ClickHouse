@@ -1,7 +1,0 @@
-{"endUserIDs":{"_experience":{"aaid":{"id":"id_1","namespace":{"code":"code_1"},"primary":1},"mcid":{"id":"id_2","namespace":{"code":"code_2"},"primary":2}}}}
-{"endUserIDs._experience":{"aaid":{"id":"id_1","namespace":{"code":"code_1"},"primary":1},"mcid":{"id":"id_2","namespace":{"code":"code_2"},"primary":2}}}
-{"endUserIDs._experience.aaid":{"id":"id_1","namespace":{"code":"code_1"},"primary":1}}
-{"endUserIDs._experience.aaid.id":"id_1"}
-{"endUserIDs._experience.aaid.namespace":{"code":"code_1"}}
-{"endUserIDs._experience.aaid.namespace.code":"code_1"}
-{"endUserIDs._experience.aaid.primary":1}

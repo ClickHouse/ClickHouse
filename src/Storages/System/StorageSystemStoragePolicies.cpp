@@ -6,8 +6,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
-#include <base/EnumReflection.h>
-#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -39,14 +37,14 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
 
 Pipe StorageSystemStoragePolicies::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     MutableColumnPtr col_policy_name = ColumnString::create();
     MutableColumnPtr col_volume_name = ColumnString::create();
@@ -70,7 +68,7 @@ Pipe StorageSystemStoragePolicies::read(
             for (const auto & disk_ptr : volumes[i]->getDisks())
                 disks.push_back(disk_ptr->getName());
             col_disks->insert(disks);
-            col_volume_type->insert(magic_enum::enum_name(volumes[i]->getType()));
+            col_volume_type->insert(volumeTypeToString(volumes[i]->getType()));
             col_max_part_size->insert(volumes[i]->max_data_part_size);
             col_move_factor->insert(policy_ptr->getMoveFactor());
             col_prefer_not_to_merge->insert(volumes[i]->areMergesAvoided() ? 1 : 0);
@@ -90,7 +88,7 @@ Pipe StorageSystemStoragePolicies::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(storage_snapshot->metadata->getSampleBlock(), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
 }
 
 }

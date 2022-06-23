@@ -1,9 +1,9 @@
 ---
-sidebar_position: 61
-sidebar_label: clickhouse-benchmark
+toc_priority: 61
+toc_title: clickhouse-benchmark
 ---
 
-# clickhouse-benchmark 
+# clickhouse-benchmark {#clickhouse-benchmark}
 
 Connects to a ClickHouse server and repeatedly sends specified queries.
 
@@ -40,7 +40,7 @@ clickhouse-benchmark [keys] < queries_file;
 
 ## Keys {#clickhouse-benchmark-keys}
 
--   `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-benchmark` will read queries from standard input.
+-   `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-benchmark` will read queries from standard input. 
 -   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
 -   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (to disable reports set 0). Default value: 1.
 -   `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
@@ -160,4 +160,4 @@ localhost:9000, queries 10, QPS: 6.082, RPS: 121959604.568, MiB/s: 930.478, resu
 99.990%     0.172 sec.
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark.md) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark.md) <!--hide-->

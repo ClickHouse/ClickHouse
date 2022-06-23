@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 44
-sidebar_label: "\u5B57\u5178\u952E\u548C\u5B57\u6BB5"
+toc_priority: 44
+toc_title: "\u5B57\u5178\u952E\u548C\u5B57\u6BB5"
 ---
 
 # 字典键和字段 {#dictionary-key-and-fields}
@@ -172,4 +172,4 @@ CREATE DICTIONARY somename (
 
 -   [使用外部字典的函数](../../../sql-reference/functions/ext-dict-functions.md).
 
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

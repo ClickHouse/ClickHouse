@@ -12,7 +12,6 @@ BraceWrapping:
     AfterUnion: true
     BeforeCatch: true
     BeforeElse: true
-    BeforeLambdaBody: true
     IndentBraces: false
 BreakConstructorInitializersBeforeComma: false
 Cpp11BracedListStyle: true

@@ -1,9 +1,9 @@
 ---
-sidebar_position: 3
-sidebar_label: JDBC
+toc_priority: 3
+toc_title: JDBC
 ---
 
-# JDBC
+# JDBC {#table-engine-jdbc}
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
@@ -92,4 +92,4 @@ FROM system.numbers
 
 -   [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/jdbc/) <!--hide-->

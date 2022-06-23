@@ -38,7 +38,6 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
@@ -112,6 +111,7 @@ public:
 
         auto is_not_null = FunctionFactory::instance().get("isNotNull", context);
         auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context);
+        auto multi_if = FunctionFactory::instance().get("multiIf", context);
 
         ColumnsWithTypeAndName multi_if_args;
         ColumnsWithTypeAndName tmp_args(1);
@@ -143,16 +143,7 @@ public:
         if (multi_if_args.size() == 1)
             return multi_if_args.front().column;
 
-        /// If there was only two arguments (3 arguments passed to multiIf)
-        /// use function "if" instead, because it's implemented more efficient.
-        /// TODO: make "multiIf" the same efficient.
-        FunctionOverloadResolverPtr if_function;
-        if (multi_if_args.size() == 3)
-            if_function = FunctionFactory::instance().get("if", context);
-        else
-            if_function = FunctionFactory::instance().get("multiIf", context);
-
-        ColumnPtr res = if_function->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count);
+        ColumnPtr res = multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count);
 
         /// if last argument is not nullable, result should be also not nullable
         if (!multi_if_args.back().column->isNullable() && res->isNullable())

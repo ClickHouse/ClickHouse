@@ -4,7 +4,7 @@
 #include <map>
 #include <mutex>
 #include <Core/Types.h>
-#include <libnuraft/log_store.hxx>
+#include <libnuraft/log_store.hxx> // Y_IGNORE
 
 namespace DB
 {

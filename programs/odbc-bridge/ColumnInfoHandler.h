@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Common/config.h>
-
 #if USE_ODBC
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Common/config.h>
 #include <Poco/Logger.h>
 
 

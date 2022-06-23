@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <storage_configuration>
         <disks>
             <s3>
@@ -12,15 +12,6 @@
                 <!-- Avoid extra retries to speed up tests -->
                 <retry_attempts>0</retry_attempts>
             </s3>
-            <s3_retryable>
-                <type>s3</type>
-                <!-- Use custom S3 endpoint -->
-                <endpoint>http://resolver:8080/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-                <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
-                <skip_access_check>true</skip_access_check>
-            </s3_retryable>
             <default/>
         </disks>
         <policies>
@@ -41,13 +32,6 @@
                     </external>
                 </volumes>
             </s3_cold>
-            <s3_retryable>
-                <volumes>
-                    <main>
-                        <disk>s3_retryable</disk>
-                    </main>
-                </volumes>
-            </s3_retryable>
         </policies>
     </storage_configuration>
-</clickhouse>
+</yandex>

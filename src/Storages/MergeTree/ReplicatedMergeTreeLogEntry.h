@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
@@ -77,7 +77,6 @@ struct ReplicatedMergeTreeLogEntryData
     String toString() const;
 
     String znode_name;
-    String log_entry_id;
 
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
@@ -96,7 +95,7 @@ struct ReplicatedMergeTreeLogEntryData
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
-    MergeType merge_type = MergeType::Regular;
+    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
 
@@ -143,8 +142,6 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// Returns fake part for drop range (for DROP_RANGE and REPLACE_RANGE)
     std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
-
-    String getDescriptionForLogs(MergeTreeDataFormatVersion format_version) const;
 
     /// This entry is DROP PART, not DROP PARTITION. They both have same
     /// DROP_RANGE entry type, but differs in information about drop range.

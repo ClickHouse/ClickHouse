@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations())
+     : IOutputFormat(header_, out_), format_settings(format_settings_)
 {
     struct winsize w;
     if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
@@ -143,7 +143,7 @@ GridSymbols ascii_grid_symbols {
 }
 
 
-void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
+void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 {
     UInt64 max_rows = format_settings.pretty.max_rows;
 
@@ -157,6 +157,10 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
     const auto & header = getPort(port_kind).getHeader();
+
+    Serializations serializations(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -321,7 +325,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 {
     String serialized_value = " ";
     {
-        WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+        WriteBufferFromString out_serialize(serialized_value, WriteBufferFromString::AppendModeTag());
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
@@ -367,21 +371,23 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
 void PrettyBlockOutputFormat::consume(Chunk chunk)
 {
-    write(std::move(chunk), PortKind::Main);
+    write(chunk, PortKind::Main);
 }
 
 void PrettyBlockOutputFormat::consumeTotals(Chunk chunk)
 {
     total_rows = 0;
+    writeSuffixIfNot();
     writeCString("\nTotals:\n", out);
-    write(std::move(chunk), PortKind::Totals);
+    write(chunk, PortKind::Totals);
 }
 
 void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
 {
     total_rows = 0;
+    writeSuffixIfNot();
     writeCString("\nExtremes:\n", out);
-    write(std::move(chunk), PortKind::Extremes);
+    write(chunk, PortKind::Extremes);
 }
 
 
@@ -395,10 +401,15 @@ void PrettyBlockOutputFormat::writeSuffix()
     }
 }
 
-
-void registerOutputFormatPretty(FormatFactory & factory)
+void PrettyBlockOutputFormat::finalize()
 {
-    factory.registerOutputFormat("Pretty", [](
+    writeSuffixIfNot();
+}
+
+
+void registerOutputFormatProcessorPretty(FormatFactory & factory)
+{
+    factory.registerOutputFormatProcessor("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -407,9 +418,7 @@ void registerOutputFormatPretty(FormatFactory & factory)
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("Pretty");
-
-    factory.registerOutputFormat("PrettyNoEscapes", [](
+    factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -419,8 +428,6 @@ void registerOutputFormatPretty(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, changed_settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("PrettyNoEscapes");
 }
 
 }

@@ -7,7 +7,7 @@
 #include <mutex>
 #include <atomic>
 
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -39,7 +39,7 @@ public:
     /** Initialize LRUCache with max_size and max_elements_size.
       * max_elements_size == 0 means no elements size restrictions.
       */
-    explicit LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
+    LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
         : max_size(std::max(static_cast<size_t>(1), max_size_))
         , max_elements_size(max_elements_size_)
         {}
@@ -62,18 +62,6 @@ public:
         std::lock_guard lock(mutex);
 
         setImpl(key, mapped, lock);
-    }
-
-    void remove(const Key & key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end())
-            return;
-        auto & cell = it->second;
-        current_size -= cell.size;
-        queue.erase(cell.queue_iterator);
-        cells.erase(it);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -174,7 +162,7 @@ public:
         misses = 0;
     }
 
-    virtual ~LRUCache() = default;
+    virtual ~LRUCache() {}
 
 protected:
     using LRUQueue = std::list<Key>;

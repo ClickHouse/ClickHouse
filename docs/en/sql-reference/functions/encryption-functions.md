@@ -1,19 +1,19 @@
 ---
-sidebar_position: 67
-sidebar_label: Encryption
+toc_priority: 67
+toc_title: Encryption
 ---
 
-# Encryption functions
+# Encryption functions {#encryption-functions}
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
 Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively.
 
-Initialization vector length is always 16 bytes (bytes in excess of 16 are ignored).
+Initialization vector length is always 16 bytes (bytes in excess of 16 are ignored). 
 
 Note that these functions work slowly until ClickHouse 21.1.
 
-## encrypt
+## encrypt {#encrypt}
 
 This function encrypts data using these modes:
 
@@ -106,7 +106,7 @@ Result:
 └──────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## aes_encrypt_mysql
+## aes_encrypt_mysql {#aes_encrypt_mysql}
 
 Compatible with mysql encryption and resulting ciphertext can be decrypted with [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt) function.
 
@@ -168,7 +168,7 @@ Result:
 
 ``` text
 Received exception from server (version 21.1.2):
-Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
+Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123'). 
 ```
 
 While `aes_encrypt_mysql` produces MySQL-compatitalbe output:
@@ -218,7 +218,7 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 1 row in set (0.00 sec)
 ```
 
-## decrypt
+## decrypt {#decrypt}
 
 This function decrypts ciphertext into a plaintext using these modes:
 
@@ -295,7 +295,7 @@ Result:
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
 
-## aes_decrypt_mysql
+## aes_decrypt_mysql {#aes_decrypt_mysql}
 
 Compatible with mysql encryption and decrypts data encrypted with [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt) function.
 
@@ -358,4 +358,4 @@ Result:
 └───────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->

@@ -1,16 +1,16 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/CompressedReadBufferWrapper.h>
+#include <IO/BufferWithOwnMemory.h>
 
 
 namespace DB
 {
 
-class BrotliReadBuffer : public CompressedReadBufferWrapper
+class BrotliReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    explicit BrotliReadBuffer(
+    BrotliReadBuffer(
             std::unique_ptr<ReadBuffer> in_,
             size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
             char * existing_memory = nullptr,
@@ -21,6 +21,8 @@ public:
 private:
     bool nextImpl() override;
 
+    std::unique_ptr<ReadBuffer> in;
+
     class BrotliStateWrapper;
     std::unique_ptr<BrotliStateWrapper> brotli;
 
@@ -30,7 +32,7 @@ private:
     size_t out_capacity;
     uint8_t  * out_data;
 
-    bool eof_flag;
+    bool eof;
 };
 
 }

@@ -25,7 +25,7 @@ class QueryNormalizer
         bool prefer_column_name_to_alias;
 
         template <typename T>
-        ExtractedSettings(const T & settings) /// NOLINT
+        ExtractedSettings(const T & settings)
             : max_ast_depth(settings.max_ast_depth)
             , max_expanded_ast_elements(settings.max_expanded_ast_elements)
             , prefer_column_name_to_alias(settings.prefer_column_name_to_alias)
@@ -39,7 +39,7 @@ public:
         using SetOfASTs = std::set<const IAST *>;
         using MapOfASTs = std::map<ASTPtr, ASTPtr>;
 
-        Aliases & aliases;
+        const Aliases & aliases;
         const NameSet & source_columns_set;
         ExtractedSettings settings;
 
@@ -53,7 +53,7 @@ public:
         /// It's Ok to have "c + 1 AS c" in queries, but not in table definition
         const bool allow_self_aliases; /// for constructs like "SELECT column + 1 AS column"
 
-        Data(Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_, bool allow_self_aliases_)
+        Data(const Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_, bool allow_self_aliases_)
             : aliases(aliases_)
             , source_columns_set(source_columns_set_)
             , settings(settings_)

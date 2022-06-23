@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_DATASKETCHES
 
 #include <boost/noncopyable.hpp>
 #include <memory>
-#include <base/StringRef.h>
-#include <theta_sketch.hpp>
-#include <theta_union.hpp>
+#include <theta_sketch.hpp> // Y_IGNORE
+#include <theta_union.hpp> // Y_IGNORE
 
 
 namespace DB

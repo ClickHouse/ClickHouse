@@ -1,16 +1,12 @@
+
 #include <Columns/Collator.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
 #include <IO/Operators.h>
-#include <base/EnumReflection.h>
+
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 ASTPtr ASTTTLElement::clone() const
 {
@@ -33,21 +29,13 @@ ASTPtr ASTTTLElement::clone() const
 void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ttl()->formatImpl(settings, state, frame);
-    if (mode == TTLMode::MOVE)
+    if (mode == TTLMode::MOVE && destination_type == DataDestinationType::DISK)
     {
-        if (destination_type == DataDestinationType::DISK)
-            settings.ostr << " TO DISK ";
-        else if (destination_type == DataDestinationType::VOLUME)
-            settings.ostr << " TO VOLUME ";
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unsupported destination type {} for TTL MOVE",
-                    magic_enum::enum_name(destination_type));
-
-        if (if_exists)
-            settings.ostr << "IF EXISTS ";
-
-        settings.ostr << quoteString(destination_name);
+        settings.ostr << " TO DISK " << quoteString(destination_name);
+    }
+    else if (mode == TTLMode::MOVE && destination_type == DataDestinationType::VOLUME)
+    {
+        settings.ostr << " TO VOLUME " << quoteString(destination_name);
     }
     else if (mode == TTLMode::GROUP_BY)
     {

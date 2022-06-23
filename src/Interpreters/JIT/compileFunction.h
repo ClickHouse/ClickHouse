@@ -1,14 +1,14 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_EMBEDDED_COMPILER
 
-#include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/JIT/CHJIT.h>
-
 
 namespace DB
 {
@@ -28,7 +28,6 @@ struct ColumnData
   */
 ColumnData getColumnData(const IColumn * column);
 
-using ColumnDataRowsOffset = size_t;
 using ColumnDataRowsSize = size_t;
 
 using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
@@ -54,17 +53,14 @@ struct AggregateFunctionWithOffset
 };
 
 using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
-using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
-using JITAddIntoAggregateStatesFunctionSinglePlace = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr);
+using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
-using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
+using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 
 struct CompiledAggregateFunctions
 {
     JITCreateAggregateStatesFunction create_aggregate_states_function;
     JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
-    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place;
-
     JITMergeAggregateStatesFunction merge_aggregate_states_function;
     JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function;
 
@@ -79,26 +75,10 @@ struct CompiledAggregateFunctions
   *
   * JITCreateAggregateStatesFunction will initialize aggregate data ptr with initial aggregate states values.
   * JITAddIntoAggregateStatesFunction will update aggregate states for aggregate functions with specified ColumnData.
-  * JITAddIntoAggregateStatesFunctionSinglePlace will update single aggregate state for aggregate functions with specified ColumnData.
   * JITMergeAggregateStatesFunction will merge aggregate states for aggregate functions.
   * JITInsertAggregateStatesIntoColumnsFunction will insert aggregate states for aggregate functions into result columns.
   */
-CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
-
-
-using JITSortDescriptionFunc = int8_t (*)(size_t, size_t, ColumnData *, ColumnData *);
-
-struct CompiledSortDescriptionFunction
-{
-    JITSortDescriptionFunc comparator_function;
-    CHJIT::CompiledModule compiled_module;
-};
-
-CompiledSortDescriptionFunction compileSortDescription(
-    CHJIT & jit,
-    SortDescription & description,
-    const DataTypes & sort_description_types,
-    const std::string & sort_description_dump);
+CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
 
 }
 

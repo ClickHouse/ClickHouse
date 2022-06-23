@@ -109,7 +109,7 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_) : level(level_), enable_l
 
 void registerCodecZSTD(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::ZSTD);
+    UInt8 method_code = UInt8(CompressionMethodByte::ZSTD);
     factory.registerCompressionCodec("ZSTD", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr {
         int level = CompressionCodecZSTD::ZSTD_DEFAULT_LEVEL;
         if (arguments && !arguments->children.empty())
@@ -154,11 +154,6 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
         }
         return std::make_shared<CompressionCodecZSTD>(level);
     });
-}
-
-CompressionCodecPtr getCompressionCodecZSTD(int level)
-{
-    return std::make_shared<CompressionCodecZSTD>(level);
 }
 
 }

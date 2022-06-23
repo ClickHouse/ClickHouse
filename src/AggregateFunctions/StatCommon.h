@@ -1,16 +1,12 @@
 #pragma once
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <Common/ArenaAllocator.h>
+
 #include <numeric>
 #include <algorithm>
 #include <utility>
-
-#include <base/sort.h>
-
-#include <Common/ArenaAllocator.h>
-
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-
 
 namespace DB
 {
@@ -45,7 +41,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     /// Save initial positions, than sort indices according to the values.
     std::vector<size_t> indexes(size);
     std::iota(indexes.begin(), indexes.end(), 0);
-    ::sort(indexes.begin(), indexes.end(),
+    std::sort(indexes.begin(), indexes.end(),
                 [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
 
     size_t left = 0;

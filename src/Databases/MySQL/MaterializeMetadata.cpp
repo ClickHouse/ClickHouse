@@ -5,9 +5,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Sources/MySQLSource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/quoteString.h>
@@ -15,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <filesystem>
-#include <base/FnTraits.h>
 
 namespace fs = std::filesystem;
 
@@ -30,30 +27,22 @@ namespace ErrorCodes
 
 static std::unordered_map<String, String> fetchTablesCreateQuery(
     const mysqlxx::PoolWithFailover::Entry & connection, const String & database_name,
-    const std::vector<String> & fetch_tables, std::unordered_set<String> & materialized_tables_list,
-    const Settings & global_settings)
+    const std::vector<String> & fetch_tables, const Settings & global_settings)
 {
     std::unordered_map<String, String> tables_create_query;
     for (const auto & fetch_table_name : fetch_tables)
     {
-        if (!materialized_tables_list.empty() && !materialized_tables_list.contains(fetch_table_name))
-            continue;
-
         Block show_create_table_header{
             {std::make_shared<DataTypeString>(), "Table"},
             {std::make_shared<DataTypeString>(), "Create Table"},
         };
 
         StreamSettings mysql_input_stream_settings(global_settings, false, true);
-        auto show_create_table = std::make_unique<MySQLSource>(
+        MySQLBlockInputStream show_create_table(
             connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
             show_create_table_header, mysql_input_stream_settings);
 
-        QueryPipeline pipeline(std::move(show_create_table));
-
-        Block create_query_block;
-        PullingPipelineExecutor executor(pipeline);
-        executor.pull(create_query_block);
+        Block create_query_block = show_create_table.read();
         if (!create_query_block || create_query_block.rows() != 1)
             throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
 
@@ -71,13 +60,9 @@ static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entr
 
     std::vector<String> tables_in_db;
     StreamSettings mysql_input_stream_settings(global_settings);
-    auto input = std::make_unique<MySQLSource>(connection, query, header, mysql_input_stream_settings);
+    MySQLBlockInputStream input(connection, query, header, mysql_input_stream_settings);
 
-    QueryPipeline pipeline(std::move(input));
-
-    Block block;
-    PullingPipelineExecutor executor(pipeline);
-    while (executor.pull(block))
+    while (Block block = input.read())
     {
         tables_in_db.reserve(tables_in_db.size() + block.rows());
         for (size_t index = 0; index < block.rows(); ++index)
@@ -98,13 +83,8 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     };
 
     StreamSettings mysql_input_stream_settings(settings, false, true);
-    auto input = std::make_unique<MySQLSource>(connection, "SHOW MASTER STATUS;", header, mysql_input_stream_settings);
-
-    QueryPipeline pipeline(std::move(input));
-
-    Block master_status;
-    PullingPipelineExecutor executor(pipeline);
-    executor.pull(master_status);
+    MySQLBlockInputStream input(connection, "SHOW MASTER STATUS;", header, mysql_input_stream_settings);
+    Block master_status = input.read();
 
     if (!master_status || master_status.rows() != 1)
         throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
@@ -126,12 +106,9 @@ void MaterializeMetadata::fetchMasterVariablesValue(const mysqlxx::PoolWithFailo
 
     const String & fetch_query = "SHOW VARIABLES WHERE Variable_name = 'binlog_checksum'";
     StreamSettings mysql_input_stream_settings(settings, false, true);
-    auto variables_input = std::make_unique<MySQLSource>(connection, fetch_query, variables_header, mysql_input_stream_settings);
-    QueryPipeline pipeline(std::move(variables_input));
+    MySQLBlockInputStream variables_input(connection, fetch_query, variables_header, mysql_input_stream_settings);
 
-    Block variables_block;
-    PullingPipelineExecutor executor(pipeline);
-    while (executor.pull(variables_block))
+    while (Block variables_block = variables_input.read())
     {
         ColumnPtr variables_name = variables_block.getByName("Variable_name").column;
         ColumnPtr variables_value = variables_block.getByName("Value").column;
@@ -153,12 +130,8 @@ static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & conne
 
     String grants_query, sub_privs;
     StreamSettings mysql_input_stream_settings(global_settings);
-    auto input = std::make_unique<MySQLSource>(connection, "SHOW GRANTS FOR CURRENT_USER();", sync_user_privs_header, mysql_input_stream_settings);
-    QueryPipeline pipeline(std::move(input));
-
-    Block block;
-    PullingPipelineExecutor executor(pipeline);
-    while (executor.pull(block))
+    MySQLBlockInputStream input(connection, "SHOW GRANTS FOR CURRENT_USER();", sync_user_privs_header, mysql_input_stream_settings);
+    while (Block block = input.read())
     {
         for (size_t index = 0; index < block.rows(); ++index)
         {
@@ -203,12 +176,9 @@ bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover:
     };
 
     StreamSettings mysql_input_stream_settings(settings, false, true);
-    auto input = std::make_unique<MySQLSource>(connection, "SHOW MASTER LOGS", logs_header, mysql_input_stream_settings);
-    QueryPipeline pipeline(std::move(input));
+    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", logs_header, mysql_input_stream_settings);
 
-    Block block;
-    PullingPipelineExecutor executor(pipeline);
-    while (executor.pull(block))
+    while (Block block = input.read())
     {
         for (size_t index = 0; index < block.rows(); ++index)
         {
@@ -220,7 +190,7 @@ bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover:
     return false;
 }
 
-void commitMetadata(Fn<void()> auto && function, const String & persistent_tmp_path, const String & persistent_path)
+void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path, const String & persistent_path)
 {
     try
     {
@@ -257,7 +227,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
         out.close();
     }
 
-    commitMetadata(fun, persistent_tmp_path, persistent_path);
+    commitMetadata(std::move(fun), persistent_tmp_path, persistent_path);
 }
 
 MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & settings_) : persistent_path(path_), settings(settings_)
@@ -280,8 +250,7 @@ MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & 
 
 void MaterializeMetadata::startReplication(
     mysqlxx::PoolWithFailover::Entry & connection, const String & database,
-    bool & opened_transaction, std::unordered_map<String, String> & need_dumping_tables,
-    std::unordered_set<String> & materialized_tables_list)
+    bool & opened_transaction, std::unordered_map<String, String> & need_dumping_tables)
 {
     checkSyncUserPriv(connection, settings);
 
@@ -302,7 +271,7 @@ void MaterializeMetadata::startReplication(
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
         opened_transaction = true;
-        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database, settings), materialized_tables_list, settings);
+        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database, settings), settings);
         connection->query("UNLOCK TABLES;").execute();
     }
     catch (...)

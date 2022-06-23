@@ -1,6 +1,7 @@
 #include "CapnProtoRowInputFormat.h"
 #if USE_CAPNP
 
+#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
@@ -8,46 +9,204 @@
 #include <capnp/serialize.h>
 #include <capnp/dynamic.h>
 #include <capnp/common.h>
+#include <common/logger_useful.h>
+#include <common/find_symbols.h>
 
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnDecimal.h>
-
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_TYPE_OF_FIELD;
+    extern const int THERE_IS_NO_COLUMN;
     extern const int LOGICAL_ERROR;
 }
 
-CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_)
-    : IRowInputFormat(std::move(header), in_, std::move(params_))
-    , parser(std::make_shared<CapnProtoSchemaParser>())
-    , format_settings(format_settings_)
-    , column_types(getPort().getHeader().getDataTypes())
-    , column_names(getPort().getHeader().getNames())
+static CapnProtoRowInputFormat::NestedField split(const Block & header, size_t i)
+{
+    CapnProtoRowInputFormat::NestedField field = {{}, i};
+
+    // Remove leading dot in field definition, e.g. ".msg" -> "msg"
+    String name(header.safeGetByPosition(i).name);
+    if (!name.empty() && name[0] == '.')
+        name.erase(0, 1);
+
+    splitInto<'.', '_'>(field.tokens, name);
+    return field;
+}
+
+
+static Field convertNodeToField(const capnp::DynamicValue::Reader & value)
+{
+    switch (value.getType())
+    {
+        case capnp::DynamicValue::UNKNOWN:
+            throw Exception("Unknown field type", ErrorCodes::BAD_TYPE_OF_FIELD);
+        case capnp::DynamicValue::VOID:
+            return Field();
+        case capnp::DynamicValue::BOOL:
+            return value.as<bool>() ? 1u : 0u;
+        case capnp::DynamicValue::INT:
+            return value.as<int64_t>();
+        case capnp::DynamicValue::UINT:
+            return value.as<uint64_t>();
+        case capnp::DynamicValue::FLOAT:
+            return value.as<double>();
+        case capnp::DynamicValue::TEXT:
+        {
+            auto arr = value.as<capnp::Text>();
+            return String(arr.begin(), arr.size());
+        }
+        case capnp::DynamicValue::DATA:
+        {
+            auto arr = value.as<capnp::Data>().asChars();
+            return String(arr.begin(), arr.size());
+        }
+        case capnp::DynamicValue::LIST:
+        {
+            auto list_value = value.as<capnp::DynamicList>();
+            Array res(list_value.size());
+            for (auto i : kj::indices(list_value))
+                res[i] = convertNodeToField(list_value[i]);
+
+            return res;
+        }
+        case capnp::DynamicValue::ENUM:
+            return value.as<capnp::DynamicEnum>().getRaw();
+        case capnp::DynamicValue::STRUCT:
+        {
+            auto struct_value = value.as<capnp::DynamicStruct>();
+            const auto & fields = struct_value.getSchema().getFields();
+
+            Tuple tuple(fields.size());
+            for (auto i : kj::indices(fields))
+                tuple[i] = convertNodeToField(struct_value.get(fields[i]));
+
+            return tuple;
+        }
+        case capnp::DynamicValue::CAPABILITY:
+            throw Exception("CAPABILITY type not supported", ErrorCodes::BAD_TYPE_OF_FIELD);
+        case capnp::DynamicValue::ANY_POINTER:
+            throw Exception("ANY_POINTER type not supported", ErrorCodes::BAD_TYPE_OF_FIELD);
+    }
+    return Field();
+}
+
+static capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::string & field)
+{
+    KJ_IF_MAYBE(child, node.findFieldByName(field))
+        return *child;
+    else
+        throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
+}
+
+
+void CapnProtoRowInputFormat::createActions(const NestedFieldList & sorted_fields, capnp::StructSchema reader)
+{
+    /// Columns in a table can map to fields in Cap'n'Proto or to structs.
+
+    /// Store common parents and their tokens in order to backtrack.
+    std::vector<capnp::StructSchema::Field> parents;
+    std::vector<std::string> parent_tokens;
+
+    capnp::StructSchema cur_reader = reader;
+
+    for (const auto & field : sorted_fields)
+    {
+        if (field.tokens.empty())
+            throw Exception("Logical error in CapnProtoRowInputFormat", ErrorCodes::LOGICAL_ERROR);
+
+        // Backtrack to common parent
+        while (field.tokens.size() < parent_tokens.size() + 1
+            || !std::equal(parent_tokens.begin(), parent_tokens.end(), field.tokens.begin()))
+        {
+            actions.push_back({Action::POP});
+            parents.pop_back();
+            parent_tokens.pop_back();
+
+            if (parents.empty())
+            {
+                cur_reader = reader;
+                break;
+            }
+            else
+                cur_reader = parents.back().getType().asStruct();
+        }
+
+        // Go forward
+        while (parent_tokens.size() + 1 < field.tokens.size())
+        {
+            const auto & token = field.tokens[parents.size()];
+            auto node = getFieldOrThrow(cur_reader, token);
+            if (node.getType().isStruct())
+            {
+                // Descend to field structure
+                parents.emplace_back(node);
+                parent_tokens.emplace_back(token);
+                cur_reader = node.getType().asStruct();
+                actions.push_back({Action::PUSH, node});
+            }
+            else if (node.getType().isList())
+            {
+                break; // Collect list
+            }
+            else
+                throw Exception("Field " + token + " is neither Struct nor List", ErrorCodes::BAD_TYPE_OF_FIELD);
+        }
+
+        // Read field from the structure
+        auto node = getFieldOrThrow(cur_reader, field.tokens[parents.size()]);
+        if (node.getType().isList() && !actions.empty() && actions.back().field == node)
+        {
+            // The field list here flattens Nested elements into multiple arrays
+            // In order to map Nested types in Cap'nProto back, they need to be collected
+            // Since the field names are sorted, the order of field positions must be preserved
+            // For example, if the fields are { b @0 :Text, a @1 :Text }, the `a` would come first
+            // even though it's position is second.
+            auto & columns = actions.back().columns;
+            auto it = std::upper_bound(columns.cbegin(), columns.cend(), field.pos);
+            columns.insert(it, field.pos);
+        }
+        else
+        {
+            actions.push_back({Action::READ, node, {field.pos}});
+        }
+    }
+}
+
+CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info)
+    : IRowInputFormat(std::move(header), in_, std::move(params_)), parser(std::make_shared<SchemaParser>())
 {
     // Parse the schema and fetch the root object
-    root = parser->getMessageSchema(info);
-    checkCapnProtoSchemaStructure(root, getPort().getHeader(), format_settings.capn_proto.enum_comparing_mode);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    auto schema = parser->impl.parseDiskFile(info.schemaPath(), info.absoluteSchemaPath(), {});
+#pragma GCC diagnostic pop
+
+    root = schema.getNested(info.messageName()).asStruct();
+
+    /**
+     * The schema typically consists of fields in various nested structures.
+     * Here we gather the list of fields and sort them in a way so that fields in the same structure are adjacent,
+     * and the nesting level doesn't decrease to make traversal easier.
+     */
+    const auto & sample = getPort().getHeader();
+    NestedFieldList list;
+    size_t num_columns = sample.columns();
+    for (size_t i = 0; i < num_columns; ++i)
+        list.push_back(split(sample, i));
+
+    // Order list first by value of strings then by length of string vector.
+    std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b) { return a.tokens < b.tokens; });
+    createActions(list, root);
 }
 
 kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
-    in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    in.readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
 
     // one for segmentCount and one because segmentCount starts from 0
     const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
@@ -58,7 +217,7 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 
     // read size of each segment
     for (size_t i = 0; i <= segment_count; ++i)
-        in->readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
+        in.readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
 
     // calculate size of message
     const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
@@ -69,199 +228,14 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 
     // read full message
     ::memcpy(msg_chars.begin(), prefix_chars.begin(), prefix_size);
-    in->readStrict(msg_chars.begin() + prefix_size, data_size);
+    in.readStrict(msg_chars.begin() + prefix_size, data_size);
 
     return msg;
 }
 
-static void insertSignedInteger(IColumn & column, const DataTypePtr & column_type, Int64 value)
-{
-    switch (column_type->getTypeId())
-    {
-        case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
-            break;
-        case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
-            break;
-        case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(value);
-            break;
-        case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(value);
-            break;
-        case TypeIndex::DateTime64:
-            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(value);
-            break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column type is not a signed integer.");
-    }
-}
-
-static void insertUnsignedInteger(IColumn & column, const DataTypePtr & column_type, UInt64 value)
-{
-    switch (column_type->getTypeId())
-    {
-        case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
-            break;
-        case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
-            break;
-        case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(value);
-            break;
-        case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(value);
-            break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column type is not an unsigned integer.");
-    }
-}
-
-static void insertFloat(IColumn & column, const DataTypePtr & column_type, Float64 value)
-{
-    switch (column_type->getTypeId())
-    {
-        case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(value);
-            break;
-        case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(value);
-            break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column type is not a float.");
-    }
-}
-
-template <typename Value>
-static void insertString(IColumn & column, Value value)
-{
-    column.insertData(reinterpret_cast<const char *>(value.begin()), value.size());
-}
-
-template <typename ValueType>
-static void insertEnum(IColumn & column, const DataTypePtr & column_type, const capnp::DynamicEnum & enum_value, FormatSettings::EnumComparingMode enum_comparing_mode)
-{
-    auto enumerant = *kj::_::readMaybe(enum_value.getEnumerant());
-    auto enum_type = assert_cast<const DataTypeEnum<ValueType> *>(column_type.get());
-    DataTypePtr nested_type = std::make_shared<DataTypeNumber<ValueType>>();
-    switch (enum_comparing_mode)
-    {
-        case FormatSettings::EnumComparingMode::BY_VALUES:
-            insertSignedInteger(column, nested_type, Int64(enumerant.getOrdinal()));
-            return;
-        case FormatSettings::EnumComparingMode::BY_NAMES:
-            insertSignedInteger(column, nested_type, Int64(enum_type->getValue(String(enumerant.getProto().getName()))));
-            return;
-        case FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE:
-        {
-            /// Find the same enum name case insensitive.
-            String enum_name = enumerant.getProto().getName();
-            for (auto & name : enum_type->getAllRegisteredNames())
-            {
-                if (compareEnumNames(name, enum_name, enum_comparing_mode))
-                {
-                    insertSignedInteger(column, nested_type, Int64(enum_type->getValue(name)));
-                    break;
-                }
-            }
-        }
-    }
-}
-
-static void insertValue(IColumn & column, const DataTypePtr & column_type, const capnp::DynamicValue::Reader & value, FormatSettings::EnumComparingMode enum_comparing_mode)
-{
-    if (column_type->lowCardinality())
-    {
-        auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
-        auto tmp_column = lc_column.getDictionary().getNestedColumn()->cloneEmpty();
-        auto dict_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
-        insertValue(*tmp_column, dict_type, value, enum_comparing_mode);
-        lc_column.insertFromFullColumn(*tmp_column, 0);
-        return;
-    }
-
-    switch (value.getType())
-    {
-        case capnp::DynamicValue::Type::INT:
-            insertSignedInteger(column, column_type, value.as<Int64>());
-            break;
-        case capnp::DynamicValue::Type::UINT:
-            insertUnsignedInteger(column, column_type, value.as<UInt64>());
-            break;
-        case capnp::DynamicValue::Type::FLOAT:
-            insertFloat(column, column_type, value.as<Float64>());
-            break;
-        case capnp::DynamicValue::Type::BOOL:
-            insertUnsignedInteger(column, column_type, UInt64(value.as<bool>()));
-            break;
-        case capnp::DynamicValue::Type::DATA:
-            insertString(column, value.as<capnp::Data>());
-            break;
-        case capnp::DynamicValue::Type::TEXT:
-            insertString(column, value.as<capnp::Text>());
-            break;
-        case capnp::DynamicValue::Type::ENUM:
-            if (column_type->getTypeId() == TypeIndex::Enum8)
-                insertEnum<Int8>(column, column_type, value.as<capnp::DynamicEnum>(), enum_comparing_mode);
-            else
-                insertEnum<Int16>(column, column_type, value.as<capnp::DynamicEnum>(), enum_comparing_mode);
-            break;
-        case capnp::DynamicValue::LIST:
-        {
-            auto list_value = value.as<capnp::DynamicList>();
-            auto & column_array = assert_cast<ColumnArray &>(column);
-            auto & offsets = column_array.getOffsets();
-            offsets.push_back(offsets.back() + list_value.size());
-
-            auto & nested_column = column_array.getData();
-            auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
-            for (const auto & nested_value : list_value)
-                insertValue(nested_column, nested_type, nested_value, enum_comparing_mode);
-            break;
-        }
-        case capnp::DynamicValue::Type::STRUCT:
-        {
-            auto struct_value = value.as<capnp::DynamicStruct>();
-            if (column_type->isNullable())
-            {
-                auto & nullable_column = assert_cast<ColumnNullable &>(column);
-                auto field = *kj::_::readMaybe(struct_value.which());
-                if (field.getType().isVoid())
-                    nullable_column.insertDefault();
-                else
-                {
-                    auto & nested_column = nullable_column.getNestedColumn();
-                    auto nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
-                    auto nested_value = struct_value.get(field);
-                    insertValue(nested_column, nested_type, nested_value, enum_comparing_mode);
-                    nullable_column.getNullMapData().push_back(0);
-                }
-            }
-            else
-            {
-                auto & tuple_column = assert_cast<ColumnTuple &>(column);
-                const auto * tuple_type = assert_cast<const DataTypeTuple *>(column_type.get());
-                for (size_t i = 0; i != tuple_column.tupleSize(); ++i)
-                    insertValue(
-                        tuple_column.getColumn(i),
-                        tuple_type->getElements()[i],
-                        struct_value.get(tuple_type->getElementNames()[i]),
-                        enum_comparing_mode);
-            }
-            break;
-        }
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CapnProto value type.");
-    }
-}
-
 bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (in->eof())
+    if (in.eof())
         return false;
 
     auto array = readMessage();
@@ -271,55 +245,66 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
 #else
     capnp::FlatArrayMessageReader msg(array);
 #endif
+    std::vector<capnp::DynamicStruct::Reader> stack;
+    stack.push_back(msg.getRoot<capnp::DynamicStruct>(root));
 
-    auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
-
-    for (size_t i = 0; i != columns.size(); ++i)
+    for (auto action : actions)
     {
-        auto value = getReaderByColumnName(root_reader, column_names[i]);
-        insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        switch (action.type)
+        {
+            case Action::READ:
+            {
+                Field value = convertNodeToField(stack.back().get(action.field));
+                if (action.columns.size() > 1)
+                {
+                    // Nested columns must be flattened into several arrays
+                    // e.g. Array(Tuple(x ..., y ...)) -> Array(x ...), Array(y ...)
+                    const auto & collected = DB::get<const Array &>(value);
+                    size_t size = collected.size();
+                    // The flattened array contains an array of a part of the nested tuple
+                    Array flattened(size);
+                    for (size_t column_index = 0; column_index < action.columns.size(); ++column_index)
+                    {
+                        // Populate array with a single tuple elements
+                        for (size_t off = 0; off < size; ++off)
+                        {
+                            const auto & tuple = DB::get<const Tuple &>(collected[off]);
+                            flattened[off] = tuple[column_index];
+                        }
+                        auto & col = columns[action.columns[column_index]];
+                        col->insert(flattened);
+                    }
+                }
+                else
+                {
+                    auto & col = columns[action.columns[0]];
+                    col->insert(value);
+                }
+
+                break;
+            }
+            case Action::POP:
+                stack.pop_back();
+                break;
+            case Action::PUSH:
+                stack.push_back(stack.back().get(action.field).as<capnp::DynamicStruct>());
+                break;
+        }
     }
 
     return true;
 }
 
-CapnProtoSchemaReader::CapnProtoSchemaReader(const FormatSettings & format_settings_) : format_settings(format_settings_)
+void registerInputFormatProcessorCapnProto(FormatFactory & factory)
 {
-}
-
-NamesAndTypesList CapnProtoSchemaReader::readSchema()
-{
-    auto schema_info = FormatSchemaInfo(
-        format_settings.schema.format_schema,
-        "CapnProto",
-        true,
-        format_settings.schema.is_server,
-        format_settings.schema.format_schema_path);
-
-    auto schema_parser = CapnProtoSchemaParser();
-    auto schema = schema_parser.getMessageSchema(schema_info);
-    return capnProtoSchemaToCHSchema(schema);
-}
-
-void registerInputFormatCapnProto(FormatFactory & factory)
-{
-    factory.registerInputFormat(
+    factory.registerInputFormatProcessor(
         "CapnProto",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         {
             return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
-                       FormatSchemaInfo(settings, "CapnProto", true), settings);
+                       FormatSchemaInfo(settings.schema.format_schema, "CapnProto", true,
+                                        settings.schema.is_server, settings.schema.format_schema_path));
         });
-    factory.markFormatSupportsSubsetOfColumns("CapnProto");
-    factory.registerFileExtension("capnp", "CapnProto");
-}
-
-void registerCapnProtoSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("CapnProto", [](const FormatSettings & settings)
-    {
-       return std::make_shared<CapnProtoSchemaReader>(settings);
-    });
 }
 
 }
@@ -329,8 +314,7 @@ void registerCapnProtoSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatCapnProto(FormatFactory &) {}
-    void registerCapnProtoSchemaReader(FormatFactory &) {}
+    void registerInputFormatProcessorCapnProto(FormatFactory &) {}
 }
 
 #endif // USE_CAPNP

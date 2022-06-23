@@ -13,12 +13,12 @@ Hello "world", 789 ,2016-01-03
 "Hello
  world", 100, 2016-01-04,
  default,,
- default-eof,,' | $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 --input_format_csv_empty_as_default=1 --query="INSERT INTO csv FORMAT CSV";
+ default-eof,,' | $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 --query="INSERT INTO csv FORMAT CSV";
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY d, s";
+$CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY d";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t DateTime('Asia/Istanbul'), s String) ENGINE = Memory";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t DateTime('Europe/Moscow'), s String) ENGINE = Memory";
 
 echo '"2016-01-01 01:02:03","1"
 2016-01-02 01:02:03, "2"
@@ -29,11 +29,11 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY s";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t Nullable(DateTime('Asia/Istanbul')), s Nullable(String)) ENGINE = Memory";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t Nullable(DateTime('Europe/Moscow')), s Nullable(String)) ENGINE = Memory";
 
 echo 'NULL, NULL
 "2016-01-01 01:02:03",NUL
-"2016-01-02 01:02:03",Nhello' | $CLICKHOUSE_CLIENT --format_csv_null_representation='NULL' --input_format_csv_empty_as_default=1 --query="INSERT INTO csv FORMAT CSV";
+"2016-01-02 01:02:03",Nhello' | $CLICKHOUSE_CLIENT --input_format_csv_unquoted_null_literal_as_null=1 --query="INSERT INTO csv FORMAT CSV";
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY s NULLS LAST";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";

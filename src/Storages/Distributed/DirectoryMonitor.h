@@ -21,11 +21,6 @@ class StorageDistributed;
 class ActionBlocker;
 class BackgroundSchedulePool;
 
-class IProcessor;
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-
-class ISource;
-
 /** Details of StorageDistributed.
   * This type is not designed for standalone use.
   */
@@ -50,9 +45,9 @@ public:
 
     void shutdownAndDropAllData();
 
-    static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
+    static BlockInputStreamPtr createStreamFromFile(const String & file_name);
 
-    /// For scheduling via DistributedSink.
+    /// For scheduling via DistributedBlockOutputStream
     bool addAndSchedule(size_t file_size, size_t ms);
 
     struct InternalStatus
@@ -122,6 +117,8 @@ private:
 
     CurrentMetrics::Increment metric_pending_files;
     CurrentMetrics::Increment metric_broken_files;
+
+    friend class DirectoryMonitorBlockInputStream;
 };
 
 }

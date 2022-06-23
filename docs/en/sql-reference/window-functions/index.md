@@ -1,9 +1,12 @@
 ---
-sidebar_position: 62
-sidebar_label: Window Functions
+toc_priority: 62
+toc_title: Window Functions
 ---
 
-# Window Functions
+# [experimental] Window Functions
+
+!!! warning "Warning"
+    This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in the future releases. Set `allow_experimental_window_functions = 1` to enable it.
 
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
@@ -11,7 +14,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | --------| ----------|
 | ad hoc window specification (`count(*) over (partition by id order by time desc)`) | supported |
 | expressions involving window functions, e.g. `(count(*) over ()) / 2)` | not supported, wrap in a subquery ([feature request](https://github.com/ClickHouse/ClickHouse/issues/19857)) |
-| `WINDOW` clause (`select ... from table window w as (partition by id)`) | supported |
+| `WINDOW` clause (`select ... from table window w as (partiton by id)`) | supported |
 | `ROWS` frame | supported |
 | `RANGE` frame | supported, the default |
 | `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame | not supported, specify the number of seconds instead |

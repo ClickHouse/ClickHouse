@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,8 +19,7 @@ function thread()
     REPLICA=$1
     ITERATIONS=$2
 
-    # It's legal to fetch something before insert finished
-    $CLICKHOUSE_CLIENT --max_block_size 1 --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 --query "INSERT INTO r$REPLICA SELECT number * $NUM_REPLICAS + $REPLICA FROM numbers($ITERATIONS)" 2>&1 | grep -v -F "Tried to commit obsolete part"
+    $CLICKHOUSE_CLIENT --max_block_size 1 --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 --query "INSERT INTO r$REPLICA SELECT number * $NUM_REPLICAS + $REPLICA FROM numbers($ITERATIONS)"
 }
 
 for REPLICA in $SEQ; do

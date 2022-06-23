@@ -1,13 +1,13 @@
 ---
-sidebar_position: 3
-sidebar_label: ClickHouse性能
+toc_priority: 3
+toc_title: ClickHouse性能
 ---
 
 # 性能 {#performance}
 
-根据Yandex的内部测试结果，ClickHouse表现出了比同类可比较产品更优的性能。你可以在 [这里](https://clickhouse.com/benchmark/dbms/) 查看具体的测试结果。
+根据Yandex的内部测试结果，ClickHouse表现出了比同类可比较产品更优的性能。你可以在 [这里](https://clickhouse.tech/benchmark/dbms/) 查看具体的测试结果。
 
-许多其他的测试也证实这一点。你可以使用互联网搜索到它们，或者你也可以从 [我们收集的部分相关连接](https://clickhouse.com/#independent-benchmarks) 中查看。
+许多其他的测试也证实这一点。你可以使用互联网搜索到它们，或者你也可以从 [我们收集的部分相关连接](https://clickhouse.tech/#independent-benchmarks) 中查看。
 
 ## 单个大查询的吞吐量 {#dan-ge-da-cha-xun-de-tun-tu-liang}
 
@@ -27,4 +27,4 @@ sidebar_label: ClickHouse性能
 
 我们建议每次写入不少于1000行的批量写入，或每秒不超过一个写入请求。当使用tab-separated格式将一份数据写入到MergeTree表中时，写入速度大约为50到200MB/s。如果您写入的数据每行为1Kb，那么写入的速度为50，000到200，000行每秒。如果您的行更小，那么写入速度将更高。为了提高写入性能，您可以使用多个INSERT进行并行写入，这将带来线性的性能提升。
 
-[来源文章](https://clickhouse.com/docs/en/introduction/performance/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/introduction/performance/) <!--hide-->

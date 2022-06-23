@@ -10,27 +10,10 @@
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]))
 
-
-(ns jepsen.control.scp)
-
-;; We need to overwrite Jepsen's implementation of scp! because it
-;; doesn't use strict-host-key-checking
-
-(defn scp!
-  "Runs an SCP command by shelling out. Takes a conn-spec (used for port, key,
-  etc), a seq of sources, and a single destination, all as strings."
-  [conn-spec sources dest]
-  (apply util/sh "scp" "-rpC"
-         "-P" (str (:port conn-spec))
-         (concat (when-let [k (:private-key-path conn-spec)]
-                   ["-i" k])
-                 (if-not (:strict-host-key-checking conn-spec)
-                   ["-o StrictHostKeyChecking=no"])
-                 sources
-                 [dest]))
-  nil)
-
-(ns jepsen.clickhouse-keeper.db)
+(defn get-clickhouse-sky
+  [version]
+  (c/exec :sky :get :-d common-prefix :-N :Backbone version)
+  (str common-prefix "/clickhouse"))
 
 (defn get-clickhouse-url
   [url]
@@ -44,6 +27,7 @@
   [source]
   (info "Downloading clickhouse from" source)
   (cond
+    (clojure.string/starts-with? source "rbtorrent:") (get-clickhouse-sky source)
     (clojure.string/starts-with? source "http") (get-clickhouse-url source)
     (.exists (io/file source)) (get-clickhouse-scp source)
     :else (throw (Exception. (str "Don't know how to download clickhouse from" source)))))
@@ -84,7 +68,6 @@
   (do
     (c/exec :mkdir :-p common-prefix)
     (c/exec :mkdir :-p data-dir)
-    (c/exec :mkdir :-p coordination-data-dir)
     (c/exec :mkdir :-p logs-dir)
     (c/exec :mkdir :-p configs-dir)
     (c/exec :mkdir :-p sub-configs-dir)
@@ -157,13 +140,8 @@
          (do
            (info node "Coordination files exists, going to compress")
            (c/cd data-dir
-                 (c/exec :tar :czf "coordination.tar.gz" "coordination"))))
-       (if (cu/exists? (str logs-dir))
-         (do
-           (info node "Logs exist, going to compress")
-           (c/cd common-prefix
-                 (c/exec :tar :czf "logs.tar.gz" "logs"))) (info node "Logs are missing")))
-      (let [common-logs [(str common-prefix "/logs.tar.gz") (str data-dir "/coordination.tar.gz")]
+                 (c/exec :tar :czf "coordination.tar.gz" "coordination")))))
+      (let [common-logs [stderr-file (str logs-dir "/clickhouse-keeper.log") (str data-dir "/coordination.tar.gz")]
             gdb-log (str logs-dir "/gdb.log")]
         (if (cu/exists? (str logs-dir "/gdb.log"))
           (conj common-logs gdb-log)

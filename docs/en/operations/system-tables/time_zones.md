@@ -1,4 +1,4 @@
-# time_zones
+# system.time_zones {#system-time_zones}
 
 Contains a list of time zones that are supported by the ClickHouse server. This list of timezones might vary depending on the version of ClickHouse.
 
@@ -27,4 +27,4 @@ SELECT * FROM system.time_zones LIMIT 10
 └────────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/time_zones) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/time_zones) <!--hide-->

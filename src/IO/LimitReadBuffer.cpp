@@ -29,8 +29,7 @@ bool LimitReadBuffer::nextImpl()
 
     if (!in->next())
     {
-        /// Clearing the buffer with existing data.
-        set(in->position(), 0);
+        working_buffer = in->buffer();
         return false;
     }
 

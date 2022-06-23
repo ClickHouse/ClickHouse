@@ -8,9 +8,7 @@ if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
 endif()
 
 # TODO: move Functions/Regexps.h to some lib and use here
-if (TARGET ch_contrib::hyperscan)
-    target_link_libraries(clickhouse_functions_url PRIVATE ch_contrib::hyperscan)
-endif()
+target_link_libraries(clickhouse_functions_url PRIVATE hyperscan)
 
 if (USE_GPERF)
     # Only for regenerate

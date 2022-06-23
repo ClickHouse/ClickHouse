@@ -76,7 +76,7 @@ void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Bl
     }
 }
 
-void MergeTreeDataPartWriterInMemory::fillChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterInMemory::finish(IMergeTreeDataPart::Checksums & checksums, bool /* sync */)
 {
     /// If part is empty we still need to initialize block by empty columns.
     if (!part_in_memory->block)

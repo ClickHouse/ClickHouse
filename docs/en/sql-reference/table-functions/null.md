@@ -1,19 +1,19 @@
 ---
-sidebar_position: 53
-sidebar_label: null function
+toc_priority: 53
+toc_title: null function
 ---
 
-# null
+# null {#null-function}
 
 Creates a temporary table of the specified structure with the [Null](../../engines/table-engines/special/null.md) table engine. According to the `Null`-engine properties, the table data is ignored and the table itself is immediately droped right after the query execution. The function is used for the convenience of test writing and demonstrations.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 null('structure')
 ```
 
-**Parameter**
+**Parameter** 
 
 -   `structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
 
@@ -36,8 +36,8 @@ INSERT INTO t SELECT * FROM numbers_mt(1000000000);
 DROP TABLE IF EXISTS t;
 ```
 
-See also:
+See also: 
 
 -   [Null table engine](../../engines/table-engines/special/null.md)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/null/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/null/) <!--hide-->

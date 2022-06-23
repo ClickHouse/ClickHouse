@@ -1,11 +1,12 @@
 ---
-sidebar_position: 6
-sidebar_label: HDFS
+toc_priority: 6
+toc_title: HDFS
 ---
 
-# HDFS
+# HDFS {#table_engines-hdfs}
 
-This engine provides integration with the [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar to the [File](../../../engines/table-engines/special/file.md#table_engines-file) and [URL](../../../engines/table-engines/special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
+This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar
+to the [File](../../../engines/table-engines/special/file.md#table_engines-file) and [URL](../../../engines/table-engines/special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
 
 ## Usage {#usage}
 
@@ -13,13 +14,12 @@ This engine provides integration with the [Apache Hadoop](https://en.wikipedia.o
 ENGINE = HDFS(URI, format)
 ```
 
-**Engine Parameters**
-
-- `URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
--  `format` - specifies one of the available file formats. To perform
+The `URI` parameter is the whole file URI in HDFS.
+The `format` parameter specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
+The path part of `URI` may contain globs. In this case the table would be readonly.
 
 **Example:**
 
@@ -50,11 +50,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel.
--   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.
+-   Reads and writes can be parallel
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
+    -   Replication.
 
 **Globs in path**
 
@@ -71,12 +71,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
-    -  'hdfs://hdfs1:9000/some_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_3'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_3'
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -98,9 +98,8 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::warning
-If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+!!! warning "Warning"
+    If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 
 **Example**
 
@@ -127,13 +126,11 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
   </hdfs_root>
 ```
 
-### Configuration Options {#configuration-options}
-
-#### Supported by libhdfs3 {#supported-by-libhdfs3}
+### List of possible configuration options with default values
+#### Supported by libhdfs3
 
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
 | dfs\_client\_read\_shortcircuit                       | true                    |
 | output\_replace-datanode-on-failure                   | true                    |
@@ -183,40 +180,22 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 #### ClickHouse extras {#clickhouse-extras}
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
-|libhdfs3\_conf                                         | ""                      |
 
-### Limitations {#limitations}
-* `hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
+#### Limitations {#limitations}
+  * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
 
-If the `hadoop_security_authentication` parameter has the value `kerberos`, ClickHouse authenticates via Kerberos.
-Parameters are [here](#clickhouse-extras) and `hadoop_security_kerberos_ticket_cache_path` may be of help.
+If hadoop\_security\_authentication parameter has value 'kerberos', ClickHouse authentifies via Kerberos facility.
+Parameters [here](#clickhouse-extras) and hadoop\_security\_kerberos\_ticket\_cache\_path may be of help.
 Note that due to libhdfs3 limitations only old-fashioned approach is supported,
-datanode communications are not secured by SASL (`HADOOP_SECURE_DN_USER` is a reliable indicator of such
-security approach). Use `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` for reference.
+datanode communications are not secured by SASL (HADOOP\_SECURE\_DN\_USER is a reliable indicator of such
+security approach). Use tests/integration/test\_storage\_kerberized\_hdfs/hdfs_configs/bootstrap.sh for reference.
 
-If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_kerberos_kinit_command` is specified, `kinit` will be invoked. `hadoop_kerberos_keytab` and `hadoop_kerberos_principal` are mandatory in this case. `kinit` tool and krb5 configuration files are required.
-
-## HDFS Namenode HA support {#namenode-ha}
-
-libhdfs3 support HDFS namenode HA.
-
-- Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
-- Add following piece to ClickHouse config file:
-
-``` xml
-  <hdfs>
-    <libhdfs3_conf>/etc/clickhouse-server/hdfs-site.xml</libhdfs3_conf>
-  </hdfs>
-```
-
-- Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
-
+If hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal or hadoop\_kerberos\_kinit\_command is specified, kinit will be invoked. hadoop\_kerberos\_keytab and hadoop\_kerberos\_principal are mandatory in this case. kinit tool and krb5 configuration files are required.
 
 ## Virtual Columns {#virtual-columns}
 
@@ -227,4 +206,4 @@ libhdfs3 support HDFS namenode HA.
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->

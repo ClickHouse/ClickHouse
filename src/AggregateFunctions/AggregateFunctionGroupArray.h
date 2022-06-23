@@ -144,7 +144,7 @@ public:
         }
     }
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    void create(AggregateDataPtr __restrict place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
@@ -237,7 +237,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -256,7 +256,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -447,7 +447,7 @@ public:
         }
     }
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    void create(AggregateDataPtr __restrict place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
@@ -550,7 +550,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         writeVarUInt(data(place).value.size(), buf);
 
@@ -570,7 +570,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         UInt64 elems;
         readVarUInt(elems, buf);

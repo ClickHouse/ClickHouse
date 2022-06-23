@@ -9,7 +9,7 @@ Many developers can say that the code is the best docs by itself, and they are r
 If you want to help ClickHouse with documentation you can face, for example, the following questions:
 
 - "I don't know how to write."
-
+    
     We have prepared some [recommendations](#what-to-write) for you.
 
 - "I know what I want to write, but I don't know how to contribute to docs."
@@ -38,7 +38,7 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
 
-At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, Chinese, Japanese. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
+At the moment, [documentation](https://clickhouse.tech/docs) exists in English, Russian, Chinese, Japanese, and Farsi. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
 
 Each language lays in the corresponding folder. Files that are not translated from English are the symbolic links to the English ones.
 
@@ -54,7 +54,7 @@ You can contribute to the documentation in many ways, for example:
 
 - Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
 
-    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.com/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
+    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.tech/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
 
     When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
 
@@ -71,17 +71,17 @@ Contribute all new information in English language. Other languages are translat
     ```
 
 - Bold text: `**asterisks**` or `__underlines__`.
-- Links: `[link text](uri)`. Examples:
+- Links: `[link text](uri)`. Examples: 
 
     - External link: `[ClickHouse repo](https://github.com/ClickHouse/ClickHouse)`
     - Cross link: `[How to build docs](tools/README.md)`
 
 - Images: `![Exclamation sign](uri)`. You can refer to local images as well as remote in internet.
 - Lists: Lists can be of two types:
-
+    
     - `- unordered`: Each item starts from the `-`.
     - `1. ordered`: Each item starts from the number.
-
+    
     A list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
 
 - Inline code: `` `in backticks` ``.
@@ -107,7 +107,7 @@ Contribute all new information in English language. Other languages are translat
 - Text hidden behind a cut (single sting that opens on click):
 
     ```text
-    <details markdown="1"> <summary>Visible text</summary>
+    <details markdown="1"> <summary>Visible text</summary> 
         Hidden content.
     </details>`.
     ```
@@ -128,7 +128,7 @@ Contribute all new information in English language. Other languages are translat
 
 When you add a new file, it should end with a link like:
 
-`[Original article](https://clickhouse.com/docs/<path-to-the-page>) <!--hide-->`
+`[Original article](https://clickhouse.tech/docs/<path-to-the-page>) <!--hide-->`
 
 and there should be **a new empty line** after it.
 
@@ -164,7 +164,7 @@ When writing documentation, think about people who read it. Each audience has sp
 
 ClickHouse documentation can be divided by the audience for the following parts:
 
-- Conceptual topics in [Introduction](https://clickhouse.com/docs/en/), tutorials and overviews, changelog.
+- Conceptual topics in [Introduction](https://clickhouse.tech/docs/en/), tutorials and overviews, changelog.
 
     These topics are for the most common auditory. When editing text in them, use the most common terms that are comfortable for the audience with basic technical skills.
 

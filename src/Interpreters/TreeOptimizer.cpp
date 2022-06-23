@@ -4,9 +4,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
-#include <Interpreters/WhereConstraintsOptimizer.h>
-#include <Interpreters/SubstituteColumnOptimizer.h>
-#include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
@@ -17,12 +14,10 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
-#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -72,17 +67,24 @@ const std::unordered_set<String> possibly_injective_function_names
   * Instead, leave `GROUP BY const`.
   * Next, see deleting the constants in the analyzeAggregation method.
   */
-void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
+void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & source_columns)
 {
     /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
-    /// might be in positional GROUP BY.
+    UInt64 unused_column = 0;
+    String unused_column_name = toString(unused_column);
+
+    while (source_columns.count(unused_column_name))
+    {
+        ++unused_column;
+        unused_column_name = toString(unused_column);
+    }
+
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
+void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
@@ -105,15 +107,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
         group_exprs.pop_back();
     };
 
-    const auto & settings = context->getSettingsRef();
-
     /// iterate over each GROUP BY expression, eliminate injective function calls and literals
     for (size_t i = 0; i < group_exprs.size();)
     {
         if (const auto * function = group_exprs[i]->as<ASTFunction>())
         {
             /// assert function is injective
-            if (possibly_injective_function_names.contains(function->name))
+            if (possibly_injective_function_names.count(function->name))
             {
                 /// do not handle semantic errors here
                 if (function->arguments->children.size() < 2)
@@ -140,18 +140,10 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            else
+            else if (!function_factory.get(function->name, context)->isInjective({}))
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
-
-                if (!function_builder)
-                    function_builder = function_factory.get(function->name, context);
-
-                if (!function_builder->isInjective({}))
-                {
-                    ++i;
-                    continue;
-                }
+                ++i;
+                continue;
             }
 
             /// copy shared pointer to args in order to ensure lifetime
@@ -170,22 +162,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
         }
         else if (is_literal(group_exprs[i]))
         {
-            bool keep_position = false;
-            if (settings.enable_positional_arguments)
-            {
-                const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
-                if (value.getType() == Field::Types::UInt64)
-                {
-                    auto pos = value.get<UInt64>();
-                    if (pos > 0 && pos <= select_query->select()->children.size())
-                        keep_position = true;
-                }
-            }
-
-            if (keep_position)
-                ++i;
-            else
-                remove_expr_at_index(i);
+            remove_expr_at_index(i);
         }
         else
         {
@@ -195,7 +172,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
     }
 
     if (group_exprs.empty())
-        appendUnusedGroupByColumn(select_query);
+        appendUnusedGroupByColumn(select_query, source_columns);
 }
 
 struct GroupByKeysInfo
@@ -211,22 +188,10 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
     /// filling set with short names of keys
     for (const auto & group_key : group_by_keys)
     {
-        /// for grouping sets case
-        if (group_key->as<ASTExpressionList>())
-        {
-            const auto express_list_ast = group_key->as<const ASTExpressionList &>();
-            for (const auto & group_elem : express_list_ast.children)
-            {
-                data.key_names.insert(group_elem->getColumnName());
-            }
-        }
-        else
-        {
-            if (group_key->as<ASTFunction>())
-                data.has_function = true;
+        if (group_key->as<ASTFunction>())
+            data.has_function = true;
 
-            data.key_names.insert(group_key->getColumnName());
-        }
+        data.key_names.insert(group_key->getColumnName());
     }
 
     return data;
@@ -255,7 +220,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 
     /// filling the result
     for (const auto & group_key : group_by_keys)
-        if (group_by_keys_data.key_names.contains(group_key->getColumnName()))
+        if (group_by_keys_data.key_names.count(group_key->getColumnName()))
             modified.push_back(group_key);
 
     /// modifying the input
@@ -371,7 +336,7 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
         {
             const String & name = identifier->shortName();
 
-            if (select.distinct || implicit_distinct.contains(name))
+            if (select.distinct || implicit_distinct.count(name))
             {
                 if (alias.empty())
                     names.insert(name);
@@ -414,7 +379,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
             return;
 
         String name = identifier->shortName();
-        if (!distinct_names.contains(name))
+        if (!distinct_names.count(name))
             return; /// Not a distinct column, keep DISTINCT for it.
 
         selected_names.insert(name);
@@ -432,17 +397,10 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
 /// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
                                           const TablesWithColumns & tables_with_columns,
-                                          const TreeRewriterResult & result)
+                                          const Names & sorting_key_columns)
 {
     auto order_by = select_query->orderBy();
     if (!order_by)
-        return;
-
-    /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their undelying tables
-    /// and we can break the matching of the sorting key for `read_in_order`
-    /// optimization by removing monotonous functions from the prefix of key.
-    if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
         return;
 
     for (const auto & child : order_by->children)
@@ -459,30 +417,13 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
-        if (select_query->group_by_with_grouping_sets)
+        for (auto & elem : group_by->children)
         {
-            for (auto & set : group_by->children)
-            {
-                for (auto & elem : set->children)
-                {
-                    auto hash = elem->getTreeHash();
-                    String key = toString(hash.first) + '_' + toString(hash.second);
-                    group_by_hashes.insert(key);
-                }
-            }
-        }
-        else
-        {
-            for (auto & elem : group_by->children)
-            {
-                auto hash = elem->getTreeHash();
-                String key = toString(hash.first) + '_' + toString(hash.second);
-                group_by_hashes.insert(key);
-            }
+            auto hash = elem->getTreeHash();
+            String key = toString(hash.first) + '_' + toString(hash.second);
+            group_by_hashes.insert(key);
         }
     }
-
-    auto sorting_key_columns = result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{};
 
     bool is_sorting_key_prefix = true;
     for (size_t i = 0; i < order_by->children.size(); ++i)
@@ -588,44 +529,6 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-/// Use constraints to get rid of useless parts of query
-void optimizeWithConstraints(ASTSelectQuery * select_query,
-                             Aliases & /*aliases*/,
-                             const NameSet & /*source_columns_set*/,
-                             const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
-                             const StorageMetadataPtr & metadata_snapshot,
-                             const bool optimize_append_index)
-{
-    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
-}
-
-void optimizeSubstituteColumn(ASTSelectQuery * select_query,
-                              Aliases & /*aliases*/,
-                              const NameSet & /*source_columns_set*/,
-                              const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
-                              const StorageMetadataPtr & metadata_snapshot,
-                              const ConstStoragePtr & storage)
-{
-    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
-}
-
-/// Transform WHERE to CNF for more convenient optimization.
-bool convertQueryToCNF(ASTSelectQuery * select_query)
-{
-    if (select_query->where())
-    {
-        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
-        if (!cnf_form)
-            return false;
-
-        cnf_form->pushNotInFuntions();
-        select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
-        return true;
-    }
-
-    return false;
-}
-
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
@@ -674,11 +577,11 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
-void optimizeMultiIfToIf(ASTPtr & query)
+void optimizeCountConstantAndSumOne(ASTPtr & query)
 {
-    OptimizeMultiIfToIfVisitor::Data data;
-    OptimizeMultiIfToIfVisitor(data).visit(query);
+    RewriteCountVariantsVisitor::visit(query);
 }
+
 
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
@@ -704,65 +607,6 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
-std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, std::vector<ASTPtr *> & functions)
-{
-    if (functions.size() < 2)
-        return nullptr;
-
-    const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
-    auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
-    func_base->arguments->children = common_arguments;
-    func_base->parameters = std::make_shared<ASTExpressionList>();
-
-    for (const auto * ast : functions)
-    {
-        assert(ast && *ast);
-        const auto * func = (*ast)->as<ASTFunction>();
-        assert(func && func->parameters->as<ASTExpressionList>());
-        const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
-        if (parameters.size() != 1)
-            return nullptr; /// query is illegal, give up
-        func_base->parameters->children.push_back(parameters[0]);
-    }
-    return func_base;
-}
-
-/// Rewrites multi quantile()() functions with the same arguments to quantiles()()[]
-/// eg:SELECT quantile(0.5)(x), quantile(0.9)(x), quantile(0.95)(x) FROM...
-///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
-void optimizeFuseQuantileFunctions(ASTPtr & query)
-{
-    GatherFunctionQuantileVisitor::Data data{};
-    GatherFunctionQuantileVisitor(data).visit(query);
-    for (auto & candidate : data.fuse_quantile)
-    {
-        String func_name = candidate.first;
-        auto & args_to_functions = candidate.second;
-
-        /// Try to fuse multiply `quantile*` Function to plural
-        for (auto it : args_to_functions.arg_map_function)
-        {
-            std::vector<ASTPtr *> & functions = it.second;
-            auto func_base = getQuantileFuseCandidate(func_name, functions);
-            if (!func_base)
-                continue;
-            for (size_t i = 0; i < functions.size(); ++i)
-            {
-                std::shared_ptr<ASTFunction> ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(i + 1));
-                if (const auto & alias = (*functions[i])->tryGetAlias(); !alias.empty())
-                    ast_new->setAlias(alias);
-                *functions[i] = ast_new;
-            }
-        }
-    }
-}
-
-void optimizeOrLikeChain(ASTPtr & query)
-{
-    ConvertFunctionOrLikeVisitor::Data data = {};
-    ConvertFunctionOrLikeVisitor(data).visit(query);
-}
-
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -774,11 +618,6 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
-{
-    RewriteCountVariantsVisitor::visit(query);
-}
-
 void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
                           const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns, ContextPtr context)
 {
@@ -788,29 +627,21 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
-        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
+    if (settings.optimize_functions_to_subcolumns && result.storage
+        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
+        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
+
+    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
 
-    bool converted_to_cnf = false;
-    if (settings.convert_query_to_cnf)
-        converted_to_cnf = convertQueryToCNF(select_query);
-
-    if (converted_to_cnf && settings.optimize_using_constraints && result.storage_snapshot)
-    {
-        optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
-            tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);
-
-        if (settings.optimize_substitute_columns)
-            optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
-                tables_with_columns, result.storage_snapshot->metadata, result.storage);
-    }
+    /// Push the predicate expression down to the subqueries.
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
     /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, context);
+    optimizeGroupBy(select_query, result.source_columns_set, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
@@ -825,9 +656,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
-
-    if (settings.optimize_multiif_to_if)
-        optimizeMultiIfToIf(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
@@ -859,7 +687,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns, result);
+        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
+            result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{});
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,
@@ -875,17 +704,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
-
-    if (settings.optimize_syntax_fuse_functions)
-        optimizeFuseQuantileFunctions(query);
-
-    if (settings.optimize_or_like_chain
-        && settings.allow_hyperscan
-        && settings.max_hyperscan_regexp_length == 0
-        && settings.max_hyperscan_regexp_total_length == 0)
-    {
-        optimizeOrLikeChain(query);
-    }
 }
 
 }

@@ -13,29 +13,29 @@ namespace DB
     */
 class WriteBufferValidUTF8 final : public BufferWithOwnMemory<WriteBuffer>
 {
+private:
+    WriteBuffer & output_buffer;
+    bool group_replacements;
+    /// The last recorded character was `replacement`.
+    bool just_put_replacement = false;
+    std::string replacement;
+
+    void putReplacement();
+    void putValid(char * data, size_t len);
+
+    void nextImpl() override;
+    void finish();
+
 public:
     static const size_t DEFAULT_SIZE;
 
-    explicit WriteBufferValidUTF8(
+    WriteBufferValidUTF8(
         WriteBuffer & output_buffer_,
         bool group_replacements_ = true,
         const char * replacement_ = "\xEF\xBF\xBD",
         size_t size = DEFAULT_SIZE);
 
     ~WriteBufferValidUTF8() override;
-
-private:
-    void putReplacement();
-    void putValid(char * data, size_t len);
-
-    void nextImpl() override;
-    void finalizeImpl() override;
-
-    WriteBuffer & output_buffer;
-    bool group_replacements;
-    /// The last recorded character was `replacement`.
-    bool just_put_replacement = false;
-    std::string replacement;
 };
 
 }

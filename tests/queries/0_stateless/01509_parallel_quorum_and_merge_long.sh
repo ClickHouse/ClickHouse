@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-s3-storage
-# Tag no-replicated-database: Fails due to additional replicas or shards
-# Tag no-s3-storage: Merge assigned to replica 2, but replication queues are stopped for it
-
 
 set -e
 

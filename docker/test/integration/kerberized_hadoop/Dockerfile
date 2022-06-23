@@ -15,10 +15,9 @@ RUN curl -o krb5-libs-1.10.3-65.el6.x86_64.rpm ftp://ftp.pbone.net/mirror/vault.
     rm -fr *.rpm
 
 RUN cd /tmp && \
-    curl http://archive.apache.org/dist/commons/daemon/source/commons-daemon-1.0.15-src.tar.gz -o commons-daemon-1.0.15-src.tar.gz && \
-    tar xzf commons-daemon-1.0.15-src.tar.gz && \
-    cd commons-daemon-1.0.15-src/src/native/unix && \
-    ./configure && \
-    make && \
-    cp ./jsvc /usr/local/hadoop-2.7.0/sbin && \
-    [ -e /usr/local/hadoop ] || ln -s ./hadoop-2.7.0 /usr/local/hadoop
+	curl http://archive.apache.org/dist/commons/daemon/source/commons-daemon-1.0.15-src.tar.gz -o commons-daemon-1.0.15-src.tar.gz && \
+	tar xzf commons-daemon-1.0.15-src.tar.gz && \
+	cd commons-daemon-1.0.15-src/src/native/unix && \
+	./configure && \
+	make && \
+	cp ./jsvc /usr/local/hadoop/sbin

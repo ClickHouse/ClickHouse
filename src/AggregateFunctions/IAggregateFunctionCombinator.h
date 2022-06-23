@@ -35,10 +35,6 @@ public:
 
     virtual bool isForInternalUsageOnly() const { return false; }
 
-    /** Does combinator supports nesting (of itself, i.e. ArrayArray or IfIf)
-     */
-    virtual bool supportsNesting() const { return false; }
-
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),
       *  get the arguments for nested function (ex: UInt64 for sum).
       * If arguments are not suitable for combined function, throw an exception.
@@ -68,7 +64,7 @@ public:
         const DataTypes & arguments,
         const Array & params) const = 0;
 
-    virtual ~IAggregateFunctionCombinator() = default;
+    virtual ~IAggregateFunctionCombinator() {}
 };
 
 using AggregateFunctionCombinatorPtr = std::shared_ptr<const IAggregateFunctionCombinator>;

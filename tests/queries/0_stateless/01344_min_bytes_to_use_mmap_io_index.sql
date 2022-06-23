@@ -1,9 +1,8 @@
--- Tags: no-s3-storage
 DROP TABLE IF EXISTS test_01344;
 CREATE TABLE test_01344 (x String, INDEX idx (x) TYPE set(10) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO test_01344 VALUES ('Hello, world');
 
-SET local_filesystem_read_method = 'mmap', min_bytes_to_use_mmap_io = 1;
+SET min_bytes_to_use_mmap_io = 1;
 SELECT * FROM test_01344 WHERE x = 'Hello, world';
 
 SYSTEM FLUSH LOGS;

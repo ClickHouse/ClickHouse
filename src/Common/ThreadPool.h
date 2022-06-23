@@ -8,13 +8,10 @@
 #include <queue>
 #include <list>
 #include <optional>
-#include <atomic>
-
-#include <boost/heap/priority_queue.hpp>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -106,9 +103,10 @@ private:
         }
     };
 
-    boost::heap::priority_queue<JobWithPriority> jobs;
+    std::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
+
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
@@ -147,7 +145,7 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
     {}
 
 public:
-    static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);
+    static void initialize(size_t max_threads = 10000);
     static GlobalThreadPool & instance();
 };
 
@@ -155,27 +153,23 @@ public:
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
   */
-class ThreadFromGlobalPool : boost::noncopyable
+class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPool() = default;
+    ThreadFromGlobalPool() {}
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
         : state(std::make_shared<Poco::Event>())
-        , thread_id(std::make_shared<std::thread::id>())
     {
         /// NOTE: If this will throw an exception, the destructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
-            thread_id = thread_id,
             state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
             auto event = std::move(state);
             SCOPE_EXIT(event->set());
-
-            thread_id = std::make_shared<std::thread::id>(std::this_thread::get_id());
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
@@ -189,17 +183,16 @@ public:
         });
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs)
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
         if (joinable())
             abort();
         state = std::move(rhs.state);
-        thread_id = std::move(rhs.thread_id);
         return *this;
     }
 
@@ -227,18 +220,12 @@ public:
 
     bool joinable() const
     {
-        if (!state)
-            return false;
-        /// Thread cannot join itself.
-        if (*thread_id == std::this_thread::get_id())
-            return false;
-        return true;
+        return state != nullptr;
     }
 
 private:
     /// The state used in this object and inside the thread job.
     std::shared_ptr<Poco::Event> state;
-    std::shared_ptr<std::thread::id> thread_id;
 };
 
 

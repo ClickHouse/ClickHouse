@@ -3,7 +3,7 @@
 #include <Interpreters/CatBoostModel.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <memory>
 
@@ -15,14 +15,14 @@ namespace DB
 class ExternalModelsLoader : public ExternalLoader, WithContext
 {
 public:
-    using ModelPtr = std::shared_ptr<const IMLModel>;
+    using ModelPtr = std::shared_ptr<const IModel>;
 
     /// Models will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     explicit ExternalModelsLoader(ContextPtr context_);
 
     ModelPtr getModel(const std::string & model_name) const
     {
-        return std::static_pointer_cast<const IMLModel>(load(model_name));
+        return std::static_pointer_cast<const IModel>(load(model_name));
     }
 
     void reloadModel(const std::string & model_name) const

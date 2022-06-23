@@ -1,11 +1,12 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -14,7 +15,7 @@ namespace DB
 class Context;
 
 /**
- * s3cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+ * s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
  * A table function, which allows to process many files from S3 on a specific cluster
  * On initiator it creates a connection to _all_ nodes in cluster, discloses asterics
  * in S3 file path and dispatch each file dynamically.
@@ -29,12 +30,7 @@ public:
     {
         return name;
     }
-
-    bool hasStaticStructure() const override { return configuration.structure != "auto"; }
-
-    bool needStructureHint() const override { return configuration.structure == "auto"; }
-
-    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+    bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr executeImpl(
@@ -45,13 +41,16 @@ protected:
 
     const char * getStorageTypeName() const override { return "S3Cluster"; }
 
-    AccessType getSourceAccessType() const override { return AccessType::S3; }
-
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
     void parseArguments(const ASTPtr &, ContextPtr) override;
 
-    StorageS3ClusterConfiguration configuration;
-    ColumnsDescription structure_hint;
+    String cluster_name;
+    String filename;
+    String format;
+    String structure;
+    String access_key_id;
+    String secret_access_key;
+    String compression_method = "auto";
 };
 
 }

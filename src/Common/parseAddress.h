@@ -2,7 +2,7 @@
 
 #include <string>
 #include <map>
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -13,8 +13,8 @@ namespace DB
   * Otherwise, an exception is thrown.
   *
   * Examples:
-  *  clickhouse.com - returns "clickhouse.com" and default_port
-  *  clickhouse.com:80 - returns "clickhouse.com" and 80
+  *  yandex.ru - returns "yandex.ru" and default_port
+  *  yandex.ru:80 - returns "yandex.ru" and 80
   *  [2a02:6b8:a::a]:80 - returns [2a02:6b8:a::a] and 80; note that square brackets remain in returned host.
   */
 std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 default_port);

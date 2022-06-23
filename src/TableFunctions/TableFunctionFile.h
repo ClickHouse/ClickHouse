@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/* file(path, format[, structure, compression]) - creates a temporary storage from file
+/* file(path, format, structure) - creates a temporary storage from file
  *
  * The file must be in the clickhouse data directory.
  * The relative path begins with the clickhouse data directory.
@@ -20,18 +20,9 @@ public:
         return name;
     }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
-
-protected:
-    int fd = -1;
-    void parseFirstArguments(const ASTPtr & arg, ContextPtr context) override;
-    String getFormatFromFirstArgument() override;
-
 private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const std::string & compression_method_) const override;
     const char * getStorageTypeName() const override { return "File"; }
-};
-
-}
+};}

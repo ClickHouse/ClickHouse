@@ -15,7 +15,7 @@ import yaml
 
 @contextlib.contextmanager
 def temp_dir():
-    path = tempfile.mkdtemp(dir=os.environ.get("TEMP"))
+    path = tempfile.mkdtemp(dir=os.environ.get('TEMP'))
     try:
         yield path
     finally:
@@ -34,7 +34,7 @@ def cd(new_cwd):
 
 def get_free_port():
     with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(("", 0))
+        s.bind(('', 0))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
@@ -61,12 +61,12 @@ def read_md_file(path):
     meta_text = []
     content = []
     if os.path.exists(path):
-        with open(path, "r") as f:
+        with open(path, 'r') as f:
             for line in f:
-                if line.startswith("---"):
+                if line.startswith('---'):
                     if in_meta:
                         in_meta = False
-                        meta = yaml.full_load("".join(meta_text))
+                        meta = yaml.full_load(''.join(meta_text))
                     else:
                         in_meta = True
                 else:
@@ -74,7 +74,7 @@ def read_md_file(path):
                         meta_text.append(line)
                     else:
                         content.append(line)
-    return meta, "".join(content)
+    return meta, ''.join(content)
 
 
 def write_md_file(path, meta, content):
@@ -82,13 +82,13 @@ def write_md_file(path, meta, content):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
-    with open(path, "w") as f:
+    with open(path, 'w') as f:
         if meta:
-            print("---", file=f)
+            print('---', file=f)
             yaml.dump(meta, f)
-            print("---", file=f)
-            if not content.startswith("\n"):
-                print("", file=f)
+            print('---', file=f)
+            if not content.startswith('\n'):
+                print('', file=f)
         f.write(content)
 
 
@@ -100,38 +100,39 @@ def represent_ordereddict(dumper, data):
 
         value.append((node_key, node_value))
 
-    return yaml.nodes.MappingNode("tag:yaml.org,2002:map", value)
+    return yaml.nodes.MappingNode(u'tag:yaml.org,2002:map', value)
 
 
 yaml.add_representer(collections.OrderedDict, represent_ordereddict)
 
 
 def init_jinja2_filters(env):
+    import amp
     import website
-
     chunk_size = 10240
-    env.filters["chunks"] = lambda line: [
-        line[i : i + chunk_size] for i in range(0, len(line), chunk_size)
-    ]
-    env.filters["adjust_markdown_html"] = website.adjust_markdown_html
-    env.filters["to_rfc882"] = lambda d: datetime.datetime.strptime(
-        d, "%Y-%m-%d"
-    ).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    env.filters['chunks'] = lambda line: [line[i:i + chunk_size] for i in range(0, len(line), chunk_size)]
+    env.filters['html_to_amp'] = amp.html_to_amp
+    env.filters['adjust_markdown_html'] = website.adjust_markdown_html
+    env.filters['to_rfc882'] = lambda d: datetime.datetime.strptime(d, '%Y-%m-%d').strftime('%a, %d %b %Y %H:%M:%S GMT')
 
 
 def init_jinja2_env(args):
     import mdx_clickhouse
-
     env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(
-            [args.website_dir, os.path.join(args.src_dir, "docs", "_includes")]
-        ),
-        extensions=["jinja2.ext.i18n", "jinja2_highlight.HighlightExtension"],
+        loader=jinja2.FileSystemLoader([
+            args.website_dir,
+            os.path.join(args.docs_dir, '_includes')
+        ]),
+        extensions=[
+            'jinja2.ext.i18n',
+            'jinja2_highlight.HighlightExtension'
+        ]
     )
-    env.extend(jinja2_highlight_cssclass="syntax p-3 my-3")
-    translations_dir = os.path.join(args.website_dir, "locale")
+    env.extend(jinja2_highlight_cssclass='syntax p-3 my-3')
+    translations_dir = os.path.join(args.website_dir, 'locale')
     env.install_gettext_translations(
-        mdx_clickhouse.get_translations(translations_dir, "en"), newstyle=True
+        mdx_clickhouse.get_translations(translations_dir, 'en'),
+        newstyle=True
     )
     init_jinja2_filters(env)
     return env

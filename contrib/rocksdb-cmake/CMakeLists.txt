@@ -1,10 +1,3 @@
-option (ENABLE_ROCKSDB "Enable rocksdb library" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_ROCKSDB)
-  message (STATUS "Not using rocksdb")
-  return()
-endif()
-
 ## this file is extracted from `contrib/rocksdb/CMakeLists.txt`
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
 list(APPEND CMAKE_MODULE_PATH "${ROCKSDB_SOURCE_DIR}/cmake/modules/")
@@ -13,10 +6,6 @@ set(PORTABLE ON)
 ## always disable jemalloc for rocksdb by default
 ## because it introduces non-standard jemalloc APIs
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
-set(USE_SNAPPY OFF)
-if (TARGET ch_contrib::snappy)
-  set(USE_SNAPPY ON)
-endif()
 option(WITH_SNAPPY "build with SNAPPY" ${USE_SNAPPY})
 ## lz4, zlib, zstd is enabled in ClickHouse by default
 option(WITH_LZ4 "build with lz4" ON)
@@ -49,32 +38,42 @@ else()
     # but it does not have all the jemalloc files in include/...
     set(WITH_JEMALLOC ON)
   else()
-    if(WITH_JEMALLOC AND TARGET ch_contrib::jemalloc)
+    if(WITH_JEMALLOC)
       add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
-      list(APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
+      list(APPEND THIRDPARTY_LIBS jemalloc)
     endif()
   endif()
 
   if(WITH_SNAPPY)
     add_definitions(-DSNAPPY)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
+    list(APPEND THIRDPARTY_LIBS snappy)
   endif()
 
   if(WITH_ZLIB)
     add_definitions(-DZLIB)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
+    list(APPEND THIRDPARTY_LIBS zlib)
   endif()
 
   if(WITH_LZ4)
     add_definitions(-DLZ4)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
+    list(APPEND THIRDPARTY_LIBS lz4)
   endif()
 
   if(WITH_ZSTD)
     add_definitions(-DZSTD)
-    list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
+    include_directories(${ZSTD_INCLUDE_DIR})
+    include_directories("${ZSTD_INCLUDE_DIR}/common")
+    include_directories("${ZSTD_INCLUDE_DIR}/dictBuilder")
+    include_directories("${ZSTD_INCLUDE_DIR}/deprecated")
+
+    list(APPEND THIRDPARTY_LIBS zstd)
   endif()
 endif()
+
+set(BUILD_VERSION_CC rocksdb_build_version.cc)
+add_library(rocksdb_build_version OBJECT ${BUILD_VERSION_CC})
+
+target_include_directories(rocksdb_build_version PRIVATE "${ROCKSDB_SOURCE_DIR}/util")
 
 include(CheckCCompilerFlag)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
@@ -112,6 +111,18 @@ if(NOT MSVC)
   set(CMAKE_REQUIRED_FLAGS "-msse4.2 -mpclmul")
 endif()
 
+CHECK_CXX_SOURCE_COMPILES("
+#include <cstdint>
+#include <nmmintrin.h>
+#include <wmmintrin.h>
+int main() {
+  volatile uint32_t x = _mm_crc32_u32(0, 0);
+  const auto a = _mm_set_epi64x(0, 0);
+  const auto b = _mm_set_epi64x(0, 0);
+  const auto c = _mm_clmulepi64_si128(a, b, 0x00);
+  auto d = _mm_cvtsi128_si64(c);
+}
+" HAVE_SSE42)
 unset(CMAKE_REQUIRED_FLAGS)
 if(HAVE_SSE42)
   add_definitions(-DHAVE_SSE42)
@@ -120,13 +131,25 @@ elseif(FORCE_SSE42)
   message(FATAL_ERROR "FORCE_SSE42=ON but unable to compile with SSE4.2 enabled")
 endif()
 
-set (HAVE_THREAD_LOCAL 1)
+CHECK_CXX_SOURCE_COMPILES("
+#if defined(_MSC_VER) && !defined(__thread)
+#define __thread __declspec(thread)
+#endif
+int main() {
+  static __thread int tls;
+}
+" HAVE_THREAD_LOCAL)
 if(HAVE_THREAD_LOCAL)
   add_definitions(-DROCKSDB_SUPPORT_THREAD_LOCAL)
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   add_definitions(-DOS_MACOSX)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES arm)
+    add_definitions(-DIOS_CROSS_COMPILE -DROCKSDB_LITE)
+    # no debug info for IOS, that will make our library big
+    add_definitions(-DNDEBUG)
+  endif()
 elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
   add_definitions(-DOS_LINUX)
 elseif(CMAKE_SYSTEM_NAME MATCHES "SunOS")
@@ -156,7 +179,7 @@ endif()
 
 option(WITH_FALLOCATE "build with fallocate" ON)
 if(WITH_FALLOCATE)
-  CHECK_C_SOURCE_COMPILES("
+  CHECK_CXX_SOURCE_COMPILES("
 #include <fcntl.h>
 #include <linux/falloc.h>
 int main() {
@@ -169,7 +192,7 @@ int main() {
   endif()
 endif()
 
-CHECK_C_SOURCE_COMPILES("
+CHECK_CXX_SOURCE_COMPILES("
 #include <fcntl.h>
 int main() {
   int fd = open(\"/dev/null\", 0);
@@ -180,7 +203,7 @@ if(HAVE_SYNC_FILE_RANGE_WRITE)
   add_definitions(-DROCKSDB_RANGESYNC_PRESENT)
 endif()
 
-CHECK_C_SOURCE_COMPILES("
+CHECK_CXX_SOURCE_COMPILES("
 #include <pthread.h>
 int main() {
   (void) PTHREAD_MUTEX_ADAPTIVE_NP;
@@ -191,7 +214,7 @@ if(HAVE_PTHREAD_MUTEX_ADAPTIVE_NP)
 endif()
 
 include(CheckCXXSymbolExists)
-if (OS_FREEBSD)
+if(CMAKE_SYSTEM_NAME MATCHES "^FreeBSD")
   check_cxx_symbol_exists(malloc_usable_size "${ROCKSDB_SOURCE_DIR}/malloc_np.h" HAVE_MALLOC_USABLE_SIZE)
 else()
   check_cxx_symbol_exists(malloc_usable_size "${ROCKSDB_SOURCE_DIR}/malloc.h" HAVE_MALLOC_USABLE_SIZE)
@@ -200,14 +223,15 @@ if(HAVE_MALLOC_USABLE_SIZE)
   add_definitions(-DROCKSDB_MALLOC_USABLE_SIZE)
 endif()
 
-if (OS_LINUX)
+check_cxx_symbol_exists(sched_getcpu sched.h HAVE_SCHED_GETCPU)
+if(HAVE_SCHED_GETCPU)
   add_definitions(-DROCKSDB_SCHED_GETCPU_PRESENT)
-  add_definitions(-DROCKSDB_AUXV_SYSAUXV_PRESENT)
-  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
-elseif (OS_FREEBSD)
-  add_definitions(-DROCKSDB_AUXV_SYSAUXV_PRESENT)
 endif()
 
+check_cxx_symbol_exists(getauxval auvx.h HAVE_AUXV_GETAUXVAL)
+if(HAVE_AUXV_GETAUXVAL)
+  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
+endif()
 
 include_directories(${ROCKSDB_SOURCE_DIR})
 include_directories("${ROCKSDB_SOURCE_DIR}/include")
@@ -219,293 +243,272 @@ find_package(Threads REQUIRED)
 # Main library source code
 
 set(SOURCES
-    ${ROCKSDB_SOURCE_DIR}/cache/cache.cc
-    ${ROCKSDB_SOURCE_DIR}/cache/cache_entry_roles.cc
-    ${ROCKSDB_SOURCE_DIR}/cache/clock_cache.cc
-    ${ROCKSDB_SOURCE_DIR}/cache/lru_cache.cc
-    ${ROCKSDB_SOURCE_DIR}/cache/sharded_cache.cc
-    ${ROCKSDB_SOURCE_DIR}/db/arena_wrapped_db_iter.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_fetcher.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_addition.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_cache.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_garbage.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_meta.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_garbage_meter.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_format.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_sequential_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_writer.cc
-    ${ROCKSDB_SOURCE_DIR}/db/builder.cc
-    ${ROCKSDB_SOURCE_DIR}/db/c.cc
-    ${ROCKSDB_SOURCE_DIR}/db/column_family.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_job.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker_fifo.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker_level.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker_universal.cc
-    ${ROCKSDB_SOURCE_DIR}/db/compaction/sst_partitioner.cc
-    ${ROCKSDB_SOURCE_DIR}/db/convenience.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_filesnapshot.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/compacted_db_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_write.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_compaction_flush.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_files.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_open.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_debug.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_experimental.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_readonly.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_secondary.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_info_dumper.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_iter.cc
-    ${ROCKSDB_SOURCE_DIR}/db/dbformat.cc
-    ${ROCKSDB_SOURCE_DIR}/db/error_handler.cc
-    ${ROCKSDB_SOURCE_DIR}/db/event_helpers.cc
-    ${ROCKSDB_SOURCE_DIR}/db/experimental.cc
-    ${ROCKSDB_SOURCE_DIR}/db/external_sst_file_ingestion_job.cc
-    ${ROCKSDB_SOURCE_DIR}/db/file_indexer.cc
-    ${ROCKSDB_SOURCE_DIR}/db/flush_job.cc
-    ${ROCKSDB_SOURCE_DIR}/db/flush_scheduler.cc
-    ${ROCKSDB_SOURCE_DIR}/db/forward_iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/db/import_column_family_job.cc
-    ${ROCKSDB_SOURCE_DIR}/db/internal_stats.cc
-    ${ROCKSDB_SOURCE_DIR}/db/logs_with_prep_tracker.cc
-    ${ROCKSDB_SOURCE_DIR}/db/log_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/db/log_writer.cc
-    ${ROCKSDB_SOURCE_DIR}/db/malloc_stats.cc
-    ${ROCKSDB_SOURCE_DIR}/db/memtable.cc
-    ${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc
-    ${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc
-    ${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc
-    ${ROCKSDB_SOURCE_DIR}/db/output_validator.cc
-    ${ROCKSDB_SOURCE_DIR}/db/periodic_work_scheduler.cc
-    ${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc
-    ${ROCKSDB_SOURCE_DIR}/db/range_tombstone_fragmenter.cc
-    ${ROCKSDB_SOURCE_DIR}/db/repair.cc
-    ${ROCKSDB_SOURCE_DIR}/db/snapshot_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/db/table_cache.cc
-    ${ROCKSDB_SOURCE_DIR}/db/table_properties_collector.cc
-    ${ROCKSDB_SOURCE_DIR}/db/transaction_log_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/db/trim_history_scheduler.cc
-    ${ROCKSDB_SOURCE_DIR}/db/version_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/db/version_edit.cc
-    ${ROCKSDB_SOURCE_DIR}/db/version_edit_handler.cc
-    ${ROCKSDB_SOURCE_DIR}/db/version_set.cc
-    ${ROCKSDB_SOURCE_DIR}/db/wal_edit.cc
-    ${ROCKSDB_SOURCE_DIR}/db/wal_manager.cc
-    ${ROCKSDB_SOURCE_DIR}/db/write_batch.cc
-    ${ROCKSDB_SOURCE_DIR}/db/write_batch_base.cc
-    ${ROCKSDB_SOURCE_DIR}/db/write_controller.cc
-    ${ROCKSDB_SOURCE_DIR}/db/write_thread.cc
-    ${ROCKSDB_SOURCE_DIR}/env/composite_env.cc
-    ${ROCKSDB_SOURCE_DIR}/env/env.cc
-    ${ROCKSDB_SOURCE_DIR}/env/env_chroot.cc
-    ${ROCKSDB_SOURCE_DIR}/env/env_encryption.cc
-    ${ROCKSDB_SOURCE_DIR}/env/env_hdfs.cc
-    ${ROCKSDB_SOURCE_DIR}/env/file_system.cc
-    ${ROCKSDB_SOURCE_DIR}/env/file_system_tracer.cc
-    ${ROCKSDB_SOURCE_DIR}/env/fs_remap.cc
-    ${ROCKSDB_SOURCE_DIR}/env/mock_env.cc
-    ${ROCKSDB_SOURCE_DIR}/file/delete_scheduler.cc
-    ${ROCKSDB_SOURCE_DIR}/file/file_prefetch_buffer.cc
-    ${ROCKSDB_SOURCE_DIR}/file/file_util.cc
-    ${ROCKSDB_SOURCE_DIR}/file/filename.cc
-    ${ROCKSDB_SOURCE_DIR}/file/line_file_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/file/random_access_file_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/file/read_write_util.cc
-    ${ROCKSDB_SOURCE_DIR}/file/readahead_raf.cc
-    ${ROCKSDB_SOURCE_DIR}/file/sequence_file_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/file/sst_file_manager_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/file/writable_file_writer.cc
-    ${ROCKSDB_SOURCE_DIR}/logging/auto_roll_logger.cc
-    ${ROCKSDB_SOURCE_DIR}/logging/event_logger.cc
-    ${ROCKSDB_SOURCE_DIR}/logging/log_buffer.cc
-    ${ROCKSDB_SOURCE_DIR}/memory/arena.cc
-    ${ROCKSDB_SOURCE_DIR}/memory/concurrent_arena.cc
-    ${ROCKSDB_SOURCE_DIR}/memory/jemalloc_nodump_allocator.cc
-    ${ROCKSDB_SOURCE_DIR}/memory/memkind_kmem_allocator.cc
-    ${ROCKSDB_SOURCE_DIR}/memtable/alloc_tracker.cc
-    ${ROCKSDB_SOURCE_DIR}/memtable/hash_linklist_rep.cc
-    ${ROCKSDB_SOURCE_DIR}/memtable/hash_skiplist_rep.cc
-    ${ROCKSDB_SOURCE_DIR}/memtable/skiplistrep.cc
-    ${ROCKSDB_SOURCE_DIR}/memtable/vectorrep.cc
-    ${ROCKSDB_SOURCE_DIR}/memtable/write_buffer_manager.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/histogram.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/histogram_windowing.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/in_memory_stats_history.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/instrumented_mutex.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/iostats_context.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/perf_context.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/perf_level.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/persistent_stats_history.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/statistics.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_updater.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc
-    ${ROCKSDB_SOURCE_DIR}/options/cf_options.cc
-    ${ROCKSDB_SOURCE_DIR}/options/configurable.cc
-    ${ROCKSDB_SOURCE_DIR}/options/customizable.cc
-    ${ROCKSDB_SOURCE_DIR}/options/db_options.cc
-    ${ROCKSDB_SOURCE_DIR}/options/options.cc
-    ${ROCKSDB_SOURCE_DIR}/options/options_helper.cc
-    ${ROCKSDB_SOURCE_DIR}/options/options_parser.cc
-    ${ROCKSDB_SOURCE_DIR}/port/stack_trace.cc
-    ${ROCKSDB_SOURCE_DIR}/table/adaptive/adaptive_table_factory.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/binary_search_index_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_filter_block.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_factory.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_prefetcher.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/block_prefix_index.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/data_block_hash_index.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/data_block_footer.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/filter_block_reader_common.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/filter_policy.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/flush_block_policy.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/full_filter_block.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/hash_index_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/index_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/index_reader_common.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/parsed_full_filter_block.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/partitioned_filter_block.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/partitioned_index_iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/partitioned_index_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/reader_common.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/uncompression_dict_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_fetcher.cc
-    ${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_factory.cc
-    ${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/format.cc
-    ${ROCKSDB_SOURCE_DIR}/table/get_context.cc
-    ${ROCKSDB_SOURCE_DIR}/table/iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/table/merging_iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/table/meta_blocks.cc
-    ${ROCKSDB_SOURCE_DIR}/table/persistent_cache_helper.cc
-    ${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_bloom.cc
-    ${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_builder.cc
-    ${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_factory.cc
-    ${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_index.cc
-    ${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_key_coding.cc
-    ${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/sst_file_dumper.cc
-    ${ROCKSDB_SOURCE_DIR}/table/sst_file_reader.cc
-    ${ROCKSDB_SOURCE_DIR}/table/sst_file_writer.cc
-    ${ROCKSDB_SOURCE_DIR}/table/table_factory.cc
-    ${ROCKSDB_SOURCE_DIR}/table/table_properties.cc
-    ${ROCKSDB_SOURCE_DIR}/table/two_level_iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/testutil.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/block_cache_analyzer/block_cache_trace_analyzer.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/dump/db_dump_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/io_tracer_parser_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/ldb_cmd.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/ldb_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/sst_dump_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/trace_analyzer_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/trace_replay/trace_replay.cc
-    ${ROCKSDB_SOURCE_DIR}/trace_replay/block_cache_tracer.cc
-    ${ROCKSDB_SOURCE_DIR}/trace_replay/io_tracer.cc
-    ${ROCKSDB_SOURCE_DIR}/util/coding.cc
-    ${ROCKSDB_SOURCE_DIR}/util/compaction_job_stats_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/util/comparator.cc
-    ${ROCKSDB_SOURCE_DIR}/util/compression_context_cache.cc
-    ${ROCKSDB_SOURCE_DIR}/util/concurrent_task_limiter_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/util/crc32c.cc
-    ${ROCKSDB_SOURCE_DIR}/util/dynamic_bloom.cc
-    ${ROCKSDB_SOURCE_DIR}/util/hash.cc
-    ${ROCKSDB_SOURCE_DIR}/util/murmurhash.cc
-    ${ROCKSDB_SOURCE_DIR}/util/random.cc
-    ${ROCKSDB_SOURCE_DIR}/util/rate_limiter.cc
-    ${ROCKSDB_SOURCE_DIR}/util/ribbon_config.cc
-    ${ROCKSDB_SOURCE_DIR}/util/slice.cc
-    ${ROCKSDB_SOURCE_DIR}/util/file_checksum_helper.cc
-    ${ROCKSDB_SOURCE_DIR}/util/status.cc
-    ${ROCKSDB_SOURCE_DIR}/util/string_util.cc
-    ${ROCKSDB_SOURCE_DIR}/util/thread_local.cc
-    ${ROCKSDB_SOURCE_DIR}/util/threadpool_imp.cc
-    ${ROCKSDB_SOURCE_DIR}/util/xxhash.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/backupable/backupable_db.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_compaction_filter.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db_impl_filesnapshot.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_dump_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_file.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/cassandra_compaction_filter.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/format.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/merge_operator.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/checkpoint/checkpoint_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters/remove_emptyvalue_compactionfilter.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/debug.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/env_mirror.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/env_timed.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_env.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_fs.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/leveldb_options/leveldb_options.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/memory/memory_util.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/bytesxor.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/max.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/put.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/sortlist.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/string_append/stringappend.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/string_append/stringappend2.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/uint64add.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/object_registry.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/option_change_migration/option_change_migration.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/options/options_util.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier_file.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier_metadata.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/persistent_cache_tier.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/volatile_tier_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/simulator_cache/cache_simulator.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/simulator_cache/sim_cache.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/table_properties_collectors/compact_on_deletion_collector.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/trace/file_trace_reader_writer.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/lock_manager.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_tracker.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_manager.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/range_tree_lock_manager.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/range_tree_lock_tracker.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/optimistic_transaction_db_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/optimistic_transaction.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/pessimistic_transaction.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/pessimistic_transaction_db.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/snapshot_checker.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_base.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_db_mutex_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_util.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_prepared_txn.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_prepared_txn_db.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn_db.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/ttl/db_ttl_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index_internal.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/keyrange.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/lock_request.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/locktree.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/manager.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/range_buffer.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/treenode.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/txnid_set.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/wfg.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/standalone_port.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/util/dbt.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/util/memarena.cc
-    rocksdb_build_version.cc)
+        "${ROCKSDB_SOURCE_DIR}/cache/cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/cache/clock_cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/cache/lru_cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/cache/sharded_cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/arena_wrapped_db_iter.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_addition.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_garbage.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_meta.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_format.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_sequential_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/blob/blob_log_writer.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/c.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/column_family.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compacted_db_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/compaction.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_iterator.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_job.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker_fifo.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker_level.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_picker_universal.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/compaction/sst_partitioner.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/convenience.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_filesnapshot.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_write.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_compaction_flush.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_files.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_open.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_debug.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_experimental.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_readonly.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_secondary.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_info_dumper.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/db_iter.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/dbformat.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/error_handler.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/event_helpers.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/experimental.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/external_sst_file_ingestion_job.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/file_indexer.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/flush_job.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/flush_scheduler.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/forward_iterator.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/import_column_family_job.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/internal_stats.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/logs_with_prep_tracker.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/log_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/log_writer.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/malloc_stats.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/memtable.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/output_validator.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/periodic_work_scheduler.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/range_tombstone_fragmenter.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/repair.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/snapshot_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/table_cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/table_properties_collector.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/transaction_log_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/trim_history_scheduler.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/version_builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/version_edit.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/version_edit_handler.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/version_set.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/wal_edit.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/wal_manager.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/write_batch.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/write_batch_base.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/write_controller.cc"
+        "${ROCKSDB_SOURCE_DIR}/db/write_thread.cc"
+        "${ROCKSDB_SOURCE_DIR}/env/env.cc"
+        "${ROCKSDB_SOURCE_DIR}/env/env_chroot.cc"
+        "${ROCKSDB_SOURCE_DIR}/env/env_encryption.cc"
+        "${ROCKSDB_SOURCE_DIR}/env/env_hdfs.cc"
+        "${ROCKSDB_SOURCE_DIR}/env/file_system.cc"
+        "${ROCKSDB_SOURCE_DIR}/env/file_system_tracer.cc"
+        "${ROCKSDB_SOURCE_DIR}/env/mock_env.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/delete_scheduler.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/file_prefetch_buffer.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/file_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/filename.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/random_access_file_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/read_write_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/readahead_raf.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/sequence_file_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/sst_file_manager_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/file/writable_file_writer.cc"
+        "${ROCKSDB_SOURCE_DIR}/logging/auto_roll_logger.cc"
+        "${ROCKSDB_SOURCE_DIR}/logging/event_logger.cc"
+        "${ROCKSDB_SOURCE_DIR}/logging/log_buffer.cc"
+        "${ROCKSDB_SOURCE_DIR}/memory/arena.cc"
+        "${ROCKSDB_SOURCE_DIR}/memory/concurrent_arena.cc"
+        "${ROCKSDB_SOURCE_DIR}/memory/jemalloc_nodump_allocator.cc"
+        "${ROCKSDB_SOURCE_DIR}/memory/memkind_kmem_allocator.cc"
+        "${ROCKSDB_SOURCE_DIR}/memtable/alloc_tracker.cc"
+        "${ROCKSDB_SOURCE_DIR}/memtable/hash_linklist_rep.cc"
+        "${ROCKSDB_SOURCE_DIR}/memtable/hash_skiplist_rep.cc"
+        "${ROCKSDB_SOURCE_DIR}/memtable/skiplistrep.cc"
+        "${ROCKSDB_SOURCE_DIR}/memtable/vectorrep.cc"
+        "${ROCKSDB_SOURCE_DIR}/memtable/write_buffer_manager.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/histogram.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/histogram_windowing.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/in_memory_stats_history.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/instrumented_mutex.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/iostats_context.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/perf_context.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/perf_level.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/persistent_stats_history.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/statistics.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_updater.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc"
+        "${ROCKSDB_SOURCE_DIR}/options/cf_options.cc"
+        "${ROCKSDB_SOURCE_DIR}/options/configurable.cc"
+        "${ROCKSDB_SOURCE_DIR}/options/customizable.cc"
+        "${ROCKSDB_SOURCE_DIR}/options/db_options.cc"
+        "${ROCKSDB_SOURCE_DIR}/options/options.cc"
+        "${ROCKSDB_SOURCE_DIR}/options/options_helper.cc"
+        "${ROCKSDB_SOURCE_DIR}/options/options_parser.cc"
+        "${ROCKSDB_SOURCE_DIR}/port/stack_trace.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/adaptive/adaptive_table_factory.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/binary_search_index_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_filter_block.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_factory.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_iterator.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_prefetcher.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/block_prefix_index.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/data_block_hash_index.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/data_block_footer.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/filter_block_reader_common.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/filter_policy.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/flush_block_policy.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/full_filter_block.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/hash_index_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/index_builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/index_reader_common.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/parsed_full_filter_block.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/partitioned_filter_block.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/partitioned_index_iterator.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/partitioned_index_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/reader_common.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_based/uncompression_dict_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/block_fetcher.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_factory.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/format.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/get_context.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/iterator.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/merging_iterator.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/meta_blocks.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/persistent_cache_helper.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_bloom.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_builder.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_factory.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_index.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_key_coding.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/sst_file_dumper.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/sst_file_reader.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/sst_file_writer.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/table_factory.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/table_properties.cc"
+        "${ROCKSDB_SOURCE_DIR}/table/two_level_iterator.cc"
+        "${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc"
+        "${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/test_util/testutil.cc"
+        "${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/tools/block_cache_analyzer/block_cache_trace_analyzer.cc"
+        "${ROCKSDB_SOURCE_DIR}/tools/dump/db_dump_tool.cc"
+        "${ROCKSDB_SOURCE_DIR}/tools/io_tracer_parser_tool.cc"
+        "${ROCKSDB_SOURCE_DIR}/tools/ldb_cmd.cc"
+        "${ROCKSDB_SOURCE_DIR}/tools/ldb_tool.cc"
+        "${ROCKSDB_SOURCE_DIR}/tools/sst_dump_tool.cc"
+        "${ROCKSDB_SOURCE_DIR}/tools/trace_analyzer_tool.cc"
+        "${ROCKSDB_SOURCE_DIR}/trace_replay/trace_replay.cc"
+        "${ROCKSDB_SOURCE_DIR}/trace_replay/block_cache_tracer.cc"
+        "${ROCKSDB_SOURCE_DIR}/trace_replay/io_tracer.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/coding.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/compaction_job_stats_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/comparator.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/compression_context_cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/concurrent_task_limiter_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/crc32c.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/dynamic_bloom.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/hash.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/murmurhash.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/random.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/rate_limiter.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/slice.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/file_checksum_helper.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/status.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/string_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/thread_local.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/threadpool_imp.cc"
+        "${ROCKSDB_SOURCE_DIR}/util/xxhash.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/backupable/backupable_db.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_compaction_filter.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db_impl_filesnapshot.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_dump_tool.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_file.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/cassandra/cassandra_compaction_filter.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/cassandra/format.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/cassandra/merge_operator.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/checkpoint/checkpoint_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters/remove_emptyvalue_compactionfilter.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/debug.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/env_mirror.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/env_timed.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_env.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_fs.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/leveldb_options/leveldb_options.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/memory/memory_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/bytesxor.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/max.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/put.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/sortlist.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/string_append/stringappend.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/string_append/stringappend2.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/uint64add.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/object_registry.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/option_change_migration/option_change_migration.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/options/options_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier_file.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier_metadata.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/persistent_cache_tier.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/volatile_tier_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/simulator_cache/cache_simulator.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/simulator_cache/sim_cache.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/table_properties_collectors/compact_on_deletion_collector.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/trace/file_trace_reader_writer.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/lock_manager.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_tracker.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_manager.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/optimistic_transaction_db_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/optimistic_transaction.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/pessimistic_transaction.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/pessimistic_transaction_db.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/snapshot_checker.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_base.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_db_mutex_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/transaction_util.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_prepared_txn.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_prepared_txn_db.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn_db.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/ttl/db_ttl_impl.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index.cc"
+        "${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index_internal.cc"
+        $<TARGET_OBJECTS:rocksdb_build_version>)
 
 if(HAVE_SSE42 AND NOT MSVC)
   set_source_files_properties(
@@ -539,8 +542,8 @@ if(WITH_FOLLY_DISTRIBUTED_MUTEX)
     "${ROCKSDB_SOURCE_DIR}/third-party/folly/folly/synchronization/WaitOptions.cpp")
 endif()
 
-add_library(_rocksdb ${SOURCES})
-add_library(ch_contrib::rocksdb ALIAS _rocksdb)
-target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
-# SYSTEM is required to overcome some issues
-target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include")
+set(ROCKSDB_STATIC_LIB rocksdb)
+
+add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES})
+target_link_libraries(${ROCKSDB_STATIC_LIB} PRIVATE
+  ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})

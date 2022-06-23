@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
 <logger>
 	<level>trace</level>
 	<log>/var/log/clickhouse-server/clickhouse-server.log</log>
@@ -22,8 +22,9 @@
     </openSSL>
 
     <max_concurrent_queries>500</max_concurrent_queries>
+    <mark_cache_size>5368709120</mark_cache_size>
     <path>./clickhouse/</path>
     <users_config>users.xml</users_config>
 
     <dictionaries_config>/etc/clickhouse-server/config.d/*.xml</dictionaries_config>
-</clickhouse>
+</yandex>

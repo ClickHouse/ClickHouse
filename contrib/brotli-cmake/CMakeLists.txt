@@ -1,10 +1,3 @@
-option (ENABLE_BROTLI "Enable brotli" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_BROTLI)
-    message(STATUS "Not using brotli")
-    return()
-endif()
-
 set(BROTLI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/brotli/c")
 set(BROTLI_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/brotli/c")
 
@@ -40,9 +33,10 @@ set(SRCS
     "${BROTLI_SOURCE_DIR}/common/constants.c"
 )
 
-add_library(_brotli ${SRCS})
-add_library(ch_contrib::brotli ALIAS _brotli)
+add_library(brotli ${SRCS})
 
-target_include_directories(_brotli SYSTEM BEFORE PUBLIC "${BROTLI_SOURCE_DIR}/include")
+target_include_directories(brotli PUBLIC "${BROTLI_SOURCE_DIR}/include")
 
-target_compile_definitions(_brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
+if(M_LIBRARY)
+    target_link_libraries(brotli PRIVATE ${M_LIBRARY})
+endif()

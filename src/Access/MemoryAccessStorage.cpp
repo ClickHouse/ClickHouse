@@ -1,6 +1,5 @@
 #include <Access/MemoryAccessStorage.h>
-#include <Access/AccessChangesNotifier.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -8,13 +7,13 @@
 
 namespace DB
 {
-MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
+MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_)
+    : IAccessStorage(storage_name_)
 {
 }
 
 
-std::optional<UUID> MemoryAccessStorage::findImpl(AccessEntityType type, const String & name) const
+std::optional<UUID> MemoryAccessStorage::findImpl(EntityType type, const String & name) const
 {
     std::lock_guard lock{mutex};
     const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
@@ -27,7 +26,7 @@ std::optional<UUID> MemoryAccessStorage::findImpl(AccessEntityType type, const S
 }
 
 
-std::vector<UUID> MemoryAccessStorage::findAllImpl(AccessEntityType type) const
+std::vector<UUID> MemoryAccessStorage::findAllImpl(EntityType type) const
 {
     std::lock_guard lock{mutex};
     std::vector<UUID> result;
@@ -39,69 +38,64 @@ std::vector<UUID> MemoryAccessStorage::findAllImpl(AccessEntityType type) const
 }
 
 
-bool MemoryAccessStorage::exists(const UUID & id) const
+bool MemoryAccessStorage::existsImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return entries_by_id.contains(id);
+    return entries_by_id.count(id);
 }
 
 
-AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
+AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return nullptr;
-    }
+        throwNotFound(id);
     const Entry & entry = it->second;
     return entry.entity;
 }
 
 
-std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+String MemoryAccessStorage::readNameImpl(const UUID & id) const
 {
-    UUID id = generateRandomID();
-    std::lock_guard lock{mutex};
-    if (insertNoLock(id, new_entity, replace_if_exists, throw_if_exists))
-        return id;
-
-    return std::nullopt;
+    return readImpl(id)->getName();
 }
 
 
-bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+UUID MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists)
+{
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
+    UUID id = generateRandomID();
+    std::lock_guard lock{mutex};
+    insertNoLock(id, new_entity, replace_if_exists, notifications);
+    return id;
+}
+
+
+void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications)
 {
     const String & name = new_entity->getName();
-    AccessEntityType type = new_entity->getType();
+    EntityType type = new_entity->getType();
 
     /// Check that we can insert.
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    auto it_by_name = entries_by_name.find(name);
-    bool name_collision = (it_by_name != entries_by_name.end());
-
-    if (name_collision && !replace_if_exists)
+    auto it = entries_by_id.find(id);
+    if (it != entries_by_id.end())
     {
-        if (throw_if_exists)
-            throwNameCollisionCannotInsert(type, name);
-        else
-            return false;
-    }
-
-    auto it_by_id = entries_by_id.find(id);
-    if (it_by_id != entries_by_id.end())
-    {
-        const auto & existing_entry = it_by_id->second;
+        const auto & existing_entry = it->second;
         throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
     }
 
-    if (name_collision && replace_if_exists)
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    auto it2 = entries_by_name.find(name);
+    if (it2 != entries_by_name.end())
     {
-        const auto & existing_entry = *(it_by_name->second);
-        removeNoLock(existing_entry.id, /* throw_if_not_exists = */ false);
+        const auto & existing_entry = *(it2->second);
+        if (replace_if_exists)
+            removeNoLock(existing_entry.id, notifications);
+        else
+            throwNameCollisionCannotInsert(type, name);
     }
 
     /// Do insertion.
@@ -109,61 +103,54 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     entry.id = id;
     entry.entity = new_entity;
     entries_by_name[name] = &entry;
-    changes_notifier.onEntityAdded(id, new_entity);
-    return true;
+    prepareNotifications(entry, false, notifications);
 }
 
 
-bool MemoryAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
+void MemoryAccessStorage::removeImpl(const UUID & id)
 {
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     std::lock_guard lock{mutex};
-    return removeNoLock(id, throw_if_not_exists);
+    removeNoLock(id, notifications);
 }
 
 
-bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
+void MemoryAccessStorage::removeNoLock(const UUID & id, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return false;
-    }
+        throwNotFound(id);
 
     Entry & entry = it->second;
     const String & name = entry.entity->getName();
-    AccessEntityType type = entry.entity->getType();
+    EntityType type = entry.entity->getType();
+
+    prepareNotifications(entry, true, notifications);
 
     /// Do removing.
-    UUID removed_id = id;
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     entries_by_name.erase(name);
     entries_by_id.erase(it);
-
-    changes_notifier.onEntityRemoved(removed_id, type);
-    return true;
 }
 
 
-bool MemoryAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
+void MemoryAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
 {
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     std::lock_guard lock{mutex};
-    return updateNoLock(id, update_func, throw_if_not_exists);
+    updateNoLock(id, update_func, notifications);
 }
 
 
-bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
+void MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return false;
-    }
+        throwNotFound(id);
 
     Entry & entry = it->second;
     auto old_entity = entry.entity;
@@ -173,7 +160,7 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());
 
     if (*new_entity == *old_entity)
-        return true;
+        return;
 
     entry.entity = new_entity;
 
@@ -188,8 +175,7 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
         entries_by_name[new_entity->getName()] = &entry;
     }
 
-    changes_notifier.onEntityUpdated(id, new_entity);
-    return true;
+    prepareNotifications(entry, false, notifications);
 }
 
 
@@ -205,8 +191,16 @@ void MemoryAccessStorage::setAll(const std::vector<AccessEntityPtr> & all_entiti
 
 void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
 {
-    std::lock_guard lock{mutex};
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
 
+    std::lock_guard lock{mutex};
+    setAllNoLock(all_entities, notifications);
+}
+
+
+void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, Notifications & notifications)
+{
     boost::container::flat_set<UUID> not_used_ids;
     std::vector<UUID> conflicting_ids;
 
@@ -241,7 +235,7 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     boost::container::flat_set<UUID> ids_to_remove = std::move(not_used_ids);
     boost::range::copy(conflicting_ids, std::inserter(ids_to_remove, ids_to_remove.end()));
     for (const auto & id : ids_to_remove)
-        removeNoLock(id, /* throw_if_not_exists = */ false);
+        removeNoLock(id, notifications);
 
     /// Insert or update entities.
     for (const auto & [id, entity] : all_entities)
@@ -252,16 +246,81 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
             if (*(it->second.entity) != *entity)
             {
                 const AccessEntityPtr & changed_entity = entity;
-                updateNoLock(id,
-                             [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
-                             /* throw_if_not_exists = */ true);
+                updateNoLock(id, [&changed_entity](const AccessEntityPtr &) { return changed_entity; }, notifications);
             }
         }
         else
-        {
-            insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
-        }
+            insertNoLock(id, entity, false, notifications);
     }
 }
 
+
+void MemoryAccessStorage::prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const
+{
+    const AccessEntityPtr entity = remove ? nullptr : entry.entity;
+    for (const auto & handler : entry.handlers_by_id)
+        notifications.push_back({handler, entry.id, entity});
+
+    for (const auto & handler : handlers_by_type[static_cast<size_t>(entry.entity->getType())])
+        notifications.push_back({handler, entry.id, entity});
+}
+
+
+scope_guard MemoryAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+{
+    std::lock_guard lock{mutex};
+    auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    handlers.push_back(handler);
+    auto handler_it = std::prev(handlers.end());
+
+    return [this, type, handler_it]
+    {
+        std::lock_guard lock2{mutex};
+        auto & handlers2 = handlers_by_type[static_cast<size_t>(type)];
+        handlers2.erase(handler_it);
+    };
+}
+
+
+scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries_by_id.find(id);
+    if (it == entries_by_id.end())
+        return {};
+    const Entry & entry = it->second;
+    auto handler_it = entry.handlers_by_id.insert(entry.handlers_by_id.end(), handler);
+
+    return [this, id, handler_it]
+    {
+        std::lock_guard lock2{mutex};
+        auto it2 = entries_by_id.find(id);
+        if (it2 != entries_by_id.end())
+        {
+            const Entry & entry2 = it2->second;
+            entry2.handlers_by_id.erase(handler_it);
+        }
+    };
+}
+
+
+bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries_by_id.find(id);
+    if (it != entries_by_id.end())
+    {
+        const Entry & entry = it->second;
+        return !entry.handlers_by_id.empty();
+    }
+    return false;
+}
+
+
+bool MemoryAccessStorage::hasSubscriptionImpl(EntityType type) const
+{
+    std::lock_guard lock{mutex};
+    const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    return !handlers.empty();
+}
 }

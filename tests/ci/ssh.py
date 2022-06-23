@@ -27,19 +27,15 @@ class SSHAgent:
         self._env_backup["SSH_OPTIONS"] = os.environ.get("SSH_OPTIONS")
 
         # set ENV from stdout of ssh-agent
-        for line in self._run(["ssh-agent"]).splitlines():
+        for line in self._run(['ssh-agent']).splitlines():
             name, _, value = line.partition(b"=")
             if _ == b"=":
                 value = value.split(b";", 1)[0]
                 self._env[name.decode()] = value.decode()
                 os.environ[name.decode()] = value.decode()
 
-        ssh_options = (
-            "," + os.environ["SSH_OPTIONS"] if os.environ.get("SSH_OPTIONS") else ""
-        )
-        os.environ[
-            "SSH_OPTIONS"
-        ] = f"{ssh_options}UserKnownHostsFile=/dev/null,StrictHostKeyChecking=no"
+        ssh_options = "," + os.environ["SSH_OPTIONS"] if os.environ.get("SSH_OPTIONS") else ""
+        os.environ["SSH_OPTIONS"] = f"{ssh_options}UserKnownHostsFile=/dev/null,StrictHostKeyChecking=no"
 
     def add(self, key):
         key_pub = self._key_pub(key)
@@ -93,13 +89,7 @@ class SSHAgent:
     @staticmethod
     def _run(cmd, stdin=None):
         shell = isinstance(cmd, str)
-        with subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if stdin else None,
-            shell=shell,
-        ) as p:
+        with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE if stdin else None, shell=shell) as p:
             stdout, stderr = p.communicate(stdin)
 
             if stdout.strip().decode() == "The agent has no identities.":
@@ -111,17 +101,9 @@ class SSHAgent:
 
             return stdout
 
-
 class SSHKey:
-    def __init__(self, key_name=None, key_value=None):
-        if key_name is None and key_value is None:
-            raise Exception("Either key_name or key_value must be specified")
-        if key_name is not None and key_value is not None:
-            raise Exception("key_name or key_value must be specified")
-        if key_name is not None:
-            self.key = os.getenv(key_name)
-        else:
-            self.key = key_value
+    def __init__(self, key_name):
+        self.key = os.getenv(key_name)
         self._key_pub = None
         self._ssh_agent = SSHAgent()
 

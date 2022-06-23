@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iostream>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -108,8 +108,8 @@ inline void readVarInt(Int16 & x, ReadBuffer & istr)
 }
 
 template <typename T>
-requires (!std::is_same_v<T, UInt64>)
-inline void readVarUInt(T & x, ReadBuffer & istr)
+inline std::enable_if_t<!std::is_same_v<T, UInt64>, void>
+readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
@@ -132,7 +132,7 @@ inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
             if (istr.eof())
                 throwReadAfterEOF();
 
-        UInt64 byte = *istr.position(); /// NOLINT
+        UInt64 byte = *istr.position();
         ++istr.position();
         x |= (byte & 0x7F) << (7 * i);
 
@@ -172,7 +172,7 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
         if (istr == end)
             throwReadAfterEOF();
 
-        UInt64 byte = *istr; /// NOLINT
+        UInt64 byte = *istr;
         ++istr;
         x |= (byte & 0x7F) << (7 * i);
 

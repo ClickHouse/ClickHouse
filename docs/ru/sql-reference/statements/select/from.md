@@ -1,5 +1,5 @@
 ---
-sidebar_label: FROM
+toc_title: FROM
 ---
 
 # Секция FROM {#select-from}
@@ -20,7 +20,7 @@ sidebar_label: FROM
 
 Если в запросе используется модификатор `FINAL`, то ClickHouse полностью мёржит данные перед выдачей результата, таким образом выполняя все преобразования данных, которые производятся движком таблиц при мёржах.
 
-Он применим при выборе данных из таблиц, использующих [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)- семейство движков. Также поддерживается для:
+Он применим при выборе данных из таблиц, использующих [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)- семейство движков (кроме `GraphiteMergeTree`). Также поддерживается для:
 
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) варианты исполнения `MergeTree` движков.
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), и [MaterializedView](../../../engines/table-engines/special/materializedview.md), которые работают поверх других движков, если они созданы для таблиц с движками семейства `MergeTree`.

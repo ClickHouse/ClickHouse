@@ -1,4 +1,4 @@
-# query_thread_log
+# system.query_thread_log {#system_tables-query_thread_log}
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
@@ -10,8 +10,6 @@ To start logging:
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
-
-You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_thread_log` table.
 
 Columns:
 
@@ -114,6 +112,5 @@ ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'Compr
 **See Also**
 
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
--   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/query_thread_log) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_thread_log) <!--hide-->

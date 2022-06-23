@@ -52,7 +52,7 @@ private:
     static void visit(ASTExpressionList &, const ASTPtr &, Data &);
     static void visit(ASTFunction &, const ASTPtr &, Data &);
 
-    static void extractJoinUsingColumns(ASTPtr ast, Data & data);
+    static void extractJoinUsingColumns(const ASTPtr ast, Data & data);
 };
 
 /// Visits AST for names qualification.
@@ -67,6 +67,7 @@ struct RestoreQualifiedNamesMatcher
     {
         DatabaseAndTableWithAlias distributed_table;
         DatabaseAndTableWithAlias remote_table;
+        bool rename = false;
 
         void changeTable(ASTIdentifier & identifier) const;
     };

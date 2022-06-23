@@ -1,5 +1,5 @@
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Columns/ColumnSparse.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ void MaterializingTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & col : columns)
-        col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
+        col = col->convertToFullColumnIfConst();
 
     chunk.setColumns(std::move(columns), num_rows);
 }

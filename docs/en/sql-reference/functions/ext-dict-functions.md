@@ -1,17 +1,16 @@
 ---
-sidebar_position: 58
-sidebar_label: External Dictionaries
+toc_priority: 58
+toc_title: External Dictionaries
 ---
 
-:::note    
-For dictionaries created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
-:::
+!!! attention "Attention"
+    For dictionaries, created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 
-# Functions for Working with External Dictionaries
+# Functions for Working with External Dictionaries {#ext_dict_functions}
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-## dictGet, dictGetOrDefault, dictGetOrNull
+## dictGet, dictGetOrDefault, dictGetOrNull {#dictget}
 
 Retrieves values from an external dictionary.
 
@@ -54,7 +53,7 @@ The first column is `id`, the second column is `c1`.
 Configure the external dictionary:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -78,7 +77,7 @@ Configure the external dictionary:
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 Perform the query:
@@ -88,7 +87,7 @@ SELECT
     dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
     toTypeName(val) AS type
 FROM system.numbers
-LIMIT 3;
+LIMIT 3
 ```
 
 ``` text
@@ -114,7 +113,7 @@ The first column is `id`, the second is `c1`, the third is `c2`.
 Configure the external dictionary:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>ext-dict-mult</name>
         <source>
@@ -143,7 +142,7 @@ Configure the external dictionary:
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 Perform the query:
@@ -218,8 +217,8 @@ Result:
 ``` text
 (0,'2019-05-20')        0       \N      \N      (NULL,NULL)
 (1,'2019-05-20')        1       First   First   ('First','First')
-(2,'2019-05-20')        1       Second  \N      ('Second',NULL)
-(3,'2019-05-20')        1       Third   Third   ('Third','Third')
+(2,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(3,'2019-05-20')        0       \N      \N      (NULL,NULL)
 (4,'2019-05-20')        0       \N      \N      (NULL,NULL)
 ```
 
@@ -227,7 +226,7 @@ Result:
 
 -   [External Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)
 
-## dictHas
+## dictHas {#dicthas}
 
 Checks whether a key is present in a dictionary.
 
@@ -247,7 +246,7 @@ dictHas('dict_name', id_expr)
 
 Type: `UInt8`.
 
-## dictGetHierarchy
+## dictGetHierarchy {#dictgethierarchy}
 
 Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical.md).
 
@@ -268,7 +267,7 @@ dictGetHierarchy('dict_name', key)
 
 Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
 
-## dictIsIn
+## dictIsIn {#dictisin}
 
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 
@@ -289,7 +288,7 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 Type: `UInt8`.
 
-## dictGetChildren
+## dictGetChildren {#dictgetchildren}
 
 Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
 
@@ -338,7 +337,7 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 └──────────────────────────────────────────────────────┘
 ```
 
-## dictGetDescendant
+## dictGetDescendant {#dictgetdescendant}
 
 Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.
 
@@ -402,7 +401,7 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 └────────────────────────────────────────────────────────────┘
 ```
 
-## Other Functions
+## Other Functions {#ext_dict_functions-other}
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
 

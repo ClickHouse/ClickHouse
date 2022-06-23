@@ -1,12 +1,12 @@
 ---
-sidebar_position: 72
-sidebar_label: "Навигация по коду ClickHouse"
+toc_priority: 71
+toc_title: "Навигация по коду ClickHouse"
 ---
 
 
 # Навигация по коду ClickHouse {#navigatsiia-po-kodu-clickhouse}
 
-Для навигации по коду онлайн доступен **Woboq**, он расположен [здесь](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). В нём реализовано удобное перемещение между исходными файлами, семантическая подсветка, подсказки, индексация и поиск. Слепок кода обновляется ежедневно.
+Для навигации по коду онлайн доступен **Woboq**, он расположен [здесь](https://clickhouse.tech/codebrowser/html_report///ClickHouse/src/index.html). В нём реализовано удобное перемещение между исходными файлами, семантическая подсветка, подсказки, индексация и поиск. Слепок кода обновляется ежедневно.
 
 Также вы можете просматривать исходники на [GitHub](https://github.com/ClickHouse/ClickHouse).
 

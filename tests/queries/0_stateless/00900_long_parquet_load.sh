@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
 
 #
 # Load all possible .parquet files found in submodules.
@@ -40,12 +39,10 @@ DATA_DIR=$CUR_DIR/data_parquet
 #   Code: 349. DB::Ex---tion: Can not insert NULL data into non-nullable column "phoneNumbers": data for INSERT was parsed from stdin
 
 for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_ALL=C sort); do
+    echo === Try load data from "$NAME"
+
     JSON=$DATA_DIR/$NAME.json
     COLUMNS_FILE=$DATA_DIR/$NAME.columns
-
-    ([ -z "$PARQUET_READER" ] || [ ! -s "$PARQUET_READER" ]) && [ ! -s "$COLUMNS_FILE" ] && continue
-
-    echo === Try load data from "$NAME"
 
     # If you want change or add .parquet file - rm data_parquet/*.json data_parquet/*.columns
     [ -n "$PARQUET_READER" ] && [ ! -s "$COLUMNS_FILE" ] && [ ! -s "$JSON" ] && "$PARQUET_READER" --json "$DATA_DIR"/"$NAME" > "$JSON"

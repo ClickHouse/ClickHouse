@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/StringRef.h>
-
 #include <Common/Arena.h>
 
 /**
@@ -14,7 +12,7 @@
   * make a persistent copy of the key in each of the following cases:
   * 1) the aggregation method doesn't use temporary keys, so they're persistent
   *    from the start;
-  * 2) the key is already present in the hash table;
+  * 1) the key is already present in the hash table;
   * 3) that particular key is stored by value, e.g. a short StringRef key in
   *    StringHashMap.
   *

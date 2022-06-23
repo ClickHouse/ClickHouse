@@ -1,4 +1,12 @@
 <test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <settings>
+        <allow_experimental_window_functions>1</allow_experimental_window_functions>
+    </settings>
+
     <!--
         For some counters, find top 10 users by the numer of records.
         First with LIMIT BY, next with window functions.

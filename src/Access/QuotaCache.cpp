@@ -1,10 +1,10 @@
 #include <Access/EnabledQuota.h>
-#include <Access/Quota.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
-#include <base/range.h>
+#include <Common/thread_local_rng.h>
+#include <common/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/lower_bound.hpp>
@@ -21,6 +21,17 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    std::chrono::system_clock::duration randomDuration(std::chrono::seconds max)
+    {
+        auto count = std::chrono::duration_cast<std::chrono::system_clock::duration>(max).count();
+        std::uniform_int_distribution<Int64> distribution{0, count - 1};
+        return std::chrono::system_clock::duration(distribution(thread_local_rng));
+    }
+}
+
+
 void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota_id_)
 {
     quota = quota_;
@@ -33,25 +44,26 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
 {
     const auto & params = enabled.params;
+    using KeyType = Quota::KeyType;
     switch (quota->key_type)
     {
-        case QuotaKeyType::NONE:
+        case KeyType::NONE:
         {
             return "";
         }
-        case QuotaKeyType::USER_NAME:
+        case KeyType::USER_NAME:
         {
             return params.user_name;
         }
-        case QuotaKeyType::IP_ADDRESS:
+        case KeyType::IP_ADDRESS:
         {
             return params.client_address.toString();
         }
-        case QuotaKeyType::FORWARDED_IP_ADDRESS:
+        case KeyType::FORWARDED_IP_ADDRESS:
         {
             return params.forwarded_address;
         }
-        case QuotaKeyType::CLIENT_KEY:
+        case KeyType::CLIENT_KEY:
         {
             if (!params.client_key.empty())
                 return params.client_key;
@@ -59,19 +71,19 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
                 "Quota " + quota->getName() + " (for user " + params.user_name + ") requires a client supplied key.",
                 ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY);
         }
-        case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
+        case KeyType::CLIENT_KEY_OR_USER_NAME:
         {
             if (!params.client_key.empty())
                 return params.client_key;
             return params.user_name;
         }
-        case QuotaKeyType::CLIENT_KEY_OR_IP_ADDRESS:
+        case KeyType::CLIENT_KEY_OR_IP_ADDRESS:
         {
             if (!params.client_key.empty())
                 return params.client_key;
             return params.client_address.toString();
         }
-        case QuotaKeyType::MAX: break;
+        case KeyType::MAX: break;
     }
     throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
 }
@@ -82,21 +94,18 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::getOrBui
     auto it = key_to_intervals.find(key);
     if (it != key_to_intervals.end())
         return it->second;
-    return rebuildIntervals(key, std::chrono::system_clock::now());
+    return rebuildIntervals(key);
 }
 
 
 void QuotaCache::QuotaInfo::rebuildAllIntervals()
 {
-    if (key_to_intervals.empty())
-        return;
-    auto current_time = std::chrono::system_clock::now();
     for (const String & key : key_to_intervals | boost::adaptors::map_keys)
-        rebuildIntervals(key, current_time);
+        rebuildIntervals(key);
 }
 
 
-boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time)
+boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildIntervals(const String & key)
 {
     auto new_intervals = boost::make_shared<Intervals>();
     new_intervals->quota_name = quota->getName();
@@ -104,16 +113,22 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
     new_intervals->quota_key = key;
     auto & intervals = new_intervals->intervals;
     intervals.reserve(quota->all_limits.size());
+    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
     for (const auto & limits : quota->all_limits)
     {
-        intervals.emplace_back(limits.duration, limits.randomize_interval, current_time);
+        intervals.emplace_back();
         auto & interval = intervals.back();
-        for (auto quota_type : collections::range(QuotaType::MAX))
+        interval.duration = limits.duration;
+        std::chrono::system_clock::time_point end_of_interval{};
+        interval.randomize_interval = limits.randomize_interval;
+        if (limits.randomize_interval)
+            end_of_interval += randomDuration(limits.duration);
+        interval.end_of_interval = end_of_interval.time_since_epoch();
+        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
         {
-            auto quota_type_i = static_cast<size_t>(quota_type);
-            if (limits.max[quota_type_i])
-                interval.max[quota_type_i] = *limits.max[quota_type_i];
-            interval.used[quota_type_i] = 0;
+            if (limits.max[resource_type])
+                interval.max[resource_type] = *limits.max[resource_type];
+            interval.used[resource_type] = 0;
         }
     }
 
@@ -144,10 +159,9 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 
             /// Found an interval with the same duration, we need to copy its usage information to `result`.
             const auto & current_interval = *lower_bound;
-            for (auto quota_type : collections::range(QuotaType::MAX))
+            for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
             {
-                auto quota_type_i = static_cast<size_t>(quota_type);
-                new_interval.used[quota_type_i].store(current_interval.used[quota_type_i].load());
+                new_interval.used[resource_type].store(current_interval.used[resource_type].load());
                 new_interval.end_of_interval.store(current_interval.end_of_interval.load());
             }
         }
@@ -158,8 +172,8 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 }
 
 
-QuotaCache::QuotaCache(const AccessControl & access_control_)
-    : access_control(access_control_)
+QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
+    : access_control_manager(access_control_manager_)
 {
 }
 
@@ -201,7 +215,7 @@ void QuotaCache::ensureAllQuotasRead()
         return;
     all_quotas_read = true;
 
-    subscription = access_control.subscribeForChanges<Quota>(
+    subscription = access_control_manager.subscribeForChanges<Quota>(
         [&](const UUID & id, const AccessEntityPtr & entity)
         {
             if (entity)
@@ -210,9 +224,9 @@ void QuotaCache::ensureAllQuotasRead()
                 quotaRemoved(id);
         });
 
-    for (const UUID & quota_id : access_control.findAll<Quota>())
+    for (const UUID & quota_id : access_control_manager.findAll<Quota>())
     {
-        auto quota = access_control.tryRead<Quota>(quota_id);
+        auto quota = access_control_manager.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }

@@ -7,7 +7,7 @@
 
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
-#include <ctime>
+#include <time.h>
 
 
 namespace DB
@@ -43,13 +43,13 @@ private:
 class FunctionBaseNow : public IFunctionBase
 {
 public:
-    explicit FunctionBaseNow(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
-        : time_value(time_), argument_types(std::move(argument_types_)), return_type(std::move(return_type_)) {}
+    explicit FunctionBaseNow(time_t time_, DataTypePtr return_type_) : time_value(time_), return_type(return_type_) {}
 
     String getName() const override { return "now"; }
 
     const DataTypes & getArgumentTypes() const override
     {
+        static const DataTypes argument_types;
         return argument_types;
     }
 
@@ -65,11 +65,9 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     time_t time_value;
-    DataTypes argument_types;
     DataTypePtr return_type;
 };
 
@@ -118,10 +116,8 @@ public:
         }
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
-                time(nullptr), DataTypes{arguments.front().type},
-                std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0)));
-
-        return std::make_unique<FunctionBaseNow>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>());
+                time(nullptr), std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0)));
+        return std::make_unique<FunctionBaseNow>(time(nullptr), std::make_shared<DataTypeDateTime>());
     }
 };
 

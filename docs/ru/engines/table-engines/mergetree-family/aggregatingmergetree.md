@@ -1,6 +1,6 @@
 ---
-sidebar_position: 35
-sidebar_label: AggregatingMergeTree
+toc_priority: 35
+toc_title: AggregatingMergeTree
 ---
 
 # AggregatingMergeTree {#aggregatingmergetree}
@@ -9,7 +9,7 @@ sidebar_label: AggregatingMergeTree
 
 Таблицы типа `AggregatingMergeTree` могут использоваться для инкрементальной агрегации данных, в том числе, для агрегирующих материализованных представлений.
 
-Движок обрабатывает все столбцы типа [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md).
+Движок обрабатывает все столбцы типа [AggregateFunction](../../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
 
 Использование `AggregatingMergeTree` оправдано только в том случае, когда это уменьшает количество строк на порядки.
 
@@ -38,9 +38,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Attention"
+!!! attention "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-    :::
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (

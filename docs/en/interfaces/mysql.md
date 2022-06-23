@@ -1,9 +1,9 @@
 ---
-sidebar_position: 20
-sidebar_label: MySQL Interface
+toc_priority: 20
+toc_title: MySQL Interface
 ---
 
-# MySQL Interface
+# MySQL Interface {#mysql-interface}
 
 ClickHouse supports MySQL wire protocol. It can be enabled by [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting in configuration file:
 
@@ -36,7 +36,7 @@ mysql>
 ```
 
 For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
+If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool mysql).
 
 Restrictions:
 
@@ -44,10 +44,4 @@ Restrictions:
 
 -   some data types are sent as strings
 
-To cancel a long query use `KILL QUERY connection_id` statement (it is replaced with `KILL QUERY WHERE query_id = connection_id` while proceeding). For example:
-
-``` bash
-$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
-```
-
-[Original article](https://clickhouse.com/docs/en/interfaces/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->

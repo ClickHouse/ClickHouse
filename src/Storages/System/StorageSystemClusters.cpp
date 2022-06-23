@@ -45,8 +45,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
             // get an error when trying to get the info about DB from ZK.
             // Just ignore these inaccessible databases. A good example of a
             // failing test is `01526_client_start_and_exit`.
-            try
-            {
+            try {
                 writeCluster(res_columns, {name_and_database.first, replicated->getCluster()});
             }
             catch (...)

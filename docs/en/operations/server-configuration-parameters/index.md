@@ -1,9 +1,10 @@
 ---
-sidebar_position: 54
-sidebar_label: Server Configuration Parameters
+toc_folder_title: Server Configuration Parameters
+toc_priority: 54
+toc_title: Introduction
 ---
 
-# Server Configuration Parameters 
+# Server Configuration Parameters {#server-settings}
 
 This section contains descriptions of server settings that cannot be changed at the session or query level.
 
@@ -13,4 +14,4 @@ Other settings are described in the “[Settings](../../operations/settings/inde
 
 Before studying the settings, read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
-[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/) <!--hide-->

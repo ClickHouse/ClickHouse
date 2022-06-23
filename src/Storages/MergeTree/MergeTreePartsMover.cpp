@@ -94,7 +94,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     unsigned parts_to_move_by_ttl_rules = 0;
     double parts_to_move_total_size_bytes = 0.0;
 
-    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVectorForInternalUsage();
+    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVector();
 
     if (data_parts.empty())
         return false;
@@ -113,7 +113,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
-                if (unreserved_space < required_maximum_available_space && !disk->isBroken())
+                if (unreserved_space < required_maximum_available_space)
                     need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
             }
         }
@@ -122,9 +122,6 @@ bool MergeTreePartsMover::selectPartsForMove(
     time_t time_of_move = time(nullptr);
 
     auto metadata_snapshot = data->getInMemoryMetadataPtr();
-
-    if (need_to_move.empty() && !metadata_snapshot->hasAnyMoveTTL())
-        return false;
 
     for (const auto & part : data_parts)
     {
@@ -198,30 +195,28 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
     auto settings = data->getSettings();
-    auto part = moving_part.part;
-    auto disk = moving_part.reserved_space->getDisk();
-    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->volume->getDisk()->getName(), disk->getName());
 
+    auto part = moving_part.part;
+    LOG_TRACE(log, "Cloning part {}", part->name);
+
+    auto disk = moving_part.reserved_space->getDisk();
     const String directory_to_move = "moving";
-    if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+    if (settings->allow_remote_fs_zero_copy_replication)
     {
-        /// Try zero-copy replication and fallback to default copy if it's not possible
+        /// Try to fetch part from S3 without copy and fallback to default copy
+        /// if it's not possible
         moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / directory_to_move / "";
         String relative_path = part->relative_path;
         if (disk->exists(path_to_clone + relative_path))
         {
-            LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
+            LOG_WARNING(log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
             disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
-
         disk->createDirectories(path_to_clone);
         bool is_fetched = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
         if (!is_fetched)
-        {
-            LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             part->volume->getDisk()->copy(fs::path(data->getRelativeDataPath()) / relative_path / "", disk, path_to_clone);
-        }
         part->volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
     }
     else
@@ -235,8 +230,6 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part->loadVersionMetadata();
-    cloned_part->modification_time = disk->getLastModified(cloned_part->getFullRelativePath()).epochTime();
     return cloned_part;
 
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -10,7 +10,7 @@ namespace DB
 class StorageBlocks : public IStorage
 {
 /* Storage based on the prepared streams that already contain data blocks.
- * Used by Live and Window Views to complete stored query based on the mergeable blocks.
+ * Used by Live Views to complete stored query based on the mergeable blocks.
  */
 public:
     StorageBlocks(const StorageID & table_id_,
@@ -18,9 +18,9 @@ public:
         QueryProcessingStage::Enum to_stage_)
         : IStorage(table_id_), pipes(std::move(pipes_)), to_stage(to_stage_)
     {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_);
-        setInMemoryMetadata(storage_metadata);
+        StorageInMemoryMetadata metadata_;
+        metadata_.setColumns(columns_);
+        setInMemoryMetadata(metadata_);
     }
     static StoragePtr createStorage(const StorageID & table_id,
         const ColumnsDescription & columns, Pipes pipes, QueryProcessingStage::Enum to_stage)
@@ -34,14 +34,14 @@ public:
     bool supportsFinal() const override { return true; }
 
     QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override
     {
         return to_stage;
     }
 
     Pipe read(
         const Names & /*column_names*/,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -52,6 +52,7 @@ public:
     }
 
 private:
+    Block res_block;
     Pipes pipes;
     QueryProcessingStage::Enum to_stage;
 };

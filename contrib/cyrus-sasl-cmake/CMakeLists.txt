@@ -1,20 +1,8 @@
-if (${ENABLE_LIBRARIES} AND ${ENABLE_KRB5})
-    set (DEFAULT_ENABLE_CYRUS_SASL 1)
-else()
-    set (DEFAULT_ENABLE_CYRUS_SASL 0)
-endif()
-option(ENABLE_CYRUS_SASL "Enable cyrus-sasl" ${DEFAULT_ENABLE_CYRUS_SASL})
-
-if (NOT ENABLE_CYRUS_SASL)
-    message(STATUS "Not using cyrus-sasl")
-    return()
-endif()
-
 set(CYRUS_SASL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/cyrus-sasl")
 
-add_library(_sasl2)
+add_library(${CYRUS_SASL_LIBRARY})
 
-target_sources(_sasl2 PRIVATE
+target_sources(${CYRUS_SASL_LIBRARY} PRIVATE
     "${CYRUS_SASL_SOURCE_DIR}/plugins/gssapi.c"
     # "${CYRUS_SASL_SOURCE_DIR}/plugins/gssapiv2_init.c"
     "${CYRUS_SASL_SOURCE_DIR}/common/plugin_common.c"
@@ -32,11 +20,11 @@ target_sources(_sasl2 PRIVATE
     "${CYRUS_SASL_SOURCE_DIR}/lib/checkpw.c"
 )
 
-target_include_directories(_sasl2 PUBLIC
+target_include_directories(${CYRUS_SASL_LIBRARY} PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_include_directories(_sasl2 PRIVATE
+target_include_directories(${CYRUS_SASL_LIBRARY} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}  # for config.h
     "${CYRUS_SASL_SOURCE_DIR}/plugins"
     ${CYRUS_SASL_SOURCE_DIR}
@@ -50,7 +38,7 @@ target_include_directories(_sasl2 PRIVATE
     "${CYRUS_SASL_SOURCE_DIR}/tests"
 )
 
-target_compile_definitions(_sasl2 PUBLIC
+target_compile_definitions(${CYRUS_SASL_LIBRARY} PUBLIC
     HAVE_CONFIG_H
     # PLUGINDIR="/usr/local/lib/sasl2"
     PLUGINDIR=""
@@ -76,6 +64,6 @@ file(COPY
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(_sasl2 PUBLIC ch_contrib::krb5)
-
-add_library(ch_contrib::sasl2 ALIAS _sasl2)
+target_link_libraries(${CYRUS_SASL_LIBRARY}
+    PUBLIC ${KRB5_LIBRARY}
+)

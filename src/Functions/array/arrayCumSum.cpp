@@ -1,10 +1,9 @@
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-
+#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -18,9 +17,6 @@ namespace ErrorCodes
 
 struct ArrayCumSumImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -87,8 +83,8 @@ struct ArrayCumSumImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = ColumnVectorOrDecimal<Element>;
-        using ColVecResult = ColumnVectorOrDecimal<Result>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -103,10 +99,11 @@ struct ArrayCumSumImpl
             const IColumn::Offsets & offsets = array.getOffsets();
 
             typename ColVecResult::MutablePtr res_nested;
-            if constexpr (is_decimal<Element>)
+            if constexpr (IsDecimalNumber<Element>)
             {
-                const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
-                res_nested = ColVecResult::create(0, column_typed->getScale());
+                const typename ColVecType::Container & data =
+                    checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
+                res_nested = ColVecResult::create(0, data.getScale());
             }
             else
                 res_nested = ColVecResult::create();
@@ -122,8 +119,8 @@ struct ArrayCumSumImpl
         const IColumn::Offsets & offsets = array.getOffsets();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (is_decimal<Element>)
-            res_nested = ColVecResult::create(0, column->getScale());
+        if constexpr (IsDecimalNumber<Element>)
+            res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();
 

@@ -1,9 +1,9 @@
 ---
-sidebar_position: 4
-sidebar_label: MySQL
+toc_priority: 4
+toc_title: MySQL
 ---
 
-# MySQL
+# MySQL {#mysql}
 
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
@@ -19,7 +19,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 SETTINGS
     [connection_pool_size=16, ]
     [connection_max_tries=3, ]
-    [connection_wait_timeout=5, ] /* 0 -- do not wait */
     [connection_auto_close=true ]
 ;
 ```
@@ -108,45 +107,9 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## Settings {#mysql-settings}
-
-Default settings are not very efficient, since they do not even reuse connections. These settings allow you to increase the number of queries run by the server per second.
-
-### connection_auto_close {#connection-auto-close}
-
-Allows to automatically close the connection after query execution, i.e. disable connection reuse.
-
-Possible values:
-
--   1 — Auto-close connection is allowed, so the connection reuse is disabled
--   0 — Auto-close connection is not allowed, so the connection reuse is enabled
-
-Default value: `1`.
-
-### connection_max_tries {#connection-max-tries}
-
-Sets the number of retries for pool with failover.
-
-Possible values:
-
--   Positive integer.
--   0 — There are no retries for pool with failover.
-
-Default value: `3`.
-
-### connection_pool_size {#connection-pool-size}
-
-Size of connection pool (if all connections are in use, the query will wait until some connection will be freed).
-
-Possible values:
-
--   Positive integer.
-
-Default value: `16`.
-
 ## See Also {#see-also}
 
--   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
+-   [The ‘mysql’ table function](../../../sql-reference/table-functions/mysql.md)
 -   [Using MySQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/mysql/) <!--hide-->

@@ -8,9 +8,11 @@ namespace DB
 {
 
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
+    NamesAndTypesList columns(sample.getNamesAndTypesList());
+    fields.assign(columns.begin(), columns.end());
     field_tag_names.resize(sample.columns());
 
     bool need_validate_utf8 = false;
@@ -193,18 +195,15 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
 
 void XMLRowOutputFormat::onProgress(const Progress & value)
 {
-    statistics.progress.incrementPiecewiseAtomically(value);
+    progress.incrementPiecewiseAtomically(value);
 }
 
-void XMLRowOutputFormat::finalizeImpl()
+void XMLRowOutputFormat::writeLastSuffix()
 {
+
     writeCString("\t<rows>", *ostr);
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);
-
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
 
@@ -217,10 +216,10 @@ void XMLRowOutputFormat::finalizeImpl()
 
 void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
 {
-    if (statistics.applied_limit)
+    if (applied_limit)
     {
         writeCString("\t<rows_before_limit_at_least>", *ostr);
-        writeIntText(statistics.rows_before_limit, *ostr);
+        writeIntText(rows_before_limit, *ostr);
         writeCString("</rows_before_limit_at_least>\n", *ostr);
     }
 }
@@ -229,21 +228,21 @@ void XMLRowOutputFormat::writeStatistics()
 {
     writeCString("\t<statistics>\n", *ostr);
     writeCString("\t\t<elapsed>", *ostr);
-    writeText(statistics.watch.elapsedSeconds(), *ostr);
+    writeText(watch.elapsedSeconds(), *ostr);
     writeCString("</elapsed>\n", *ostr);
     writeCString("\t\t<rows_read>", *ostr);
-    writeText(statistics.progress.read_rows.load(), *ostr);
+    writeText(progress.read_rows.load(), *ostr);
     writeCString("</rows_read>\n", *ostr);
     writeCString("\t\t<bytes_read>", *ostr);
-    writeText(statistics.progress.read_bytes.load(), *ostr);
+    writeText(progress.read_bytes.load(), *ostr);
     writeCString("</bytes_read>\n", *ostr);
     writeCString("\t</statistics>\n", *ostr);
 }
 
 
-void registerOutputFormatXML(FormatFactory & factory)
+void registerOutputFormatProcessorXML(FormatFactory & factory)
 {
-    factory.registerOutputFormat("XML", [](
+    factory.registerOutputFormatProcessor("XML", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -251,9 +250,6 @@ void registerOutputFormatXML(FormatFactory & factory)
     {
         return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("XML");
-    factory.markFormatHasNoAppendSupport("XML");
 }
 
 }

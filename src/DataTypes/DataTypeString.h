@@ -1,18 +1,17 @@
 #pragma once
 
+#include <ostream>
+
 #include <DataTypes/IDataType.h>
 
 
 namespace DB
 {
 
-class ColumnString;
-
 class DataTypeString final : public IDataType
 {
 public:
     using FieldType = String;
-    using ColumnType = ColumnString;
     static constexpr bool is_parametric = false;
     static constexpr auto type_id = TypeIndex::String;
 

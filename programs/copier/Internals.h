@@ -13,12 +13,12 @@
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <boost/algorithm/string.hpp>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <base/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/typeid_cast.h>
 #include <Common/ClickHouseRevision.h>
@@ -49,7 +49,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Formats/FormatSettings.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/SquashingBlockInputStream.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/copyData.h>
+#include <DataStreams/NullBlockOutputStream.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -161,7 +165,10 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
         const ASTPtr & sharding_key_ast = nullptr);
 
-Block getBlockWithAllStreamData(QueryPipelineBuilder builder);
+
+BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream);
+
+Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream);
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 

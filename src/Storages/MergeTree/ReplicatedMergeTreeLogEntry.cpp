@@ -26,7 +26,6 @@ enum FormatVersion : UInt8
     FORMAT_WITH_DEDUPLICATE = 4,
     FORMAT_WITH_UUID = 5,
     FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
-    FORMAT_WITH_LOG_ENTRY_ID = 7,
 
     FORMAT_LAST
 };
@@ -44,16 +43,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     if (new_part_uuid != UUIDHelpers::Nil)
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_UUID);
 
-    if (!log_entry_id.empty())
-        format_version = std::max<UInt8>(format_version, FORMAT_WITH_LOG_ENTRY_ID);
-
     out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
-
-    if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
-        out << "log_entry_id: " << escape << log_entry_id << '\n';
 
     switch (type)
     {
@@ -79,7 +72,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
 
-            if (merge_type != MergeType::Regular)
+            if (merge_type != MergeType::REGULAR)
                 out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
 
             if (new_part_uuid != UUIDHelpers::Nil)
@@ -165,7 +158,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     out << '\n';
 
-    if (new_part_type != MergeTreeDataPartType::Wide && new_part_type != MergeTreeDataPartType::Unknown)
+    if (new_part_type != MergeTreeDataPartType::WIDE && new_part_type != MergeTreeDataPartType::UNKNOWN)
         out << "part_type: " << new_part_type.toString() << "\n";
 
     if (quorum)
@@ -198,9 +191,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     {
         in >> "block_id: " >> escape >> block_id >> "\n";
     }
-
-    if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
-        in >> "log_entry_id: " >> escape >> log_entry_id >> "\n";
 
     in >> type_str >> "\n";
 
@@ -319,12 +309,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         size_t columns_size;
         in >> columns_size >> "\n";
         columns_str.resize(columns_size);
-        in.readStrict(columns_str.data(), columns_size);
+        in.readStrict(&columns_str[0], columns_size);
         in >> "\nmetadata_str_size:\n";
         size_t metadata_size;
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
-        in.readStrict(metadata_str.data(), metadata_size);
+        in.readStrict(&metadata_str[0], metadata_size);
     }
     else if (type_str == "sync_pinned_part_uuids")
     {
@@ -348,7 +338,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> "\n";
     }
     else
-        new_part_type = MergeTreeDataPartType::Wide;
+        new_part_type = MergeTreeDataPartType::WIDE;
 
     /// Optional field.
     if (!in.eof())
@@ -502,17 +492,6 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
         return {};
 
     return {new_part_name};
-}
-
-String ReplicatedMergeTreeLogEntryData::getDescriptionForLogs(MergeTreeDataFormatVersion format_version) const
-{
-    String description = fmt::format("{} with virtual parts [{}]", typeToString(), fmt::join(getVirtualPartNames(format_version), ", "));
-    if (auto drop_range = getDropRange(format_version))
-    {
-        description += " and drop range ";
-        description += *drop_range;
-    }
-    return description;
 }
 
 }

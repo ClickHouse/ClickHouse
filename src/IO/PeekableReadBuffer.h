@@ -20,11 +20,9 @@ class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
 public:
-    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = 0);
+    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~PeekableReadBuffer() override;
-
-    void prefetch() override { sub_buf.prefetch(); }
 
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
@@ -68,7 +66,7 @@ public:
     bool hasUnreadData() const;
 
     // for streaming reading (like in Kafka) we need to restore initial state of the buffer
-    // without recreating the buffer.
+    // w/o recreating the buffer.
     void reset();
 
 private:
@@ -86,21 +84,11 @@ private:
     /// Updates all invalidated pointers and sizes.
     void resizeOwnMemoryIfNecessary(size_t bytes_to_append);
 
-    char * getMemoryData() { return use_stack_memory ? stack_memory : memory.data(); }
-    const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
-
 
     ReadBuffer & sub_buf;
     size_t peeked_size = 0;
     std::optional<Position> checkpoint = std::nullopt;
     bool checkpoint_in_own_memory = false;
-
-    /// To prevent expensive and in some cases unnecessary memory allocations on PeekableReadBuffer
-    /// creation (for example if PeekableReadBuffer is often created or if we need to remember small amount of
-    /// data after checkpoint), at the beginning we will use small amount of memory on stack and allocate
-    /// larger buffer only if reserved memory is not enough.
-    char stack_memory[16];
-    bool use_stack_memory = true;
 };
 
 

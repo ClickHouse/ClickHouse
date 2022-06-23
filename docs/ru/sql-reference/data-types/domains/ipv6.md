@@ -1,6 +1,6 @@
 ---
-sidebar_position: 60
-sidebar_label: IPv6
+toc_priority: 60
+toc_title: IPv6
 ---
 
 ## IPv6 {#ipv6}
@@ -31,15 +31,15 @@ CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 `IPv6` поддерживает вставку в виде строк с текстовым представлением IPv6 адреса:
 
 ``` sql
-INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.com', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.com/docs/en/', '2a02:e980:1e::1');
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.tech', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.tech/docs/en/', '2a02:e980:1e::1');
 
 SELECT * FROM hits;
 ```
 
 ``` text
 ┌─url────────────────────────────────┬─from──────────────────────────┐
-│ https://clickhouse.com          │ 2001:44c8:129:2632:33:0:252:2 │
-│ https://clickhouse.com/docs/en/ │ 2a02:e980:1e::1               │
+│ https://clickhouse.tech          │ 2001:44c8:129:2632:33:0:252:2 │
+│ https://clickhouse.tech/docs/en/ │ 2a02:e980:1e::1               │
 │ https://wikipedia.org              │ 2a02:aa08:e000:3100::2        │
 └────────────────────────────────────┴───────────────────────────────┘
 ```

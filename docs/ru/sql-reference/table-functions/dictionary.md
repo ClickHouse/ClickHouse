@@ -1,6 +1,6 @@
 ---
-sidebar_position: 54
-sidebar_label: dictionary
+toc_priority: 54
+toc_title: dictionary
 ---
 
 # dictionary {#dictionary-function}
@@ -13,7 +13,7 @@ sidebar_label: dictionary
 dictionary('dict')
 ```
 
-**Аргументы**
+**Аргументы** 
 
 -   `dict` — имя словаря. [String](../../sql-reference/data-types/string.md).
 

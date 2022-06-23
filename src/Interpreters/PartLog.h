@@ -1,10 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
-#include <Storages/MergeTree/MergeType.h>
 
 
 namespace DB
@@ -22,22 +18,9 @@ struct PartLogElement
         MOVE_PART = 6,
     };
 
-    enum MergeReasonType
-    {
-        /// merge_reason is relevant only for event_type = 'MERGE_PARTS', in other cases it is NOT_A_MERGE
-        NOT_A_MERGE = 1,
-        /// Just regular merge
-        REGULAR_MERGE = 2,
-        /// Merge assigned to delete some data from parts (with TTLMergeSelector)
-        TTL_DELETE_MERGE = 3,
-        /// Merge with recompression
-        TTL_RECOMPRESS_MERGE = 4,
-    };
-
     String query_id;
 
     Type event_type = NEW_PART;
-    MergeReasonType merge_reason = NOT_A_MERGE;
 
     time_t event_time = 0;
     Decimal64 event_time_microseconds = 0;
@@ -47,10 +30,7 @@ struct PartLogElement
     String table_name;
     String part_name;
     String partition_id;
-    String disk_name;
     String path_on_disk;
-
-    MergeTreeDataPartType part_type;
 
     /// Size of the part
     UInt64 rows = 0;
@@ -69,13 +49,12 @@ struct PartLogElement
     UInt16 error = 0;
     String exception;
 
+
     static std::string name() { return "PartLog"; }
 
-    static MergeReasonType getMergeReasonType(MergeType merge_type);
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class IMergeTreeDataPart;

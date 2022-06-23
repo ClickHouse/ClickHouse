@@ -2,7 +2,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
@@ -11,8 +11,8 @@
 #include <Common/assert_cast.h>
 #include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-#include <base/sort.h>
-#include <base/scope_guard.h>
+#include <common/sort.h>
+#include <common/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -49,12 +49,6 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     }
 
     return new_col_holder;
-}
-
-bool ColumnFixedString::isDefaultAt(size_t index) const
-{
-    assert(index < size());
-    return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
 void ColumnFixedString::insert(const Field & x)
@@ -142,49 +136,118 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
 
-struct ColumnFixedString::ComparatorBase
+template <bool positive>
+struct ColumnFixedString::less
 {
     const ColumnFixedString & parent;
-
-    explicit ComparatorBase(const ColumnFixedString & parent_)
-        : parent(parent_)
-    {
-    }
-
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
+    bool operator()(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
-
-        return res;
+        return positive ? (res < 0) : (res > 0);
     }
 };
 
-void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
-    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorAscendingStable(*this), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
+    size_t s = size();
+    res.resize(s);
+    for (size_t i = 0; i < s; ++i)
+        res[i] = i;
+
+    if (limit >= s)
+        limit = 0;
+
+    if (limit)
+    {
+        if (reverse)
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+        else
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+    }
+    else
+    {
+        if (reverse)
+            std::sort(res.begin(), res.end(), less<false>(*this));
+        else
+            std::sort(res.begin(), res.end(), less<true>(*this));
+    }
 }
 
-void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
 {
-    auto comparator_equal = ComparatorEqual(*this);
+    if (equal_ranges.empty())
+        return;
 
-    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    if (limit >= size() || limit >= equal_ranges.back().second)
+        limit = 0;
+
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    EqualRanges new_ranges;
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto& [first, last] = equal_ranges[i];
+        if (reverse)
+            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
+        else
+            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
+
+        auto new_first = first;
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+    if (limit)
+    {
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
+        if (reverse)
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+        else
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
 }
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -207,7 +270,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 {
     size_t col_size = size();
     if (col_size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
+        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     auto res = ColumnFixedString::create(n);
 
@@ -218,42 +281,51 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     const UInt8 * filt_end = filt_pos + col_size;
     const UInt8 * data_pos = chars.data();
 
+#ifdef __SSE2__
     /** A slightly more optimized version.
         * Based on the assumption that often pieces of consecutive values
         *  completely pass or do not pass the filter.
         * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
         */
-    static constexpr size_t SIMD_BYTES = 64;
-    const UInt8 * filt_end_aligned = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
+
+    static constexpr size_t SIMD_BYTES = 16;
+    const __m128i zero16 = _mm_setzero_si128();
+    const UInt8 * filt_end_sse = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
     const size_t chars_per_simd_elements = SIMD_BYTES * n;
 
-    while (filt_pos < filt_end_aligned)
+    while (filt_pos < filt_end_sse)
     {
-        uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
+        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+        mask = ~mask;
 
-        if (0xffffffffffffffff == mask)
+        if (0 == mask)
+        {
+            /// Nothing is inserted.
+            data_pos += chars_per_simd_elements;
+        }
+        else if (0xFFFF == mask)
         {
             res->chars.insert(data_pos, data_pos + chars_per_simd_elements);
+            data_pos += chars_per_simd_elements;
         }
         else
         {
             size_t res_chars_size = res->chars.size();
-            while (mask)
+            for (size_t i = 0; i < SIMD_BYTES; ++i)
             {
-                size_t index = __builtin_ctzll(mask);
-                res->chars.resize(res_chars_size + n);
-                memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
-                res_chars_size += n;
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                if (filt_pos[i])
+                {
+                    res->chars.resize(res_chars_size + n);
+                    memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos, n);
+                    res_chars_size += n;
+                }
+                data_pos += n;
             }
         }
-        data_pos += chars_per_simd_elements;
+
         filt_pos += SIMD_BYTES;
     }
+#endif
 
     size_t res_chars_size = res->chars.size();
     while (filt_pos < filt_end)
@@ -272,35 +344,32 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
-void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
-{
-    if (mask.size() < size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
-
-    int index = mask.size() - 1;
-    int from = size() - 1;
-    chars.resize_fill(mask.size() * n, 0);
-    while (index >= 0)
-    {
-        if (!!mask[index] ^ inverted)
-        {
-            if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
-
-            memcpy(&chars[index * n], &chars[from * n], n);
-            --from;
-        }
-
-        --index;
-    }
-
-    if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
-}
-
 ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
 {
-    return permuteImpl(*this, perm, limit);
+    size_t col_size = size();
+
+    if (limit == 0)
+        limit = col_size;
+    else
+        limit = std::min(col_size, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    if (limit == 0)
+        return ColumnFixedString::create(n);
+
+    auto res = ColumnFixedString::create(n);
+
+    Chars & res_chars = res->chars;
+
+    res_chars.resize(n * limit);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < limit; ++i, offset += n)
+        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[perm[i] * n], n);
+
+    return res;
 }
 
 
@@ -313,7 +382,6 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 
@@ -370,12 +438,13 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    auto cmp_less = ComparatorAscendingUnstable(*this);
+    less<true> less_op(*this);
+
     for (size_t i = 1; i < col_size; ++i)
     {
-        if (cmp_less(i, min_idx))
+        if (less_op(i, min_idx))
             min_idx = i;
-        else if (cmp_less(max_idx, i))
+        else if (less_op(max_idx, i))
             max_idx = i;
     }
 
@@ -396,9 +465,9 @@ ColumnPtr ColumnFixedString::compress() const
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    const size_t column_size = size();
-    const size_t compressed_size = compressed->size();
-    return ColumnCompressed::create(column_size, compressed_size,
+    size_t column_size = size();
+
+    return ColumnCompressed::create(column_size, compressed->size(),
         [compressed = std::move(compressed), column_size, n = n]
         {
             size_t chars_size = n * column_size;

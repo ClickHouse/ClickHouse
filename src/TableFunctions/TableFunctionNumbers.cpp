@@ -2,6 +2,7 @@
 #include <TableFunctions/TableFunctionNumbers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -42,7 +43,7 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
         UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
 
-        auto res = std::make_shared<StorageSystemNumbers>(StorageID(getDatabaseName(), table_name), multithreaded, length, offset, false);
+        auto res = StorageSystemNumbers::create(StorageID(getDatabaseName(), table_name), multithreaded, length, offset, false);
         res->startup();
         return res;
     }

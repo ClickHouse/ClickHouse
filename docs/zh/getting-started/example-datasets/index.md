@@ -1,6 +1,7 @@
 ---
-sidebar_label: 示例数据集
-sidebar_position: 12
+toc_folder_title: "\u793A\u4F8B\u6570\u636E\u96C6"
+toc_priority: 12
+toc_title: "\u5BFC\u8A00"
 ---
 
 # 示例数据集 {#example-datasets}
@@ -17,4 +18,4 @@ sidebar_position: 12
 -   [New York Taxi Data](../../getting-started/example-datasets/nyc-taxi.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
 
-[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->

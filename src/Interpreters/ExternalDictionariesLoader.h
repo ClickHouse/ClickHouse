@@ -46,6 +46,7 @@ protected:
     /// Try convert qualified dictionary name to persistent UUID
     std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
 
+
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
 };

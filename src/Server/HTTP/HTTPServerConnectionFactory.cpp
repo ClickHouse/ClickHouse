@@ -11,9 +11,9 @@ HTTPServerConnectionFactory::HTTPServerConnectionFactory(
     poco_check_ptr(factory);
 }
 
-Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
+Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket)
 {
-    return new HTTPServerConnection(context, tcp_server, socket, params, factory);
+    return new HTTPServerConnection(context, socket, params, factory);
 }
 
 }

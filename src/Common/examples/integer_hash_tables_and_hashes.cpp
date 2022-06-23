@@ -13,7 +13,7 @@
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>

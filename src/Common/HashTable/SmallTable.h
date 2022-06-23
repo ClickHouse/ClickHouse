@@ -79,7 +79,7 @@ public:
     class Reader final : private Cell::State
     {
     public:
-        explicit Reader(DB::ReadBuffer & in_)
+        Reader(DB::ReadBuffer & in_)
             : in(in_)
         {
         }
@@ -129,7 +129,7 @@ public:
         bool is_initialized = false;
     };
 
-    class iterator /// NOLINT
+    class iterator
     {
         Self * container = nullptr;
         Cell * ptr = nullptr;
@@ -137,7 +137,7 @@ public:
         friend class SmallTable;
 
     public:
-        iterator() {} /// NOLINT
+        iterator() {}
         iterator(Self * container_, Cell * ptr_) : container(container_), ptr(ptr_) {}
 
         bool operator== (const iterator & rhs) const { return ptr == rhs.ptr; }
@@ -156,7 +156,7 @@ public:
     };
 
 
-    class const_iterator /// NOLINT
+    class const_iterator
     {
         const Self * container = nullptr;
         const Cell * ptr = nullptr;
@@ -164,9 +164,9 @@ public:
         friend class SmallTable;
 
     public:
-        const_iterator() = default;
-        const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {} /// NOLINT
-        const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {} /// NOLINT
+        const_iterator() {}
+        const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {}
+        const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {}
 
         bool operator== (const const_iterator & rhs) const { return ptr == rhs.ptr; }
         bool operator!= (const const_iterator & rhs) const { return ptr != rhs.ptr; }

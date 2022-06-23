@@ -15,11 +15,11 @@ CREATE TABLE lc_nullable (
     f64 Array(LowCardinality(Nullable(Float64))),
 
     date Array(LowCardinality(Nullable(Date))),
-    date_time Array(LowCardinality(Nullable(DateTime('Asia/Istanbul')))),
+    date_time Array(LowCardinality(Nullable(DateTime('Europe/Moscow')))),
 
     str Array(LowCardinality(Nullable(String))),
     fixed_string Array(LowCardinality(Nullable(FixedString(5))))
-) ENGINE = MergeTree() ORDER BY order_key SETTINGS allow_nullable_key = 1;
+) ENGINE = MergeTree() ORDER BY order_key;
 
 INSERT INTO lc_nullable SELECT
     groupArray(number) AS order_key,
@@ -33,8 +33,8 @@ INSERT INTO lc_nullable SELECT
     groupArray(toUInt64(number)) AS u64,
     groupArray(toFloat32(number)) AS f32,
     groupArray(toFloat64(number)) AS f64,
-    groupArray(toDate(number, 'Asia/Istanbul')) AS date,
-    groupArray(toDateTime(number, 'Asia/Istanbul')) AS date_time,
+    groupArray(toDate(number, 'Europe/Moscow')) AS date,
+    groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time,
     groupArray(toString(number)) AS str,
     groupArray(toFixedString(toString(number), 5)) AS fixed_string
     FROM (SELECT number FROM system.numbers LIMIT 15);
@@ -51,8 +51,8 @@ INSERT INTO lc_nullable SELECT
     groupArray(toUInt64(num)) AS u64,
     groupArray(toFloat32(num)) AS f32,
     groupArray(toFloat64(num)) AS f64,
-    groupArray(toDate(num, 'Asia/Istanbul')) AS date,
-    groupArray(toDateTime(num, 'Asia/Istanbul')) AS date_time,
+    groupArray(toDate(num, 'Europe/Moscow')) AS date,
+    groupArray(toDateTime(num, 'Europe/Moscow')) AS date_time,
     groupArray(toString(num)) AS str,
     groupArray(toFixedString(toString(num), 5)) AS fixed_string
     FROM (SELECT negate(number) as num FROM system.numbers LIMIT 15);
@@ -69,8 +69,8 @@ INSERT INTO lc_nullable SELECT
     groupArray(toUInt64(number)) AS u64,
     groupArray(toFloat32(number)) AS f32,
     groupArray(toFloat64(number)) AS f64,
-    groupArray(toDate(number, 'Asia/Istanbul')) AS date,
-    groupArray(toDateTime(number, 'Asia/Istanbul')) AS date_time,
+    groupArray(toDate(number, 'Europe/Moscow')) AS date,
+    groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time,
     groupArray(toString(number)) AS str,
     groupArray(toFixedString(toString(number), 5)) AS fixed_string
     FROM (SELECT number FROM system.numbers WHERE number >= 5 LIMIT 15);
@@ -87,8 +87,8 @@ INSERT INTO lc_nullable SELECT
     groupArray(toUInt64(number)) AS u64,
     groupArray(toFloat32(number)) AS f32,
     groupArray(toFloat64(number)) AS f64,
-    groupArray(toDate(number, 'Asia/Istanbul')) AS date,
-    groupArray(toDateTime(number, 'Asia/Istanbul')) AS date_time,
+    groupArray(toDate(number, 'Europe/Moscow')) AS date,
+    groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time,
     groupArray(toString(number)) AS str,
     groupArray(toFixedString(toString(number), 5)) AS fixed_string
     FROM (SELECT number FROM system.numbers WHERE number >= 10 LIMIT 15);
@@ -123,8 +123,8 @@ INSERT INTO lc_nullable SELECT
     [NULL, toUInt64(n)] AS u64,
     [NULL, toFloat32(n)] AS f32,
     [NULL, toFloat64(n)] AS f64,
-    [NULL, toDate(n, 'Asia/Istanbul')] AS date,
-    [NULL, toDateTime(n, 'Asia/Istanbul')] AS date_time,
+    [NULL, toDate(n, 'Europe/Moscow')] AS date,
+    [NULL, toDateTime(n, 'Europe/Moscow')] AS date_time,
     [NULL, toString(n)] AS str,
     [NULL, toFixedString(toString(n), 5)] AS fixed_string
     FROM (SELECT 100 as n);
@@ -140,7 +140,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 1);
 SELECT count() FROM lc_nullable WHERE has(f32, 1);
 SELECT count() FROM lc_nullable WHERE has(f64, 1);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-01-02'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:00:01', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:00:01', 'Europe/Moscow'));
 SELECT count() FROM lc_nullable WHERE has(str, '1');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('1', 5));
 
@@ -168,7 +168,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 5);
 SELECT count() FROM lc_nullable WHERE has(f32, 5);
 SELECT count() FROM lc_nullable WHERE has(f64, 5);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-01-06'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:00:05', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:00:05', 'Europe/Moscow'));
 SELECT count() FROM lc_nullable WHERE has(str, '5');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('5', 5));
 
@@ -183,7 +183,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 10);
 SELECT count() FROM lc_nullable WHERE has(f32, 10);
 SELECT count() FROM lc_nullable WHERE has(f64, 10);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-01-11'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:00:10', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:00:10', 'Europe/Moscow'));
 SELECT count() FROM lc_nullable WHERE has(str, '10');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('10', 5));
 
@@ -213,7 +213,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 100);
 SELECT count() FROM lc_nullable WHERE has(f32, 100);
 SELECT count() FROM lc_nullable WHERE has(f64, 100);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-04-11'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:01:40', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:01:40', 'Europe/Moscow'));
 SELECT count() FROM lc_nullable WHERE has(str, '100');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('100', 5));
 

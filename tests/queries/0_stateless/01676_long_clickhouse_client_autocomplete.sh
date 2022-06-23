@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # NOTE: database = $CLICKHOUSE_DATABASE is superfluous
 
-function test_completion_word_client()
+function test_completion_word()
 {
     local w=$1 && shift
 
@@ -20,11 +19,11 @@ function test_completion_word_client()
 log_user 0
 set timeout 3
 match_max 100000
+# A default timeout action is to do nothing, change it to fail
 expect_after {
-    # Do not ignore eof from expect
-    eof { exp_continue }
-    # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    timeout {
+        exit 1
+    }
 }
 
 spawn bash -c "$CLICKHOUSE_CLIENT_BINARY $CLICKHOUSE_CLIENT_OPT"
@@ -55,7 +54,7 @@ EOF
 
 # last 3 bytes will be completed,
 # so take this in mind when you will update the list.
-client_compwords_positive=(
+compwords_positive=(
     # system.functions
     concatAssumeInjective
     # system.table_engines
@@ -89,73 +88,8 @@ client_compwords_positive=(
     # system.dictionaries
     # FIXME: none
 )
-
-
-function test_completion_word_local()
-{
-    local w=$1 && shift
-
-    local w_len=${#w}
-    local compword_begin=${w:0:$((w_len-3))}
-    local compword_end=${w:$((w_len-3))}
-
-    # NOTE: here and below you should escape variables of the expect.
-    timeout 60s expect << EOF
-log_user 0
-set timeout 3
-match_max 100000
-expect_after {
-    # Do not ignore eof from expect
-    eof { exp_continue }
-    # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
-}
-
-spawn bash -c "$CLICKHOUSE_LOCAL"
-expect ":) "
-
-# Make a query
-send -- "SET $compword_begin"
-expect "SET $compword_begin"
-
-# Wait for suggestions to load, they are loaded in background
-set is_done 0
-while {\$is_done == 0} {
-    send -- "\\t"
-    expect {
-        "$compword_begin$compword_end" {
-            set is_done 1
-        }
-        default {
-            sleep 1
-        }
-    }
-}
-
-send -- "\\3\\4"
-expect eof
-EOF
-}
-
-local_compwords_positive=(
-    # system.functions
-    concatAssumeInjective
-    # system.table_engines
-    ReplacingMergeTree
-    # system.formats
-    JSONEachRow
-    # system.table_functions
-    clusterAllReplicas
-    # system.data_type_families
-    SimpleAggregateFunction
-)
-
-for w in "${client_compwords_positive[@]}"; do
-    test_completion_word_client "$w" || echo "[FAIL] $w (positive)"
-done
-
-for w in "${local_compwords_positive[@]}"; do
-    test_completion_word_local "$w" || echo "[FAIL] $w (positive)"
+for w in "${compwords_positive[@]}"; do
+    test_completion_word "$w" || echo "[FAIL] $w (positive)"
 done
 
 exit 0

@@ -3,7 +3,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
-#include <Access/Common/AccessType.h>
 
 #include <memory>
 #include <string>
@@ -53,29 +52,16 @@ public:
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
 
-    /// Check if table function needs a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
-    /// It's used for schema inference.
-    virtual bool needStructureHint() const { return false; }
-
-    /// Set a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
-    /// This hint could be used not to repeat schema in function arguments.
-    virtual void setStructureHint(const ColumnsDescription &) {}
-
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;
 
     virtual ~ITableFunction() = default;
 
 private:
     virtual StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;
-
     virtual const char * getStorageTypeName() const = 0;
-
-    virtual AccessType getSourceAccessType() const;
 };
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;

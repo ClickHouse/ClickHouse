@@ -9,8 +9,6 @@
 
 #include <deque>
 
-#include <base/sort.h>
-
 
 namespace DB
 {
@@ -41,7 +39,7 @@ void LogicalExpressionsOptimizer::perform()
 {
     if (select_query == nullptr)
         return;
-    if (visited_nodes.contains(select_query))
+    if (visited_nodes.count(select_query))
         return;
 
     size_t position = 0;
@@ -96,7 +94,7 @@ void LogicalExpressionsOptimizer::reorderColumns()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
-    if (visited_nodes.contains(select_query))
+    if (visited_nodes.count(select_query))
         return;
 
     using Edge = std::pair<IAST *, IAST *>;
@@ -161,7 +159,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
             {
                 if (!child->as<ASTSelectQuery>())
                 {
-                    if (!visited_nodes.contains(child.get()))
+                    if (!visited_nodes.count(child.get()))
                         to_visit.push_back(Edge(to_node, &*child));
                     else
                     {
@@ -182,7 +180,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
     {
         auto & equalities = chain.second;
         auto & equality_functions = equalities.functions;
-        ::sort(equality_functions.begin(), equality_functions.end());
+        std::sort(equality_functions.begin(), equality_functions.end());
     }
 }
 
@@ -239,7 +237,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
-    ::sort(tuple.begin(), tuple.end());
+    std::sort(tuple.begin(), tuple.end());
 
     /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
     ASTPtr equals_expr_lhs;

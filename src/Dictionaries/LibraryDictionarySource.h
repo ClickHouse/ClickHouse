@@ -1,7 +1,8 @@
 #pragma once
 
-#include <BridgeHelper/LibraryBridgeHelper.h>
-#include <Common/LocalDateTime.h>
+#include <Common/SharedLibrary.h>
+#include <Bridge/LibraryBridgeHelper.h>
+#include <common/LocalDateTime.h>
 #include <Core/UUID.h>
 #include "DictionaryStructure.h"
 #include <Core/ExternalResultDescription.h>
@@ -46,16 +47,16 @@ public:
 
     ~LibraryDictionarySource() override;
 
-    QueryPipeline loadAll() override;
+    BlockInputStreamPtr loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override
+    BlockInputStreamPtr loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for LibraryDictionarySource");
     }
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
 
     bool isModified() const override;
 

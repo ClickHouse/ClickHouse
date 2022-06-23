@@ -10,7 +10,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <Common/MemorySanitizer.h>
 
@@ -157,7 +157,7 @@ struct HashTableCell
 
     Key key;
 
-    HashTableCell() {} /// NOLINT
+    HashTableCell() {}
 
     /// Create a cell with the given key / key and value.
     HashTableCell(const Key & key_, const State &) : key(key_) {}
@@ -602,7 +602,7 @@ protected:
 
 
     template <typename Derived, bool is_const>
-    class iterator_base /// NOLINT
+    class iterator_base
     {
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
@@ -613,7 +613,7 @@ protected:
         friend class HashTable;
 
     public:
-        iterator_base() {} /// NOLINT
+        iterator_base() {}
         iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
 
         bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
@@ -628,7 +628,7 @@ protected:
                 ++ptr;
 
             /// Skip empty cells in the main buffer.
-            auto * buf_end = container->buf + container->grower.bufSize();
+            auto buf_end = container->buf + container->grower.bufSize();
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -661,7 +661,7 @@ protected:
           * compatibility with std find(). Unfortunately, now is not the time to
           * do this.
           */
-        operator Cell * () const { return nullptr; } /// NOLINT
+        operator Cell * () const { return nullptr; }
     };
 
 
@@ -684,7 +684,7 @@ public:
         alloc(grower);
     }
 
-    HashTable(size_t reserve_for_num_elements) /// NOLINT
+    HashTable(size_t reserve_for_num_elements)
     {
         if (Cell::need_zero_value_storage)
             this->zeroValue()->setZero();
@@ -692,7 +692,7 @@ public:
         alloc(grower);
     }
 
-    HashTable(HashTable && rhs) noexcept
+    HashTable(HashTable && rhs)
         : buf(nullptr)
     {
         *this = std::move(rhs);
@@ -704,7 +704,7 @@ public:
         free();
     }
 
-    HashTable & operator=(HashTable && rhs) noexcept
+    HashTable & operator= (HashTable && rhs)
     {
         destroyElements();
         free();
@@ -713,10 +713,10 @@ public:
         std::swap(m_size, rhs.m_size);
         std::swap(grower, rhs.grower);
 
-        Hash::operator=(std::move(rhs)); ///NOLINT
-        Allocator::operator=(std::move(rhs)); ///NOLINT
-        Cell::State::operator=(std::move(rhs)); ///NOLINT
-        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs)); ///NOLINT
+        Hash::operator=(std::move(rhs));
+        Allocator::operator=(std::move(rhs));
+        Cell::State::operator=(std::move(rhs));
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs));
 
         return *this;
     }
@@ -724,7 +724,7 @@ public:
     class Reader final : private Cell::State
     {
     public:
-        explicit Reader(DB::ReadBuffer & in_)
+        Reader(DB::ReadBuffer & in_)
             : in(in_)
         {
         }
@@ -771,13 +771,13 @@ public:
     };
 
 
-    class iterator : public iterator_base<iterator, false> /// NOLINT
+    class iterator : public iterator_base<iterator, false>
     {
     public:
         using iterator_base<iterator, false>::iterator_base;
     };
 
-    class const_iterator : public iterator_base<const_iterator, true> /// NOLINT
+    class const_iterator : public iterator_base<const_iterator, true>
     {
     public:
         using iterator_base<const_iterator, true>::iterator_base;
@@ -811,7 +811,7 @@ public:
             return iteratorToZero();
 
         Cell * ptr = buf;
-        auto * buf_end = buf + grower.bufSize();
+        auto buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
@@ -1036,14 +1036,14 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
-    ALWAYS_INLINE bool erase(const Key & x)
-    requires Grower::performs_linear_probing_with_single_step
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
+    ALWAYS_INLINE erase(const Key & x)
     {
         return erase(x, hash(x));
     }
 
-    ALWAYS_INLINE bool erase(const Key & x, size_t hash_value)
-    requires Grower::performs_linear_probing_with_single_step
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
+    ALWAYS_INLINE erase(const Key & x, size_t hash_value)
     {
         /** Deletion from open addressing hash table without tombstones
           *

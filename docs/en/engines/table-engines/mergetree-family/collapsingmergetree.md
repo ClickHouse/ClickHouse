@@ -1,9 +1,9 @@
 ---
-sidebar_position: 70
-sidebar_label: CollapsingMergeTree
+toc_priority: 36
+toc_title: CollapsingMergeTree
 ---
 
-# CollapsingMergeTree
+# CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
@@ -42,9 +42,8 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
-Do not use this method in new projects and, if possible, switch old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -304,4 +303,4 @@ select * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

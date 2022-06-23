@@ -1,9 +1,10 @@
-# rebuild in #33610
 # docker build -t clickhouse/stateless-test .
-ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM clickhouse/test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
+
+RUN echo "deb [trusted=yes] http://repo.mysql.com/apt/ubuntu/ bionic mysql-5.7" >> /etc/apt/sources.list \
+    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8C718D3B5072E1F5
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -29,16 +30,10 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
-            mysql-client=8.0* \
-            postgresql-client \
-            sqlite3 \
-            awscli \
-            openjdk-11-jre-headless \
-            rpm2cpio \
-            cpio
+            mysql-client=5.7* \
+            postgresql-client
 
-
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
@@ -53,24 +48,6 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
-ARG TARGETARCH
-
-# Download Minio-related binaries
-RUN arch=${TARGETARCH:-amd64} \
-    && if [ "$arch" = "amd64" ] ; then wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.x86_64.rpm"; else wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.aarch64.rpm" ; fi \
-    && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
-    && chmod +x ./mc
-
-
-RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
-    && tar -xvf hadoop-3.3.1.tar.gz \
-    && rm -rf hadoop-3.3.1.tar.gz
-
-ENV MINIO_ROOT_USER="clickhouse"
-ENV MINIO_ROOT_PASSWORD="clickhouse"
-ENV EXPORT_S3_STORAGE_POLICIES=1
-
 COPY run.sh /
-COPY setup_minio.sh /
-COPY setup_hdfs_minicluster.sh /
+COPY process_functional_tests_result.py /
 CMD ["/bin/bash", "/run.sh"]

@@ -1,3 +1,3 @@
-if (TARGET ch_contrib::grpc)
+if (USE_GRPC)
     add_subdirectory (grpc_protos)
 endif()

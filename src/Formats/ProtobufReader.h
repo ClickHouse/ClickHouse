@@ -1,6 +1,8 @@
 #pragma once
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#   include "config_formats.h"
+#endif
 
 #if USE_PROTOBUF
 #   include <Common/PODArray.h>
@@ -16,7 +18,7 @@ class ReadBuffer;
 class ProtobufReader
 {
 public:
-    explicit ProtobufReader(ReadBuffer & in_);
+    ProtobufReader(ReadBuffer & in_);
 
     void startMessage(bool with_length_delimiter_);
     void endMessage(bool ignore_errors);

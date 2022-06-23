@@ -50,10 +50,6 @@ struct KeyDescription
         ContextPtr context,
         const std::optional<String> & additional_column);
 
-    /// Build an empty key description. It's different from the default constructor with some
-    /// additional initializations.
-    static KeyDescription buildEmptyKey();
-
     /// Recalculate all expressions and fields for key with new columns without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewColumns(
@@ -76,9 +72,6 @@ struct KeyDescription
 
     /// Substitute modulo with moduloLegacy. Used in KeyCondition to allow proper comparison with keys.
     static bool moduloToModuloLegacyRecursive(ASTPtr node_expr);
-
-    /// Parse description from string
-    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 };
 
 }

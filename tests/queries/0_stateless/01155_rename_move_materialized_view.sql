@@ -1,7 +1,3 @@
--- Tags: no-parallel
-
-SET prefer_localhost_replica = 1;
-
 DROP DATABASE IF EXISTS test_01155_ordinary;
 DROP DATABASE IF EXISTS test_01155_atomic;
 
@@ -38,9 +34,8 @@ RENAME TABLE test_01155_ordinary.mv1 TO test_01155_atomic.mv1;
 RENAME TABLE test_01155_ordinary.mv2 TO test_01155_atomic.mv2;
 RENAME TABLE test_01155_ordinary.dst TO test_01155_atomic.dst;
 RENAME TABLE test_01155_ordinary.src TO test_01155_atomic.src;
-SET check_table_dependencies=0;
 RENAME TABLE test_01155_ordinary.dist TO test_01155_atomic.dist;
-SET check_table_dependencies=1;
+
 RENAME DICTIONARY test_01155_ordinary.dict TO test_01155_atomic.dict;
 SELECT 'ordinary after rename:';
 SELECT substr(name, 1, 10) FROM system.tables WHERE database='test_01155_ordinary';
@@ -50,8 +45,8 @@ DROP DATABASE test_01155_ordinary;
 USE default;
 
 INSERT INTO test_01155_atomic.src(s) VALUES ('after moving tables');
-SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError 81 }
-SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError 36 }
+--SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError 81 }
+--SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError 36 }
 
 RENAME DATABASE test_01155_atomic TO test_01155_ordinary;
 USE test_01155_ordinary;

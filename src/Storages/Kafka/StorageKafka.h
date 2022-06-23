@@ -7,6 +7,7 @@
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
+#include <common/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>
@@ -27,18 +28,12 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public IStorage, WithContext
+class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageKafka>;
     friend struct StorageKafkaInterceptors;
 
 public:
-    StorageKafka(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        std::unique_ptr<KafkaSettings> kafka_settings_,
-        const String & collection_name_);
-
     std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }
@@ -48,14 +43,14 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(
+    BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
@@ -71,6 +66,12 @@ public:
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
     HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+protected:
+    StorageKafka(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        std::unique_ptr<KafkaSettings> kafka_settings_);
 
 private:
     // Configuration and state
@@ -87,8 +88,6 @@ private:
     Poco::Semaphore semaphore;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
-
-    std::atomic<bool> mv_attached = false;
 
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
@@ -114,15 +113,14 @@ private:
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
-    SettingsChanges createSettingsAdjustments();
-    ConsumerBufferPtr createReadBuffer(size_t consumer_number);
+    /// Handle error mode
+    HandleKafkaErrorMode handle_error_mode;
 
-    /// If named_collection is specified.
-    String collection_name;
+    SettingsChanges createSettingsAdjustments();
+    ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & conf);
-    String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;

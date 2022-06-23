@@ -2,7 +2,7 @@
 
 #include <Processors/Transforms/WindowTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -63,7 +63,7 @@ WindowStep::WindowStep(const DataStream & input_stream_,
 
 }
 
-void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void WindowStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
@@ -129,7 +129,7 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 
     if (!window_description.order_by.empty())
-        map.add("Sort Description", explainSortDescription(window_description.order_by));
+        map.add("Sort Description", explainSortDescription(window_description.order_by, {}));
 
     auto functions_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & func : window_functions)

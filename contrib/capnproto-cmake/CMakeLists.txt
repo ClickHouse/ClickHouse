@@ -1,10 +1,3 @@
-option (ENABLE_CAPNP "Enable Cap'n Proto" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_CAPNP)
-    message(STATUS "Not using Cap'n Proto library")
-    return()
-endif()
-
 set (CAPNPROTO_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/src")
 
 set (CMAKE_CXX_STANDARD 17)
@@ -36,8 +29,8 @@ set (KJ_SRCS
     "${CAPNPROTO_SOURCE_DIR}/kj/parse/char.c++"
 )
 
-add_library(_kj ${KJ_SRCS})
-target_include_directories(_kj SYSTEM PUBLIC ${CAPNPROTO_SOURCE_DIR})
+add_library(kj ${KJ_SRCS})
+target_include_directories(kj SYSTEM PUBLIC ${CAPNPROTO_SOURCE_DIR})
 
 set (CAPNP_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/c++.capnp.c++"
@@ -52,17 +45,16 @@ set (CAPNP_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/serialize-packed.c++"
 
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema.c++"
-    "${CAPNPROTO_SOURCE_DIR}/capnp/stream.capnp.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema-loader.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/dynamic.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/stringify.c++"
 )
 
-add_library(_capnp ${CAPNP_SRCS})
-set_target_properties(_capnp
+add_library(capnp ${CAPNP_SRCS})
+set_target_properties(capnp
                       PROPERTIES LINKER_LANGUAGE CXX
                       )
-target_link_libraries(_capnp PUBLIC _kj)
+target_link_libraries(capnp PUBLIC kj)
 
 set (CAPNPC_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/type-id.c++"
@@ -71,22 +63,23 @@ set (CAPNPC_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/lexer.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/grammar.capnp.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/parser.c++"
-    "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/generics.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/node-translator.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/compiler.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema-parser.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/serialize-text.c++"
 )
 
-add_library(_capnpc ${CAPNPC_SRCS})
-target_link_libraries(_capnpc PUBLIC _capnp)
+add_library(capnpc ${CAPNPC_SRCS})
+target_link_libraries(capnpc PUBLIC capnp)
 
-if (COMPILER_CLANG)
+# The library has substandard code
+if (COMPILER_GCC)
+    set (SUPPRESS_WARNINGS -w)
+elseif (COMPILER_CLANG)
+    set (SUPPRESS_WARNINGS -w)
     set (CAPNP_PRIVATE_CXX_FLAGS -fno-char8_t)
 endif ()
 
-target_compile_options(_kj PRIVATE ${CAPNP_PRIVATE_CXX_FLAGS})
-target_compile_options(_capnp PRIVATE ${CAPNP_PRIVATE_CXX_FLAGS})
-target_compile_options(_capnpc PRIVATE ${CAPNP_PRIVATE_CXX_FLAGS})
-
-add_library(ch_contrib::capnp ALIAS _capnpc)
+target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})

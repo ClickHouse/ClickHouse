@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/logger_useful.h>
-#include <base/types.h>
+#include <common/logger_useful.h>
+#include <common/types.h>
 
 
 namespace DB

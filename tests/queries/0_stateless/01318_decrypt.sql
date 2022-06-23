@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- Tag no-fasttest: Depends on OpenSSL
-
 --- aes_decrypt_mysql(string, key, block_mode[, init_vector, AAD])
 -- The MySQL-compatitable encryption, only ecb, cbc, cfb128 and ofb modes are supported,
 -- just like for MySQL
@@ -82,6 +79,8 @@ SELECT 'aes-192-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, in
 SELECT 'aes-256-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
 
 SELECT 'aes-128-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
+SELECT 'aes-192-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
+SELECT 'aes-256-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
 
 SELECT 'aes-128-ecb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
 SELECT 'aes-192-ecb' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
@@ -97,6 +96,8 @@ SELECT 'aes-192-cbc' as mode, decrypt(mode, encrypt(mode, input, key24, iv), key
 SELECT 'aes-256-cbc' as mode, decrypt(mode, encrypt(mode, input, key32, iv), key32, iv) == input FROM encryption_test;
 
 SELECT 'aes-128-cfb128' as mode, decrypt(mode, encrypt(mode, input, key16, iv), key16, iv) == input FROM encryption_test;
+SELECT 'aes-192-cfb128' as mode, decrypt(mode, encrypt(mode, input, key24, iv), key24, iv) == input FROM encryption_test;
+SELECT 'aes-256-cfb128' as mode, decrypt(mode, encrypt(mode, input, key32, iv), key32, iv) == input FROM encryption_test;
 
 SELECT 'aes-128-ctr' as mode, decrypt(mode, encrypt(mode, input, key16, iv), key16, iv) == input FROM encryption_test;
 SELECT 'aes-192-ctr' as mode, decrypt(mode, encrypt(mode, input, key24, iv), key24, iv) == input FROM encryption_test;

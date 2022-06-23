@@ -1,18 +1,18 @@
 #include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <unistd.h>
 
 #if defined(OS_LINUX)
 
 #include "hasLinuxCapability.h"
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
-#include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
@@ -265,24 +265,26 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
 {
     NetlinkMessage answer = query(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(tid));
 
-    const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
-    if (attr->header.nla_type != TASKSTATS_TYPE_AGGR_PID)
-        throw Exception("Expected TASKSTATS_TYPE_AGGR_PID", ErrorCodes::NETLINK_ERROR);
+    for (const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
+        attr < answer.end();
+        attr = attr->next())
+    {
+        if (attr->header.nla_type == TASKSTATS_TYPE_AGGR_TGID || attr->header.nla_type == TASKSTATS_TYPE_AGGR_PID)
+        {
+            for (const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
+                nested_attr < attr->next();
+                nested_attr = nested_attr->next())
+            {
+                if (nested_attr->header.nla_type == TASKSTATS_TYPE_STATS)
+                {
+                    out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
+                    return;
+                }
+            }
+        }
+    }
 
-    /// TASKSTATS_TYPE_AGGR_PID
-    const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
-    if (nested_attr->header.nla_type != TASKSTATS_TYPE_PID)
-        throw Exception("Expected TASKSTATS_TYPE_PID", ErrorCodes::NETLINK_ERROR);
-    if (nested_attr == nested_attr->next())
-        throw Exception("No TASKSTATS_TYPE_STATS packet after TASKSTATS_TYPE_PID", ErrorCodes::NETLINK_ERROR);
-    nested_attr = nested_attr->next();
-    if (nested_attr->header.nla_type != TASKSTATS_TYPE_STATS)
-        throw Exception("Expected TASKSTATS_TYPE_STATS", ErrorCodes::NETLINK_ERROR);
-
-    out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
-
-    if (attr->next() != answer.end())
-        throw Exception("Unexpected end of response", ErrorCodes::NETLINK_ERROR);
+    throw Exception("There is no TASKSTATS_TYPE_STATS attribute in the Netlink response", ErrorCodes::NETLINK_ERROR);
 }
 
 

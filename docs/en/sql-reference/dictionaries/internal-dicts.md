@@ -1,9 +1,9 @@
 ---
-sidebar_position: 39
-sidebar_label: Internal Dictionaries
+toc_priority: 39
+toc_title: Internal Dictionaries
 ---
 
-# Internal Dictionaries
+# Internal Dictionaries {#internal_dicts}
 
 ClickHouse contains a built-in feature for working with a geobase.
 
@@ -14,7 +14,7 @@ This allows you to:
 -   Check whether a region is part of another region.
 -   Get a chain of parent regions.
 
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
+All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with Yandex.Metrica dictionaries”.
 
 The internal dictionaries are disabled in the default package.
 To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.
@@ -48,5 +48,5 @@ Dictionary updates (other than loading at first use) do not block queries. Durin
 
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
 
-There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
+There are also functions for working with OS identifiers and Yandex.Metrica search engines, but they shouldn’t be used.
 

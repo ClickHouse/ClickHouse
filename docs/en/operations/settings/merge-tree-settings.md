@@ -1,4 +1,4 @@
-# MergeTree tables settings
+# MergeTree tables settings {#merge-tree-settings}
 
 The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.
 
@@ -27,10 +27,6 @@ An example of changing the settings for a specific table with the `ALTER TABLE .
 ``` sql
 ALTER TABLE foo
     MODIFY SETTING max_suspicious_broken_parts = 100;
-
--- reset to default (use value from system.merge_tree_settings)
-ALTER TABLE foo
-    RESET SETTING max_suspicious_broken_parts;
 ```
 
 ## parts_to_throw_insert {#parts-to-throw-insert}
@@ -114,7 +110,7 @@ A large number of parts in a table reduces performance of ClickHouse queries and
 
 ## replicated_deduplication_window {#replicated-deduplication-window}
 
-The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
+The number of most recently inserted blocks for which Zookeeper stores hash sums to check for duplicates.
 
 Possible values:
 
@@ -123,7 +119,7 @@ Possible values:
 
 Default value: 100.
 
-The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication/), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
+The `Insert` command creates one or more blocks (parts). When inserting into Replicated tables, ClickHouse for [insert deduplication](../../engines/table-engines/mergetree-family/replication/) writes the hash sums of the created parts into Zookeeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from Zookeeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
@@ -142,7 +138,7 @@ A deduplication mechanism is used, similar to replicated tables (see [replicated
 
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
-The number of seconds after which the hash sums of the inserted blocks are removed from ClickHouse Keeper.
+The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.
 
 Possible values:
 
@@ -150,7 +146,7 @@ Possible values:
 
 Default value: 604800 (1 week).
 
-Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
+Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
 
 ## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
 
@@ -185,44 +181,6 @@ Possible values:
 
 Default value: 0.
 
-## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
-
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches. This setting is applied to a particular table, unlike the [max_replicated_fetches_network_bandwidth_for_server](settings.md#max_replicated_fetches_network_bandwidth_for_server) setting, which is applied to the server.
-
-You can limit both server network and network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_fetches_network_bandwidth_for_server` setting.
-
-The setting isn't followed perfectly accurately.
-
-Possible values:
-
--   Positive integer.
--   0 — Unlimited.
-
-Default value: `0`.
-
-**Usage**
-
-Could be used for throttling speed when replicating data to add or replace new nodes.
-
-## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
-
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends. This setting is applied to a particular table, unlike the [max_replicated_sends_network_bandwidth_for_server](settings.md#max_replicated_sends_network_bandwidth_for_server) setting, which is applied to the server.
-
-You can limit both server network and network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_sends_network_bandwidth_for_server` setting.
-
-The setting isn't followed perfectly accurately.
-
-Possible values:
-
--   Positive integer.
--   0 — Unlimited.
-
-Default value: `0`.
-
-**Usage**
-
-Could be used for throttling speed when replicating data to add or replace new nodes.
-
 ## old_parts_lifetime {#old-parts-lifetime}
 
 The time (in seconds) of storing inactive parts to protect against data loss during spontaneous server reboots.
@@ -256,7 +214,7 @@ Possible values:
 
 Default value: 161061273600 (150 GB).
 
-The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
+The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is less than `max_bytes_to_merge_at_max_space_in_pool`.
 
 Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
 
@@ -320,97 +278,4 @@ Possible values:
 
 Default value: `0`.
 
-## check_sample_column_is_correct {#check_sample_column_is_correct}
-
-Enables the check at table creation, that the data type of a column for sampling or sampling expression is correct. The data type must be one of unsigned [integer types](../../sql-reference/data-types/int-uint.md): `UInt8`, `UInt16`, `UInt32`, `UInt64`.
-
-Possible values:
-
--   true  — The check is enabled.
--   false — The check is disabled at table creation.
-
-Default value: `true`.
-
-By default, the ClickHouse server checks at table creation the data type of a column for sampling or sampling expression. If you already have tables with incorrect sampling expression and do not want the server to raise an exception during startup, set `check_sample_column_is_correct` to `false`.
-
-## min_bytes_to_rebalance_partition_over_jbod {#min-bytes-to-rebalance-partition-over-jbod}
-
-Sets minimal amount of bytes to enable balancing when distributing new big parts over volume disks [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures).
-
-Possible values:
-
--   Positive integer.
--   0 — Balancing is disabled.
-
-Default value: `0`.
-
-**Usage**
-
-The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should not be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) / 1024. Otherwise, ClickHouse throws an exception.
-
-## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
-
-Enables or disables detaching a data part on a replica after a merge or a mutation, if it is not byte-identical to data parts on other replicas. If disabled, the data part is removed. Activate this setting if you want to analyze such parts later.
-
-The setting is applicable to `MergeTree` tables with enabled [data replication](../../engines/table-engines/mergetree-family/replication.md).
-
-Possible values:
-
--   0 — Parts are removed.
--   1 — Parts are detached.
-
-Default value: `0`.
-
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `60` seconds.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `1` second.
-
-## max_concurrent_queries {#max-concurrent-queries}
-
-Max number of concurrently executed queries related to the MergeTree table. Queries will still be limited by other `max_concurrent_queries` settings.
-
-Possible values:
-
--   Positive integer.
--   0 — No limit.
-
-Default value: `0` (no limit).
-
-**Example**
-
-``` xml
-<max_concurrent_queries>50</max_concurrent_queries>
-```
-
-## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
-
-The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting. Note that queries will still be limited by other `max_concurrent_queries` settings.
-
-Possible values:
-
--   Positive integer.
--   0 — Disabled (`max_concurrent_queries` limit applied to no queries).
-
-Default value: `0` (limit never applied).
-
-**Example**
-
-``` xml
-<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
-```
+[Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->

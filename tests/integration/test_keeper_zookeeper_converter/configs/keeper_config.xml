@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
@@ -6,8 +6,8 @@
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
         <coordination_settings>
-            <operation_timeout_ms>30000</operation_timeout_ms>
-            <session_timeout_ms>600000</session_timeout_ms>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
             <snapshot_distance>75</snapshot_distance>
         </coordination_settings>
@@ -16,8 +16,8 @@
             <server>
                 <id>1</id>
                 <hostname>localhost</hostname>
-                <port>9234</port>
+                <port>44444</port>
             </server>
         </raft_configuration>
     </keeper_server>
-</clickhouse>
+</yandex>

@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 61
-sidebar_label: "\u95F4\u9694"
+toc_priority: 61
+toc_title: "\u95F4\u9694"
 ---
 
 # Interval类型 {#data-type-interval}
@@ -57,7 +57,7 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 不同类型的间隔不能合并。 你不能使用诸如 `4 DAY 1 HOUR` 的时间间隔. 以小于或等于时间间隔最小单位的单位来指定间隔，例如，时间间隔 `1 day and an hour` 可以表示为 `25 HOUR` 或 `90000 SECOND`.
 
 你不能对 `Interval` 类型的值执行算术运算，但你可以向 `Date` 或 `DateTime` 数据类型的值添加不同类型的时间间隔，例如:
-
+ 
 ``` sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
 ```

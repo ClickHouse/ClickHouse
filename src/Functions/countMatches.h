@@ -31,7 +31,6 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -55,7 +54,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnConst * column_pattern = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
-        const Regexps::Regexp re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(column_pattern->getValue<String>());
+        Regexps::Pool::Pointer re = Regexps::get<false /* like */, true /* is_no_capture */, CountMatchesBase::case_insensitive>(column_pattern->getValue<String>());
         OptimizedRegularExpression::MatchVec matches;
 
         const IColumn * column_haystack = arguments[0].column.get();
@@ -95,7 +94,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Error in FunctionCountMatches::getReturnTypeImpl()");
     }
 
-    static uint64_t countMatches(StringRef src, const Regexps::Regexp & re, OptimizedRegularExpression::MatchVec & matches)
+    static uint64_t countMatches(StringRef src, Regexps::Pool::Pointer & re, OptimizedRegularExpression::MatchVec & matches)
     {
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
@@ -108,7 +107,7 @@ public:
         {
             if (pos >= end)
                 break;
-            if (!re.match(pos, end - pos, matches, matches_limit))
+            if (!re->match(pos, end - pos, matches, matches_limit))
                 break;
             /// Progress should be made, but with empty match the progress will not be done.
             /// Also note that simply check is pattern empty is not enough,

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-
 set -eu
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -8,17 +6,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Data preparation.
-
 # Now we can get the user_files_path by use the table file function for trick. also we can get it by query as:
 #  "insert into function file('exist.txt', 'CSV', 'val1 char') values ('aaaa'); select _path from file('exist.txt', 'CSV', 'val1 char')"
-CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
-mkdir -p ${CLICKHOUSE_USER_FILES_PATH}/
-echo -n aaaaaaaaa > ${CLICKHOUSE_USER_FILES_PATH}/a.txt
-echo -n bbbbbbbbb > ${CLICKHOUSE_USER_FILES_PATH}/b.txt
-echo -n ccccccccc > ${CLICKHOUSE_USER_FILES_PATH}/c.txt
+mkdir -p ${user_files_path}/
+echo -n aaaaaaaaa > ${user_files_path}/a.txt
+echo -n bbbbbbbbb > ${user_files_path}/b.txt
+echo -n ccccccccc > ${user_files_path}/c.txt
 echo -n ccccccccc > /tmp/c.txt
-mkdir -p ${CLICKHOUSE_USER_FILES_PATH}/dir
+mkdir -p ${user_files_path}/dir
 
 
 ### 1st TEST in CLIENT mode.
@@ -27,28 +24,28 @@ ${CLICKHOUSE_CLIENT} --query "create table data (A String, B String) engine=Merg
 
 
 # Valid cases:
-${CLICKHOUSE_CLIENT} --query "select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "select file('c.txt'), * from data";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('${user_files_path}/c.txt'), * from data";echo ":"$?
 ${CLICKHOUSE_CLIENT} --multiquery --query "
-    create table filenames(name String) engine=MergeTree() order by tuple();
-    insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
-    select file(name) from filenames format TSV;
-    drop table if exists filenames;
+	create table filenames(name String) engine=MergeTree() order by tuple();
+	insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
+	select file(name) from filenames format TSV;
+	drop table if exists filenames;
 "
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
 # Test non-exists file
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'nonexist.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'nonexist.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test isDir
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'dir'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'${user_files_path}/dir'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test path out of the user_files directory. It's not allowed in client mode
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'/tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'/tmp/c.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Test relative path consists of ".." whose absolute path is out of the user_files directory.
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'../../../../../../../../../../../../../../../../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'../../../../a.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'${user_files_path}/../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'../../../../a.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 
 ### 2nd TEST in LOCAL mode.
@@ -64,36 +61,29 @@ echo $c_count
 # Valid cases:
 # The default dir is the CWD path in LOCAL mode
 ${CLICKHOUSE_LOCAL} --query "
-    drop table if exists data;
-    create table data (A String, B String) engine=MergeTree() order by A;
-    select file('a.txt'), file('b.txt');
-    insert into data select file('a.txt'), file('b.txt');
-    insert into data select file('a.txt'), file('b.txt');
-    select file('c.txt'), * from data;
-    select file('/tmp/c.txt'), * from data;
-    select $c_count, $c_count -length(file('${CURDIR}/01518_nullable_aggregate_states2.reference'))
+	drop table if exists data;
+	create table data (A String, B String) engine=MergeTree() order by A;
+	select file('a.txt'), file('b.txt');
+	insert into data select file('a.txt'), file('b.txt');
+	insert into data select file('a.txt'), file('b.txt');
+	select file('c.txt'), * from data;
+	select file('/tmp/c.txt'), * from data;
+	select $c_count, $c_count -length(file('${CURDIR}/01518_nullable_aggregate_states2.reference'))
 "
 echo ":"$?
 
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
 # Test non-exists file
-echo "${CLICKHOUSE_LOCAL} --query "'"select file('"'nonexist.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-local --query "'"select file('"'nonexist.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Test isDir
-echo "${CLICKHOUSE_LOCAL} --query "'"select file('"'dir'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
-
-# Test that the function is not injective
-
-echo -n Hello > ${CLICKHOUSE_USER_FILES_PATH}/a
-echo -n Hello > ${CLICKHOUSE_USER_FILES_PATH}/b
-echo -n World > ${CLICKHOUSE_USER_FILES_PATH}/c
-
-${CLICKHOUSE_CLIENT} --query "SELECT file(arrayJoin(['a', 'b', 'c'])) AS s, count() GROUP BY s ORDER BY s"
-${CLICKHOUSE_CLIENT} --query "SELECT s, count() FROM file('?', TSV, 's String') GROUP BY s ORDER BY s"
+echo "clickhouse-local --query "'"select file('"'dir'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Restore
-rm ${CLICKHOUSE_USER_FILES_PATH}/{a,b,c}.txt
-rm ${CLICKHOUSE_USER_FILES_PATH}/{a,b,c}
-rm /tmp/c.txt
-rm -rf ${CLICKHOUSE_USER_FILES_PATH}/dir
+rm -rf a.txt b.txt c.txt dir
+rm -rf ${user_files_path}/a.txt
+rm -rf ${user_files_path}/b.txt
+rm -rf ${user_files_path}/c.txt
+rm -rf /tmp/c.txt
+rm -rf ${user_files_path}/dir

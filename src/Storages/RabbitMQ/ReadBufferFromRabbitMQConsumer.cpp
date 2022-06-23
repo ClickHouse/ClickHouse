@@ -7,17 +7,12 @@
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <boost/algorithm/string/split.hpp>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include "Poco/Timer.h"
 #include <amqpcpp.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         RabbitMQHandler & event_handler_,
@@ -67,10 +62,9 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
                 if (row_delimiter != '\0')
                     message_received += row_delimiter;
 
-                if (!received.push({message_received, message.hasMessageID() ? message.messageID() : "",
+                received.push({message_received, message.hasMessageID() ? message.messageID() : "",
                         message.hasTimestamp() ? message.timestamp() : 0,
-                        redelivered, AckTracker(delivery_tag, channel_id)}))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
+                        redelivered, AckTracker(delivery_tag, channel_id)});
             }
         })
         .onError([&](const char * message)

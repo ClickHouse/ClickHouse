@@ -1,9 +1,9 @@
 ---
-sidebar_position: 37
-sidebar_label: file
+toc_priority: 37
+toc_title: file
 ---
 
-# file
+# file {#file}
 
 Creates a table from a file. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [hdfs](../../sql-reference/table-functions/hdfs.md) ones.
 
@@ -72,7 +72,7 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 └─────────┴─────────┴─────────┘
 ```
 
-## Globs in Path
+## Globs in Path {#globs-in-path}
 
 Multiple path components can have globs. For being processed file must exist and match to the whole path pattern (not only suffix or prefix).
 
@@ -106,9 +106,8 @@ Query the number of rows in all files of these two directories:
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
 ```
 
-:::warning    
-If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+!!! warning "Warning"
+    If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 
 **Example**
 
@@ -118,7 +117,7 @@ Query the data from files named `file000`, `file001`, … , `file999`:
 SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
 ```
 
-## Virtual Columns
+## Virtual Columns {#virtual-columns}
 
 -   `_path` — Path to the file.
 -   `_file` — Name of the file.
@@ -127,4 +126,4 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 
 -   [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/file/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/file/) <!--hide-->

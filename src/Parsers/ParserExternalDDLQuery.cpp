@@ -1,14 +1,15 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #include <Parsers/ASTExternalDDLQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
+#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 
-#if USE_MYSQL
+#ifdef USE_MYSQL
 #    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
 #endif
@@ -16,7 +17,7 @@
 namespace DB
 {
 
-#if USE_MYSQL
+#ifdef USE_MYSQL
 namespace ErrorCodes
 {
     extern const int MYSQL_SYNTAX_ERROR;
@@ -42,7 +43,7 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     bool res = false;
     if (external_ddl_query->from->name == "MySQL")
     {
-#if USE_MYSQL
+#ifdef USE_MYSQL
         ParserDropQuery p_drop_query;
         ParserRenameQuery p_rename_query;
         MySQLParser::ParserAlterQuery p_alter_query;

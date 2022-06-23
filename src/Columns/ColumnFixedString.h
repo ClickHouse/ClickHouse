@@ -32,18 +32,13 @@ private:
     /// The size of the rows.
     const size_t n;
 
-    struct ComparatorBase;
-
-    using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
-    using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
-    using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
-    using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
-    using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
+    template <bool positive>
+    struct less;
 
     /** Create an empty column of strings of fixed-length `n` */
-    explicit ColumnFixedString(size_t n_) : n(n_) {}
+    ColumnFixedString(size_t n_) : n(n_) {}
 
-    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {} /// NOLINT
+    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {}
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
@@ -91,8 +86,6 @@ public:
     {
         return StringRef(&chars[n * index], n);
     }
-
-    bool isDefaultAt(size_t index) const override;
 
     void insert(const Field & x) override;
 
@@ -146,17 +139,13 @@ public:
         return hasEqualValuesImpl<ColumnFixedString>();
     }
 
-    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                    size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                    size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-
-    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
@@ -181,28 +170,13 @@ public:
         chars.reserve(n * size);
     }
 
-    void resize(size_t size)
-    {
-        chars.resize(n * size);
-    }
-
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (const auto * rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
+        if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
             return n == rhs_concrete->n;
         return false;
-    }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndicesOfNonDefaultRowsImpl<ColumnFixedString>(indices, from, limit);
     }
 
     bool canBeInsideNullable() const override { return true; }

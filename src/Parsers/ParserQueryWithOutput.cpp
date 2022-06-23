@@ -1,29 +1,28 @@
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/ParserDescribeTableQuery.h>
+#include <Parsers/ParserShowProcesslistQuery.h>
+#include <Parsers/ParserCheckQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserKillQueryQuery.h>
+#include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserWatchQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ParserAlterQuery.h>
-#include <Parsers/ParserCheckQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDescribeTableQuery.h>
-#include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserShowAccessEntitiesQuery.h>
+#include <Parsers/ParserShowAccessQuery.h>
+#include <Parsers/ParserShowCreateAccessEntityQuery.h>
+#include <Parsers/ParserShowGrantsQuery.h>
+#include <Parsers/ParserShowPrivilegesQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/ParserKillQueryQuery.h>
-#include <Parsers/ParserOptimizeQuery.h>
-#include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/ParserRenameQuery.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserShowProcesslistQuery.h>
-#include <Parsers/ParserShowTablesQuery.h>
-#include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/ParserWatchQuery.h>
 #include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
-#include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
-#include <Parsers/Access/ParserShowAccessQuery.h>
-#include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
-#include <Parsers/Access/ParserShowGrantsQuery.h>
-#include <Parsers/Access/ParserShowPrivilegesQuery.h>
-#include "Common/Exception.h"
 
 
 namespace DB
@@ -49,7 +48,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;
     ParserShowGrantsQuery show_grants_p;
     ParserShowPrivilegesQuery show_privileges_p;
-    ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
+    ParserExplainQuery explain_p(end);
 
     ASTPtr query;
 
@@ -86,14 +85,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserStringLiteral out_file_p;
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
-
-        ParserKeyword s_compression_method("COMPRESSION");
-        if (s_compression_method.ignore(pos, expected))
-        {
-            ParserStringLiteral compression;
-            if (!compression.parse(pos, query_with_output.compression, expected))
-                return false;
-        }
 
         query_with_output.children.push_back(query_with_output.out_file);
     }

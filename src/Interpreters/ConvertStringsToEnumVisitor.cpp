@@ -43,11 +43,11 @@ void changeIfArguments(ASTPtr & first, ASTPtr & second)
     String enum_string = makeStringsEnum(values);
     auto enum_literal = std::make_shared<ASTLiteral>(enum_string);
 
-    auto first_cast = makeASTFunction("_CAST");
+    auto first_cast = makeASTFunction("CAST");
     first_cast->arguments->children.push_back(first);
     first_cast->arguments->children.push_back(enum_literal);
 
-    auto second_cast = makeASTFunction("_CAST");
+    auto second_cast = makeASTFunction("CAST");
     second_cast->arguments->children.push_back(second);
     second_cast->arguments->children.push_back(enum_literal);
 
@@ -65,12 +65,12 @@ void changeTransformArguments(ASTPtr & array_to, ASTPtr & other)
 
     String enum_string = makeStringsEnum(values);
 
-    auto array_cast = makeASTFunction("_CAST");
+    auto array_cast = makeASTFunction("CAST");
     array_cast->arguments->children.push_back(array_to);
     array_cast->arguments->children.push_back(std::make_shared<ASTLiteral>("Array(" + enum_string + ")"));
     array_to = array_cast;
 
-    auto other_cast = makeASTFunction("_CAST");
+    auto other_cast = makeASTFunction("CAST");
     other_cast->arguments->children.push_back(other);
     other_cast->arguments->children.push_back(std::make_shared<ASTLiteral>(enum_string));
     other = other_cast;
@@ -100,7 +100,7 @@ void FindUsedFunctionsMatcher::visit(const ASTPtr & ast, Data & data)
 
 void FindUsedFunctionsMatcher::visit(const ASTFunction & func, Data & data)
 {
-    if (data.names.contains(func.name) && !data.call_stack.empty())
+    if (data.names.count(func.name) && !data.call_stack.empty())
     {
         String alias = func.tryGetAlias();
         if (!alias.empty())
@@ -136,7 +136,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
 
     /// We are not sure we could change the type of function result
     /// cause it is present in other function as argument
-    if (data.used_functions.contains(function_node.tryGetAlias()))
+    if (data.used_functions.count(function_node.tryGetAlias()))
         return;
 
     if (function_node.name == "if")
@@ -149,7 +149,8 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (!literal1 || !literal2)
             return;
 
-        if (literal1->value.getTypeName() != "String" || literal2->value.getTypeName() != "String")
+        if (literal1->value.getTypeName() != std::string_view{"String"}
+            || literal2->value.getTypeName() != std::string_view{"String"})
             return;
 
         changeIfArguments(function_node.arguments->children[1],
@@ -165,7 +166,8 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (!literal_to || !literal_other)
             return;
 
-        if (literal_to->value.getTypeName() != "Array" || literal_other->value.getTypeName() != "String")
+        if (literal_to->value.getTypeName() != std::string_view{"Array"}
+            || literal_other->value.getTypeName() != std::string_view{"String"})
             return;
 
         Array array_to = literal_to->value.get<Array>();
@@ -181,3 +183,4 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
 }
 
 }
+

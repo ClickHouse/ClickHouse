@@ -1,80 +1,38 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+#-*- coding: utf-8 -*-
 import subprocess
 import os
 import argparse
 import logging
 import sys
-from typing import List
 
 SCRIPT_PATH = os.path.realpath(__file__)
-IMAGE_TYPE = "binary"
 
+IMAGE_MAP = {
+    "deb": "clickhouse/deb-builder",
+    "binary": "clickhouse/binary-builder",
+    "unbundled": "clickhouse/unbundled-builder"
+}
 
 def check_image_exists_locally(image_name):
     try:
-        output = subprocess.check_output(
-            f"docker images -q {image_name} 2> /dev/null", shell=True
-        )
+        output = subprocess.check_output("docker images -q {} 2> /dev/null".format(image_name), shell=True)
         return output != ""
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as ex:
         return False
-
 
 def pull_image(image_name):
     try:
-        subprocess.check_call(f"docker pull {image_name}", shell=True)
+        subprocess.check_call("docker pull {}".format(image_name), shell=True)
         return True
-    except subprocess.CalledProcessError:
-        logging.info(f"Cannot pull image {image_name}".format())
+    except subprocess.CalledProcessError as ex:
+        logging.info("Cannot pull image {}".format(image_name))
         return False
 
-
 def build_image(image_name, filepath):
-    context = os.path.dirname(filepath)
-    build_cmd = f"docker build --network=host -t {image_name} -f {filepath} {context}"
-    logging.info("Will build image with cmd: '%s'", build_cmd)
-    subprocess.check_call(
-        build_cmd,
-        shell=True,
-    )
+    subprocess.check_call("docker build --network=host -t {} -f {} .".format(image_name, filepath), shell=True)
 
-
-def pre_build(repo_path: str, env_variables: List[str]):
-    if "WITH_PERFORMANCE=1" in env_variables:
-        current_branch = subprocess.check_output(
-            "git branch --show-current", shell=True, encoding="utf-8"
-        ).strip()
-        is_shallow = (
-            subprocess.check_output(
-                "git rev-parse --is-shallow-repository", shell=True, encoding="utf-8"
-            )
-            == "true\n"
-        )
-        if is_shallow:
-            # I've spent quite some time on looking around the problem, and my
-            # conclusion is: in the current state the easiest way to go is to force
-            # unshallow repository for performance artifacts.
-            # To change it we need to rework our performance tests docker image
-            raise Exception("shallow repository is not suitable for performance builds")
-        if current_branch != "master":
-            cmd = (
-                f"git -C {repo_path} fetch --no-recurse-submodules "
-                "--no-tags origin master:master"
-            )
-            logging.info("Getting master branch for performance artifact: ''%s'", cmd)
-            subprocess.check_call(cmd, shell=True)
-
-
-def run_docker_image_with_env(
-    image_name,
-    as_root,
-    output,
-    env_variables,
-    ch_root,
-    ccache_dir,
-    docker_image_version,
-):
+def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir, docker_image_version):
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -84,152 +42,89 @@ def run_docker_image_with_env(
     else:
         interactive = ""
 
-    if as_root:
-        user = "0:0"
-    else:
-        user = f"{os.geteuid()}:{os.getegid()}"
-
-    cmd = (
-        f"docker run --network=host --user={user} --rm --volume={output}:/output "
-        f"--volume={ch_root}:/build --volume={ccache_dir}:/ccache {env_part} "
-        f"{interactive} {image_name}:{docker_image_version}"
+    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build --volume={ccache_dir}:/ccache {env} {interactive} {img_name}".format(
+        output_path=output,
+        ch_root=ch_root,
+        ccache_dir=ccache_dir,
+        env=env_part,
+        img_name=image_name + ":" + docker_image_version,
+        interactive=interactive
     )
 
-    logging.info("Will build ClickHouse pkg with cmd: '%s'", cmd)
+    logging.info("Will build ClickHouse pkg with cmd: '{}'".format(cmd))
 
     subprocess.check_call(cmd, shell=True)
 
-
-def is_release_build(build_type, package_type, sanitizer, split_binary):
-    return (
-        build_type == ""
-        and package_type == "deb"
-        and sanitizer == ""
-        and not split_binary
-    )
-
-
-def parse_env_variables(
-    build_type,
-    compiler,
-    sanitizer,
-    package_type,
-    cache,
-    distcc_hosts,
-    split_binary,
-    clang_tidy,
-    version,
-    author,
-    official,
-    additional_pkgs,
-    with_coverage,
-    with_binaries,
-):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
+    CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
     FREEBSD_SUFFIX = "-freebsd"
-    PPC_SUFFIX = "-ppc64le"
 
     result = []
-    result.append("OUTPUT_DIR=/output")
-    cmake_flags = ["$CMAKE_FLAGS"]
+    cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
+    is_clang = compiler.startswith(CLANG_PREFIX)
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
-    is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
+    is_cross_compile = is_cross_darwin or is_cross_darwin_arm or is_cross_arm or is_cross_freebsd
+
+    # Explicitly use LLD with Clang by default.
+    # Don't force linker for cross-compilation.
+    if is_clang and not is_cross_compile:
+        cmake_flags.append("-DLINKER_NAME=lld")
 
     if is_cross_darwin:
-        cc = compiler[: -len(DARWIN_SUFFIX)]
+        cc = compiler[:-len(DARWIN_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
-        cmake_flags.append(
-            "-DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/"
-            "x86_64-apple-darwin-install_name_tool"
-        )
-        cmake_flags.append(
-            "-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib"
-        )
+        cmake_flags.append("-DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/x86_64-apple-darwin-install_name_tool")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
         cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
-        )
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
     elif is_cross_darwin_arm:
-        cc = compiler[: -len(DARWIN_ARM_SUFFIX)]
+        cc = compiler[:-len(DARWIN_ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
-        cmake_flags.append(
-            "-DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/"
-            "aarch64-apple-darwin-install_name_tool"
-        )
-        cmake_flags.append(
-            "-DCMAKE_RANLIB:FILEPATH=/cctools/bin/aarch64-apple-darwin-ranlib"
-        )
+        cmake_flags.append("-DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/aarch64-apple-darwin-install_name_tool")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/aarch64-apple-darwin-ranlib")
         cmake_flags.append("-DLINKER_NAME=/cctools/bin/aarch64-apple-darwin-ld")
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake"
-        )
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-aarch64.cmake")
     elif is_cross_arm:
-        cc = compiler[: -len(ARM_SUFFIX)]
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
-        )
-        result.append("DEB_ARCH=arm64")
+        cc = compiler[:-len(ARM_SUFFIX)]
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
     elif is_cross_freebsd:
-        cc = compiler[: -len(FREEBSD_SUFFIX)]
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake"
-        )
-    elif is_cross_ppc:
-        cc = compiler[: -len(PPC_SUFFIX)]
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
-        )
+        cc = compiler[:-len(FREEBSD_SUFFIX)]
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake")
     else:
         cc = compiler
-        result.append("DEB_ARCH=amd64")
 
-    cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
+    cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 
-    if package_type == "deb":
-        result.append("MAKE_DEB=true")
-        cmake_flags.append("-DENABLE_TESTS=0")
-        cmake_flags.append("-DENABLE_UTILS=0")
-        cmake_flags.append("-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON")
-        cmake_flags.append("-DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON")
-        cmake_flags.append("-DCMAKE_AUTOGEN_VERBOSE=ON")
-        cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
-        cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
-        cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
-        if is_release_build(build_type, package_type, sanitizer, split_binary):
-            cmake_flags.append("-DINSTALL_STRIPPED_BINARIES=ON")
-            result.append("WITH_PERFORMANCE=1")
-            if is_cross_arm:
-                cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
-            else:
-                result.append("BUILD_MUSL_KEEPER=1")
-
-    result.append(f"CC={cc}")
-    result.append(f"CXX={cxx}")
-    cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
-    cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
+    if image_type == "deb" or image_type == "unbundled":
+        result.append("DEB_CC={}".format(cc))
+        result.append("DEB_CXX={}".format(cxx))
+    elif image_type == "binary":
+        result.append("CC={}".format(cc))
+        result.append("CXX={}".format(cxx))
+        cmake_flags.append('-DCMAKE_C_COMPILER=`which {}`'.format(cc))
+        cmake_flags.append('-DCMAKE_CXX_COMPILER=`which {}`'.format(cxx))
 
     # Create combined output archive for split build and for performance tests.
-    if package_type == "coverity":
-        result.append("COMBINED_OUTPUT=coverity")
-        result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
+    if package_type == "performance":
+        result.append("COMBINED_OUTPUT=performance")
+        cmake_flags.append("-DENABLE_TESTS=0")
     elif split_binary:
         result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
-        result.append(f"SANITIZER={sanitizer}")
+        result.append("SANITIZER={}".format(sanitizer))
     if build_type:
-        result.append(f"BUILD_TYPE={build_type.capitalize()}")
-    else:
-        result.append("BUILD_TYPE=None")
+        result.append("BUILD_TYPE={}".format(build_type))
 
-    if cache == "distcc":
-        result.append(f"CCACHE_PREFIX={cache}")
+    if cache == 'distcc':
+        result.append("CCACHE_PREFIX={}".format(cache))
 
     if cache:
         result.append("CCACHE_DIR=/ccache")
@@ -240,177 +135,113 @@ def parse_env_variables(
         # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
-        hosts_with_params = [f"{host}/24,lzo" for host in distcc_hosts] + [
-            "localhost/`nproc`"
-        ]
-        result.append('DISTCC_HOSTS="' + " ".join(hosts_with_params) + '"')
+        hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
+        result.append('DISTCC_HOSTS="{}"'.format(" ".join(hosts_with_params)))
     elif cache == "distcc":
-        result.append('DISTCC_HOSTS="localhost/`nproc`"')
+        result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
 
-    if additional_pkgs:
-        result.append("MAKE_APK=true")
-        result.append("MAKE_RPM=true")
-        result.append("MAKE_TGZ=true")
+    if alien_pkgs:
+        result.append("ALIEN_PKGS='" + ' '.join(['--' + pkg for pkg in alien_pkgs]) + "'")
 
     if with_binaries == "programs":
-        result.append("BINARY_OUTPUT=programs")
+        result.append('BINARY_OUTPUT=programs')
     elif with_binaries == "tests":
-        result.append("ENABLE_TESTS=1")
-        result.append("BINARY_OUTPUT=tests")
-        cmake_flags.append("-DENABLE_TESTS=1")
+        result.append('ENABLE_TESTS=1')
+        result.append('BINARY_OUTPUT=tests')
+        cmake_flags.append('-DENABLE_TESTS=1')
+        cmake_flags.append('-DUSE_GTEST=1')
+
+    if unbundled:
+        cmake_flags.append('-DUNBUNDLED=1 -DUSE_INTERNAL_RDKAFKA_LIBRARY=1 -DENABLE_ARROW=0 -DENABLE_AVRO=0 -DENABLE_ORC=0 -DENABLE_PARQUET=0')
 
     if split_binary:
-        cmake_flags.append(
-            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 "
-            "-DCLICKHOUSE_SPLIT_BINARY=1"
-        )
+        cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
         # We can't always build utils because it requires too much space, but
         # we have to build them at least in some way in CI. The split build is
         # probably the least heavy disk-wise.
-        cmake_flags.append("-DENABLE_UTILS=1")
+        cmake_flags.append('-DENABLE_UTILS=1')
 
     if clang_tidy:
-        cmake_flags.append("-DENABLE_CLANG_TIDY=1")
-        cmake_flags.append("-DENABLE_UTILS=1")
-        cmake_flags.append("-DENABLE_TESTS=1")
-        cmake_flags.append("-DENABLE_EXAMPLES=1")
+        cmake_flags.append('-DENABLE_CLANG_TIDY=1')
+        cmake_flags.append('-DENABLE_UTILS=1')
+        cmake_flags.append('-DUSE_GTEST=1')
+        cmake_flags.append('-DENABLE_TESTS=1')
+        cmake_flags.append('-DENABLE_EXAMPLES=1')
         # Don't stop on first error to find more clang-tidy errors in one run.
-        result.append("NINJA_FLAGS=-k0")
+        result.append('NINJA_FLAGS=-k0')
 
     if with_coverage:
-        cmake_flags.append("-DWITH_COVERAGE=1")
+        cmake_flags.append('-DWITH_COVERAGE=1')
 
     if version:
-        result.append(f"VERSION_STRING='{version}'")
+        result.append("VERSION_STRING='{}'".format(version))
 
     if author:
-        result.append(f"AUTHOR='{author}'")
+        result.append("AUTHOR='{}'".format(author))
 
     if official:
-        cmake_flags.append("-DCLICKHOUSE_OFFICIAL_BUILD=1")
+        cmake_flags.append('-DYANDEX_OFFICIAL_BUILD=1')
 
-    result.append('CMAKE_FLAGS="' + " ".join(cmake_flags) + '"')
+    result.append('CMAKE_FLAGS="' + ' '.join(cmake_flags) + '"')
 
     return result
 
-
-def dir_name(name: str) -> str:
-    if not os.path.isabs(name):
-        name = os.path.abspath(os.path.join(os.getcwd(), name))
-    return name
-
-
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="ClickHouse building script using prebuilt Docker image",
-    )
-    parser.add_argument(
-        "--package-type",
-        choices=["deb", "binary", "coverity"],
-        required=True,
-    )
-    parser.add_argument(
-        "--clickhouse-repo-path",
-        default=os.path.join(os.path.dirname(SCRIPT_PATH), os.pardir, os.pardir),
-        type=dir_name,
-        help="ClickHouse git repository",
-    )
-    parser.add_argument("--output-dir", type=dir_name, required=True)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+    parser = argparse.ArgumentParser(description="ClickHouse building script using prebuilt Docker image")
+    # 'performance' creates a combined .tgz with server and configs to be used for performance test.
+    parser.add_argument("--package-type", choices=['deb', 'binary', 'performance'], required=True)
+    parser.add_argument("--clickhouse-repo-path", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
+    parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-
-    parser.add_argument(
-        "--compiler",
-        choices=(
-            "clang-14",
-            "clang-14-darwin",
-            "clang-14-darwin-aarch64",
-            "clang-14-aarch64",
-            "clang-14-ppc64le",
-            "clang-14-freebsd",
-            "gcc-11",
-        ),
-        default="clang-14",
-        help="a compiler to use",
-    )
-    parser.add_argument(
-        "--sanitizer",
-        choices=("address", "thread", "memory", "undefined", ""),
-        default="",
-    )
-
+    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
+                                               "clang-11-freebsd", "gcc-10"), default="clang-11")
+    parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
+    parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
-    parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
-    parser.add_argument(
-        "--ccache_dir",
-        default=os.getenv("HOME", "") + "/.ccache",
-        type=dir_name,
-        help="a directory with ccache",
-    )
+    parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
+    parser.add_argument("--ccache_dir", default= os.getenv("HOME", "") + '/.ccache')
     parser.add_argument("--distcc-hosts", nargs="+")
     parser.add_argument("--force-build-image", action="store_true")
     parser.add_argument("--version")
-    parser.add_argument("--author", default="clickhouse", help="a package author")
+    parser.add_argument("--author", default="clickhouse")
     parser.add_argument("--official", action="store_true")
-    parser.add_argument("--additional-pkgs", action="store_true")
+    parser.add_argument("--alien-pkgs", nargs='+', default=[])
     parser.add_argument("--with-coverage", action="store_true")
-    parser.add_argument(
-        "--with-binaries", choices=("programs", "tests", ""), default=""
-    )
-    parser.add_argument(
-        "--docker-image-version", default="latest", help="docker image tag to use"
-    )
-    parser.add_argument(
-        "--as-root", action="store_true", help="if the container should run as root"
-    )
+    parser.add_argument("--with-binaries", choices=("programs", "tests", ""), default="")
+    parser.add_argument("--docker-image-version", default="latest")
 
     args = parser.parse_args()
+    if not os.path.isabs(args.output_dir):
+        args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_name = f"clickhouse/{IMAGE_TYPE}-builder"
+    image_type = 'binary' if args.package_type == 'performance' else 'unbundled' if args.unbundled else args.package_type
+    image_name = IMAGE_MAP[image_type]
 
-    ch_root = args.clickhouse_repo_path
+    if not os.path.isabs(args.clickhouse_repo_path):
+        ch_root = os.path.abspath(os.path.join(os.getcwd(), args.clickhouse_repo_path))
+    else:
+        ch_root = args.clickhouse_repo_path
 
-    if args.additional_pkgs and args.package_type != "deb":
-        raise Exception("Can build additional packages only in deb build")
+    if args.alien_pkgs and not image_type == "deb":
+        raise Exception("Can add alien packages only in deb build")
 
-    if args.with_binaries != "" and args.package_type != "deb":
+    if args.with_binaries != "" and not image_type == "deb":
         raise Exception("Can add additional binaries only in deb build")
 
-    if args.with_binaries != "" and args.package_type == "deb":
-        logging.info("Should place %s to output", args.with_binaries)
+    if args.with_binaries != "" and image_type == "deb":
+        logging.info("Should place {} to output".format(args.with_binaries))
 
-    dockerfile = os.path.join(ch_root, "docker/packager", IMAGE_TYPE, "Dockerfile")
+    dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
     image_with_version = image_name + ":" + args.docker_image_version
-    if not check_image_exists_locally(image_name) or args.force_build_image:
+    if image_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_with_version) or args.force_build_image:
             build_image(image_with_version, dockerfile)
     env_prepared = parse_env_variables(
-        args.build_type,
-        args.compiler,
-        args.sanitizer,
-        args.package_type,
-        args.cache,
-        args.distcc_hosts,
-        args.split_binary,
-        args.clang_tidy,
-        args.version,
-        args.author,
-        args.official,
-        args.additional_pkgs,
-        args.with_coverage,
-        args.with_binaries,
-    )
+        args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
+        args.cache, args.distcc_hosts, args.unbundled, args.split_binary, args.clang_tidy,
+        args.version, args.author, args.official, args.alien_pkgs, args.with_coverage, args.with_binaries)
 
-    pre_build(args.clickhouse_repo_path, env_prepared)
-    run_docker_image_with_env(
-        image_name,
-        args.as_root,
-        args.output_dir,
-        env_prepared,
-        ch_root,
-        args.ccache_dir,
-        args.docker_image_version,
-    )
-    logging.info("Output placed into %s", args.output_dir)
+    run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir, args.docker_image_version)
+    logging.info("Output placed into {}".format(args.output_dir))

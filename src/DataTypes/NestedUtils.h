@@ -11,9 +11,7 @@ namespace Nested
 {
     std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name);
 
-    /// Splits name of compound identifier by first/last dot (depending on 'reverse' parameter).
-    std::pair<std::string, std::string> splitName(const std::string & name, bool reverse = false);
-    std::pair<std::string_view, std::string_view> splitName(const std::string_view & name, bool reverse = false);
+    std::pair<std::string, std::string> splitName(const std::string & name);
 
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
@@ -30,9 +28,6 @@ namespace Nested
 
     /// Check that sizes of arrays - elements of nested data structures - are equal.
     void validateArraySizes(const Block & block);
-
-    /// Get all nested tables names from a block.
-    std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
 }
 
 }

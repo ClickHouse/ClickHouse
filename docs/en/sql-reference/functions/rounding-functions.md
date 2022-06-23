@@ -1,11 +1,11 @@
 ---
-sidebar_position: 45
-sidebar_label: Rounding
+toc_priority: 45
+toc_title: Rounding
 ---
 
-# Rounding Functions
+# Rounding Functions {#rounding-functions}
 
-## floor(x\[, N\])
+## floor(x\[, N\]) {#floorx-n}
 
 Returns the largest round number that is less than or equal to `x`. A round number is a multiple of 1/10N, or the nearest number of the appropriate data type if 1 / 10N isn’t exact.
 ‘N’ is an integer constant, optional parameter. By default it is zero, which means to round to an integer.
@@ -17,19 +17,19 @@ Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function does not do anything).
 If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
 
-## ceil(x\[, N\]), ceiling(x\[, N\])
+## ceil(x\[, N\]), ceiling(x\[, N\]) {#ceilx-n-ceilingx-n}
 
 Returns the smallest round number that is greater than or equal to `x`. In every other way, it is the same as the `floor` function (see above).
 
-## trunc(x\[, N\]), truncate(x\[, N\])
+## trunc(x\[, N\]), truncate(x\[, N\]) {#truncx-n-truncatex-n}
 
 Returns the round number with largest absolute value that has an absolute value less than or equal to `x`‘s. In every other way, it is the same as the ’floor’ function (see above).
 
-## round(x\[, N\])
+## round(x\[, N\]) {#rounding_functions-round}
 
 Rounds a value to a specified number of decimal places.
 
-The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types (Decimal).
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types.
 
 ``` sql
 round(expression [, decimal_places])
@@ -47,9 +47,9 @@ round(expression [, decimal_places])
 
 The rounded number of the same type as the input number.
 
-### Examples
+### Examples {#examples}
 
-**Example of use with Float**
+**Example of use**
 
 ``` sql
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
@@ -61,20 +61,6 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 │ 0.5 │                        0 │
 │   1 │                        1 │
 └─────┴──────────────────────────┘
-```
-
-**Example of use with Decimal**
-
-``` sql
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3
-```
-
-``` text
-┌──────x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
-│ 0.0000 │                                           0.0000 │
-│ 0.5000 │                                           1.0000 │
-│ 1.0000 │                                           1.0000 │
-└────────┴──────────────────────────────────────────────────┘
 ```
 
 **Examples of rounding**
@@ -102,7 +88,7 @@ round(3.65, 1) = 3.6
 
 -   [roundBankers](#roundbankers)
 
-## roundBankers
+## roundBankers {#roundbankers}
 
 Rounds a number to a specified decimal position.
 
@@ -140,7 +126,7 @@ roundBankers(expression [, decimal_places])
 
 A value rounded by the banker’s rounding method.
 
-### Examples
+### Examples {#examples-1}
 
 **Example of use**
 
@@ -176,26 +162,26 @@ roundBankers(4.5) = 4
 roundBankers(3.55, 1) = 3.6
 roundBankers(3.65, 1) = 3.6
 roundBankers(10.35, 1) = 10.4
-roundBankers(10.755, 2) = 10.76
+roundBankers(10.755, 2) = 11,76
 ```
 
 **See Also**
 
 -   [round](#rounding_functions-round)
 
-## roundToExp2(num)
+## roundToExp2(num) {#roundtoexp2num}
 
 Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
 
-## roundDuration(num)
+## roundDuration(num) {#rounddurationnum}
 
-Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. 
+Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function is specific to Yandex.Metrica and used for implementing the report on session length.
 
-## roundAge(num)
+## roundAge(num) {#roundagenum}
 
-Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. 
+Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.
 
-## roundDown(num, arr)
+## roundDown(num, arr) {#rounddownnum-arr}
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 

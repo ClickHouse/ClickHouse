@@ -1,5 +1,5 @@
-<clickhouse>
-    <timezone>Etc/UTC</timezone>
+<yandex>
+    <timezone>Europe/Moscow</timezone>
     <listen_host>0.0.0.0</listen_host>
     <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <path>/var/lib/clickhouse/</path>
@@ -9,17 +9,12 @@
     <users_config>users.xml</users_config>
 
   <logger>
-        <level>test</level>
+        <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <size>1000M</size>
         <count>10</count>
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
-        <rotateOnOpen>true</rotateOnOpen>
     </logger>
-
-    <access_control_improvements>
-        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
-    </access_control_improvements>
-</clickhouse>
+</yandex>

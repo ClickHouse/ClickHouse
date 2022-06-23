@@ -1,12 +1,12 @@
 ---
-sidebar_position: 27
-sidebar_label: 第三方集成库
+toc_priority: 27
+toc_title: 第三方集成库
 ---
 
 # 第三方集成库 {#integration-libraries-from-third-party-developers}
 
 !!! warning "声明"
-    ClickHouse, Inc.**没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
+Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
 
 ## 基础设施 {#infrastructure-products}
 
@@ -42,8 +42,8 @@ sidebar_label: 第三方集成库
         -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
 -   Monitoring
     -   [Graphite](https://graphiteapp.org)
-        -   [graphouse](https://github.com/ClickHouse/graphouse)
-        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+        -   [graphouse](https://github.com/yandex/graphouse)
+        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
         -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
     -   [Grafana](https://grafana.com/)
@@ -105,4 +105,4 @@ sidebar_label: 第三方集成库
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[源文章](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->
+[源文章](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

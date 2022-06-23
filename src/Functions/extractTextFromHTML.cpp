@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -53,7 +53,7 @@
   *
   * Usage example:
   *
-  * SELECT extractTextFromHTML(html) FROM url('https://github.com/ClickHouse/ClickHouse', RawBLOB, 'html String')
+  * SELECT extractTextFromHTML(html) FROM url('https://yandex.ru/', RawBLOB, 'html String')
   *
   * - ClickHouse has embedded web browser.
   */
@@ -300,7 +300,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

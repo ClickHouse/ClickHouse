@@ -3,7 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
-#include <Access/Common/AccessRightsElement.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 
@@ -25,19 +25,13 @@ BlockIO InterpreterOptimizeQuery::execute()
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast, Context::ResolveOrdinary);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;
@@ -52,7 +46,7 @@ BlockIO InterpreterOptimizeQuery::execute()
                 column_names.emplace_back(col->getColumnName());
         }
 
-        storage_snapshot->check(column_names);
+        metadata_snapshot->check(column_names, NamesAndTypesList{}, table_id);
         Names required_columns;
         {
             required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
@@ -85,7 +79,7 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
 {
     const auto & optimize = query_ptr->as<const ASTOptimizeQuery &>();
     AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::OPTIMIZE, optimize.getDatabase(), optimize.getTable());
+    required_access.emplace_back(AccessType::OPTIMIZE, optimize.database, optimize.table);
     return required_access;
 }
 

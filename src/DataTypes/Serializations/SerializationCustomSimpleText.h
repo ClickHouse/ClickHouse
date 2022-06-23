@@ -10,20 +10,18 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
-/** Simple ISerialization that uses serializeText/deserializeText
+/** Simple IDataTypeCustomTextSerialization that uses serializeText/deserializeText
  * for all serialization and deserialization. */
 class SerializationCustomSimpleText : public SerializationWrapper
 {
 public:
-    explicit SerializationCustomSimpleText(const SerializationPtr & nested_);
+    SerializationCustomSimpleText(const SerializationPtr & nested_);
 
     // Methods that subclasses must override in order to get full serialization/deserialization support.
     virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;
-    /// whole = true means that buffer contains only one value, so we should read until EOF.
-    /// It's needed to check if there is garbage after parsed field.
-    virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const = 0;
+    virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
-    /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
+    /** Text deserialization without quoting or escaping.
       */
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 

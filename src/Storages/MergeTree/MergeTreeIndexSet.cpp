@@ -4,10 +4,9 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 
 
 namespace DB
@@ -49,7 +48,8 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty set index {}.", backQuote(index_name));
+        throw Exception(
+            "Attempt to write empty set index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
@@ -80,11 +80,8 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
 {
-    if (version != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
-
     block.clear();
 
     Field field_rows;
@@ -199,7 +196,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     size_t limit,
     ClearableSetVariants & variants) const
 {
-    /// Like DistinctSortedTransform.
+    /// Like DistinctSortedBlockInputStream.
     typename Method::State state(column_ptrs, key_sizes, nullptr);
 
     bool has_new_data = false;
@@ -250,7 +247,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_sample_block(index_sample_block_)
 {
     for (const auto & name : index_sample_block.getNames())
-        if (!key_columns.contains(name))
+        if (!key_columns.count(name))
             key_columns.insert(name);
 
     const auto & select = query.query->as<ASTSelectQuery &>();
@@ -356,11 +353,11 @@ bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
         return true;
 
     if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.contains(identifier->getColumnName());
+        return key_columns.count(identifier->getColumnName()) != 0;
 
     if (auto * func = node->as<ASTFunction>())
     {
-        if (key_columns.contains(func->getColumnName()))
+        if (key_columns.count(func->getColumnName()))
         {
             /// Function is already calculated.
             node = std::make_shared<ASTIdentifier>(func->getColumnName());
@@ -446,7 +443,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
     if (const auto * func = node->as<ASTFunction>())
     {
-        if (key_columns.contains(func->getColumnName()))
+        if (key_columns.count(func->getColumnName()))
             return false;
 
         const ASTs & args = func->arguments->children;
@@ -484,7 +481,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
-}
+};
 
 bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
 {

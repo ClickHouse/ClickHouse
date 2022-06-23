@@ -5,7 +5,6 @@
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/PODArray.h>
 
 
 namespace DB
@@ -116,11 +115,6 @@ public:
         return data->getFloat32(0);
     }
 
-    bool isDefaultAt(size_t) const override
-    {
-        return data->isDefaultAt(0);
-    }
-
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -163,7 +157,7 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        const auto * res = data->deserializeAndInsertFromArena(pos);
+        auto res = data->deserializeAndInsertFromArena(pos);
         data->popBack(1);
         ++s;
         return res;
@@ -187,15 +181,11 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void expand(const Filter & mask, bool inverted) override;
-
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-    void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, Permutation & res) const override;
-    void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
 
     size_t byteSize() const override
     {
@@ -242,30 +232,9 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (const auto * rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
+        if (auto rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
             return data->structureEquals(*rhs_concrete->data);
         return false;
-    }
-
-    double getRatioOfDefaultRows(double) const override
-    {
-        return data->isDefaultAt(0) ? 1.0 : 0.0;
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        if (!data->isDefaultAt(0))
-        {
-            size_t to = limit && from + limit < size() ? from + limit : size();
-            indices.reserve(indices.size() + to - from);
-            for (size_t i = from; i < to; ++i)
-                indices.push_back(i);
-        }
-    }
-
-    SerializationInfoPtr getSerializationInfo() const override
-    {
-        return data->getSerializationInfo();
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }

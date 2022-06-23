@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<clickhouse>
+<yandex>
     <http_handlers>
         <rule>
             <methods>GET</methods>
@@ -19,8 +19,7 @@
             <handler>
                 <type>predefined_query_handler</type>
                 <query>SELECT name, value FROM system.settings WHERE name = {setting_name_1:String} OR name = {setting_name_2:String}</query>
-                <content_type>application/generic+one</content_type>
             </handler>
         </rule>
     </http_handlers>
-</clickhouse>
+</yandex>

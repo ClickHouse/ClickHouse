@@ -7,7 +7,6 @@
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -28,24 +27,14 @@ struct StudentTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "studentTTest";
 
-    bool hasEnoughObservations() const
+    std::pair<Float64, Float64> getResult() const
     {
-        return nx > 0 && ny > 0 && nx + ny > 2;
-    }
-
-    Float64 getDegreesOfFreedom() const
-    {
-        return nx + ny - 2;
-    }
-
-    std::tuple<Float64, Float64> getResult() const
-    {
-        Float64 mean_x = getMeanX();
-        Float64 mean_y = getMeanY();
+        Float64 mean_x = x1 / nx;
+        Float64 mean_y = y1 / ny;
 
         /// To estimate the variance we first estimate two means.
         /// That's why the number of degrees of freedom is the total number of values of both samples minus 2.
-        Float64 degrees_of_freedom = getDegreesOfFreedom();
+        Float64 degrees_of_freedom = nx + ny - 2;
 
         /// Calculate s^2
         /// The original formulae looks like
@@ -70,14 +59,12 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertBinary(name, argument_types);
-
-    if (parameters.size() > 1)
-        throw Exception("Aggregate function " + name + " requires zero or one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
         throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);
 
-    return std::make_shared<AggregateFunctionTTest<StudentTTestData>>(argument_types, parameters);
+    return std::make_shared<AggregateFunctionTTest<StudentTTestData>>(argument_types);
 }
 
 }

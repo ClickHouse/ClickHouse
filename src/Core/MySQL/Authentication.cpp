@@ -2,13 +2,13 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include <Interpreters/Session.h>
-#include <Access/Credentials.h>
+#include <Access/User.h>
+#include <Access/AccessControlManager.h>
 
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
 
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 namespace DB
 {
@@ -30,16 +30,15 @@ namespace Authentication
 
 static const size_t SCRAMBLE_LENGTH = 20;
 
-/** Generate a random string using ASCII characters but avoid separator character,
-  * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
-  * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
-  */
-static String generateScramble()
+Native41::Native41()
 {
-    String scramble;
     scramble.resize(SCRAMBLE_LENGTH + 1, 0);
     Poco::RandomInputStream generator;
 
+    /** Generate a random string using ASCII characters but avoid separator character,
+      * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
+      * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
+      */
     for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
     {
         generator >> scramble[i];
@@ -47,18 +46,14 @@ static String generateScramble()
         if (scramble[i] == '\0' || scramble[i] == '$')
             scramble[i] = scramble[i] + 1;
     }
-
-    return scramble;
 }
 
-Native41::Native41() : scramble(generateScramble()) { }
-
-Native41::Native41(const String & password_, const String & scramble_)
+Native41::Native41(const String & password, const String & auth_plugin_data)
 {
     /// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
     /// SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat> SHA1( SHA1( password ) ) )
     Poco::SHA1Engine engine1;
-    engine1.update(password_);
+    engine1.update(password);
     const Poco::SHA1Engine::Digest & password_sha1 = engine1.digest();
 
     Poco::SHA1Engine engine2;
@@ -66,17 +61,19 @@ Native41::Native41(const String & password_, const String & scramble_)
     const Poco::SHA1Engine::Digest & password_double_sha1 = engine2.digest();
 
     Poco::SHA1Engine engine3;
-    engine3.update(scramble_.data(), scramble_.size());
+    engine3.update(auth_plugin_data.data(), auth_plugin_data.size());
     engine3.update(password_double_sha1.data(), password_double_sha1.size());
     const Poco::SHA1Engine::Digest & digest = engine3.digest();
 
     scramble.resize(SCRAMBLE_LENGTH);
-    for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
+    for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+    {
         scramble[i] = static_cast<unsigned char>(password_sha1[i] ^ digest[i]);
+    }
 }
 
 void Native41::authenticate(
-    const String & user_name, Session & session, std::optional<String> auth_response,
+    const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
@@ -89,7 +86,7 @@ void Native41::authenticate(
 
     if (auth_response->empty())
     {
-        session.authenticate(user_name, "", address);
+        context->setUser(user_name, "", address);
         return;
     }
 
@@ -99,7 +96,22 @@ void Native41::authenticate(
                 + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
             ErrorCodes::UNKNOWN_EXCEPTION);
 
-    session.authenticate(MySQLNative41Credentials{user_name, scramble, *auth_response}, address);
+    auto user = context->getAccessControlManager().read<User>(user_name);
+
+    Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
+    assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
+
+    Poco::SHA1Engine engine;
+    engine.update(scramble.data(), SCRAMBLE_LENGTH);
+    engine.update(double_sha1_value.data(), double_sha1_value.size());
+
+    String password_sha1(Poco::SHA1Engine::DIGEST_SIZE, 0x0);
+    const Poco::SHA1Engine::Digest & digest = engine.digest();
+    for (size_t i = 0; i < password_sha1.size(); i++)
+    {
+        password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
+    }
+    context->setUser(user_name, password_sha1, address);
 }
 
 #if USE_SSL
@@ -111,11 +123,20 @@ Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logg
      *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin. [1]
      *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
      */
-    scramble = generateScramble();
+    scramble.resize(SCRAMBLE_LENGTH + 1, 0);
+    Poco::RandomInputStream generator;
+
+    for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
+    {
+        generator >> scramble[i];
+        scramble[i] &= 0x7f;
+        if (scramble[i] == '\0' || scramble[i] == '$')
+            scramble[i] = scramble[i] + 1;
+    }
 }
 
 void Sha256Password::authenticate(
-    const String & user_name, Session & session, std::optional<String> auth_response,
+    const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
@@ -191,9 +212,9 @@ void Sha256Password::authenticate(
         }
 
         password.resize(plaintext_size);
-        for (int i = 0; i < plaintext_size; ++i)
+        for (int i = 0; i < plaintext_size; i++)
         {
-            password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % SCRAMBLE_LENGTH]);
+            password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
         }
     }
     else if (is_secure_connection)
@@ -210,7 +231,7 @@ void Sha256Password::authenticate(
         password.pop_back();
     }
 
-    session.authenticate(user_name, password, address);
+    context->setUser(user_name, password, address);
 }
 
 #endif

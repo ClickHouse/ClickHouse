@@ -1,3 +1,5 @@
+set allow_experimental_window_functions = 1;
+
 drop table if exists product_groups;
 drop table if exists products;
 
@@ -36,14 +38,14 @@ SELECT
   price,
 	rank() OVER (PARTITION BY group_name ORDER BY price) rank
 FROM products INNER JOIN product_groups USING (group_id)
-order by group_name, rank, price, product_name;
+order by  group_name, rank, price;
 
 select '---- Q3 ----';
 SELECT
 	product_name,
 	group_name,
 	price,
-	row_number() OVER (PARTITION BY group_name ORDER BY price desc, product_name asc) rn
+	row_number() OVER (PARTITION BY group_name ORDER BY price desc) rn
 FROM products INNER JOIN product_groups USING (group_id)
 ORDER BY group_name, rn;
 

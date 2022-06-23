@@ -12,10 +12,11 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include <Core/QueryProcessingStage.h>
-#include <QueryPipeline/BlockIO.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
@@ -31,13 +32,14 @@ public:
     InterpreterWatchQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
-    QueryPipelineBuilder buildQueryPipeline();
 
 private:
     ASTPtr query_ptr;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
+    /// Streams of read data
+    BlockInputStreams streams;
 };
 
 }

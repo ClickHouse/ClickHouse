@@ -1,6 +1,6 @@
 ---
-sidebar_position: 12
-sidebar_label: ExternalDistributed
+toc_priority: 12
+toc_title: ExternalDistributed
 ---
 
 # ExternalDistributed {#externaldistributed}
@@ -35,7 +35,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `password` — пароль пользователя.
 
 ## Особенности реализации {#implementation-details}
-
+	
 Поддерживает несколько реплик, которые должны быть перечислены через `|`, а шарды — через `,`. Например:
 
 ```sql

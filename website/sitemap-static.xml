@@ -1,23 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
-  <loc>https://clickhouse.com/</loc>
+  <loc>https://clickhouse.tech/</loc>
   <changefreq>daily</changefreq>
 </url>
-  <url>
-  <loc>https://clickhouse.com/company/</loc>
+<url>
+  <loc>https://clickhouse.tech/benchmark/dbms/</loc>
   <changefreq>weekly</changefreq>
 </url>
 <url>
-  <loc>https://clickhouse.com/benchmark/dbms/</loc>
+  <loc>https://clickhouse.tech/benchmark/hardware/</loc>
   <changefreq>weekly</changefreq>
 </url>
 <url>
-  <loc>https://clickhouse.com/benchmark/hardware/</loc>
-  <changefreq>weekly</changefreq>
-</url>
-<url>
-  <loc>https://clickhouse.com/codebrowser/ClickHouse/index.html</loc>
+  <loc>https://clickhouse.tech/codebrowser/html_report/ClickHouse/index.html</loc>
   <changefreq>daily</changefreq>
 </url>
 </urlset>

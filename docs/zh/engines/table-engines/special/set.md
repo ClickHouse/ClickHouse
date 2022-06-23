@@ -8,4 +8,4 @@
 
 对于强制服务器重启，磁盘上的数据块可能会丢失或损坏。在数据块损坏的情况下，可能需要手动删除包含损坏数据的文件。
 
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/set/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/set/) <!--hide-->

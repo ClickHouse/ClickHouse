@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: "访问权限和账户管理"
+toc_priority: 48
+toc_title: "访问权限和账户管理"
 ---
 
 # 访问权限和账户管理 {#access-rights}
@@ -143,4 +143,4 @@ Management queries:
      默认情况，SQL驱动方式的访问权限和账户管理对所有用户都是关闭的。你需要在 `users.xml` 中配置至少一个用户，并且把[权限管理](settings/settings-users.md#access_management-user-setting)的值设置为1。
 
 
-[Original article](https://clickhouse.com/docs/en/operations/access_rights/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

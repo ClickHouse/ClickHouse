@@ -13,14 +13,11 @@ void registerTableFunctions()
     registerTableFunctionNumbers(factory);
     registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
-    registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
-
-    registerTableFunctionMeiliSearch(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
@@ -30,11 +27,6 @@ void registerTableFunctions()
 
 #if USE_HDFS
     registerTableFunctionHDFS(factory);
-    registerTableFunctionHDFSCluster(factory);
-#endif
-
-#if USE_HIVE
-    registerTableFunctionHive(factory);
 #endif
 
     registerTableFunctionODBC(factory);
@@ -50,13 +42,7 @@ void registerTableFunctions()
     registerTableFunctionPostgreSQL(factory);
 #endif
 
-#if USE_SQLITE
-    registerTableFunctionSQLite(factory);
-#endif
-
     registerTableFunctionDictionary(factory);
-
-    registerTableFunctionFormat(factory);
 }
 
 }

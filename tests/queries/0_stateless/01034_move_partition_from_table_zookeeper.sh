@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-fasttest
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -76,8 +75,8 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE dst;"
 
 $CLICKHOUSE_CLIENT --query="SELECT 'MOVE incompatible schema different order by';"
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src3', '1') PARTITION BY p ORDER BY (p, k, d);"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE dst (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst3', '1') PARTITION BY p ORDER BY (d, k, p);"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CURR_DATABASE/src3', '1') PARTITION BY p ORDER BY (p, k, d);"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE dst (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CURR_DATABASE/dst3', '1') PARTITION BY p ORDER BY (d, k, p);"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (0, '0', 1);"

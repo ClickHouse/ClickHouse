@@ -1,7 +1,19 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
+
+#include <Columns/ColumnVector.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <common/DateLUT.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
+#include <Parsers/ASTLiteral.h>
+
 #include <optional>
 #include <string>
 
@@ -53,7 +65,7 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationDateTime64>(scale, *this);
+    return std::make_shared<SerializationDateTime64>(time_zone, utc_time_zone, scale);
 }
 
 }

@@ -15,6 +15,7 @@
 namespace DB
 {
 /** Search and replace functions in strings:
+  *
   * position(haystack, needle)     - the normal search for a substring in a string, returns the position (in bytes) of the found substring starting with 1, or 0 if no substring is found.
   * positionUTF8(haystack, needle) - the same, but the position is calculated at code points, provided that the string is encoded in UTF-8.
   * positionCaseInsensitive(haystack, needle)
@@ -23,29 +24,13 @@ namespace DB
   * like(haystack, pattern)        - search by the regular expression LIKE; Returns 0 or 1. Case-insensitive, but only for Latin.
   * notLike(haystack, pattern)
   *
-  * ilike(haystack, pattern) - like 'like' but case-insensitive
-  * notIlike(haystack, pattern)
-  *
   * match(haystack, pattern)       - search by regular expression re2; Returns 0 or 1.
+  * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns 0 or 1 if any pattern_i matches.
+  * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns index of any match or zero if none;
+  * multiMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns an array of matched indices in any order;
   *
   * countSubstrings(haystack, needle) -- count number of occurrences of needle in haystack.
   * countSubstringsCaseInsensitive(haystack, needle)
-  * countSubstringsCaseInsensitiveUTF8(haystack, needle)
-  *
-  * hasToken()
-  * hasTokenCaseInsensitive()
-  *
-  * JSON stuff:
-  * visitParamExtractBool()
-  * simpleJSONExtractBool()
-  * visitParamExtractFloat()
-  * simpleJSONExtractFloat()
-  * visitParamExtractInt()
-  * simpleJSONExtractInt()
-  * visitParamExtractUInt()
-  * simpleJSONExtractUInt()
-  * visitParamHas()
-  * simpleJSONHas()
   *
   * Applies regexp re2 and pulls:
   * - the first subpattern, if the regexp has a subpattern;
@@ -61,18 +46,16 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Impl>
+template <typename Impl, typename Name>
 class FunctionsStringSearch : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
+    static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return Impl::supports_start_pos; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {
@@ -85,13 +68,17 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
-        return Impl::getArgumentsThatAreAlwaysConstant();
+        if (!Impl::use_default_implementation_for_constants)
+            return ColumnNumbers{};
+        if (!Impl::supports_start_pos)
+            return ColumnNumbers{1, 2};
+        return ColumnNumbers{1, 2, 3};
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2 || 3 < arguments.size())
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+            throw Exception("Number of arguments for function " + String(Name::name) + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be 2 or 3.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -115,6 +102,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
+        using ResultType = typename Impl::ResultType;
+
         const ColumnPtr & column_haystack = arguments[0].column;
         const ColumnPtr & column_needle = arguments[1].column;
 
@@ -124,8 +113,6 @@ public:
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
-
-        using ResultType = typename Impl::ResultType;
 
         if constexpr (!Impl::use_default_implementation_for_constants)
         {
@@ -171,14 +158,6 @@ public:
                 col_haystack_vector->getChars(),
                 col_haystack_vector->getOffsets(),
                 col_needle_const->getValue<String>(),
-                column_start_pos,
-                vec_res);
-        else if (col_haystack_vector_fixed && col_needle_vector)
-            Impl::vectorFixedVector(
-                col_haystack_vector_fixed->getChars(),
-                col_haystack_vector_fixed->getN(),
-                col_needle_vector->getChars(),
-                col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res);
         else if (col_haystack_vector_fixed && col_needle_const)

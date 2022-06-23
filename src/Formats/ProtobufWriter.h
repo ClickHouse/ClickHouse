@@ -1,6 +1,8 @@
 #pragma once
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_PROTOBUF
 #   include <Core/Types.h>
@@ -16,7 +18,7 @@ class WriteBuffer;
 class ProtobufWriter
 {
 public:
-    explicit ProtobufWriter(WriteBuffer & out_);
+    ProtobufWriter(WriteBuffer & out_);
     ~ProtobufWriter();
 
     void startMessage();

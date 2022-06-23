@@ -1,18 +1,18 @@
 #include <Storages/System/StorageSystemPrivileges.h>
-#include <Access/AccessControl.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/SettingsProfile.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Access/AccessControlManager.h>
+#include <Access/SettingsProfile.h>
+#include <Access/AccessFlags.h>
 
 
 namespace DB
@@ -44,11 +44,11 @@ namespace
 }
 
 
-const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccessTypeEnumValues()
+const std::vector<std::pair<String, Int8>> & StorageSystemPrivileges::getAccessTypeEnumValues()
 {
-    static const std::vector<std::pair<String, Int16>> values = []
+    static const std::vector<std::pair<String, Int8>> values = []
     {
-        std::vector<std::pair<String, Int16>> res;
+        std::vector<std::pair<String, Int8>> res;
 
 #define ADD_ACCESS_TYPE_ENUM_VALUE(name, aliases, node_type, parent_group_name) \
         res.emplace_back(toString(AccessType::name), static_cast<size_t>(AccessType::name));
@@ -65,10 +65,10 @@ const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccess
 NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
 {
     NamesAndTypesList names_and_types{
-        {"privilege", std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())},
+        {"privilege", std::make_shared<DataTypeEnum8>(getAccessTypeEnumValues())},
         {"aliases", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getLevelEnumValues()))},
-        {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues()))},
+        {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getAccessTypeEnumValues()))},
     };
     return names_and_types;
 }
@@ -77,17 +77,17 @@ NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
 void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     size_t column_index = 0;
-    auto & column_access_type = assert_cast<ColumnInt16 &>(*res_columns[column_index++]).getData();
+    auto & column_access_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
     auto & column_aliases = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_aliases_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_level = assert_cast<ColumnInt8 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
     auto & column_level_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
-    auto & column_parent_group = assert_cast<ColumnInt16 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
+    auto & column_parent_group = assert_cast<ColumnInt8 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
     auto & column_parent_group_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
 
     auto add_row = [&](AccessType access_type, const std::string_view & aliases, Level max_level, AccessType parent_group)
     {
-        column_access_type.push_back(static_cast<Int16>(access_type));
+        column_access_type.push_back(static_cast<Int8>(access_type));
 
         for (size_t pos = 0; pos < aliases.length();)
         {
@@ -121,7 +121,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
         }
         else
         {
-            column_parent_group.push_back(static_cast<Int16>(parent_group));
+            column_parent_group.push_back(static_cast<Int8>(parent_group));
             column_parent_group_null_map.push_back(false);
         }
     };

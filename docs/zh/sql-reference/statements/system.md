@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: SYSTEM
+toc_priority: 37
+toc_title: SYSTEM
 ---
 
 # SYSTEM Queries {#query-language-system}
@@ -280,4 +280,4 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 重置所有 `ReplicatedMergeTree`表的ZooKeeper会话状态。该操作会以Zookeeper为参照，对比当前状态，有需要的情况下将任务添加到ZooKeeper队列。
 
-[原始文档](https://clickhouse.com/docs/en/query_language/system/) <!--hide-->
+[原始文档](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

@@ -1,6 +1,8 @@
 #include <Columns/Collator.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_ICU
 #    include <unicode/locid.h>
@@ -17,7 +19,6 @@
 #include <Common/Exception.h>
 #include <Poco/String.h>
 #include <algorithm>
-#include <base/sort.h>
 
 
 namespace DB
@@ -75,10 +76,10 @@ AvailableCollationLocales::LocalesVector AvailableCollationLocales::getAvailable
         result.push_back(name_and_locale.second);
 
     auto comparator = [] (const LocaleAndLanguage & f, const LocaleAndLanguage & s)
-    {
-        return f.locale_name < s.locale_name;
-    };
-    ::sort(result.begin(), result.end(), comparator);
+        {
+            return f.locale_name < s.locale_name;
+        };
+    std::sort(result.begin(), result.end(), comparator);
 
     return result;
 }
@@ -86,7 +87,7 @@ AvailableCollationLocales::LocalesVector AvailableCollationLocales::getAvailable
 bool AvailableCollationLocales::isCollationSupported(const std::string & locale_name) const
 {
     /// We support locale names in any case, so we have to convert all to lower case
-    return locales_map.contains(Poco::toLower(locale_name));
+    return locales_map.count(Poco::toLower(locale_name));
 }
 
 Collator::Collator(const std::string & locale_)

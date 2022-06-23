@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 39
-sidebar_label: "\u5185\u90E8\u5B57\u5178"
+toc_priority: 39
+toc_title: "\u5185\u90E8\u5B57\u5178"
 ---
 
 # 内部字典 {#internal_dicts}
@@ -52,4 +52,4 @@ Geobase从文本文件加载。
 
 还有与操作系统标识符和Yandex的工作功能。Metrica搜索引擎，但他们不应该被使用。
 
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/internal_dicts/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/internal_dicts/) <!--hide-->

@@ -1,13 +1,9 @@
-# rebuild in #33610
 #  docker build -t clickhouse/fasttest .
-ARG FROM_TAG=latest
-FROM clickhouse/test-util:$FROM_TAG
+FROM ubuntu:20.04
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=14
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -30,14 +26,12 @@ RUN apt-get update \
         software-properties-common \
         --yes --no-install-recommends
 
-# Architecture of the image when BuildKit/buildx is used
-ARG TARGETARCH
-
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN arch=${TARGETARCH:-amd64} \
-  && curl -Lo /usr/bin/dpkg-deb https://github.com/ClickHouse-Extras/dpkg/releases/download/1.21.1-clickhouse/dpkg-deb-${arch}
+RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
+    && chmod +x dpkg-deb \
+    && cp dpkg-deb /usr/bin
 
 RUN apt-get update \
     && apt-get install \
@@ -73,7 +67,7 @@ RUN apt-get update \
         unixodbc \
        --yes --no-install-recommends
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

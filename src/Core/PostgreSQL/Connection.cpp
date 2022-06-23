@@ -1,8 +1,5 @@
 #include "Connection.h"
-
-#if USE_LIBPQXX
-#include <Common/logger_useful.h>
-
+#include <common/logger_useful.h>
 
 namespace postgres
 {
@@ -12,7 +9,10 @@ Connection::Connection(const ConnectionInfo & connection_info_, bool replication
     , log(&Poco::Logger::get("PostgreSQLReplicaConnection"))
 {
     if (replication)
-        connection_info = {fmt::format("{} replication=database", connection_info.connection_string), connection_info.host_port};
+    {
+        connection_info = std::make_pair(
+            fmt::format("{} replication=database", connection_info.first), connection_info.second);
+    }
 }
 
 void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec)
@@ -39,6 +39,7 @@ void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)>
 pqxx::connection & Connection::getRef()
 {
     connect();
+    assert(connection != nullptr);
     return *connection;
 }
 
@@ -58,14 +59,11 @@ void Connection::updateConnection()
 {
     if (connection)
         connection->close();
-
     /// Always throws if there is no connection.
-    connection = std::make_unique<pqxx::connection>(connection_info.connection_string);
-
+    connection = std::make_unique<pqxx::connection>(connection_info.first);
     if (replication)
         connection->set_variable("default_transaction_isolation", "'repeatable read'");
-
-    LOG_DEBUG(&Poco::Logger::get("PostgreSQLConnection"), "New connection to {}", connection_info.host_port);
+    LOG_DEBUG(&Poco::Logger::get("PostgreSQLConnection"), "New connection to {}", connection_info.second);
 }
 
 void Connection::connect()
@@ -74,5 +72,3 @@ void Connection::connect()
         updateConnection();
 }
 }
-
-#endif

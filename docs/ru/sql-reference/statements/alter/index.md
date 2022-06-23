@@ -1,6 +1,6 @@
 ---
-sidebar_position: 35
-sidebar_label: ALTER
+toc_priority: 35
+toc_title: ALTER
 ---
 
 ## ALTER {#query_language_queries_alter}
@@ -14,7 +14,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 В запросе указывается список из одного или более действий через запятую.
 Каждое действие — операция над столбцом.
 
-Большинство запросов `ALTER TABLE` изменяют настройки таблицы или данные:
+Большинство запросов `ALTER` изменяют настройки таблицы или данные:
 
 -   [COLUMN](../../../sql-reference/statements/alter/column.md)
 -   [PARTITION](../../../sql-reference/statements/alter/partition.md)
@@ -25,13 +25,8 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
-    :::note 
-    Запрос `ALTER TABLE` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
-    :::
-Следующие запросы `ALTER` управляют представлениями:
-
--   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — изменяет структуру [Materialized view](../create/view.md#materialized).
--   [ALTER LIVE VIEW](../../../sql-reference/statements/alter/view.md#alter-live-view) — обновляет [Live view](../create/view.md#live-view).
+!!! note "Note"
+    Запрос `ALTER` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
 
 Следующие запросы `ALTER` изменяют сущности, связанные с управлением доступом на основе ролей:
 
@@ -40,8 +35,6 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [QUOTA](../../../sql-reference/statements/alter/quota.md)
 -   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
-
-Выражение [ALTER TABLE ... MODIFY COMMENT](../../../sql-reference/statements/alter/comment.md) добавляет, изменяет или удаляет комментарий к таблице, независимо от того, был ли он установлен раньше или нет.
 
 ### Мутации {#mutations}
 
@@ -71,11 +64,8 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 Для нереплицируемых таблиц, все запросы `ALTER` выполняются синхронно. Для реплицируемых таблиц, запрос всего лишь добавляет инструкцию по соответствующим действиям в `ZooKeeper`, а сами действия осуществляются при первой возможности. Но при этом, запрос может ждать завершения выполнения этих действий на всех репликах.
 
-Для всех запросов `ALTER` можно настроить ожидание с помощью настройки [replication_alter_partitions_sync](../../../operations/settings/settings.md#replication-alter-partitions-sync).
+Для запросов `ALTER ... ATTACH|DETACH|DROP` можно настроить ожидание, с помощью настройки `replication_alter_partitions_sync`.
+Возможные значения: `0` - не ждать, `1` - ждать выполнения только у себя (по умолчанию), `2` - ждать всех.
 
-Вы можете указать время ожидания (в секундах) выполнения всех запросов `ALTER` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
+Для запросов `ALTER TABLE ... UPDATE|DELETE` синхронность выполнения определяется настройкой [mutations_sync](../../../operations/settings/settings.md#mutations_sync). 
 
-:::info "Примечание"
-    Для всех запросов `ALTER` при `replication_alter_partitions_sync = 2` и неактивности некоторых реплик больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
-
-Для запросов `ALTER TABLE ... UPDATE|DELETE` синхронность выполнения определяется настройкой [mutations_sync](../../../operations/settings/settings.md#mutations_sync).

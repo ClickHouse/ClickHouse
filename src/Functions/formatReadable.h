@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -34,11 +33,6 @@ public:
     String getName() const override
     {
         return name;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return true;
     }
 
     size_t getNumberOfArguments() const override { return 1; }

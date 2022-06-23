@@ -26,20 +26,17 @@ int io_setup(unsigned nr, aio_context_t * ctxp);
 int io_destroy(aio_context_t ctx);
 
 /// last argument is an array of pointers technically speaking
-int io_submit(aio_context_t ctx, long nr, struct iocb * iocbpp[]); /// NOLINT
+int io_submit(aio_context_t ctx, long nr, struct iocb * iocbpp[]);
 
-int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events, struct timespec * timeout); /// NOLINT
+int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events, struct timespec * timeout);
 
 
 struct AIOContext : private boost::noncopyable
 {
-    aio_context_t ctx = 0;
+    aio_context_t ctx;
 
-    AIOContext() = default;
-    explicit AIOContext(unsigned int nr_events);
+    AIOContext(unsigned int nr_events = 128);
     ~AIOContext();
-    AIOContext(AIOContext && rhs) noexcept;
-    AIOContext & operator=(AIOContext && rhs) noexcept;
 };
 
 #elif defined(OS_FREEBSD)

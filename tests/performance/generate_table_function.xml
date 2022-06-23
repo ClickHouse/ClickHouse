@@ -4,8 +4,8 @@
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Enum8(\'hello\' = 1, \'world\' = 5)', 0, 10, 10) LIMIT 1000000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Array(Nullable(Enum8(\'hello\' = 1, \'world\' = 5)))', 0, 10, 10) LIMIT 100000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Nullable(Enum16(\'h\' = 1, \'w\' = 5 , \'o\' = -200))', 0, 10, 10) LIMIT 1000000000);</query>
-    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('d Date, dt DateTime, dtm DateTime(\'Asia/Istanbul\')', 0, 10, 10) LIMIT 1000000000);</query>
-    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('dt64 DateTime64, dts64 DateTime64(6), dtms64 DateTime64(6 ,\'Asia/Istanbul\')', 0, 10, 10) LIMIT 100000000);</query>
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('d Date, dt DateTime, dtm DateTime(\'Europe/Moscow\')', 0, 10, 10) LIMIT 1000000000);</query>
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('dt64 DateTime64, dts64 DateTime64(6), dtms64 DateTime64(6 ,\'Europe/Moscow\')', 0, 10, 10) LIMIT 100000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('f32 Float32, f64 Float64', 0, 10, 10) LIMIT 1000000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('d32 Decimal32(4), d64 Decimal64(8), d128 Decimal128(16)', 0, 10, 10) LIMIT 1000000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Tuple(Int32, Int64)', 0, 10, 10) LIMIT 1000000000);</query>

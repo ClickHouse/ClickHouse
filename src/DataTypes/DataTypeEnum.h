@@ -27,8 +27,6 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool isComparable() const override { return true; }
-
-    virtual bool contains(const IDataType & rhs) const = 0;
 };
 
 
@@ -38,7 +36,6 @@ class DataTypeEnum final : public IDataTypeEnum, public EnumValues<Type>
 public:
     using FieldType = Type;
     using ColumnType = ColumnVector<FieldType>;
-    static constexpr auto type_id = sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16;
     using typename EnumValues<Type>::Values;
 
     static constexpr bool is_parametric = true;
@@ -53,7 +50,7 @@ public:
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
 
-    TypeIndex getTypeId() const override { return type_id; }
+    TypeIndex getTypeId() const override { return sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16; }
 
     FieldType readValue(ReadBuffer & istr) const
     {
@@ -79,7 +76,7 @@ public:
     /// Example:
     /// Enum('a' = 1, 'b' = 2) -> Enum('c' = 1, 'b' = 2, 'd' = 3) OK
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
-    bool contains(const IDataType & rhs) const override;
+    bool contains(const IDataType & rhs) const;
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

@@ -1,8 +1,8 @@
 ---
-sidebar_position: 150
+toc_priority: 150
 ---
 
-# skewPop
+# skewPop {#skewpop}
 
 Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 

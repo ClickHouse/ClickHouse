@@ -8,26 +8,19 @@
 namespace DB
 {
 /**
- * This buffer writes to cache, but after finalize() copy written file from cache to disk.
+ * Write buffer with possibility to set and invoke callback after 'finalize' call.
  */
-class WritingToCacheWriteBuffer final : public WriteBufferFromFileDecorator
+class CompletionAwareWriteBuffer : public WriteBufferFromFileDecorator
 {
 public:
-    WritingToCacheWriteBuffer(
-        std::unique_ptr<WriteBufferFromFileBase> impl_,
-        std::function<std::unique_ptr<ReadBuffer>()> create_read_buffer_,
-        std::function<std::unique_ptr<WriteBuffer>()> create_write_buffer_)
-        : WriteBufferFromFileDecorator(std::move(impl_))
-        , create_read_buffer(std::move(create_read_buffer_))
-        , create_write_buffer(std::move(create_write_buffer_))
-    {
-    }
+    CompletionAwareWriteBuffer(std::unique_ptr<WriteBufferFromFileBase> impl_, std::function<void()> completion_callback_)
+        : WriteBufferFromFileDecorator(std::move(impl_)), completion_callback(completion_callback_) { }
 
-    ~WritingToCacheWriteBuffer() override
+    virtual ~CompletionAwareWriteBuffer() override
     {
         try
         {
-            finalize();
+            CompletionAwareWriteBuffer::finalize();
         }
         catch (...)
         {
@@ -35,36 +28,18 @@ public:
         }
     }
 
-    void preFinalize() override
+    void finalize() override
     {
-        impl->next();
-        impl->preFinalize();
-        impl->finalize();
+        if (finalized)
+            return;
 
-        read_buffer = create_read_buffer();
-        write_buffer = create_write_buffer();
-        copyData(*read_buffer, *write_buffer);
-        write_buffer->next();
-        write_buffer->preFinalize();
+        WriteBufferFromFileDecorator::finalize();
 
-        is_prefinalized = true;
-    }
-
-    void finalizeImpl() override
-    {
-        if (!is_prefinalized)
-            preFinalize();
-
-        write_buffer->finalize();
+        completion_callback();
     }
 
 private:
-    std::function<std::unique_ptr<ReadBuffer>()> create_read_buffer;
-    std::function<std::unique_ptr<WriteBuffer>()> create_write_buffer;
-    std::unique_ptr<ReadBuffer> read_buffer;
-    std::unique_ptr<WriteBuffer> write_buffer;
-
-    bool is_prefinalized = false;
+    const std::function<void()> completion_callback;
 };
 
 enum FileDownloadStatus
@@ -93,9 +68,8 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
     std::unique_lock<std::mutex> lock{mutex};
 
     auto it = file_downloads.find(path);
-    if (it != file_downloads.end())
-        if (auto x = it->second.lock())
-            return x;
+    if (it != file_downloads.end() && !it->second.expired())
+        return it->second.lock();
 
     std::shared_ptr<FileDownloadMetadata> metadata(
         new FileDownloadMetadata,
@@ -114,17 +88,19 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
 std::unique_ptr<ReadBufferFromFileBase>
 DiskCacheWrapper::readFile(
     const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    size_t buf_size,
+    size_t estimated_size,
+    size_t aio_threshold,
+    size_t mmap_threshold,
+    MMappedFileCache * mmap_cache) const
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::readFile(path, settings, read_hint, file_size);
+        return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 
-    LOG_TEST(log, "Read file {} from cache", backQuote(path));
+    LOG_DEBUG(log, "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
-        return cache_disk->readFile(path, settings, read_hint, file_size);
+        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 
     auto metadata = acquireDownloadMetadata(path);
 
@@ -135,22 +111,14 @@ DiskCacheWrapper::readFile(
         {
             /// This thread will responsible for file downloading to cache.
             metadata->status = DOWNLOADING;
-            LOG_TEST(log, "File {} doesn't exist in cache. Will download it", backQuote(path));
+            LOG_DEBUG(log, "File {} doesn't exist in cache. Will download it", backQuote(path));
         }
         else if (metadata->status == DOWNLOADING)
         {
-            LOG_TEST(log, "Waiting for file {} download to cache", backQuote(path));
+            LOG_DEBUG(log, "Waiting for file {} download to cache", backQuote(path));
             metadata->condition.wait(lock, [metadata] { return metadata->status == DOWNLOADED || metadata->status == ERROR; });
         }
     }
-
-    auto current_read_settings = settings;
-    /// Do not use RemoteFSReadMethod::threadpool for index and mark files.
-    /// Here it does not make sense since the files are small.
-    /// Note: enabling `threadpool` read requires to call setReadUntilEnd().
-    current_read_settings.remote_fs_method = RemoteFSReadMethod::read;
-    /// Disable data cache.
-    current_read_settings.enable_filesystem_cache = false;
 
     if (metadata->status == DOWNLOADING)
     {
@@ -166,17 +134,13 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
-
-                    WriteSettings write_settings;
-                    write_settings.enable_filesystem_cache_on_write_operations = false;
-
-                    auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite, write_settings);
+                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+                    auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
                 cache_disk->moveFile(tmp_path, path);
 
-                LOG_TEST(log, "File {} downloaded to cache", backQuote(path));
+                LOG_DEBUG(log, "File {} downloaded to cache", backQuote(path));
             }
             catch (...)
             {
@@ -194,38 +158,32 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == DOWNLOADED)
-        return cache_disk->readFile(path, settings, read_hint, file_size);
+        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 
-    return DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
+    return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
+DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::writeFile(path, buf_size, mode, settings);
+        return DiskDecorator::writeFile(path, buf_size, mode);
 
-    WriteSettings current_settings = settings;
-    /// There are two different cache implementations. Disable second one if the first is enabled.
-    /// The first will soon be removed, this disabling is temporary.
-    current_settings.enable_filesystem_cache_on_write_operations = false;
-
-    LOG_TEST(log, "Write file {} to cache", backQuote(path));
+    LOG_DEBUG(log, "Write file {} to cache", backQuote(path));
 
     auto dir_path = directoryPath(path);
     if (!cache_disk->exists(dir_path))
         cache_disk->createDirectories(dir_path);
 
-    return std::make_unique<WritingToCacheWriteBuffer>(
-        cache_disk->writeFile(path, buf_size, mode, current_settings),
-        [this, path]()
+    return std::make_unique<CompletionAwareWriteBuffer>(
+        cache_disk->writeFile(path, buf_size, mode),
+        [this, path, buf_size, mode]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            return cache_disk->readFile(path, ReadSettings(), /* read_hint= */ {}, /* file_size= */ {});
-        },
-        [this, path, buf_size, mode, current_settings]()
-        {
-            return DiskDecorator::writeFile(path, buf_size, mode, current_settings);
+            auto src_buffer = cache_disk->readFile(path, buf_size, 0, 0, 0, nullptr);
+            auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
+            copyData(*src_buffer, *dst_buffer);
+            dst_buffer->finalize();
         });
 }
 
@@ -291,7 +249,6 @@ void DiskCacheWrapper::removeDirectory(const String & path)
 {
     if (cache_disk->exists(path))
         cache_disk->removeDirectory(path);
-
     DiskDecorator::removeDirectory(path);
 }
 
@@ -309,26 +266,11 @@ void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
     DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
-void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_all, const NameSet & files_to_keep)
+void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
 {
     if (cache_disk->exists(path))
-        cache_disk->removeSharedRecursive(path, keep_all, files_to_keep);
-    DiskDecorator::removeSharedRecursive(path, keep_all, files_to_keep);
-}
-
-
-void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all, const NameSet & files_to_keep)
-{
-    for (const auto & file : files)
-    {
-        if (cache_disk->exists(file.path))
-        {
-            bool keep_file = keep_all || files_to_keep.contains(fs::path(file.path).filename());
-            cache_disk->removeSharedFile(file.path, keep_file);
-        }
-    }
-
-    DiskDecorator::removeSharedFiles(files, keep_all, files_to_keep);
+        cache_disk->removeSharedRecursive(path, keep_s3);
+    DiskDecorator::removeSharedRecursive(path, keep_s3);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)

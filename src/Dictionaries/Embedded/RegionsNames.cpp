@@ -4,7 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Poco/Exception.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include "GeodataProviders/INamesProvider.h"
 
 

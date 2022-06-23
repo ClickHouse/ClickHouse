@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -69,7 +69,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID(char delimiter = '_') const = 0; /// NOLINT
+    virtual String getID(char delimiter = '_') const = 0;
 
     ASTPtr ptr() { return shared_from_this(); }
 
@@ -157,24 +157,6 @@ public:
             set(field, child);
     }
 
-    template <typename T>
-    void reset(T * & field)
-    {
-        if (field == nullptr)
-            return;
-
-        const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
-        {
-           return p.get() == field;
-        });
-
-        if (child == children.end())
-            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
-
-        children.erase(child);
-        field = nullptr;
-    }
-
     /// Convert to a string.
 
     /// Format settings.
@@ -224,7 +206,6 @@ public:
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
-        bool surround_each_list_element_with_parens = false;
         const IAST * current_select = nullptr;
     };
 
@@ -246,23 +227,7 @@ public:
 
     void cloneChildren();
 
-    enum class QueryKind : uint8_t
-    {
-        None = 0,
-        Alter,
-        Create,
-        Drop,
-        Grant,
-        Insert,
-        Rename,
-        Revoke,
-        SelectIntersectExcept,
-        Select,
-        System,
-    };
-    /// Return QueryKind of this AST query.
-    virtual QueryKind getQueryKind() const { return QueryKind::None; }
-
+public:
     /// For syntax highlighting.
     static const char * hilite_keyword;
     static const char * hilite_identifier;

@@ -12,26 +12,26 @@ class IParserBase : public IParser
 {
 public:
     template <typename F>
-    ALWAYS_INLINE static bool wrapParseImpl(Pos & pos, const F & func)
+    static bool wrapParseImpl(Pos & pos, const F & func)
     {
         Pos begin = pos;
         bool res = func();
         if (!res)
-            pos = begin;
+          pos = begin;
         return res;
     }
 
     struct IncreaseDepthTag {};
 
     template <typename F>
-    ALWAYS_INLINE static bool wrapParseImpl(Pos & pos, IncreaseDepthTag, const F & func)
+    static bool wrapParseImpl(Pos & pos, IncreaseDepthTag, const F & func)
     {
         Pos begin = pos;
         pos.increaseDepth();
         bool res = func();
         pos.decreaseDepth();
         if (!res)
-            pos = begin;
+          pos = begin;
         return res;
     }
 

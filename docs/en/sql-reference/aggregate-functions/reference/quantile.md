@@ -1,16 +1,14 @@
 ---
-sidebar_position: 200
+toc_priority: 200
 ---
 
-# quantile
+# quantile {#quantile}
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
 This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and a random number generator for sampling. The result is non-deterministic. To get an exact quantile, use the [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact) function.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
-
-Note that for an empty numeric sequence, `quantile` will return NaN, but its `quantile*` variants will return either NaN or a default value for the sequence type, depending on the variant.
 
 **Syntax**
 

@@ -1,11 +1,3 @@
-# Needed when using Apache Avro serialization format
-option (ENABLE_AVRO "Enable Avro" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_AVRO)
-    message(STATUS "Not using avro")
-    return()
-endif()
-
 set(AVROCPP_ROOT_DIR "${CMAKE_SOURCE_DIR}/contrib/avro/lang/c++")
 set(AVROCPP_INCLUDE_DIR "${AVROCPP_ROOT_DIR}/api")
 set(AVROCPP_SOURCE_DIR "${AVROCPP_ROOT_DIR}/impl")
@@ -48,23 +40,30 @@ set (AVROCPP_SOURCE_FILES
     "${AVROCPP_SOURCE_DIR}/Validator.cc"
     )
 
-add_library (_avrocpp ${AVROCPP_SOURCE_FILES})
-add_library (ch_contrib::avrocpp ALIAS _avrocpp)
-set_target_properties (_avrocpp PROPERTIES VERSION ${AVRO_VERSION_MAJOR}.${AVRO_VERSION_MINOR})
+add_library (avrocpp ${AVROCPP_SOURCE_FILES})
+set_target_properties (avrocpp PROPERTIES VERSION ${AVRO_VERSION_MAJOR}.${AVRO_VERSION_MINOR})
 
-target_include_directories(_avrocpp SYSTEM PUBLIC ${AVROCPP_INCLUDE_DIR})
+target_include_directories(avrocpp SYSTEM PUBLIC ${AVROCPP_INCLUDE_DIR})
 
-target_link_libraries (_avrocpp PRIVATE boost::headers_only boost::iostreams)
+target_link_libraries (avrocpp PRIVATE boost::headers_only boost::iostreams)
 
-target_compile_definitions (_avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
-target_include_directories (_avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
-target_link_libraries (_avrocpp PRIVATE ch_contrib::snappy)
+if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
+    target_compile_definitions (avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
+    target_include_directories (avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
+    target_link_libraries (avrocpp PRIVATE ${SNAPPY_LIBRARY})
+endif ()
+
+if (COMPILER_GCC)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor)
+elseif (COMPILER_CLANG)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor)
+endif ()
+
+target_compile_options(avrocpp PRIVATE ${SUPPRESS_WARNINGS})
 
 # create a symlink to include headers with <avro/...>
-set(AVRO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
 ADD_CUSTOM_TARGET(avro_symlink_headers ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${AVRO_INCLUDE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E create_symlink "${AVROCPP_ROOT_DIR}/api" "${AVRO_INCLUDE_DIR}/avro"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${AVROCPP_ROOT_DIR}/include"
+    COMMAND ${CMAKE_COMMAND} -E create_symlink "${AVROCPP_ROOT_DIR}/api" "${AVROCPP_ROOT_DIR}/include/avro"
 )
-add_dependencies(_avrocpp avro_symlink_headers)
-target_include_directories(_avrocpp SYSTEM BEFORE PUBLIC "${AVRO_INCLUDE_DIR}")
+add_dependencies(avrocpp avro_symlink_headers)

@@ -1,8 +1,6 @@
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -13,32 +11,30 @@ namespace ErrorCodes
 }
 
 MergingSortedAlgorithm::MergingSortedAlgorithm(
-    Block header_,
+    const Block & header,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : header(std::move(header_))
-    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    : merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
     , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
-    DataTypes sort_description_types;
-    sort_description_types.reserve(description.size());
-
     /// Replace column names in description to positions.
     for (auto & column_description : description)
     {
         has_collation |= column_description.collator != nullptr;
-        sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
+        if (!column_description.column_name.empty())
+        {
+            column_description.column_number = header.getPositionByName(column_description.column_name);
+            column_description.column_name.clear();
+        }
     }
-
-    compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attemps*/);
 }
 
 void MergingSortedAlgorithm::addInput()
@@ -69,13 +65,11 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         prepareChunk(chunk);
-        cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
+        cursors[source_num] = SortCursorImpl(chunk.getColumns(), description, source_num);
     }
 
     if (has_collation)
         queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
-    else if (description.size() == 1)
-        queue_simple = SortingHeap<SimpleSortCursor>(cursors);
     else
         queue_without_collation = SortingHeap<SortCursor>(cursors);
 }
@@ -84,12 +78,10 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     prepareChunk(input.chunk);
     current_inputs[source_num].swap(input);
-    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
+    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), {});
 
     if (has_collation)
         queue_with_collation.push(cursors[source_num]);
-    else if (description.size() == 1)
-        queue_simple.push(cursors[source_num]);
     else
         queue_without_collation.push(cursors[source_num]);
 }
@@ -98,8 +90,6 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
     if (has_collation)
         return mergeImpl(queue_with_collation);
-    else if (description.size() == 1)
-        return mergeImpl(queue_simple);
     else
         return mergeImpl(queue_without_collation);
 }

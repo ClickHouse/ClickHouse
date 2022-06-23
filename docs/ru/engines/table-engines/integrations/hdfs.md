@@ -1,23 +1,21 @@
 ---
-sidebar_position: 6
-sidebar_label: HDFS
+toc_priority: 6
+toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
 
-Этот движок обеспечивает интеграцию с экосистемой [Apache Hadoop](https://ru.wikipedia.org/wiki/Hadoop), позволяя управлять данными в HDFS посредством ClickHouse. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url), но предоставляет возможности, характерные для Hadoop.
+Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url).
 
-## Использование движка {#usage}
+## Использование движка {#ispolzovanie-dvizhka}
 
 ``` sql
 ENGINE = HDFS(URI, format)
 ```
 
-**Параметры движка**
-
-В параметр `URI` нужно передавать полный URI файла в HDFS. Часть URI с путем файла может содержать шаблоны. В этом случае таблица может использоваться только для чтения.
+В параметр `URI` нужно передавать полный URI файла в HDFS.
 Параметр `format` должен быть таким, который ClickHouse может использовать и в запросах `INSERT`, и в запросах `SELECT`. Полный список поддерживаемых форматов смотрите в разделе [Форматы](../../../interfaces/formats.md#formats).
-
+Часть URI с путем файла может содержать шаблоны. В этом случае таблица может использоваться только для чтения.
 
 **Пример:**
 
@@ -46,13 +44,13 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Детали реализации {#implementation-details}
+## Детали реализации {#detali-realizatsii}
 
 -   Поддерживается многопоточное чтение и запись.
--   Поддерживается репликация без копирования данных ([zero-copy](../../../operations/storing-data.md#zero-copy)).  
 -   Не поддерживается:
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
-    -   индексы.
+    -   индексы;
+    -   репликация.
 
 **Шаблоны в пути**
 
@@ -69,12 +67,12 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 1.  Предположим, у нас есть несколько файлов со следующими URI в HDFS:
 
-    -  'hdfs://hdfs1:9000/some_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_3'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_3'
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 1.  Есть несколько возможностей создать таблицу, состояющую из этих шести файлов:
 
@@ -96,7 +94,7 @@ CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS(
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::danger "Warning"
+!!! warning "Warning"
     Если список файлов содержит числовые интервалы с ведущими нулями, используйте конструкцию с фигурными скобочками для каждой цифры или используйте `?`.
 
 **Example**
@@ -124,13 +122,11 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
   </hdfs_root>
 ```
 
-### Параметры конфигурации {#configuration-options}
-
-#### Поддерживаемые из libhdfs3 {#supported-by-libhdfs3}
+### Список возможных опций конфигурации со значениями по умолчанию
+#### Поддерживаемые из libhdfs3
 
 
 | **параметр**                                          | **по умолчанию**        |
-| -                                                     | -                       |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
 | dfs\_client\_read\_shortcircuit                       | true                    |
 | output\_replace-datanode-on-failure                   | true                    |
@@ -180,25 +176,24 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 #### Расширенные параметры для ClickHouse {#clickhouse-extras}
 
 | **параметр**                                          | **по умолчанию**        |
-| -                                                     | -                       |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
-### Ограничения {#limitations}
-  * `hadoop_security_kerberos_ticket_cache_path` и `libhdfs3_conf` могут быть определены только на глобальном, а не на пользовательском уровне
+#### Ограничения {#limitations}
+  * hadoop\_security\_kerberos\_ticket\_cache\_path могут быть определены только на глобальном уровне
 
 ## Поддержка Kerberos {#kerberos-support}
 
-Если параметр `hadoop_security_authentication` имеет значение `kerberos`, ClickHouse аутентифицируется с помощью Kerberos.
-[Расширенные параметры](#clickhouse-extras) и `hadoop_security_kerberos_ticket_cache_path` помогают сделать это.
+Если hadoop\_security\_authentication параметр имеет значение 'kerberos', ClickHouse аутентифицируется с помощью Kerberos.
+[Расширенные параметры](#clickhouse-extras) и hadoop\_security\_kerberos\_ticket\_cache\_path помогают сделать это.
 Обратите внимание что из-за ограничений libhdfs3 поддерживается только устаревший метод аутентификации,
-коммуникация с узлами данных не защищена SASL (`HADOOP_SECURE_DN_USER` надежный показатель такого
-подхода к безопасности). Используйте `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` для примера настроек.
+коммуникация с узлами данных не защищена SASL (HADOOP\_SECURE\_DN\_USER надежный показатель такого
+подхода к безопасности). Используйте tests/integration/test\_storage\_kerberized\_hdfs/hdfs_configs/bootstrap.sh для примера настроек.
 
-Если `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` или `hadoop_kerberos_kinit_command` указаны в настройках, `kinit` будет вызван. `hadoop_kerberos_keytab` и `hadoop_kerberos_principal` обязательны в этом случае. Необходимо также будет установить `kinit` и файлы конфигурации krb5.
+Если hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal или hadoop\_kerberos\_kinit\_command указаны в настройках, kinit будет вызван. hadoop\_kerberos\_keytab и hadoop\_kerberos\_principal обязательны в этом случае. Необходимо также будет установить kinit и файлы конфигурации krb5.
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы {#virtualnye-stolbtsy}
 
 -   `_path` — Путь к файлу.
 -   `_file` — Имя файла.
@@ -206,3 +201,4 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 **См. также**
 
 -   [Виртуальные колонки](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+

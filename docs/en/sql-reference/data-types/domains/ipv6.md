@@ -1,13 +1,13 @@
 ---
-sidebar_position: 60
-sidebar_label: IPv6
+toc_priority: 60
+toc_title: IPv6
 ---
 
-## IPv6
+## IPv6 {#ipv6}
 
 `IPv6` is a domain based on `FixedString(16)` type and serves as a typed replacement for storing IPv6 values. It provides compact storage with the human-friendly input-output format and column type information on inspection.
 
-### Basic Usage
+### Basic Usage {#basic-usage}
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
@@ -31,15 +31,15 @@ CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 `IPv6` domain supports custom input as IPv6-strings:
 
 ``` sql
-INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.com', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.com/docs/en/', '2a02:e980:1e::1');
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.tech', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.tech/docs/en/', '2a02:e980:1e::1');
 
 SELECT * FROM hits;
 ```
 
 ``` text
 ┌─url────────────────────────────────┬─from──────────────────────────┐
-│ https://clickhouse.com          │ 2001:44c8:129:2632:33:0:252:2 │
-│ https://clickhouse.com/docs/en/ │ 2a02:e980:1e::1               │
+│ https://clickhouse.tech          │ 2001:44c8:129:2632:33:0:252:2 │
+│ https://clickhouse.tech/docs/en/ │ 2a02:e980:1e::1               │
 │ https://wikipedia.org              │ 2a02:aa08:e000:3100::2        │
 └────────────────────────────────────┴───────────────────────────────┘
 ```
@@ -81,4 +81,4 @@ SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
 └───────────────────────────────────────────┴─────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/data_types/domains/ipv6) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/domains/ipv6) <!--hide-->

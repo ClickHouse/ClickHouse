@@ -7,7 +7,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
@@ -17,10 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/ISource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <QueryPipeline/Pipe.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 #include <thread>
@@ -35,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -126,16 +121,15 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-class SyncKillQuerySource : public ISource
+class SyncKillQueryInputStream : public IBlockInputStream
 {
 public:
-    SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
+    SyncKillQueryInputStream(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
                              const Block & res_sample_block_)
-        : ISource(res_sample_block_)
-        , process_list(process_list_)
-        , processes_to_stop(std::move(processes_to_stop_))
-        , processes_block(std::move(processes_block_))
-        , res_sample_block(res_sample_block_)
+        : process_list(process_list_),
+        processes_to_stop(std::move(processes_to_stop_)),
+        processes_block(std::move(processes_block_)),
+        res_sample_block(res_sample_block_)
     {
         addTotalRowsApprox(processes_to_stop.size());
     }
@@ -145,12 +139,14 @@ public:
         return "SynchronousQueryKiller";
     }
 
-    Chunk generate() override
+    Block getHeader() const override { return res_sample_block; }
+
+    Block readImpl() override
     {
         size_t num_result_queries = processes_to_stop.size();
 
         if (num_processed_queries >= num_result_queries)
-            return {};
+            return Block();
 
         MutableColumns columns = res_sample_block.cloneEmptyColumns();
 
@@ -183,8 +179,7 @@ public:
         /// Don't produce empty block
         } while (columns.empty() || columns[0]->empty());
 
-        size_t num_rows = columns.empty() ? 0 : columns.front()->size();
-        return Chunk(std::move(columns), num_rows);
+        return res_sample_block.cloneWithColumns(std::move(columns));
     }
 
     ProcessList & process_list;
@@ -200,11 +195,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
 
     if (!query.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccessForDDLOnCluster());
 
     BlockIO res_io;
     switch (query.type)
@@ -230,12 +221,12 @@ BlockIO InterpreterKillQueryQuery::execute()
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
 
-            res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns))));
+            res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
         }
         else
         {
-            res_io.pipeline = QueryPipeline(std::make_shared<SyncKillQuerySource>(
-                process_list, std::move(queries_to_stop), std::move(processes_block), header));
+            res_io.in = std::make_shared<SyncKillQueryInputStream>(
+                process_list, std::move(queries_to_stop), std::move(processes_block), header);
         }
 
         break;
@@ -295,116 +286,8 @@ BlockIO InterpreterKillQueryQuery::execute()
                 "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
                 ErrorCodes::ACCESS_DENIED);
 
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
+        res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
 
-        break;
-    }
-    case ASTKillQueryQuery::Type::PartMoveToShard:
-    {
-        if (query.sync)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYNC modifier is not supported for this statement.");
-
-        Block moves_block = getSelectResult(
-            "database, table, task_name, task_uuid, part_name, to_shard, state",
-            "system.part_moves_between_shards");
-
-        if (!moves_block)
-            return res_io;
-
-        const ColumnString & database_col = typeid_cast<const ColumnString &>(*moves_block.getByName("database").column);
-        const ColumnString & table_col = typeid_cast<const ColumnString &>(*moves_block.getByName("table").column);
-        const ColumnUUID & task_uuid_col = typeid_cast<const ColumnUUID &>(*moves_block.getByName("task_uuid").column);
-
-        auto header = moves_block.cloneEmpty();
-        header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
-
-        MutableColumns res_columns = header.cloneEmptyColumns();
-        auto table_id = StorageID::createEmpty();
-        AccessRightsElements required_access_rights;
-        auto access = getContext()->getAccess();
-        bool access_denied = false;
-
-        for (size_t i = 0; i < moves_block.rows(); ++i)
-        {
-            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
-            auto task_uuid = get<UUID>(task_uuid_col[i]);
-
-            CancellationCode code = CancellationCode::Unknown;
-
-            if (!query.test)
-            {
-                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-                if (!storage)
-                    code = CancellationCode::NotFound;
-                else
-                {
-                    ASTAlterCommand alter_command{};
-                    alter_command.type = ASTAlterCommand::MOVE_PARTITION;
-                    alter_command.move_destination_type = DataDestinationType::SHARD;
-                    required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
-                        alter_command, table_id.database_name, table_id.table_name);
-                    if (!access->isGranted(required_access_rights))
-                    {
-                        access_denied = true;
-                        continue;
-                    }
-                    code = storage->killPartMoveToShard(task_uuid);
-                }
-            }
-
-            insertResultRow(i, code, moves_block, header, res_columns);
-        }
-
-        if (res_columns[0]->empty() && access_denied)
-            throw Exception(
-                "Not allowed to kill move partition. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
-                ErrorCodes::ACCESS_DENIED);
-
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
-
-        break;
-    }
-    case ASTKillQueryQuery::Type::Transaction:
-    {
-        getContext()->checkAccess(AccessType::KILL_TRANSACTION);
-
-        Block transactions_block = getSelectResult("tid, tid_hash, elapsed, is_readonly, state", "system.transactions");
-
-        if (!transactions_block)
-            return res_io;
-
-        const ColumnUInt64 & tid_hash_col = typeid_cast<const ColumnUInt64 &>(*transactions_block.getByName("tid_hash").column);
-
-        auto header = transactions_block.cloneEmpty();
-        header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
-        MutableColumns res_columns = header.cloneEmptyColumns();
-
-        for (size_t i = 0; i < transactions_block.rows(); ++i)
-        {
-            UInt64 tid_hash = tid_hash_col.getUInt(i);
-
-            CancellationCode code = CancellationCode::Unknown;
-            if (!query.test)
-            {
-                auto txn = TransactionLog::instance().tryGetRunningTransaction(tid_hash);
-                if (txn)
-                {
-                    txn->onException();
-                    if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
-                        code = CancellationCode::CancelSent;
-                    else
-                        code = CancellationCode::CancelCannotBeSent;
-                }
-                else
-                {
-                    code = CancellationCode::NotFound;
-                }
-            }
-
-            insertResultRow(i, code, transactions_block, header, res_columns);
-        }
-
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
         break;
     }
     }
@@ -419,15 +302,10 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    auto io = executeQuery(select_query, getContext(), true);
-    PullingPipelineExecutor executor(io.pipeline);
-    Block res;
-    while (!res && executor.pull(res));
+    auto stream = executeQuery(select_query, getContext(), true).getInputStream();
+    Block res = stream->read();
 
-    Block tmp_block;
-    while (executor.pull(tmp_block));
-
-    if (tmp_block)
+    if (res && stream->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;
@@ -441,13 +319,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     if (query.type == ASTKillQueryQuery::Type::Query)
         required_access.emplace_back(AccessType::KILL_QUERY);
     else if (query.type == ASTKillQueryQuery::Type::Mutation)
-        required_access.emplace_back(
-                AccessType::ALTER_UPDATE
-                | AccessType::ALTER_DELETE
-                | AccessType::ALTER_MATERIALIZE_INDEX
-                | AccessType::ALTER_MATERIALIZE_COLUMN
-                | AccessType::ALTER_MATERIALIZE_TTL
-            );
+        required_access.emplace_back(AccessType::ALTER_UPDATE | AccessType::ALTER_DELETE | AccessType::ALTER_MATERIALIZE_INDEX | AccessType::ALTER_MATERIALIZE_TTL);
     return required_access;
 }
 

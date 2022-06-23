@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
    <dictionary>
        <name>dep_z</name>
        <source>
@@ -9,7 +9,7 @@
                <password></password>
                <db>dict</db>
                <table>dep_y</table>
-               <invalidate_query>SELECT intDiv(count(), 4) from dict.dep_y</invalidate_query>
+               <invalidate_query>SELECT intDiv(count(), 5) from dict.dep_y</invalidate_query>
            </clickhouse>
        </source>
        <!-- ExternalLoader::PeriodicUpdater::check_period_sec=5 anyway -->
@@ -33,4 +33,4 @@
            </attribute>
        </structure>
    </dictionary>
-</clickhouse>
+</yandex>

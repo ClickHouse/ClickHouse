@@ -5,13 +5,15 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <common/shared_ptr_helper.h>
 
 namespace DB
 {
 
 /// Provides information about Graphite configuration.
-class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemGraphite>
+class StorageSystemGraphite final : public shared_ptr_helper<StorageSystemGraphite>, public IStorageSystemOneBlock<StorageSystemGraphite>
 {
+    friend struct shared_ptr_helper<StorageSystemGraphite>;
 public:
     std::string getName() const override { return "SystemGraphite"; }
 

@@ -2,14 +2,13 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 
-#include <base/types.h>
-#include <base/sort.h>
+
+#include <common/types.h>
 #include <optional>
 #include <mutex>
 #include <city.h>
 #include <algorithm>
 #include <atomic>
-
 
 namespace DB
 {
@@ -57,6 +56,17 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const Re
 }
 
 
+bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplicaS3Shared(const ReplicatedMergeTreeLogEntryData & entry) const
+{
+    time_t threshold = remote_fs_execute_merges_on_single_replica_time_threshold;
+    return (
+        threshold > 0       /// feature turned on
+        && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
+        && entry.create_time + threshold > time(nullptr)          /// not too much time waited
+    );
+}
+
+
 /// that will return the same replica name for ReplicatedMergeTreeLogEntry on all the replicas (if the replica set is the same).
 /// that way each replica knows who is responsible for doing a certain merge.
 
@@ -90,32 +100,31 @@ std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecu
 
 void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
-    const auto settings = storage.getSettings();
-    auto threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
-    auto threshold_init = 0;
-    if (settings->allow_remote_fs_zero_copy_replication)
-        threshold_init = settings->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
+    auto threshold = storage.getSettings()->execute_merges_on_single_replica_time_threshold.totalSeconds();
+    auto threshold_s3 = 0;
+    if (storage.getSettings()->allow_remote_fs_zero_copy_replication)
+        threshold_s3 = storage.getSettings()->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
 
     if (threshold == 0)
-        /// we can reset the settings without lock (it's atomic)
+        /// we can reset the settings w/o lock (it's atomic)
         execute_merges_on_single_replica_time_threshold = threshold;
-    if (threshold_init == 0)
-        remote_fs_execute_merges_on_single_replica_time_threshold = threshold_init;
-    if (threshold == 0 && threshold_init == 0)
+    if (threshold_s3 == 0)
+        remote_fs_execute_merges_on_single_replica_time_threshold = threshold_s3;
+    if (threshold == 0 && threshold_s3 == 0)
         return;
 
     auto now = time(nullptr);
 
     /// the setting was already enabled, and last state refresh was done recently
     if (((threshold != 0 && execute_merges_on_single_replica_time_threshold != 0)
-        || (threshold_init != 0 && remote_fs_execute_merges_on_single_replica_time_threshold != 0))
+        || (threshold_s3 != 0 && remote_fs_execute_merges_on_single_replica_time_threshold != 0))
         && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
         return;
 
     auto zookeeper = storage.getZooKeeper();
     auto all_replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
 
-    ::sort(all_replicas.begin(), all_replicas.end());
+    std::sort(all_replicas.begin(), all_replicas.end());
 
     std::vector<String> active_replicas_tmp;
     int current_replica_index_tmp = -1;
@@ -134,14 +143,9 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 
     if (current_replica_index_tmp < 0 || active_replicas_tmp.size() < 2)
     {
-        if (execute_merges_on_single_replica_time_threshold > 0)
-        {
-            LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use 'execute_merges_on_single_replica_time_threshold'");
-            /// we can reset the settings without lock (it's atomic)
-            execute_merges_on_single_replica_time_threshold = 0;
-        }
-        /// default value of remote_fs_execute_merges_on_single_replica_time_threshold is not 0
-        /// so we write no warning in log here
+        LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use execute_merges_on_single_replica_time_threshold!");
+        /// we can reset the settings w/o lock (it's atomic)
+        execute_merges_on_single_replica_time_threshold = 0;
         remote_fs_execute_merges_on_single_replica_time_threshold = 0;
         return;
     }
@@ -149,8 +153,8 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     std::lock_guard lock(mutex);
     if (threshold != 0) /// Zeros already reset
         execute_merges_on_single_replica_time_threshold = threshold;
-    if (threshold_init != 0)
-        remote_fs_execute_merges_on_single_replica_time_threshold = threshold_init;
+    if (threshold_s3 != 0)
+        remote_fs_execute_merges_on_single_replica_time_threshold = threshold_s3;
     last_refresh_time = now;
     current_replica_index = current_replica_index_tmp;
     active_replicas = active_replicas_tmp;

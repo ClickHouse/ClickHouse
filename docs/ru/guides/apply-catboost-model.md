@@ -1,6 +1,6 @@
 ---
-sidebar_position: 41
-sidebar_label: "Применение модели CatBoost в ClickHouse"
+toc_priority: 41
+toc_title: "Применение модели CatBoost в ClickHouse"
 ---
 
 # Применение модели CatBoost в ClickHouse {#applying-catboost-model-in-clickhouse}
@@ -24,9 +24,9 @@ sidebar_label: "Применение модели CatBoost в ClickHouse"
 
 Если у вас еще нет [Docker](https://docs.docker.com/install/), установите его.
 
-    :::note "Примечание"
+!!! note "Примечание"
     [Docker](https://www.docker.com) – это программная платформа для создания контейнеров, которые изолируют установку CatBoost и ClickHouse от остальной части системы.
-    :::
+
 Перед применением модели CatBoost:
 
 **1.** Скачайте [Docker-образ](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) из реестра:
@@ -61,9 +61,9 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 $ clickhouse client
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     Сервер ClickHouse уже запущен внутри Docker-контейнера.
-    :::
+
 **2.** Создайте таблицу в ClickHouse с помощью следующей команды:
 
 ``` sql
@@ -121,9 +121,9 @@ FROM amazon_train
 
 ## 3. Интегрируйте CatBoost в ClickHouse {#integrate-catboost-into-clickhouse}
 
-    :::note "Примечание"
+!!! note "Примечание"
     **Опциональный шаг.** Docker-образ содержит все необходимое для запуска CatBoost и ClickHouse.
-    :::
+
 Чтобы интегрировать CatBoost в ClickHouse:
 
 **1.** Создайте библиотеку для оценки модели.
@@ -160,9 +160,9 @@ FROM amazon_train
 <catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
-    :::note "Примечание"
+!!! note "Примечание"
     Вы можете позднее изменить путь к конфигурации модели CatBoost без перезагрузки сервера.
-    :::
+    
 ## 4. Запустите вывод модели из SQL {#run-model-inference}
 
 Для тестирования модели запустите клиент ClickHouse `$ clickhouse client`.
@@ -186,9 +186,9 @@ FROM amazon_train
 LIMIT 10
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     Функция [modelEvaluate](../sql-reference/functions/other-functions.md#function-modelevaluate) возвращает кортежи (tuple) с исходными прогнозами по классам для моделей с несколькими классами.
-    :::
+
 Спрогнозируйте вероятность:
 
 ``` sql
@@ -209,9 +209,9 @@ FROM amazon_train
 LIMIT 10
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     Подробнее про функцию [exp()](../sql-reference/functions/math-functions.md).
-    :::
+
 Посчитайте логистическую функцию потерь (LogLoss) на всей выборке:
 
 ``` sql
@@ -235,6 +235,5 @@ FROM
 )
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     Подробнее про функции [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg), [log()](../sql-reference/functions/math-functions.md).
-    :::

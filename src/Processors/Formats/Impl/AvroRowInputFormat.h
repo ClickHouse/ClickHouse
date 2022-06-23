@@ -13,7 +13,6 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
 
 #include <avro/DataFile.hh>
 #include <avro/Decoder.hh>
@@ -61,7 +60,7 @@ private:
             , target_column_idx(target_column_idx_)
             , deserialize_fn(deserialize_fn_) {}
 
-        explicit Action(SkipFn skip_fn_)
+        Action(SkipFn skip_fn_)
             : type(Skip)
             , skip_fn(skip_fn_) {}
 
@@ -115,17 +114,16 @@ private:
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 };
 
-class AvroRowInputFormat final : public IRowInputFormat
+class AvroRowInputFormat : public IRowInputFormat
 {
 public:
     AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
 
     String getName() const override { return "AvroRowInputFormat"; }
 
 private:
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readPrefix() override;
-
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
     bool allow_missing_fields;
@@ -137,20 +135,18 @@ private:
 /// 2. SchemaRegistry: schema cache (schema_id -> schema)
 /// 3. AvroConfluentRowInputFormat: deserializer cache (schema_id -> AvroDeserializer)
 /// This is needed because KafkaStorage creates a new instance of InputFormat per a batch of messages
-class AvroConfluentRowInputFormat final : public IRowInputFormat
+class AvroConfluentRowInputFormat : public IRowInputFormat
 {
 public:
     AvroConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
     class SchemaRegistry;
-
-private:
-    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-
+protected:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-
+private:
     std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
@@ -159,20 +155,6 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
     FormatSettings format_settings;
-};
-
-class AvroSchemaReader : public ISchemaReader
-{
-public:
-    AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
-
-    NamesAndTypesList readSchema() override;
-
-private:
-    DataTypePtr avroNodeToDataType(avro::NodePtr node);
-
-    bool confluent;
-    const FormatSettings format_settings;
 };
 
 }

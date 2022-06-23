@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+toc_priority: 1
 ---
 
 # count {#agg_function-count}
@@ -29,7 +29,7 @@ ClickHouse поддерживает следующие виды синтакси
 
 ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`. Поведение этой конструкции зависит от настройки [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation). Она определяет, какая из функций [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) используется для выполнения операции. По умолчанию — функция [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact).
 
-Запрос `SELECT count() FROM table` оптимизирован по умолчанию с использованием метаданных из MergeTree. Если вы хотите управлять безопасностью на уровне строк, отключите оптимизацию при помощи настройки [optimize_trivial_count_query](../../../operations/settings/settings.md#optimize-trivial-count-query).
+Запрос `SELECT count() FROM table` не оптимизирован, поскольку количество записей в таблице не хранится отдельно. Он выбирает небольшой столбец из таблицы и подсчитывает количество значений в нём.
 
 При этом запрос `SELECT count(nullable_column) FROM table` может быть оптимизирован включением настройки [optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](../../../sql-reference/data-types/nullable.md#finding-null) вместо чтения всех данных столбца. Запрос `SELECT count(n) FROM table` преобразуется к запросу `SELECT sum(NOT n.null) FROM table`.
 

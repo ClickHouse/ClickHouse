@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
-#include <base/sort.h>
+#include <common/sort.h>
 
 
 namespace DB
@@ -90,7 +90,7 @@ namespace detail
         /** This function must be called before get-functions. */
         void prepare() const
         {
-            ::sort(elems, elems + count);
+            std::sort(elems, elems + count);
         }
 
         UInt16 get(double level) const
@@ -183,7 +183,7 @@ namespace detail
 
                 /// Sorting an array will not be considered a violation of constancy.
                 auto & array = elems;
-                ::nth_element(array.begin(), array.begin() + n, array.end());
+                nth_element(array.begin(), array.begin() + n, array.end());
                 quantile = array[n];
             }
 
@@ -204,7 +204,7 @@ namespace detail
                     ? level * elems.size()
                     : (elems.size() - 1);
 
-                ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                nth_element(array.begin() + prev_n, array.begin() + n, array.end());
 
                 result[level_index] = array[n];
                 prev_n = n;

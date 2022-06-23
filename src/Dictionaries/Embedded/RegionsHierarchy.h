@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <base/types.h>
+#include <common/types.h>
 #include "GeodataProviders/IHierarchiesProvider.h"
 #include <Core/Defines.h>
 
@@ -49,7 +49,7 @@ private:
     IRegionsHierarchyDataSourcePtr data_source;
 
 public:
-    explicit RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_);
+    RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_);
 
     /// Reloads, if necessary, the hierarchy of regions. Not threadsafe.
     void reload();

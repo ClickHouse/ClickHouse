@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 43
-sidebar_label: "\u5916\u90E8\u5B57\u5178\u7684\u6765\u6E90"
+toc_priority: 43
+toc_title: "\u5916\u90E8\u5B57\u5178\u7684\u6765\u6E90"
 ---
 
 # 外部字典的来源 {#dicts-external-dicts-dict-sources}
@@ -12,7 +12,7 @@ sidebar_label: "\u5916\u90E8\u5B57\u5178\u7684\u6765\u6E90"
 如果使用xml-file配置字典，则配置如下所示:
 
 ``` xml
-<clickhouse>
+<yandex>
   <dictionary>
     ...
     <source>
@@ -23,7 +23,7 @@ sidebar_label: "\u5916\u90E8\u5B57\u5178\u7684\u6765\u6E90"
     ...
   </dictionary>
   ...
-</clickhouse>
+</yandex>
 ```
 
 在情况下 [DDL-查询](../../statements/create.md#create-dictionary-query)，相等的配置将看起来像:
@@ -212,7 +212,7 @@ ClickHouse接收来自ODBC-driver的引用符号，并将查询中的所有设�
 
 ### ODBC字典功能的已知漏洞 {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-    :::info "注意"
+!!! attention "注意"
     通过ODBC驱动程序连接参数连接到数据库时 `Servername` 可以取代。 在这种情况下，值 `USERNAME` 和 `PASSWORD` 从 `odbc.ini` 被发送到远程服务器，并且可能会受到损害。
 
 **不安全使用示例**
@@ -272,7 +272,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ClickHouse中的字典配置:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>table_name</name>
         <source>
@@ -301,7 +301,7 @@ ClickHouse中的字典配置:
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 或
@@ -367,7 +367,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 在ClickHouse中配置字典:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>test</name>
         <source>
@@ -397,7 +397,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 或
@@ -627,4 +627,4 @@ SOURCE(REDIS(
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` 适用于简单源和散列单键源, `hash_map` 用于具有两个键的散列源。 不支持具有复杂键的范围源和缓存源。 可以省略，默认值为 `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

@@ -1,11 +1,13 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL || USE_LIBPQXX
 
 #include <Storages/StorageProxy.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -13,10 +15,10 @@ namespace DB
 
 bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage);
 
-void readFinalFromNestedStorage(
-    QueryPlan & query_plan,
+Pipe readFinalFromNestedStorage(
     StoragePtr nested_storage,
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,

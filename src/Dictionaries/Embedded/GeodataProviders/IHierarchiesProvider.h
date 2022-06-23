@@ -27,7 +27,7 @@ public:
 
     virtual IRegionsHierarchyReaderPtr createReader() = 0;
 
-    virtual ~IRegionsHierarchyDataSource() = default;
+    virtual ~IRegionsHierarchyDataSource() {}
 };
 
 using IRegionsHierarchyDataSourcePtr = std::shared_ptr<IRegionsHierarchyDataSource>;
@@ -42,7 +42,7 @@ public:
     virtual IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const = 0;
     virtual IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const = 0;
 
-    virtual ~IRegionsHierarchiesDataProvider() = default;
+    virtual ~IRegionsHierarchiesDataProvider() {}
 };
 
 using IRegionsHierarchiesDataProviderPtr = std::shared_ptr<IRegionsHierarchiesDataProvider>;

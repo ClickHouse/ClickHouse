@@ -1,15 +1,14 @@
 #pragma once
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
 {
 
-class SourceFromSingleChunk : public ISource
+class SourceFromSingleChunk : public SourceWithProgress
 {
 public:
-    explicit SourceFromSingleChunk(Block header, Chunk chunk_);
-    explicit SourceFromSingleChunk(Block data);
+    explicit SourceFromSingleChunk(Block header, Chunk chunk_) : SourceWithProgress(std::move(header)), chunk(std::move(chunk_)) {}
     String getName() const override { return "SourceFromSingleChunk"; }
 
 protected:

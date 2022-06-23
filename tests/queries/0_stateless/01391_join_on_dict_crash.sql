@@ -1,5 +1,3 @@
--- Tags: no-parallel, no-backward-compatibility-check
-
 DROP DATABASE IF EXISTS db_01391;
 CREATE DATABASE db_01391;
 USE db_01391;
@@ -20,8 +18,8 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' DB 'db_01391' t
 LIFETIME(MIN 1 MAX 1)
 LAYOUT(HASHED());
 
-SELECT click_country_id FROM t AS cc LEFT JOIN d ON toUInt32(d.id) = cc.click_city_id;
-SELECT click_country_id FROM t AS cc LEFT JOIN d ON d.country_id < 99 AND d.id = cc.click_city_id;
+select click_country_id from t cc
+left join d on toUInt32(d.id) = cc.click_city_id;
 
 DROP DICTIONARY d;
 DROP TABLE t;

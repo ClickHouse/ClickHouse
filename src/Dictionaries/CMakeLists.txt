@@ -10,7 +10,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
     set_source_files_properties(
         FlatDictionary.cpp
         HashedDictionary.cpp
-        HashedArrayDictionary.cpp
         CacheDictionary.cpp
         RangeHashedDictionary.cpp
         DirectDictionary.cpp
@@ -33,11 +32,14 @@ target_link_libraries(clickhouse_dictionaries
         string_utils
 )
 
-target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries(clickhouse_dictionaries
+    PUBLIC
+        abseil_swiss_tables)
 
-if (TARGET ch_contrib::cassandra)
-    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::cassandra)
+if(USE_CASSANDRA)
+    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${CASSANDRA_INCLUDE_DIR})
 endif()
 
 add_subdirectory(Embedded)
-target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::sparsehash)
+
+target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
