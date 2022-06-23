@@ -720,7 +720,7 @@ def test_in_memory_alters(start_cluster):
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query(
-        "CREATE DATABASE test_index ENGINE=Ordinary"
+        "CREATE DATABASE test_index ENGINE=Ordinary", settings={"allow_deprecated_database_ordinary": 1}
     )  # Different paths with Atomic
     node1.query(
         """
