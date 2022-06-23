@@ -15,6 +15,30 @@ namespace DB
 class TableJoin;
 class HashJoin;
 
+/**
+ * Efficient and highly parallel implementation of external memory JOIN based on HashJoin.
+ * Supports most of the JOIN modes, except CROSS and ASOF.
+ *
+ * The joining algorithm consists of three stages:
+ *
+ * 1) During the first stage we accumulate blocks of the right table via @addJoinedBlock.
+ * Each input block is split into multiple buckets based on the hash of the row join keys.
+ * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
+ * When the size of HashJoin exceeds the limits, we double the number of buckets.
+ * There can be multiple threads calling addJoinedBlock, just like @ConcurrentHashJoin.
+ *
+ * 2) At the second stage we process left table blocks via @joinBlock.
+ * Again, each input block is split into multiple buckets by hash.
+ * The first bucket is joined in-memory via HashJoin::joinBlock, and the remaining buckets are written to the disk.
+ *
+ * 3) When the last thread reading left table block finishes, the last stage begins.
+ * Each @DelayedJoiningBlocksProcessor calls repeatedly @getDelayedBlocks until there are no more unfinished buckets left.
+ * Inside @getDelayedBlocks we select the next not processed bucket, load right table blocks from disk into in-memory HashJoin,
+ * And then join them with left table blocks.
+ *
+ * After joining the left table blocks, we can load non-joined rows from the right talble for RIGHT/FULL JOINs.
+ * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
+ */
 class GraceHashJoin final : public IJoin
 {
     class FileBucket;
@@ -80,6 +104,9 @@ private:
 
     /// Increase number of buckets to match desired_size.
     /// Called when HashJoin in-memory table for one bucket exceeds the limits.
+    ///
+    /// NB: after @rehash there may be rows that are written to the buckets that they do not belong to.
+    /// It is fine; these rows will be written to the corresponding buckets during the third stage.
     BucketsSnapshot rehash(size_t desired_size);
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
