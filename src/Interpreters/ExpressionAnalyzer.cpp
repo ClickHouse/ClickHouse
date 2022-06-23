@@ -1062,8 +1062,6 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         return make_merge_join();
     else if (analyzed_join->forceGraceHashJoin() || allow_grace_hash_join)
         return make_grace_hash_join();
-        // TODO(sskvor)
-        // return std::make_shared<JoinSwitcher>(analyzed_join, sample_block, make_grace_hash_join);
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block, make_merge_join);
 }
 

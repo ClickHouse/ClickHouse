@@ -37,8 +37,8 @@ public:
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
-    void setTotals(const Block & block) override { totals = block; }
-    const Block & getTotals() const override { return totals; }
+    void setTotals(const Block & block) override;
+    const Block & getTotals() const override;
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
@@ -96,6 +96,7 @@ private:
     std::atomic<bool> started_reading_delayed_blocks{false};
 
     Block totals;
+    mutable std::mutex totals_mutex;
 };
 
 }

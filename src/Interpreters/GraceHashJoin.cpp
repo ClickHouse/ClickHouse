@@ -452,6 +452,20 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not
         });
 }
 
+void GraceHashJoin::setTotals(const Block & block)
+{
+    if (block)
+    {
+        std::scoped_lock guard{totals_mutex};
+        totals = block;
+    }
+}
+
+const Block & GraceHashJoin::getTotals() const
+{
+    return totals;
+}
+
 size_t GraceHashJoin::getTotalRowCount() const
 {
     assert(first_bucket);
