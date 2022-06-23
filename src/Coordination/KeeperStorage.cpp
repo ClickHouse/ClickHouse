@@ -1186,12 +1186,11 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
                 if (request.list_request_type == ALL)
                     return true;
 
-                auto child_it = container.find(fmt::format("{}/{}", request.path, child));
+                auto child_it = container.find(fmt::format("{}{}{}", request.path, (request.path.ends_with('/') ? "" : "/"), child));
                 if (child_it == container.end())
                     onStorageInconsistency();
 
                 const auto is_ephemeral = child_it->value.stat.ephemeralOwner != 0;
-
                 return (is_ephemeral && request.list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && request.list_request_type == PERSISTENT_ONLY);
             };
 
