@@ -1,6 +1,6 @@
 <test>
     <settings>
-        <allow_experimental_object_type>1</allow_experimental_object_type\>
+        <allow_experimental_object_type>1</allow_experimental_object_type>
     </settings>
 
     <create_query>CREATE TABLE t_json_1(data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
