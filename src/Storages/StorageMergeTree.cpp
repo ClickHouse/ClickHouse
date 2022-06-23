@@ -370,7 +370,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
     if (is_mutation)
-        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->volume);
+        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->data_part_storage);
     else
     {
         IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -378,7 +378,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         for (auto & part_ptr : future_part->parts)
         {
             ttl_infos.update(part_ptr->ttl_infos);
-            max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
+            max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
         }
 
         reserved_space = storage.balancedReservation(
@@ -1502,7 +1502,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->relative_path);
+            LOG_INFO(log, "Detaching {}", part->data_part_storage->getPartDirectory());
             part->makeCloneInDetached("", metadata_snapshot);
         }
     }
@@ -1745,29 +1745,23 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
     for (auto & part : data_parts)
     {
-        auto disk = part->volume->getDisk();
-        String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = fs::path(part_path) / "checksums.txt";
-        String tmp_checksums_path = fs::path(part_path) / "checksums.txt.tmp";
-        if (part->isStoredOnDisk() && !disk->exists(checksums_path))
+        String checksums_path = "checksums.txt";
+        String tmp_checksums_path = "checksums.txt.tmp";
+        if (part->isStoredOnDisk() && !part->data_part_storage->exists(checksums_path))
         {
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                auto out = disk->writeFile(tmp_checksums_path, 4096, WriteMode::Rewrite, local_context->getWriteSettings());
-                part->checksums.write(*out);
-                disk->moveFile(tmp_checksums_path, checksums_path);
+
+                part->data_part_storage->writeChecksums(part->checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
             {
-                if (disk->exists(tmp_checksums_path))
-                    disk->removeFile(tmp_checksums_path);
-
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
             }
