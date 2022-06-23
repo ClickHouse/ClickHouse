@@ -177,7 +177,6 @@ void MetadataStorageFromLocalDiskTransaction::addBlobToMetadata(
 void MetadataStorageFromLocalDiskTransaction::unlinkMetadata(const std::string & path)
 {
     disk->removeFile(path);
-    /// addOperation(std::make_unique<UnlinkFileOperation>(path, *metadata_storage_for_local.getDisk()));
 }
 
 }

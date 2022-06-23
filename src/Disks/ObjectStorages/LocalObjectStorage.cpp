@@ -4,6 +4,7 @@
 #include <Common/IFileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <filesystem>
@@ -24,6 +25,10 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
 }
 
+LocalObjectStorage::LocalObjectStorage()
+    : log(&Poco::Logger::get("LocalObjectStorage"))
+{
+}
 
 bool LocalObjectStorage::exists(const std::string & path) const
 {
@@ -53,6 +58,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     if (!file_size.has_value())
         file_size = getFileSizeIfPossible(path);
 
+    LOG_TEST(log, "Read object: {}", path);
     return createReadBufferFromFileBase(path, read_settings, read_hint, file_size);
 }
 
@@ -65,6 +71,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     const WriteSettings & /* write_settings */)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
+    LOG_TEST(log, "Write object: {}", path);
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
 }
 

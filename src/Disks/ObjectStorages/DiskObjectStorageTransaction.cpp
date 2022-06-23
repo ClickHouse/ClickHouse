@@ -132,7 +132,7 @@ struct RemoveObjectOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
-        if (!delete_metadata_only && !paths_to_remove.empty())
+        if (!delete_metadata_only && !paths_to_remove.empty() && object_storage.isRemote())
             object_storage.removeObjects(paths_to_remove);
 
         if (remove_from_cache)
@@ -332,7 +332,7 @@ struct CopyFileOperation final : public IDiskObjectStorageOperation
         auto source_blobs = metadata_storage.getBlobs(from_path);
         for (const auto & [blob_from, size] : source_blobs)
         {
-            auto blob_name = getRandomASCIIString();
+            auto blob_name = object_storage.generateBlobNameForPath(to_path);
 
             auto blob_to = fs::path(remote_fs_root_path) / blob_name;
 
@@ -482,7 +482,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-    auto blob_name = getRandomASCIIString();
+    auto blob_name = object_storage.generateBlobNameForPath(path);
 
     std::optional<ObjectAttributes> object_attributes;
     if (metadata_helper)
