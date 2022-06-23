@@ -1,0 +1,4 @@
+CREATE TABLE default.t\n(\n    `1` UInt8\n)\nENGINE = Memory
+0
+CREATE MATERIALIZED VIEW default.mv\n(\n    `1` UInt8\n)\nENGINE = Memory AS\nSELECT 1
+0

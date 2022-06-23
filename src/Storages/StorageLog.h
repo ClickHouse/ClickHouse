@@ -12,6 +12,9 @@
 
 namespace DB
 {
+class IBackup;
+using BackupPtr = std::shared_ptr<const IBackup>;
+
 /** Implements Log - a simple table engine without support of indices.
   * The data is stored in a compressed form.
   *
@@ -22,7 +25,6 @@ class StorageLog final : public IStorage
 {
     friend class LogSource;
     friend class LogSink;
-    friend class LogRestoreTask;
 
 public:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -68,9 +70,8 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    bool hasDataToBackup() const override { return true; }
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;
@@ -96,6 +97,9 @@ private:
 
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
+
+    /// Restores the data of this table from backup.
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
 
     /** Offsets to some row number in a file for column in table.
       * They are needed so that you can read the data in several threads.
