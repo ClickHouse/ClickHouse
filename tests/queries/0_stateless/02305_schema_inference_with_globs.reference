@@ -1,6 +1,2 @@
-2
-4
-6
-8
-x	Nullable(String)					
-x	Nullable(String)					
+x	Nullable(Float64)					
+x	Nullable(Float64)					
