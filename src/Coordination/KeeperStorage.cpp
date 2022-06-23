@@ -1643,7 +1643,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
 void KeeperStorage::finalize()
 {
     if (finalized)
-        throw DB::Exception("Testkeeper storage already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception("KeeperStorage already finalized", ErrorCodes::LOGICAL_ERROR);
 
     finalized = true;
 

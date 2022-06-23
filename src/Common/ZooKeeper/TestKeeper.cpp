@@ -1,3 +1,4 @@
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -390,8 +391,14 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
              child_it != container.end() && startsWith(child_it->first, path_prefix);
             ++child_it)
         {
+            using enum ListRequestType;
             if (parentPath(child_it->first) == path)
-                response.names.emplace_back(baseName(child_it->first));
+            {
+                const auto is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
+                if (list_request_type == ALL || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
+                    || (!is_ephemeral && list_request_type == PERSISTENT_ONLY))
+                    response.names.emplace_back(baseName(child_it->first));
+            }
         }
 
         response.stat = it->second.stat;
