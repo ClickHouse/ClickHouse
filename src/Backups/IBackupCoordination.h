@@ -14,9 +14,9 @@ public:
     virtual ~IBackupCoordination() = default;
 
     /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
-    virtual void setStatus(const String & current_host, const String & new_status) = 0;
-    virtual void setStatusAndWait(const String & current_host, const String & new_status, const Strings & other_hosts) = 0;
-    virtual void setStatusAndWaitFor(const String & current_host, const String & new_status, const Strings & other_hosts, UInt64 timeout_ms) = 0;
+    virtual void setStatus(const String & current_host, const String & new_status, const String & message) = 0;
+    virtual Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts) = 0;
+    virtual Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts, UInt64 timeout_ms) = 0;
 
     struct PartNameAndChecksum
     {
