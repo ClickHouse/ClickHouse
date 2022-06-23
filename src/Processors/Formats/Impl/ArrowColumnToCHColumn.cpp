@@ -1,4 +1,3 @@
-#include "ArrowColumnToCHColumn.h"
 #include <memory>
 #include <unordered_map>
 
@@ -704,7 +703,7 @@ std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema
             {
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-                missing_columns.push_back(i); 
+                missing_columns.push_back(i);
             }
         }
     }

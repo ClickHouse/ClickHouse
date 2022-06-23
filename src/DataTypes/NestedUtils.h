@@ -36,9 +36,9 @@ namespace Nested
     std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
 }
 
-/// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple. 
+/// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.
 /// It can extract a column from a multiple nested type column, e.g. named Tuple in named Tuple
-/// Keeps some intermediate datas to avoid rebuild them multi-times.
+/// Keeps some intermediate data to avoid rebuild them multi-times.
 class NestedColumnExtractHelper
 {
 public:
