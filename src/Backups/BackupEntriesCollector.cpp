@@ -36,7 +36,6 @@ namespace
         else
             return fmt::format("{}able {}.{}", first_char_uppercase ? 'T' : 't', backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
     }
-
 }
 
 std::string_view BackupEntriesCollector::toString(Stage stage)
@@ -319,6 +318,9 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
         if (create.getDatabase() != database_name)
             throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for database {}", backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(database_name));
+
+        String new_database_name = renaming_map.getNewDatabaseName(database_name);
+        database_info.metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
     }
 
     if (table_name)
@@ -395,17 +397,19 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             String table_name = create.getTable();
 
-            fs::path data_path_in_backup;
-            if (is_temporary_database)
+            fs::path metadata_path_in_backup, data_path_in_backup;
+            auto table_name_in_backup = renaming_map.getNewTableName({database_name, table_name});
+            if (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {
-                auto table_name_in_backup = renaming_map.getNewTemporaryTableName(table_name);
-                data_path_in_backup = root_path_in_backup / "temporary_tables" / "data" / escapeForFileName(table_name_in_backup);
+                metadata_path_in_backup = root_path_in_backup / "temporary_tables" / "metadata" / (escapeForFileName(table_name_in_backup.table) + ".sql");
+                data_path_in_backup = root_path_in_backup / "temporary_tables" / "data" / escapeForFileName(table_name_in_backup.table);
             }
             else
             {
-                auto table_name_in_backup = renaming_map.getNewTableName({database_name, table_name});
-                data_path_in_backup
-                    = root_path_in_backup / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
+                metadata_path_in_backup
+                    = root_path_in_backup / "metadata" / escapeForFileName(table_name_in_backup.database) / (escapeForFileName(table_name_in_backup.table) + ".sql");
+                data_path_in_backup = root_path_in_backup / "data" / escapeForFileName(table_name_in_backup.database)
+                    / escapeForFileName(table_name_in_backup.table);
             }
 
             /// Add information to `table_infos`.
@@ -413,6 +417,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.database = database;
             res_table_info.storage = db_table.second;
             res_table_info.create_table_query = create_table_query;
+            res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
             auto partitions_it = database_info.tables.find(table_name);
@@ -525,9 +530,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         ASTPtr new_create_query = database_info.create_database_query;
         renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
 
-        String new_database_name = renaming_map.getNewDatabaseName(database_name);
-        auto metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
-
+        const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
     }
 }
@@ -538,24 +541,11 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
     for (const auto & [table_name, table_info] : table_infos)
     {
         LOG_TRACE(log, "Adding definition of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
-        bool is_temporary_database = (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE);
 
         ASTPtr new_create_query = table_info.create_table_query;
         renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
 
-        fs::path metadata_path_in_backup;
-        if (is_temporary_database)
-        {
-            auto new_name = renaming_map.getNewTemporaryTableName(table_name.table);
-            metadata_path_in_backup = root_path_in_backup / "temporary_tables" / "metadata" / (escapeForFileName(new_name) + ".sql");
-        }
-        else
-        {
-            auto new_name = renaming_map.getNewTableName({table_name.database, table_name.table});
-            metadata_path_in_backup
-                = root_path_in_backup / "metadata" / escapeForFileName(new_name.database) / (escapeForFileName(new_name.table) + ".sql");
-        }
-
+        const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
     }
 }
