@@ -38,7 +38,7 @@ public:
 
     virtual void ignoreWithTotals() = 0;
 
-    virtual ~IInterpreterUnionOrSelectQuery() override = default;
+    ~IInterpreterUnionOrSelectQuery() override = default;
 
     Block getSampleBlock() { return result_header; }
 

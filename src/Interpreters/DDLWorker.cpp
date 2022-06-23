@@ -547,15 +547,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         {
             /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
-            String dummy;
-            if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
-            {
-                constexpr int timeout_ms = 60 * 1000;
-                if (!eph_node_disappeared->tryWait(timeout_ms))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Ephemeral node {} still exists, "
-                                    "probably it's owned by someone else", active_node_path);
-            }
+            zookeeper->waitForEphemeralToDisappearIfAny(active_node_path);
         }
 
         zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);

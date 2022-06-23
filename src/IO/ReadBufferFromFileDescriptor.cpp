@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Progress.h>
+#include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
 
 
@@ -38,7 +39,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
-    extern const int CANNOT_FSTAT;
     extern const int CANNOT_ADVISE;
 }
 
@@ -249,13 +249,9 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 }
 
 
-off_t ReadBufferFromFileDescriptor::size()
+size_t ReadBufferFromFileDescriptor::getFileSize()
 {
-    struct stat buf;
-    int res = fstat(fd, &buf);
-    if (-1 == res)
-        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
-    return buf.st_size;
+    return getSizeFromFileDescriptor(fd, getFileName());
 }
 
 
