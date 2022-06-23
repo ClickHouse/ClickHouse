@@ -87,10 +87,14 @@ private:
     Poco::Logger * log;
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
+    std::atomic<bool> need_left_sample_block{true};
+    Block left_sample_block;
     Block right_sample_block;
+    Block output_sample_block;
     bool any_take_last_row;
     size_t initial_num_buckets;
     size_t max_num_buckets;
+    size_t max_block_size;
 
     InMemoryJoinPtr first_bucket;
     std::mutex first_bucket_mutex;
