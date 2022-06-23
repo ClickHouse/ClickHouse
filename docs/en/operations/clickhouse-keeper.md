@@ -325,14 +325,14 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 
 ## Recovering after losing quorum
 
-Because Clickhouse Keeper uses Raft it can tolerate certain amount of node crashes depending on the cluster size. \
+Because ClickHouse Keeper uses Raft it can tolerate certain amount of node crashes depending on the cluster size. \
 E.g. for a 3-node cluster, it will continue working correctly if only 1 node crashes.
 
 Cluster configuration can be dynamically configured but there are some limitations. Reconfiguration relies on Raft also
 so to add/remove a node from the cluster you need to have a quorum. If you lose too many nodes in your cluster at the same time without any chance
 of starting them again, Raft will stop working and not allow you to reconfigure your cluster using the conventional way.
 
-Nevertheless, Clickhouse Keeper has a recovery mode which allows you to forcefully reconfigure your cluster with only 1 node.
+Nevertheless, ClickHouse Keeper has a recovery mode which allows you to forcefully reconfigure your cluster with only 1 node.
 This should be done only as your last resort if you cannot start your nodes again, or start a new instance on the same endpoint.
 
 Important things to note before continuing:

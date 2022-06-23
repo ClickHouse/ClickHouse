@@ -100,6 +100,8 @@ public:
 
     Poco::Timestamp getLastModified(const String &) const override { return Poco::Timestamp{}; }
 
+    time_t getLastChanged(const String &) const override { return {}; }
+
     /// Write and modification part
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override

@@ -16,14 +16,14 @@ namespace ErrorCodes
 }
 
 MergeTreeMarksLoader::MergeTreeMarksLoader(
-    DiskPtr disk_,
+    DataPartStoragePtr data_part_storage_,
     MarkCache * mark_cache_,
     const String & mrk_path_,
     size_t marks_count_,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
     bool save_marks_in_cache_,
     size_t columns_in_mark_)
-    : disk(std::move(disk_))
+    : data_part_storage(std::move(data_part_storage_))
     , mark_cache(mark_cache_)
     , mrk_path(mrk_path_)
     , marks_count(marks_count_)
@@ -50,21 +50,23 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    size_t file_size = disk->getFileSize(mrk_path);
+    size_t file_size = data_part_storage->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
     size_t expected_file_size = mark_size * marks_count;
 
     if (expected_file_size != file_size)
         throw Exception(
-            "Bad size of marks file '" + fullPath(disk, mrk_path) + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
-            ErrorCodes::CORRUPTED_DATA);
+            ErrorCodes::CORRUPTED_DATA,
+            "Bad size of marks file '{}': {}, must be: {}",
+            std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
+            std::to_string(file_size), std::to_string(expected_file_size));
 
     auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
 
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
-        auto buffer = disk->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size);
+        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
         buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
 
         if (!buffer->eof())
@@ -73,7 +75,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     else
     {
-        auto buffer = disk->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size);
+        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
         size_t i = 0;
         while (!buffer->eof())
         {
@@ -93,7 +95,7 @@ void MergeTreeMarksLoader::loadMarks()
 {
     if (mark_cache)
     {
-        auto key = mark_cache->hash(mrk_path);
+        auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
         if (save_marks_in_cache)
         {
             auto callback = [this]{ return loadMarksImpl(); };
@@ -110,7 +112,7 @@ void MergeTreeMarksLoader::loadMarks()
         marks = loadMarksImpl();
 
     if (!marks)
-        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Failed to load marks: " + std::string(fs::path(data_part_storage->getFullPath()) / mrk_path), ErrorCodes::LOGICAL_ERROR);
 }
 
 }

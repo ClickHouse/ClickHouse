@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Exception.h>
 
 namespace fs = std::filesystem;
 
@@ -29,6 +30,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_STAT;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_STATVFS;
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_CREATE_FILE;
@@ -215,6 +217,20 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
+size_t getSizeFromFileDescriptor(int fd, const String & file_name)
+{
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+    {
+        throwFromErrnoWithPath(
+            "Cannot execute fstat" + (file_name.empty() ? "" : " file: " + file_name),
+            file_name,
+            ErrorCodes::CANNOT_FSTAT);
+    }
+    return buf.st_size;
+}
+
 }
 
 
@@ -280,7 +296,15 @@ time_t getModificationTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
-    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+}
+
+time_t getChangeTime(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+        return st.st_ctime;
+    DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)

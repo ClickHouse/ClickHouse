@@ -1,6 +1,8 @@
 #pragma once
 
 #include "SharedLibraryHandler.h"
+#include <base/defines.h>
+
 #include <unordered_map>
 #include <mutex>
 
@@ -30,7 +32,7 @@ public:
 
 private:
     /// map: dict_id -> sharedLibraryHandler
-    std::unordered_map<std::string, SharedLibraryHandlerPtr> library_handlers;
+    std::unordered_map<std::string, SharedLibraryHandlerPtr> library_handlers TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 

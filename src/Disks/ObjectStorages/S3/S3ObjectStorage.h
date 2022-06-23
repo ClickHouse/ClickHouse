@@ -126,6 +126,9 @@ private:
         std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
+    void removeObjectImpl(const std::string & path, bool if_exists);
+    void removeObjectsImpl(const std::vector<std::string> & paths, bool if_exists);
+
     Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
 
     std::string bucket;
