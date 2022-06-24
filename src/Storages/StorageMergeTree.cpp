@@ -1543,7 +1543,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
         String old_name = renamed_parts.old_and_new_names[i].old_name;
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
-        renameTempPartAndAdd(loaded_parts[i], local_context->getCurrentTransaction().get(), transaction, &increment);
+        renameTempPartAndAdd(loaded_parts[i], transaction, &increment);
         transaction.commit();
 
         renamed_parts.old_and_new_names[i].old_name.clear();
@@ -1619,7 +1619,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// Populate transaction
             for (MutableDataPartPtr & part : dst_parts)
-                renameTempPartAndReplace(part, local_context->getCurrentTransaction().get(), transaction, &increment, nullptr, &data_parts_lock);
+                renameTempPartAndReplace(part, transaction, &increment, nullptr, &data_parts_lock);
 
             transaction.commit(&data_parts_lock);
 
@@ -1697,7 +1697,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             DataPartsLock lock(mutex);
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, local_context->getCurrentTransaction().get(), transaction, &dest_table_storage->increment, nullptr, &lock);
+                dest_table_storage->renameTempPartAndReplace(part, transaction, &dest_table_storage->increment, nullptr, &lock);
 
             removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, lock);
             transaction.commit(&lock);
@@ -1792,7 +1792,7 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
     for (auto part : parts)
     {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        renameTempPartAndAdd(part, NO_TRANSACTION_RAW, transaction, &increment);
+        renameTempPartAndAdd(part, transaction, &increment);
         transaction.commit();
     }
 }

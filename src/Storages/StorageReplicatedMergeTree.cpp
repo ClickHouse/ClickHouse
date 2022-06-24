@@ -1657,7 +1657,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-            renameTempPartAndReplace(part, NO_TRANSACTION_RAW, transaction);
+            renameTempPartAndReplace(part, transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
@@ -2342,7 +2342,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         Coordination::Requests ops;
         for (PartDescriptionPtr & part_desc : final_parts)
         {
-            renameTempPartAndReplace(part_desc->res_part, NO_TRANSACTION_RAW, transaction);
+            renameTempPartAndReplace(part_desc->res_part, transaction);
             getCommitPartOps(ops, part_desc->res_part);
 
             lockSharedData(*part_desc->res_part, false, part_desc->hardlinked_files);
@@ -4081,7 +4081,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         if (!to_detached)
         {
             Transaction transaction(*this, NO_TRANSACTION_RAW);
-            renameTempPartAndReplace(part, NO_TRANSACTION_RAW, transaction);
+            renameTempPartAndReplace(part, transaction);
 
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, hardlinked_files);
 
@@ -6604,7 +6604,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto data_parts_lock = lockParts();
 
                 for (MutableDataPartPtr & part : dst_parts)
-                    renameTempPartAndReplace(part, query_context->getCurrentTransaction().get(), transaction, nullptr, nullptr, &data_parts_lock);
+                    renameTempPartAndReplace(part, transaction, nullptr, nullptr, &data_parts_lock);
             }
 
             for (size_t i = 0; i < dst_parts.size(); ++i)
@@ -6841,7 +6841,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 DataPartsLock lock(mutex);
 
                 for (MutableDataPartPtr & part : dst_parts)
-                    dest_table_storage->renameTempPartAndReplace(part, query_context->getCurrentTransaction().get(), transaction, nullptr, nullptr, &lock);
+                    dest_table_storage->renameTempPartAndReplace(part, transaction, nullptr, nullptr, &lock);
 
                 for (size_t i = 0; i < dst_parts.size(); ++i)
                     dest_table_storage->lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
@@ -8020,7 +8020,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     try
     {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        auto replaced_parts = renameTempPartAndReplace(new_data_part, NO_TRANSACTION_RAW, transaction);
+        auto replaced_parts = renameTempPartAndReplace(new_data_part, transaction);
 
         if (!replaced_parts.empty())
         {

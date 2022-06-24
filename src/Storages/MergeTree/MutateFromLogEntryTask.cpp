@@ -171,7 +171,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 {
     new_part = mutate_task->getFuture().get();
 
-    storage.renameTempPartAndReplace(new_part, NO_TRANSACTION_RAW, *transaction_ptr);
+    storage.renameTempPartAndReplace(new_part, *transaction_ptr);
 
     try
     {

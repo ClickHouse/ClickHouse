@@ -2786,7 +2786,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 
 bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
-    MergeTreeTransaction * txn,
     Transaction & out_transaction,
     SimpleIncrement * increment,
     MergeTreeDeduplicationLog * deduplication_log,
@@ -2799,7 +2798,7 @@ bool MergeTreeData::renameTempPartAndAdd(
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplaceImpl(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
+        if (!renameTempPartAndReplaceImpl(part, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
             return false;
     }
     if (!covered_parts.empty())
@@ -2812,7 +2811,6 @@ bool MergeTreeData::renameTempPartAndAdd(
 
 bool MergeTreeData::renameTempPartAndReplaceImpl(
     MutableDataPartPtr & part,
-    MergeTreeTransaction * txn,
     SimpleIncrement * increment,
     Transaction & out_transaction,
     std::unique_lock<std::mutex> & lock,
@@ -2823,9 +2821,6 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     if (&out_transaction.data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
-
-    if (txn)
-        transactions_enabled.store(true);
 
     part->assertState({DataPartState::Temporary});
 
@@ -2903,7 +2898,6 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     data_parts_indexes.insert(part);
 
-    chassert(out_transaction.txn == txn);
     out_transaction.precommitted_parts.insert(part);
 
     auto part_in_memory = asInMemoryPart(part);
@@ -2924,7 +2918,6 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
-    MergeTreeTransaction * txn,
     Transaction & out_transaction,
     SimpleIncrement * increment,
     MergeTreeDeduplicationLog * deduplication_log,
@@ -2935,11 +2928,11 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (!lock)
         {
             auto part_lock = lockParts();
-            renameTempPartAndReplaceImpl(part, txn, increment, out_transaction, part_lock, &covered_parts, deduplication_log);
+            renameTempPartAndReplaceImpl(part, increment, out_transaction, part_lock, &covered_parts, deduplication_log);
         }
         else
         {
-            renameTempPartAndReplaceImpl(part, txn, increment, out_transaction, *lock, &covered_parts, deduplication_log);
+            renameTempPartAndReplaceImpl(part, increment, out_transaction, *lock, &covered_parts, deduplication_log);
         }
     }
     return covered_parts;
@@ -4849,6 +4842,14 @@ MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
     return nullptr;
 }
 
+
+MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_)
+    : data(data_)
+    , txn(txn_)
+{
+    if (txn)
+        data.transactions_enabled.store(true);
+}
 
 void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
 {
