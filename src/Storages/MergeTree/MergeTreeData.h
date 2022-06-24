@@ -1242,8 +1242,8 @@ private:
     /// Checking that candidate part doesn't break invariants: correct partition and doesn't exist already
     void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
-    /// Preparing itself to be commited in memory: fill some fields inside part, add it to data_parts_indexes
-    /// in precommited state and to transasction
+    /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
+    /// in precommitted state and to transasction
     void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename);
 
     /// Low-level method for preparing parts for commit (in-memory).
