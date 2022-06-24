@@ -603,17 +603,6 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return elem_parser.parse(pos, node, expected);
 }
 
-//// Chaining: a < b < c < d becomes (a < b) AND (b < c) AND (c < d)
-// ATRPtr chain(std::vector<Operator> operators, std::vector<ASTPtr> operands)
-// {
-//     ASTPtrs res;
-//     res.reserve(operators.size());
-//     for (size_t i = 0; i < operators.size(); i++)
-//     {
-//         res.push_back(makeASTFunction(operators[i].func_name, {operands[i], operands[i + 1]}));
-//     }
-//     return makeASTFunction("and", res);
-// }
 
 ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
 {
@@ -675,9 +664,7 @@ namespace ErrorCodes
 class Operator
 {
 public:
-    Operator()
-    {
-    }
+    Operator() = default;
 
     Operator(String func_name_,
              Int32 priority_,
@@ -705,7 +692,7 @@ public:
 
     bool popOperator(Operator & op)
     {
-        if (operators.size() == 0)
+        if (operators.empty())
             return false;
 
         op = std::move(operators.back());
@@ -723,13 +710,11 @@ public:
         }
 
         operators.push_back(std::move(op));
-
-        // LOG_FATAL(&Poco::Logger::root(), "#push {}: diff = {}, total = {}", op.func_name, depth_diff, depth_total);
     }
 
     bool popOperand(ASTPtr & op)
     {
-        if (operands.size() == 0)
+        if (operands.empty())
             return false;
 
         op = std::move(operands.back());
@@ -764,12 +749,12 @@ public:
         return true;
     }
 
-    bool isFinished()
+    bool isFinished() const
     {
         return state == -1;
     }
 
-    int previousPriority()
+    int previousPriority() const
     {
         if (operators.empty())
             return 0;
@@ -777,7 +762,7 @@ public:
         return operators.back().priority;
     }
 
-    int empty()
+    int empty() const
     {
         return operators.empty() && operands.empty();
     }
@@ -852,12 +837,8 @@ public:
         else
             pushOperand(node);
 
-        // LOG_FATAL(&Poco::Logger::root(), "#wrap-before: diff = {}, total = {}", depth_diff, depth_total);
-
         depth_diff -= depth_total;
         depth_total = 0;
-
-        // LOG_FATAL(&Poco::Logger::root(), "#wrap-after: diff = {}, total = {}", depth_diff, depth_total);
 
         return res;
     }
@@ -939,14 +920,13 @@ public:
         --open_between;
     }
 
-    bool hasBetween()
+    bool hasBetween() const
     {
         return open_between > 0;
     }
 
     void syncDepth(IParser::Pos & pos)
     {
-        // LOG_FATAL(&Poco::Logger::root(), "#sync: diff = {}", depth_diff);
         for (; depth_diff > 0; --depth_diff)
             pos.increaseDepth();
 
@@ -971,21 +951,6 @@ public:
     FunctionLayer(String func_name_) : func_name(func_name_)
     {
     }
-
-    // bool getResult(ASTPtr & op) override
-    // {
-    //     auto func = makeASTFunction(func_name, std::move(res));
-
-    //     if (parameters)
-    //     {
-    //         func->parameters = parameters;
-    //         func->children.push_back(func->parameters);
-    //     }
-
-    //     op = func;
-
-    //     return true;
-    // }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1341,7 +1306,7 @@ public:
     {
         if (parsed_interval_kind)
         {
-            if (result.size() == 0)
+            if (result.empty())
                 return false;
 
             op = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), result[0]);
@@ -1700,7 +1665,7 @@ private:
 class DateAddLayer : public Layer
 {
 public:
-    DateAddLayer(const char * function_name_) : function_name(function_name_)
+    explicit DateAddLayer(const char * function_name_) : function_name(function_name_)
     {
     }
 
@@ -1913,7 +1878,7 @@ public:
         {
             if (ParserKeyword("WHEN").ignore(pos, expected))
             {
-                if ((has_case_expr || result.size() > 0) && !wrapLayer())
+                if ((has_case_expr || !result.empty()) && !wrapLayer())
                     return false;
 
                 action = Action::OPERAND;
@@ -2089,6 +2054,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTupleOfLiterals tuple_literal_parser;
     ParserArrayOfLiterals array_literal_parser;
     ParserSubstitution substitution_parser;
+    ParserMySQLGlobalVariable mysql_global_variable_parser;
 
     ParserKeyword filter("FILTER");
     ParserKeyword over("OVER");
@@ -2104,7 +2070,6 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (pos.isValid())
     {
-        // LOG_FATAL(&Poco::Logger::root(), "#pos: {}", String(pos->begin, pos->size()));
         if (!storage.back()->parse(pos, expected, next))
             return false;
 
@@ -2215,7 +2180,6 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else if (identifier_parser.parse(pos, tmp, expected))
             {
-                /// If the next token is '(' then it is a plain function, '[' - arrayElement function
                 if (pos->type == TokenType::OpeningRoundBracket)
                 {
                     ++pos;
@@ -2282,6 +2246,10 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 next = Action::OPERAND;
                 storage.push_back(std::make_unique<ArrayLayer>());
             }
+            else if (mysql_global_variable_parser.parse(pos, tmp, expected))
+            {
+                storage.back()->pushOperand(std::move(tmp));
+            }
             else
             {
                 break;
@@ -2304,7 +2272,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 auto op = cur_op->second;
 
-                // AND can be both boolean function and part of the BETWEEN ... AND ... operator
+                // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
                 if (op.func_name == "and" && storage.back()->hasBetween())
                 {
                     storage.back()->subBetween();
@@ -2396,6 +2364,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    // Check if we only have one starting layer
     if (storage.size() > 1)
         return false;
 
