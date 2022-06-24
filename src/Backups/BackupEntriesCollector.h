@@ -120,15 +120,16 @@ private:
         ASTPtr create_table_query;
         String metadata_path_in_backup;
         std::filesystem::path data_path_in_backup;
+        std::optional<String> replicated_table_shared_id;
         std::optional<ASTs> partitions;
     };
 
     String current_status;
     std::chrono::steady_clock::time_point consistent_metadata_snapshot_start_time;
     std::unordered_map<String, DatabaseInfo> database_infos;
-    std::map<QualifiedTableName, TableInfo> table_infos;
-    std::set<String> previous_database_names;
-    std::set<QualifiedTableName> previous_table_names;
+    std::unordered_map<QualifiedTableName, TableInfo> table_infos;
+    std::vector<std::pair<String, String>> previous_databases_metadata;
+    std::vector<std::pair<QualifiedTableName, String>> previous_tables_metadata;
 
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;

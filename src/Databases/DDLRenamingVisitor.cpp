@@ -307,13 +307,6 @@ void DDLRenamingVisitor::visit(ASTPtr ast, const Data & data)
 bool DDLRenamingVisitor::needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
 
-void renameDatabaseAndTableNameInCreateQuery(const ContextPtr & global_context, const DDLRenamingMap & renaming_map, ASTPtr & ast)
-{
-    DDLRenamingVisitor::Data data{global_context, renaming_map, ast};
-    DDLRenamingVisitor::Visitor{data}.visit(ast);
-}
-
-
 void DDLRenamingMap::setNewTableName(const QualifiedTableName & old_table_name, const QualifiedTableName & new_table_name)
 {
     if (old_table_name.table.empty() || old_table_name.database.empty() || new_table_name.table.empty() || new_table_name.database.empty())
@@ -365,6 +358,14 @@ QualifiedTableName DDLRenamingMap::getNewTableName(const QualifiedTableName & ol
     if (it != old_to_new_table_names.end())
         return it->second;
     return {getNewDatabaseName(old_table_name.database), old_table_name.table};
+}
+
+
+void renameDatabaseAndTableNameInCreateQuery(ASTPtr & ast, const DDLRenamingMap & renaming_map, const ContextPtr & global_context)
+{
+    ast = ast->clone();
+    DDLRenamingVisitor::Data data{ast, renaming_map, global_context};
+    DDLRenamingVisitor::Visitor{data}.visit(ast);
 }
 
 }

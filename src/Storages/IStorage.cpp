@@ -249,28 +249,8 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query) const
+void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
 {
-    create_query = create_query->clone();
-
-    /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
-    auto & create = create_query->as<ASTCreateQuery &>();
-    create.uuid = UUIDHelpers::Nil;
-    create.to_inner_uuid = UUIDHelpers::Nil;
-
-    /// If this is a definition of a system table we'll remove columns and comment because they're reduntant for backups.
-    if (isSystemStorage())
-    {
-        if (!create.storage || !create.storage->engine)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query without table engine for a system table {}", getStorageID().getFullTableName());
-
-        auto & engine = *(create.storage->engine);
-        if (!engine.name.starts_with("System"))
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with an unexpected table engine {} for a system table {}", engine.name, getStorageID().getFullTableName());
-
-        create.reset(create.columns_list);
-        create.reset(create.comment);
-    }
 }
 
 void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)

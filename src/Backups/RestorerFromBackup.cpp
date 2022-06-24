@@ -5,6 +5,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupUtils.h>
+#include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -354,7 +355,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     read_buffer.reset();
     ParserCreateQuery create_parser;
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, create_table_query);
+    renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
 
     QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
 
@@ -433,7 +434,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
         read_buffer.reset();
         ParserCreateQuery create_parser;
         ASTPtr create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, create_database_query);
+        renameDatabaseAndTableNameInCreateQuery(create_database_query, renaming_map, context->getGlobalContext());
 
         String database_name = renaming_map.getNewDatabaseName(database_name_in_backup);
         DatabaseInfo & database_info = database_infos[database_name];
@@ -587,7 +588,8 @@ void RestorerFromBackup::createDatabases()
         if (!restore_settings.allow_different_database_def)
         {
             /// Check that the database's definition is the same as expected.
-            ASTPtr create_database_query = database->getCreateDatabaseQueryForBackup();
+            ASTPtr create_database_query = database->getCreateDatabaseQuery();
+            adjustCreateQueryForBackup(create_database_query, context->getGlobalContext(), nullptr);
             ASTPtr expected_create_query = database_info.create_database_query;
             if (serializeAST(*create_database_query) != serializeAST(*expected_create_query))
             {
@@ -659,7 +661,7 @@ void RestorerFromBackup::createTables()
             if (!restore_settings.allow_different_table_def)
             {
                 ASTPtr create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
-                storage->adjustCreateQueryForBackup(create_table_query);
+                adjustCreateQueryForBackup(create_table_query, context->getGlobalContext(), nullptr);
                 ASTPtr expected_create_query = table_info.create_table_query;
                 if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
                 {

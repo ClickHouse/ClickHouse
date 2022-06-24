@@ -157,7 +157,7 @@ BackupCoordinationReplicatedPartNames::BackupCoordinationReplicatedPartNames() =
 BackupCoordinationReplicatedPartNames::~BackupCoordinationReplicatedPartNames() = default;
 
 void BackupCoordinationReplicatedPartNames::addPartNames(
-    const String & table_zk_path,
+    const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
@@ -165,7 +165,7 @@ void BackupCoordinationReplicatedPartNames::addPartNames(
     if (part_names_prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after getPartNames()");
 
-    auto & table_info = table_infos[table_zk_path];
+    auto & table_info = table_infos[table_shared_id];
     if (!table_info.covered_parts_finder)
         table_info.covered_parts_finder = std::make_unique<CoveredPartsFinder>(table_name_for_logs);
 
@@ -207,10 +207,10 @@ void BackupCoordinationReplicatedPartNames::addPartNames(
     }
 }
 
-Strings BackupCoordinationReplicatedPartNames::getPartNames(const String & table_zk_path, const String & replica_name) const
+Strings BackupCoordinationReplicatedPartNames::getPartNames(const String & table_shared_id, const String & replica_name) const
 {
     preparePartNames();
-    auto it = table_infos.find(table_zk_path);
+    auto it = table_infos.find(table_shared_id);
     if (it == table_infos.end())
         return {};
     const auto & replicas_parts = it->second.replicas_parts;

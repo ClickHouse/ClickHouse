@@ -557,3 +557,44 @@ def test_projection():
         )
         == "2\n"
     )
+
+
+def test_replicated_database_with_not_synced_tables():
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
+    )
+
+    node1.query("CREATE TABLE mydb.tbl(x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x")
+
+    backup_name = new_backup_name()
+    node2.query(f"BACKUP DATABASE mydb TO {backup_name}")
+
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+
+    node1.query(f"RESTORE DATABASE mydb FROM {backup_name}")
+    assert node1.query("EXISTS mydb.tbl") == "1\n"
+
+
+def test_replicated_table_with_not_synced_def():
+    node1.query(
+        "CREATE TABLE tbl ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY tuple()"
+    )
+
+    node2.query(
+        "CREATE TABLE tbl ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY tuple()"
+    )
+
+    node2.query("SYSTEM STOP REPLICATION QUEUES tbl")
+    node1.query("ALTER TABLE tbl MODIFY COLUMN x String")
+
+    backup_name = new_backup_name()
+    node2.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    #node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    #node1.query(f"RESTORE TABLE tbl FROM {backup_name}")

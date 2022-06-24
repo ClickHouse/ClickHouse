@@ -3,6 +3,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupCoordinationHelpers.h>
 #include <Backups/BackupUtils.h>
+#include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -389,7 +390,7 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         ASTPtr create_database_query;
         try
         {
-            create_database_query = database_info.database->getCreateDatabaseQueryForBackup();
+            create_database_query = database_info.database->getCreateDatabaseQuery();
         }
         catch (...)
         {
@@ -537,68 +538,86 @@ bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inco
 {
     /// We need to scan tables at least twice to be sure that we haven't missed any table which could be renamed
     /// while we were scanning.
-    std::set<String> database_names;
-    std::set<QualifiedTableName> table_names;
-    boost::range::copy(database_infos | boost::adaptors::map_keys, std::inserter(database_names, database_names.end()));
-    boost::range::copy(table_infos | boost::adaptors::map_keys, std::inserter(table_names, table_names.end()));
+    std::vector<std::pair<String, String>> databases_metadata;
+    std::vector<std::pair<QualifiedTableName, String>> tables_metadata;
+    databases_metadata.reserve(database_infos.size());
+    tables_metadata.reserve(table_infos.size());
+    for (const auto & [database_name, database_info] : database_infos)
+        databases_metadata.emplace_back(database_name, database_info.create_database_query ? serializeAST(*database_info.create_database_query) : "");
+    for (const auto & [table_name, table_info] : table_infos)
+        tables_metadata.emplace_back(table_name, serializeAST(*table_info.create_table_query));
 
-    if (previous_database_names != database_names)
+    /// We need to sort the lists to make the comparison below correct.
+    ::sort(databases_metadata.begin(), databases_metadata.end());
+    ::sort(tables_metadata.begin(), tables_metadata.end());
+
+    SCOPE_EXIT({
+        previous_databases_metadata = std::move(databases_metadata);
+        previous_tables_metadata = std::move(tables_metadata);
+    });
+
+    /// Databases must be the same as during the previous scan.
+    if (databases_metadata != previous_databases_metadata)
     {
-        bool error_message_ready = false;
-        for (const auto & database_name : database_names)
+        std::vector<std::pair<String, String>> difference;
+        difference.reserve(databases_metadata.size());
+        std::set_difference(databases_metadata.begin(), databases_metadata.end(), previous_databases_metadata.begin(),
+                            previous_databases_metadata.end(), std::back_inserter(difference));
+        
+        if (!difference.empty())
         {
-            if (!previous_database_names.contains(database_name))
-            {
-                inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were added during scanning", backQuoteIfNeed(database_name)};
-                error_message_ready = true;
-                break;
-            }
+            inconsistency_error = Exception{
+                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                "Database {} were created or changed its definition during scanning",
+                backQuoteIfNeed(difference[0].first)};
+            return false;
         }
-        if (!error_message_ready)
+
+        difference.clear();
+        difference.reserve(previous_databases_metadata.size());
+        std::set_difference(previous_databases_metadata.begin(), previous_databases_metadata.end(), databases_metadata.begin(),
+                            databases_metadata.end(), std::back_inserter(difference));
+        
+        if (!difference.empty())
         {
-            for (const auto & database_name : previous_database_names)
-            {
-                if (!database_names.contains(database_name))
-                {
-                    inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Database {} were removed during scanning", backQuoteIfNeed(database_name)};
-                    error_message_ready = true;
-                    break;
-                }
-            }
+            inconsistency_error = Exception{
+                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                "Database {} were removed or changed its definition during scanning",
+                backQuoteIfNeed(difference[0].first)};
+            return false;
         }
-        assert(error_message_ready);
-        previous_database_names = std::move(database_names);
-        previous_table_names = std::move(table_names);
-        return false;
     }
 
-    if (previous_table_names != table_names)
+    /// Tables must be the same as during the previous scan.
+    if (tables_metadata != previous_tables_metadata)
     {
-        bool error_message_ready = false;
-        for (const auto & table_name : table_names)
+        std::vector<std::pair<QualifiedTableName, String>> difference;
+        difference.reserve(tables_metadata.size());
+        std::set_difference(tables_metadata.begin(), tables_metadata.end(), previous_tables_metadata.begin(),
+                            previous_tables_metadata.end(), std::back_inserter(difference));
+        
+        if (!difference.empty())
         {
-            if (!previous_table_names.contains(table_name))
-            {
-                inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were added during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
-                error_message_ready = true;
-                break;
-            }
+            inconsistency_error = Exception{
+                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                "{} were created or changed its definition during scanning",
+                tableNameWithTypeToString(difference[0].first.database, difference[0].first.table, true)};
+            return false;
         }
-        if (!error_message_ready)
+
+        difference.clear();
+        difference.reserve(previous_tables_metadata.size());
+        std::set_difference(previous_tables_metadata.begin(), previous_tables_metadata.end(), tables_metadata.begin(),
+                            tables_metadata.end(), std::back_inserter(difference));
+        
+        if (!difference.empty())
         {
-            for (const auto & table_name : previous_table_names)
-            {
-                if (!table_names.contains(table_name))
-                {
-                    inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} were removed during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true)};
-                    error_message_ready = true;
-                    break;
-                }
-            }
+            inconsistency_error = Exception{
+                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                "{} were removed or changed its definition during scanning",
+                tableNameWithTypeToString(difference[0].first.database, difference[0].first.table, true)};
+            return false;
         }
-        assert(error_message_ready);
-        previous_table_names = std::move(table_names);
-        return false;
     }
 
     return true;
@@ -615,7 +634,8 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         LOG_TRACE(log, "Adding definition of database {}", backQuoteIfNeed(database_name));
 
         ASTPtr new_create_query = database_info.create_database_query;
-        renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), nullptr);
+        renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
@@ -625,12 +645,13 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
 /// Calls IDatabase::backupTable() for all the tables found to make backup entries for tables.
 void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 {
-    for (const auto & [table_name, table_info] : table_infos)
+    for (auto & [table_name, table_info] : table_infos)
     {
         LOG_TRACE(log, "Adding definition of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
 
         ASTPtr new_create_query = table_info.create_table_query;
-        renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
+        adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), &table_info.replicated_table_shared_id);
+        renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
@@ -645,18 +666,21 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     for (const auto & [table_name, table_info] : table_infos)
     {
         const auto & storage = table_info.storage;
-        if (!storage)
-        {
-            /// This storage exists on other replica and has not been created on this replica yet.
-            /// We store metadata only for such tables.
-            /// TODO: Need special processing if it's a ReplicatedMergeTree.
-            continue;
-        }
-
-        LOG_TRACE(log, "Adding data of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
         const auto & data_path_in_backup = table_info.data_path_in_backup;
-        const auto & partitions = table_info.partitions;
-        storage->backupData(*this, data_path_in_backup, partitions);
+        if (storage)
+        {
+            LOG_TRACE(log, "Adding data of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
+            storage->backupData(*this, data_path_in_backup, table_info.partitions);
+        }
+        else
+        {
+            /// Storage == null means this storage exists on other replicas but it has not been created on this replica yet.
+            /// If this table is replicated in this case we call IBackupCoordination::addReplicatedDataPath() which will cause
+            /// other replicas to fill the storage's data in the backup.
+            /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
+            if (table_info.replicated_table_shared_id)
+                backup_coordination->addReplicatedDataPath(*table_info.replicated_table_shared_id, data_path_in_backup);
+        }
     }
 }
 
