@@ -52,7 +52,6 @@ IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
 {
 }
 
-
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
@@ -63,7 +62,6 @@ Chunk IRowInputFormat::generate()
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
 
-    ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
     size_t num_rows = 0;

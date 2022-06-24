@@ -31,6 +31,13 @@ enum class LocalFSReadMethod
     mmap,
 
     /**
+     * Use the io_uring Linux subsystem for asynchronous reads.
+     * Can use direct IO after specified size.
+     * Can do prefetch with double buffering.
+     */
+    io_uring,
+
+    /**
      * Checks if data is in page cache with 'preadv2' on modern Linux kernels.
      * If data is in page cache, read from the same thread.
      * If not, offload IO to separate threadpool.
@@ -81,6 +88,9 @@ struct ReadSettings
     size_t filesystem_cache_max_wait_sec = 1;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
+
+    size_t max_query_cache_size = (128UL * 1024 * 1024 * 1024);
+    bool skip_download_if_exceeds_query_cache = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 

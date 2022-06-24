@@ -333,8 +333,9 @@ Total rows: 2
 ```
 
 ``` sql
-INSERT INTO UserActivity FORMAT Template SETTINGS
+INSERT INTO UserActivity SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
+FORMAT Template
 ```
 
 `/some/path/resultset.format`:
@@ -359,8 +360,9 @@ Similar to `Template`, but skips whitespace characters between delimiters and va
 It’s possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
 
 ``` sql
-INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
+INSERT INTO table_name SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = ','
+FORMAT TemplateIgnoreSpaces
 ```
 
 `/some/path/resultset.format`:
@@ -1337,7 +1339,7 @@ Arrays can be nested and can have a value of the `Nullable` type as an argument.
 You can insert CapnProto data from a file into ClickHouse table by the following command:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_schema = 'schema:Message' FORMAT CapnProto"
 ```
 
 Where `schema.capnp` looks like this:
@@ -1439,7 +1441,7 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 ```
 
 ``` bash
-cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
+cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table SETTINGS format_schema='schemafile:MessageType' FORMAT Protobuf"
 ```
 
 where the file `schemafile.proto` looks like this:
@@ -1875,7 +1877,7 @@ CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, dat
 Import command:
 
 ```bash
-$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table FORMAT Regexp SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0;"
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
 ```
 
 Query:
