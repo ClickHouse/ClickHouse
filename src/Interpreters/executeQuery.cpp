@@ -626,8 +626,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (!table_id.empty())
                 context->setInsertionTable(table_id);
 
-            if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+            if (context->getCurrentTransaction() && settings.throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+            if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
         }
         else
         {
@@ -636,6 +638,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 try
                 {
+                    if (context->isGlobalContext())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
+
                     /// If there is no session (which is the default for the HTTP Handler), set up one just for this as it is necessary
                     /// to control the transaction lifetime
                     if (!context->hasSessionContext())
@@ -972,8 +977,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (implicit_txn_control)
                 {
-                    implicit_txn_control->executeCommit(context->getSessionContext());
-                    implicit_txn_control.reset();
+                    try
+                    {
+                        implicit_txn_control->executeCommit(context->getSessionContext());
+                        implicit_txn_control.reset();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
+                        /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
+                        implicit_txn_control.reset();
+                        throw;
+                    }
                 }
             };
 
