@@ -228,11 +228,22 @@ void insertSetMapped(MappedType & dest, const ValueType & src) { dest = src.seco
 /** Determines the size of the hash table, and when and how much it should be resized.
   */
 template <size_t initial_size_degree = 8>
-struct HashTableGrower
+class HashTableGrower
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
     UInt8 size_degree = initial_size_degree;
+    size_t cached_mask = (1ULL << initial_size_degree) - 1;
+    size_t cached_max_fill = 1ULL << (initial_size_degree - 1);
+
+protected:
+    void updateSizeDegree()
+    {
+        cached_mask = (1ULL << size_degree) - 1;
+        cached_max_fill = 1ULL << (size_degree - 1);
+    }
+
+public:
     static constexpr auto initial_count = 1ULL << initial_size_degree;
 
     /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
@@ -241,8 +252,8 @@ struct HashTableGrower
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
 
-    size_t maxFill() const               { return 1ULL << (size_degree - 1); }
-    size_t mask() const                  { return bufSize() - 1; }
+    size_t maxFill() const { return cached_max_fill; }
+    size_t mask() const { return cached_mask; }
 
     /// From the hash value, get the cell number in the hash table.
     size_t place(size_t x) const         { return x & mask(); }
@@ -257,6 +268,7 @@ struct HashTableGrower
     void increaseSize()
     {
         size_degree += size_degree >= 23 ? 1 : 2;
+        updateMask();
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
@@ -267,11 +279,13 @@ struct HashTableGrower
              : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
                  ? initial_size_degree
                  : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        updateMask();
     }
 
     void setBufSize(size_t buf_size_)
     {
         size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        updateMask();
     }
 };
 
