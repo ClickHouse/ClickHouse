@@ -7,18 +7,18 @@ sidebar_label: PARTITION
 
 The following operations with [partitions](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 
--   [DETACH PARTITION](#alter_detach-partition) — Moves a partition to the `detached` directory and forget it.
--   [DROP PARTITION](#alter_drop-partition) — Deletes a partition.
--   [ATTACH PART\|PARTITION](#alter_attach-partition) — Adds a part or partition from the `detached` directory to the table.
--   [ATTACH PARTITION FROM](#alter_attach-partition-from) — Copies the data partition from one table to another and adds.
--   [REPLACE PARTITION](#alter_replace-partition) — Copies the data partition from one table to another and replaces.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) — Moves the data partition from one table to another.
--   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
--   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
--   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
--   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
--   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
--   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
+-   [DETACH PARTITION\|Part](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
+-   [DROP PARTITION\|Part](#drop-partitionpart) — Deletes a partition or part.
+-   [ATTACH PARTITION\|Part](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
+-   [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
+-   [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
+-   [MOVE PARTITION TO TABLE](#move_to_table-partition) — Moves the data partition from one table to another.
+-   [CLEAR COLUMN IN PARTITION](#clear-column-partition) — Resets the value of a specified column in a partition.
+-   [CLEAR INDEX IN PARTITION](#clear-index-partition) — Resets the specified secondary index in a partition.
+-   [FREEZE PARTITION](#freeze-partition) — Creates a backup of a partition.
+-   [UNFREEZE PARTITION](#unfreeze-partition) — Removes a backup of a partition.
+-   [FETCH PARTITION\|PART](#fetch-partition) — Downloads a part or partition from another server.
+-   [MOVE PARTITION\|PART](#move-partition) — Move partition/data part to another disk or volume.
 -   [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
 -   [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 
