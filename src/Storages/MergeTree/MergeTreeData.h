@@ -566,8 +566,7 @@ public:
     /// If out_transaction == nullptr, marks covered parts as Outdated.
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
-        Transaction & out_transaction,
-        SimpleIncrement * increment = nullptr);
+        Transaction & out_transaction);
 
     void renameTempPartsAndReplace(
         MutableDataPartsVector & parts,
@@ -1247,15 +1246,13 @@ protected:
 private:
 
     /// Low-level version of previous one, doesn't lock mutex
-    /// FIXME Transactions: remove add_to_txn flag, maybe merge MergeTreeTransaction and Transaction
+    /// FIXME Merge MergeTreeTransaction and Transaction
     bool renameTempPartAndReplaceImpl(
         MutableDataPartPtr & part,
-        SimpleIncrement * increment,
         Transaction & out_transaction,
         DataPartsLock & lock,
-        DataPartsVector * out_covered_parts = nullptr,
-        MergeTreeDeduplicationLog * deduplication_log = nullptr,
-        std::string_view deduplication_token = std::string_view());
+        DataPartsVector * out_covered_parts);
+
 
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor

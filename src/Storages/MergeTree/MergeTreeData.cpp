@@ -2794,7 +2794,33 @@ bool MergeTreeData::renameTempPartAndAdd(
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplaceImpl(part, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
+        /** It is important that obtaining new block number and adding that block to parts set is done atomically.
+          * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
+          */
+        if (increment)
+        {
+            part->info.min_block = part->info.max_block = increment->get();
+            part->info.mutation = 0;
+            part->name = part->getNewName(part->info);
+        }
+
+        /// Deduplication log used only from non-replicated MergeTree. Replicated
+        /// tables have their own mechanism. We try to deduplicate at such deep
+        /// level, because only here we know real part name which is required for
+        /// deduplication.
+        if (deduplication_log)
+        {
+            const String block_id = part->getZeroLevelPartBlockID(deduplication_token);
+            auto res = deduplication_log->addPart(block_id, part->info);
+            if (!res.second)
+            {
+                ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                LOG_INFO(log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
+                return false;
+            }
+        }
+
+        if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts))
             return false;
     }
     if (!covered_parts.empty())
@@ -2807,13 +2833,12 @@ bool MergeTreeData::renameTempPartAndAdd(
 
 bool MergeTreeData::renameTempPartAndReplaceImpl(
     MutableDataPartPtr & part,
-    SimpleIncrement * increment,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    DataPartsVector * out_covered_parts,
-    MergeTreeDeduplicationLog * deduplication_log,
-    std::string_view deduplication_token)
+    DataPartsVector * out_covered_parts)
 {
+    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part->name);
+
     if (&out_transaction.data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
@@ -2829,24 +2854,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
                 ErrorCodes::CORRUPTED_DATA);
     }
 
-    MergeTreePartInfo part_info = part->info;
-    String part_name;
-
-    /** It is important that obtaining new block number and adding that block to parts set is done atomically.
-      * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
-      */
-    if (increment)
-    {
-        part_info.min_block = part_info.max_block = increment->get();
-        part_info.mutation = 0; /// it's equal to min_block by default
-        part_name = part->getNewName(part_info);
-    }
-    else /// Parts from ReplicatedMergeTree already have names
-        part_name = part->name;
-
-    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part_name);
-
-    if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
+    if (auto it_duplicate = data_parts_by_info.find(part->info); it_duplicate != data_parts_by_info.end())
     {
         String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
 
@@ -2857,51 +2865,24 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     }
 
     DataPartPtr covering_part;
-    DataPartsVector covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock);
+    DataPartsVector covered_parts = getActivePartsToReplace(part->info, part->name, covering_part, lock);
 
     if (covering_part)
     {
-        LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part_name, covering_part->getNameWithState());
+        LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
         return false;
-    }
-
-    /// Deduplication log used only from non-replicated MergeTree. Replicated
-    /// tables have their own mechanism. We try to deduplicate at such deep
-    /// level, because only here we know real part name which is required for
-    /// deduplication.
-    if (deduplication_log)
-    {
-        const String block_id = part->getZeroLevelPartBlockID(deduplication_token);
-        auto res = deduplication_log->addPart(block_id, part_info);
-        if (!res.second)
-        {
-            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-            LOG_INFO(log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
-            return false;
-        }
     }
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
     ///
     /// If out_transaction is null, we commit the part to the active set immediately, else add it to the transaction.
-
-    part->name = part_name;
-    part->info = part_info;
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
-    part->renameTo(part_name, true);
+    part->renameTo(part->name, true);
 
     data_parts_indexes.insert(part);
-
     out_transaction.precommitted_parts.insert(part);
-
-    auto part_in_memory = asInMemoryPart(part);
-    if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
-    {
-        auto wal = getWriteAheadLog();
-        wal->addPart(part_in_memory);
-    }
 
     if (out_covered_parts)
     {
@@ -2914,13 +2895,12 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
-    Transaction & out_transaction,
-    SimpleIncrement * increment)
+    Transaction & out_transaction)
 {
     auto part_lock = lockParts();
 
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, increment, out_transaction, part_lock, &covered_parts);
+    renameTempPartAndReplaceImpl(part, out_transaction, part_lock, &covered_parts);
 
     return covered_parts;
 }
@@ -2932,7 +2912,15 @@ void MergeTreeData::renameTempPartsAndReplace(
     SimpleIncrement * increment)
 {
     for (auto & part : parts)
-        renameTempPartAndReplaceImpl(part, increment, out_transaction, lock);
+    {
+        if (increment)
+        {
+            part->info.min_block = part->info.max_block = increment->get();
+            part->info.mutation = 0;
+            part->name = part->getNewName(part->info);
+        }
+        renameTempPartAndReplaceImpl(part, out_transaction, lock, nullptr);
+    }
 }
 
 void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock)
@@ -4890,8 +4878,11 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
     if (!isEmpty())
     {
+        auto settings = data.getSettings();
+        MergeTreeData::WriteAheadLogPtr wal;
         auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
+
 
         if (txn)
         {
@@ -4917,6 +4908,15 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
         for (const DataPartPtr & part : precommitted_parts)
         {
+            auto part_in_memory = asInMemoryPart(part);
+            if (part_in_memory && settings->in_memory_parts_enable_wal)
+            {
+                if (!wal)
+                    wal = data.getWriteAheadLog();
+
+                wal->addPart(part_in_memory);
+            }
+
             DataPartPtr covering_part;
             DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
             if (covering_part)
