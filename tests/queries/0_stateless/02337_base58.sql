@@ -14,4 +14,4 @@ SELECT base58Decode(encoded, 'bitcoin') FROM (SELECT base58Encode(val, 'bitcoin'
 SELECT base58Encode(val) FROM (select arrayJoin(['', 'f', 'fo', 'foo', 'foob', 'fooba', 'foobar']) val);
 SELECT base58Decode(val) FROM (select arrayJoin(['', '2m', '8o8', 'bQbp', '3csAg9', 'CZJRhmz', 't1Zv2yaZ']) val);
 
-SELECT base58Decode('Why_not?'); -- { serverError 1001 }
+SELECT base58Decode('Why_not?'); -- { serverError 36 }
