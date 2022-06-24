@@ -2830,19 +2830,8 @@ bool MergeTreeData::renameTempPartAndAdd(
     return true;
 }
 
-
-bool MergeTreeData::renameTempPartAndReplaceImpl(
-    MutableDataPartPtr & part,
-    Transaction & out_transaction,
-    DataPartsLock & lock,
-    DataPartsVector * out_covered_parts)
+void MergeTreeData::checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const
 {
-    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part->name);
-
-    if (&out_transaction.data != this)
-        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
-
     part->assertState({DataPartState::Temporary});
 
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
@@ -2863,6 +2852,33 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
         throw Exception(message, ErrorCodes::DUPLICATE_DATA_PART);
     }
+}
+
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename)
+{
+    part->is_temp = false;
+    part->setState(DataPartState::PreActive);
+
+    if (need_rename)
+        part->renameTo(part->name, true);
+
+    data_parts_indexes.insert(part);
+    out_transaction.precommitted_parts.insert(part);
+}
+
+bool MergeTreeData::renameTempPartAndReplaceImpl(
+    MutableDataPartPtr & part,
+    Transaction & out_transaction,
+    DataPartsLock & lock,
+    DataPartsVector * out_covered_parts)
+{
+    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part->name);
+
+    if (&out_transaction.data != this)
+        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
+
+    checkPartCanBeAddedToTable(part, lock);
 
     DataPartPtr covering_part;
     DataPartsVector covered_parts = getActivePartsToReplace(part->info, part->name, covering_part, lock);
@@ -2875,17 +2891,12 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    ///
-    /// If out_transaction is null, we commit the part to the active set immediately, else add it to the transaction.
-    part->is_temp = false;
-    part->setState(DataPartState::PreActive);
-    part->renameTo(part->name, true);
-
-    data_parts_indexes.insert(part);
-    out_transaction.precommitted_parts.insert(part);
+    preparePartForCommit(part, out_transaction, /* need_rename = */ true);
 
     if (out_covered_parts)
     {
+        out_covered_parts->reserve(covered_parts.size());
+
         for (DataPartPtr & covered_part : covered_parts)
             out_covered_parts->emplace_back(std::move(covered_part));
     }
