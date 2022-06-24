@@ -188,7 +188,9 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
                     {
                         /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
+                        /// FIXME MaterializedPostgreSQL works with UUIDs incorrectly and breaks invariants
+                        if (getEngineName() != "MaterializedPostgreSQL")
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
                     }
                 }
 

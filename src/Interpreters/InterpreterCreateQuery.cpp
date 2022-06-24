@@ -1273,7 +1273,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (need_lock_uuid)
         uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
+    {
+        /// FIXME MaterializedPostgreSQL works with UUIDs incorrectly and breaks invariants
+        if (database->getEngineName() != "MaterializedPostgreSQL")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
+    }
 
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function

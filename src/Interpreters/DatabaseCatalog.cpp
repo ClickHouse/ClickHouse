@@ -31,7 +31,6 @@
 #endif
 
 #if USE_LIBPQXX
-#    include <utime.h>
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
