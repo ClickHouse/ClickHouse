@@ -1619,7 +1619,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// Populate transaction
             for (MutableDataPartPtr & part : dst_parts)
-                renameTempPartAndReplace(part, transaction, &increment, nullptr, &data_parts_lock);
+                renameTempPartAndReplace(part, transaction, &increment, &data_parts_lock);
 
             transaction.commit(&data_parts_lock);
 
@@ -1697,7 +1697,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             DataPartsLock lock(mutex);
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, transaction, &dest_table_storage->increment, nullptr, &lock);
+                dest_table_storage->renameTempPartAndReplace(part, transaction, &dest_table_storage->increment, &lock);
 
             removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, lock);
             transaction.commit(&lock);

@@ -2920,7 +2920,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     SimpleIncrement * increment,
-    MergeTreeDeduplicationLog * deduplication_log,
     DataPartsLock * lock)
 {
     DataPartsVector covered_parts;
@@ -2928,11 +2927,11 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (!lock)
         {
             auto part_lock = lockParts();
-            renameTempPartAndReplaceImpl(part, increment, out_transaction, part_lock, &covered_parts, deduplication_log);
+            renameTempPartAndReplaceImpl(part, increment, out_transaction, part_lock, &covered_parts);
         }
         else
         {
-            renameTempPartAndReplaceImpl(part, increment, out_transaction, *lock, &covered_parts, deduplication_log);
+            renameTempPartAndReplaceImpl(part, increment, out_transaction, *lock, &covered_parts);
         }
     }
     return covered_parts;

@@ -568,7 +568,6 @@ public:
         MutableDataPartPtr & part,
         Transaction & out_transaction,
         SimpleIncrement * increment = nullptr,
-        MergeTreeDeduplicationLog * deduplication_log = nullptr,
         DataPartsLock * lock = nullptr);
 
     /// Remove parts from working set immediately (without wait for background

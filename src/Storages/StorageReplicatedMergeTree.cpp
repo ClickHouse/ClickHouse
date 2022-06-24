@@ -6604,7 +6604,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto data_parts_lock = lockParts();
 
                 for (MutableDataPartPtr & part : dst_parts)
-                    renameTempPartAndReplace(part, transaction, nullptr, nullptr, &data_parts_lock);
+                    renameTempPartAndReplace(part, transaction, nullptr, &data_parts_lock);
             }
 
             for (size_t i = 0; i < dst_parts.size(); ++i)
@@ -6841,7 +6841,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 DataPartsLock lock(mutex);
 
                 for (MutableDataPartPtr & part : dst_parts)
-                    dest_table_storage->renameTempPartAndReplace(part, transaction, nullptr, nullptr, &lock);
+                    dest_table_storage->renameTempPartAndReplace(part, transaction, nullptr, &lock);
 
                 for (size_t i = 0; i < dst_parts.size(); ++i)
                     dest_table_storage->lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
