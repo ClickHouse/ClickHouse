@@ -66,7 +66,8 @@ def create_tables_old_format(name, nodes, shard):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}', date, id, 64)
             """.format(
                 name=name, shard=shard, repl=i
-            )
+            ),
+            settings={"allow_deprecated_syntax_for_merge_tree": 1},
         )
 
 
