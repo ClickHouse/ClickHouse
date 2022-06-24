@@ -335,7 +335,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
             if (engine_args.size() >= 5)
-                configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+            {
+                auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
+                if (arg_value.getType() == Field::Types::Which::String)
+                    configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+                else
+                    use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
+            }
         }
 
         if (engine_args.size() >= 6)
