@@ -98,7 +98,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
             uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
             auto remote_objects = metadata_storage.getRemotePaths(path);
 
-            /// FIXME:!!!
+            /// FIXME:
             String full_path = fs::path(metadata_storage.getPath()) / path;
             bool is_remote = object_storage.isRemote();
             if (!is_remote)

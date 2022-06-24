@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int FS_METADATA_ERROR;
-}
-
 const std::string & MetadataStorageFromRemoteDisk::getPath() const
 {
     return disk->getPath();

@@ -5,7 +5,6 @@
 #include <Common/IFileCache.h>
 #include <Common/logger_useful.h>
 #include <Common/hex.h>
-#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <filesystem>

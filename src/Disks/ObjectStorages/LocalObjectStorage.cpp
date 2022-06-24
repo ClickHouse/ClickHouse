@@ -16,8 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int Local_ERROR;
-    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace ErrorCodes
@@ -65,7 +65,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
     const std::string & path,
     WriteMode mode, // Local doesn't support append, only rewrite
-    std::optional<ObjectAttributes> /* atributes */,
+    std::optional<ObjectAttributes> /* attributes */,
     FinalizeCallback && /* finalize_callback */,
     size_t buf_size,
     const WriteSettings & /* write_settings */)
