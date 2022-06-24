@@ -18,16 +18,17 @@ T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name)
 template <typename T>
 T checkAndGetLiteralArgument(const ASTLiteral & arg, const String & arg_name)
 {
-    T res;
-    if (arg.value.tryGet(res))
-        return res;
+    auto requested_type = Field::TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    auto provided_type = arg.value.getType();
+    if (requested_type != provided_type)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument '{}' must be a literal with type {}, got {}",
+            arg_name,
+            fieldTypeToString(requested_type),
+            fieldTypeToString(provided_type));
 
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Argument '{}' must be a literal with type {}, got {}",
-        arg_name,
-        fieldTypeToString(Field::TypeToEnum<NearestFieldType<std::decay_t<T>>>::value),
-        fieldTypeToString(arg.value.getType()));
+    return arg.value.safeGet<T>();
 }
 
 template String checkAndGetLiteralArgument(const ASTPtr &, const String &);
