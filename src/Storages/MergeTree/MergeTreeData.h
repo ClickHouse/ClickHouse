@@ -567,8 +567,13 @@ public:
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
-        SimpleIncrement * increment = nullptr,
-        DataPartsLock * lock = nullptr);
+        SimpleIncrement * increment = nullptr);
+
+    void renameTempPartsAndReplace(
+        MutableDataPartsVector & parts,
+        Transaction & out_transaction,
+        DataPartsLock & lock,
+        SimpleIncrement * increment = nullptr);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
