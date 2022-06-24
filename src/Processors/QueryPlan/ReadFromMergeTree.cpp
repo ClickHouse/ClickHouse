@@ -35,7 +35,6 @@
 #include <base/sort.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
-#include "Storages/SelectQueryInfo.h"
 
 namespace ProfileEvents
 {
