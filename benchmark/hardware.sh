@@ -1,100 +1,19 @@
 #!/bin/bash -e
 
-if [[ -n $1 ]]; then
-    SCALE=$1
-else
-    SCALE=100
-fi
-
-TABLE="hits_${SCALE}m_obfuscated"
-DATASET="${TABLE}_v1.tar.xz"
+TABLE="hits_100m_obfuscated"
 QUERIES_FILE="queries.sql"
 TRIES=3
 
-# Note: on older Ubuntu versions, 'axel' does not support IPv6. If you are using IPv6-only servers on very old Ubuntu, just don't install 'axel'.
+mkdir -p clickhouse-benchmark
+pushd clickhouse-benchmark
 
-FASTER_DOWNLOAD=wget
-if command -v axel >/dev/null; then
-    FASTER_DOWNLOAD=axel
-else
-    echo "It's recommended to install 'axel' for faster downloads."
+# Download the binary
+if [[ ! -x clickhouse ]]; then
+    curl https://clickhouse.com/ | sh
 fi
-
-if command -v pixz >/dev/null; then
-    TAR_PARAMS='-Ipixz'
-else
-    echo "It's recommended to install 'pixz' for faster decompression of the dataset."
-fi
-
-mkdir -p clickhouse-benchmark-$SCALE
-pushd clickhouse-benchmark-$SCALE
-
-OS=$(uname -s)
-ARCH=$(uname -m)
-
-DIR=
-
-if [ "${OS}" = "Linux" ]
-then
-    if [ "${ARCH}" = "x86_64" ]
-    then
-        DIR="amd64"
-    elif [ "${ARCH}" = "aarch64" ]
-    then
-        DIR="aarch64"
-    elif [ "${ARCH}" = "powerpc64le" ]
-    then
-        DIR="powerpc64le"
-    fi
-elif [ "${OS}" = "FreeBSD" ]
-then
-    if [ "${ARCH}" = "x86_64" ]
-    then
-        DIR="freebsd"
-    elif [ "${ARCH}" = "aarch64" ]
-    then
-        DIR="freebsd-aarch64"
-    elif [ "${ARCH}" = "powerpc64le" ]
-    then
-        DIR="freebsd-powerpc64le"
-    fi
-elif [ "${OS}" = "Darwin" ]
-then
-    if [ "${ARCH}" = "x86_64" ]
-    then
-        DIR="macos"
-    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
-    then
-        DIR="macos-aarch64"
-    fi
-fi
-
-if [ -z "${DIR}" ]
-then
-    echo "The '${OS}' operating system with the '${ARCH}' architecture is not supported."
-    exit 1
-fi
-
-URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
-echo
-echo "Will download ${URL}"
-echo
-curl -O "${URL}" && chmod a+x clickhouse || exit 1
-echo
-echo "Successfully downloaded the ClickHouse binary"
-
-chmod a+x clickhouse
 
 if [[ ! -f $QUERIES_FILE ]]; then
     wget "https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/$QUERIES_FILE"
-fi
-
-if [[ ! -d data ]]; then
-    if [[ ! -f $DATASET ]]; then
-        $FASTER_DOWNLOAD "https://datasets.clickhouse.com/hits/partitions/$DATASET"
-    fi
-
-    tar $TAR_PARAMS --strip-components=1 --directory=. -x -v -f $DATASET
 fi
 
 uptime
@@ -114,9 +33,19 @@ echo "Waiting for clickhouse-server to start"
 
 for i in {1..30}; do
     sleep 1
-    ./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM $TABLE" 2>/dev/null && break || echo '.'
+    ./clickhouse client --query "SELECT 'Ok.'" 2>/dev/null && break || echo -n '.'
     if [[ $i == 30 ]]; then exit 1; fi
 done
+
+echo "Will download the dataset"
+./clickhouse client --progress --query "
+  CREATE TABLE ${TABLE} ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+  AS SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/hits/native/hits_100m_obfuscated_*.native.zst')"
+
+./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM ${TABLE}"
+
+echo "Will prepare the dataset"
+./clickhouse client --query "OPTIMIZE TABLE ${TABLE} FINAL"
 
 echo
 echo "Will perform benchmark. Results:"
@@ -133,7 +62,7 @@ cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
 
     echo -n "["
     for i in $(seq 1 $TRIES); do
-        RES=$(./clickhouse client --max_memory_usage 100G --time --format=Null --query="$query" 2>&1 ||:)
+        RES=$(./clickhouse client --time --format=Null --query="$query" 2>&1 ||:)
         [[ "$?" == "0" ]] && echo -n "${RES}" || echo -n "null"
         [[ "$i" != $TRIES ]] && echo -n ", "
     done
@@ -180,10 +109,10 @@ else
     cat /proc/meminfo | grep MemTotal
     echo '----RAID Info-------------------'
     cat /proc/mdstat
-    #echo '----PCI-------------------------'
-    #lspci
-    #echo '----All Hardware Info-----------'
-    #lshw
     echo '--------------------------------'
 fi
+echo
+
+echo "Instance type from IMDS (if available):"
+curl --connect-timeout 1 http://169.254.169.254/latest/meta-data/instance-type
 echo
