@@ -948,7 +948,7 @@ protected:
 class FunctionLayer : public Layer
 {
 public:
-    FunctionLayer(String func_name_) : func_name(func_name_)
+    explicit FunctionLayer(String func_name_) : func_name(func_name_)
     {
     }
 
@@ -2002,7 +2002,7 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
-bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     static std::vector<std::pair<const char *, Operator>> op_table({
         {"+",             Operator("plus",      20)},            // Base arithmetic
