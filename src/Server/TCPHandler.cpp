@@ -892,6 +892,8 @@ void TCPHandler::sendInsertProfileEvents()
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
         return;
+    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return;
 
     sendProfileEvents();
 }
@@ -1357,7 +1359,7 @@ void TCPHandler::receiveQuery()
     /// Settings
     ///
     auto settings_changes = passed_settings.changes();
-    auto query_kind = query_context->getClientInfo().query_kind;
+    query_kind = query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
