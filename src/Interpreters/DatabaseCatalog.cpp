@@ -156,7 +156,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
-    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER)
+    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
             = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
@@ -1219,6 +1219,9 @@ bool DatabaseCatalog::maybeRemoveDirectory(const fs::path & unused_dir)
     }
     else
     {
+        if (!unused_dir_rm_timeout_sec)
+            return false;
+
         if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
             return false;
 
