@@ -25,12 +25,23 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
     String res;
     std::vector<String> tokens;
     std::unique_ptr<IParserKQLFunction> kql_function;
+    String alias;
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         String token = String(pos->begin,pos->end);
         String new_token;
-        if (!KQLOperators().convert(tokens,pos))
+        if (token == "=")
+        {
+            ++pos;
+            if (String(pos->begin,pos->end) != "~" )
+            {
+                alias = tokens.back();
+                tokens.pop_back();
+            }
+            --pos;
+        }
+        else if (!KQLOperators().convert(tokens,pos))
         {
             if (pos->type == TokenType::BareWord )
             {
@@ -40,8 +51,24 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
             }
             tokens.push_back(token);
         }
+
+        if (pos->type == TokenType::Comma && !alias.empty())
+        {
+            tokens.pop_back();
+            tokens.push_back("AS");
+            tokens.push_back(alias);
+            tokens.push_back(",");
+            alias.clear();
+        }
         ++pos;
     }
+
+    if (!alias.empty())
+    {
+        tokens.push_back("AS");
+        tokens.push_back(alias);
+    }
+
     for (auto token:tokens) 
         res = res + token +" ";
     return res;

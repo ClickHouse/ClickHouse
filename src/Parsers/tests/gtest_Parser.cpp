@@ -327,10 +327,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT\n    FirstName,\n    LastName\nFROM Customers\nLIMIT 3"
         },
         {
-            "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education",
-            "throws Syntax error"
-        },
-        {
             "Customers | sort by FirstName desc",
             "SELECT *\nFROM Customers\nORDER BY FirstName DESC"
         },
