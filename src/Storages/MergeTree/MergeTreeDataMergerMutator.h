@@ -133,7 +133,7 @@ public:
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
         const MergeTreeTransactionPtr & txn,
-        MergeTreeData::Transaction * out_transaction = nullptr);
+        MergeTreeData::Transaction & out_transaction);
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.

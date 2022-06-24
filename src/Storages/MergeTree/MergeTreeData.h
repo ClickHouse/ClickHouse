@@ -252,7 +252,7 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_) : data(data_), txn(txn_) {}
+        Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
@@ -556,7 +556,6 @@ public:
     /// Returns true if part was added. Returns false if part is covered by bigger part.
     bool renameTempPartAndAdd(
         MutableDataPartPtr & part,
-        MergeTreeTransaction * txn,
         Transaction & transaction,
         SimpleIncrement * increment = nullptr,
         MergeTreeDeduplicationLog * deduplication_log = nullptr,
@@ -567,7 +566,6 @@ public:
     /// If out_transaction == nullptr, marks covered parts as Outdated.
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
-        MergeTreeTransaction * txn,
         Transaction & out_transaction,
         SimpleIncrement * increment = nullptr,
         MergeTreeDeduplicationLog * deduplication_log = nullptr,
@@ -1248,7 +1246,6 @@ private:
     /// FIXME Transactions: remove add_to_txn flag, maybe merge MergeTreeTransaction and Transaction
     bool renameTempPartAndReplaceImpl(
         MutableDataPartPtr & part,
-        MergeTreeTransaction * txn,
         SimpleIncrement * increment,
         Transaction & out_transaction,
         DataPartsLock & lock,
