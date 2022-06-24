@@ -1245,6 +1245,10 @@ protected:
 
 private:
 
+    void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
+
+    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename);
+
     /// Low-level version of previous one, doesn't lock mutex
     /// FIXME Merge MergeTreeTransaction and Transaction
     bool renameTempPartAndReplaceImpl(
