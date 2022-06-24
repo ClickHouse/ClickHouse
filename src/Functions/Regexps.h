@@ -145,7 +145,7 @@ public:
 
     Regexps * operator()()
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         if (regexp)
             return &*regexp;
         regexp = constructor();
@@ -284,7 +284,7 @@ inline Regexps * get(const std::vector<std::string_view> & patterns, std::option
     std::vector<String> str_patterns;
     str_patterns.reserve(patterns.size());
     for (const auto & pattern : patterns)
-        str_patterns.push_back(std::string(pattern.data(), pattern.size()));
+        str_patterns.emplace_back(std::string(pattern.data(), pattern.size()));
 
     /// Get the lock for finding database.
     std::unique_lock lock(known_regexps.mutex);
