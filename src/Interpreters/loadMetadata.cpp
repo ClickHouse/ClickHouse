@@ -94,6 +94,15 @@ static void loadDatabase(
     }
 }
 
+static void checkUnsupportedVersion(ContextMutablePtr context, const String & database_name)
+{
+    /// Produce better exception message
+    String metadata_path = context->getPath() + "metadata/" + database_name;
+    if (fs::exists(fs::path(metadata_path)))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
+                                                     "Probably you are trying to upgrade from version older than 20.7. "
+                                                     "If so, you should upgrade through intermediate version.", database_name);
+}
 
 void loadMetadata(ContextMutablePtr context, const String & default_database_name)
 {
@@ -151,7 +160,10 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     bool create_default_db_if_not_exists = !default_database_name.empty();
     bool metadata_dir_for_default_db_already_exists = databases.contains(default_database_name);
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
+    {
+        checkUnsupportedVersion(context, default_database_name);
         databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
+    }
 
     TablesLoader::Databases loaded_databases;
     for (const auto & [name, db_path] : databases)
@@ -186,15 +198,9 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
         loadDatabase(context, database_name, path, true);
     }
-    else if (fs::exists(fs::path(path)))
-    {
-        chassert(database_name == "system");
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
-                                                     "Probably you are trying to upgrade from version older than 20.7. "
-                                                     "If so, you should upgrade through intermediate version.", database_name);
-    }
     else
     {
+        checkUnsupportedVersion(context, database_name);
         /// Initialize system database manually
         String database_create_query = "CREATE DATABASE ";
         database_create_query += database_name;
