@@ -21,7 +21,7 @@ struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
     void increaseSize()
     {
         this->size_degree += this->size_degree >= 15 ? 1 : 2;
-        HashTableGrower<initial_size_degree>::updateCachedValues();
+        this->updateCachedValues();
     }
 };
 

@@ -1,0 +1,8 @@
+<test>
+  <query>select * from numbers_mt(200) group by number format Null</query>
+  <query>select * from numbers_mt(1e4) group by number format Null</query>
+  <query>select * from numbers_mt(1e5) group by number format Null</query>
+  <query>select * from numbers_mt(1e6) group by number format Null</query>
+  <query>select * from numbers_mt(1e7) group by number format Null</query>
+  <query>select * from numbers_mt(1e8) group by number format Null</query>
+</test>
