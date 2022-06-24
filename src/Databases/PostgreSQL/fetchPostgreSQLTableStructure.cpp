@@ -300,10 +300,11 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and a.attnum = ANY(ix.indkey) "
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
-            "and t.relnamespace = {} "
+            "{}"
             "and ix.indisreplident = 't' " /// index is is replica identity index
-            "ORDER BY a.attname", /// column names
-        quoteString(postgres_table), quoteString(postgres_schema.empty() ? "public" : postgres_schema));
+            "ORDER BY a.attname", /// column name
+            (postgres_schema.empty() ? "" : "and t.relnamespace = " + quoteString(postgres_schema)) + " ",
+            quoteString(postgres_table));
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
     }
