@@ -66,6 +66,8 @@ public:
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
+        START_ALLOCATION_TRACKER,
+        STOP_ALLOCATION_TRACKER,
         UNFREEZE,
         END
     };
@@ -114,7 +116,7 @@ public:
         return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::System; }
+    QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
 

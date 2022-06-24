@@ -6,6 +6,7 @@
 
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
+#include <Storages/System/StorageSystemAllocations.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
@@ -131,6 +132,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemLicenses>(context, system_database, "licenses");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
     attach<StorageSystemBackups>(context, system_database, "backups");
+    attach<StorageSystemAllocations>(context, system_database, "allocations");
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif

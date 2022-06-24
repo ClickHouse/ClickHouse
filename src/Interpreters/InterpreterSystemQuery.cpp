@@ -496,6 +496,14 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
+        case Type::STOP_ALLOCATION_TRACKER:
+            getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
+            MemoryAllocationTracker::enable_alocation_tracker(false);
+            break;
+        case Type::START_ALLOCATION_TRACKER:
+            getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
+            MemoryAllocationTracker::enable_alocation_tracker(true);
+            break;
         case Type::UNFREEZE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
@@ -987,6 +995,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        case Type::STOP_ALLOCATION_TRACKER:
+        case Type::START_ALLOCATION_TRACKER:
         case Type::UNKNOWN:
         case Type::END: break;
     }

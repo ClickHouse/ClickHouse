@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryAllocationTracker.h>
 
 
 /// Implementation of std::allocator interface that tracks memory with MemoryTracker.
@@ -36,14 +37,17 @@ struct AllocatorWithMemoryTracking
         if (!p)
             throw std::bad_alloc();
 
+        MemoryAllocationTracker::track_alloc(p, bytes);
+
         return p;
     }
 
     void deallocate(T * p, size_t n) noexcept
     {
-        free(p);
-
         size_t bytes = n * sizeof(T);
+        MemoryAllocationTracker::track_free(p, bytes);
+
+        free(p);
         CurrentMemoryTracker::free(bytes);
     }
 };

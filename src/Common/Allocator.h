@@ -10,6 +10,7 @@
 
 #include <pcg_random.hpp>
 #include <Common/thread_local_rng.h>
+#include <Common/MemoryAllocationTracker.h>
 
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
@@ -93,7 +94,9 @@ public:
     {
         checkSize(size);
         CurrentMemoryTracker::alloc(size);
-        return allocNoTrack(size, alignment);
+        void * ptr = allocNoTrack(size, alignment);
+        MemoryAllocationTracker::track_alloc(ptr, size);
+        return ptr;
     }
 
     /// Free memory range.
@@ -102,6 +105,7 @@ public:
         try
         {
             checkSize(size);
+            MemoryAllocationTracker::track_free(buf, size);
             freeNoTrack(buf, size);
             CurrentMemoryTracker::free(size);
         }
@@ -130,12 +134,15 @@ public:
         {
             /// Resize malloc'd memory region with no special alignment requirement.
             CurrentMemoryTracker::realloc(old_size, new_size);
+            MemoryAllocationTracker::track_free(buf, old_size);
 
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
                 DB::throwFromErrno(fmt::format("Allocator: Cannot realloc from {} to {}.", ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             buf = new_buf;
+            MemoryAllocationTracker::track_alloc(buf, new_size);
+
             if constexpr (clear_memory)
                 if (new_size > old_size)
                     memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
@@ -144,6 +151,7 @@ public:
         {
             /// Resize mmap'd memory region.
             CurrentMemoryTracker::realloc(old_size, new_size);
+            MemoryAllocationTracker::track_free(buf, old_size);
 
             // On apple and freebsd self-implemented mremap used (common/mremap.h)
             buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
@@ -152,17 +160,20 @@ public:
                 DB::throwFromErrno(fmt::format("Allocator: Cannot mremap memory chunk from {} to {}.",
                     ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_MREMAP);
 
+            MemoryAllocationTracker::track_alloc(buf, new_size);
             /// No need for zero-fill, because mmap guarantees it.
         }
         else if (new_size < MMAP_THRESHOLD)
         {
             /// Small allocs that requires a copy. Assume there's enough memory in system. Call CurrentMemoryTracker once.
             CurrentMemoryTracker::realloc(old_size, new_size);
+            MemoryAllocationTracker::track_free(buf, old_size);
 
             void * new_buf = allocNoTrack(new_size, alignment);
             memcpy(new_buf, buf, std::min(old_size, new_size));
             freeNoTrack(buf, old_size);
             buf = new_buf;
+            MemoryAllocationTracker::track_alloc(buf, new_size);
         }
         else
         {

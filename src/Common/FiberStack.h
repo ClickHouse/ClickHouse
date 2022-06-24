@@ -4,6 +4,7 @@
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/MemoryAllocationTracker.h>
 #include <base/getPageSize.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -58,6 +59,7 @@ public:
 
         /// Do not count guard page in memory usage.
         CurrentMemoryTracker::alloc(num_pages * page_size);
+        MemoryAllocationTracker::track_alloc(vp, num_pages * page_size);
 
         boost::context::stack_context sctx;
         sctx.size = num_bytes;
@@ -77,6 +79,7 @@ public:
         ::munmap(vp, sctx.size);
 
         /// Do not count guard page in memory usage.
+        MemoryAllocationTracker::track_free(vp, sctx.size - page_size);
         CurrentMemoryTracker::free(sctx.size - page_size);
     }
 };
