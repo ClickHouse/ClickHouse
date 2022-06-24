@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/hyperscanRegexpChecker.h>
+#include <Functions/checkHyperscanRegexp.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
@@ -121,7 +121,7 @@ public:
             refs.emplace_back(el.get<String>());
 
         if (Impl::is_using_hyperscan)
-            checkRegexp(refs, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+            checkHyperscanRegexp(refs, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         auto col_res = ColumnVector<ResultType>::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
