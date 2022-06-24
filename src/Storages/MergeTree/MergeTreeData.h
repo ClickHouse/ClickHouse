@@ -557,22 +557,19 @@ public:
     bool renameTempPartAndAdd(
         MutableDataPartPtr & part,
         Transaction & transaction,
-        SimpleIncrement * increment = nullptr,
-        MergeTreeDeduplicationLog * deduplication_log = nullptr,
-        std::string_view deduplication_token = std::string_view());
+        DataPartsLock & lock);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     /// If out_transaction == nullptr, marks covered parts as Outdated.
+    DataPartsVector renameTempPartAndReplaceUnlocked(
+        MutableDataPartPtr & part,
+        Transaction & out_transaction,
+        DataPartsLock & lock);
+
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
         Transaction & out_transaction);
-
-    void renameTempPartsAndReplace(
-        MutableDataPartsVector & parts,
-        Transaction & out_transaction,
-        DataPartsLock & lock,
-        SimpleIncrement * increment = nullptr);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -1245,11 +1242,14 @@ protected:
 
 private:
 
+    /// Checking that candidate part doesn't break invariants: correct partition and doesn't exist already
     void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
+    /// Preparing itself to be commited in memory: fill some fields inside part, add it to data_parts_indexes
+    /// in precommited state and to transasction
     void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename);
 
-    /// Low-level version of previous one, doesn't lock mutex
+    /// Low-level method for preparing parts for commit.
     /// FIXME Merge MergeTreeTransaction and Transaction
     bool renameTempPartAndReplaceImpl(
         MutableDataPartPtr & part,
