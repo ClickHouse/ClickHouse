@@ -557,8 +557,8 @@ public:
     bool renameTempPartAndAdd(
         MutableDataPartPtr & part,
         MergeTreeTransaction * txn,
+        Transaction & transaction,
         SimpleIncrement * increment = nullptr,
-        Transaction * out_transaction = nullptr,
         MergeTreeDeduplicationLog * deduplication_log = nullptr,
         std::string_view deduplication_token = std::string_view());
 
@@ -566,20 +566,12 @@ public:
     /// Returns all parts covered by the added part (in ascending order).
     /// If out_transaction == nullptr, marks covered parts as Outdated.
     DataPartsVector renameTempPartAndReplace(
-        MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment = nullptr,
-        Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
-
-    /// Low-level version of previous one, doesn't lock mutex
-    /// FIXME Transactions: remove add_to_txn flag, maybe merge MergeTreeTransaction and Transaction
-    bool renameTempPartAndReplace(
         MutableDataPartPtr & part,
         MergeTreeTransaction * txn,
-        SimpleIncrement * increment,
-        Transaction * out_transaction,
-        DataPartsLock & lock,
-        DataPartsVector * out_covered_parts = nullptr,
+        Transaction & out_transaction,
+        SimpleIncrement * increment = nullptr,
         MergeTreeDeduplicationLog * deduplication_log = nullptr,
-        std::string_view deduplication_token = std::string_view());
+        DataPartsLock * lock = nullptr);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -1251,6 +1243,19 @@ protected:
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
 private:
+
+    /// Low-level version of previous one, doesn't lock mutex
+    /// FIXME Transactions: remove add_to_txn flag, maybe merge MergeTreeTransaction and Transaction
+    bool renameTempPartAndReplaceImpl(
+        MutableDataPartPtr & part,
+        MergeTreeTransaction * txn,
+        SimpleIncrement * increment,
+        Transaction & out_transaction,
+        DataPartsLock & lock,
+        DataPartsVector * out_covered_parts = nullptr,
+        MergeTreeDeduplicationLog * deduplication_log = nullptr,
+        std::string_view deduplication_token = std::string_view());
+
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor
     /// Uses data.currently_moving_parts_mutex

@@ -476,7 +476,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
         try
         {
-            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction);
+            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, transaction);
         }
         catch (const Exception & e)
         {
