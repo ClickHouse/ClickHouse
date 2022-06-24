@@ -30,6 +30,11 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
+instance2 = cluster.add_instance(
+    "instance2",
+    user_configs=["configs/users.xml"],
+    with_rabbitmq=True,
+)
 
 # Helpers
 
@@ -2743,6 +2748,42 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
         )
         if result == "1\t2\n":
             break
+
+
+def test_rabbitmq_address(rabbitmq_cluster):
+
+    instance2.query("""
+        drop table if exists rabbit_in;
+        drop table if exists rabbit_out;
+        create table
+            rabbit_in (val String)
+            engine=RabbitMQ
+            SETTINGS rabbitmq_exchange_name = 'rxhep',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_num_consumers = 1,
+                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+        create table
+            rabbit_out (val String) engine=RabbitMQ
+            SETTINGS rabbitmq_exchange_name = 'rxhep',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_num_consumers = 1,
+                     rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
+        set stream_like_engine_allow_direct_select=1;
+        insert into rabbit_out select 'kek';
+    """)
+
+    result = ""
+    try_no = 0
+    while True:
+        result = instance2.query("select * from rabbit_in;")
+        if result.strip() == "kek":
+            break
+        else:
+            try_no = try_no + 1
+            if try_no == 20:
+                break
+        time.sleep(1)
+    assert result.strip() == "kek"
 
 
 if __name__ == "__main__":
