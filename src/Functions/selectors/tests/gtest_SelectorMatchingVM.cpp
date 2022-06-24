@@ -20,6 +20,103 @@ TEST(SelectorMatchingVM, SingleTag)
     EXPECT_EQ(vm.handleOpeningTag("bOdY"sv), MatchResult::MATCH);
 }
 
+TEST(SelectorMatchingVM, AttributeSelectors)
+{
+    std::string selector = "body[key0][key1=value1][key2 *= 'value2'][key3 ^= \"value3\"][key4 $='value4'][key5 ~= value5]";
+    const char * begin = selector.data();
+    const char * end = selector.data() + selector.size();
+    auto vm = SelectorMatchingVM::parseSelector(begin, end);
+
+    ASSERT_EQ(vm.instructions.size(), 1);
+    EXPECT_EQ(vm.instructions[0].expected_tag, "body"sv);
+    EXPECT_FALSE(vm.instructions[0].need_jump_to_next_instruction);
+
+    const auto& attributes = vm.instructions[0].attributes;
+    ASSERT_EQ(attributes.size(), 6);
+
+    EXPECT_EQ(attributes[0].matcher.key, "key0"sv);
+    EXPECT_EQ(attributes[0].matcher.value_matcher->getPattern(), "");
+    EXPECT_TRUE(attributes[0].matcher.value_matcher->match("anything"));
+
+    EXPECT_EQ(attributes[1].matcher.key, "key1"sv);
+    EXPECT_EQ(attributes[1].matcher.value_matcher->getPattern(), "value1");
+    EXPECT_TRUE(attributes[1].matcher.value_matcher->match("value1"));
+    EXPECT_FALSE(attributes[1].matcher.value_matcher->match("not_value1"));
+
+    EXPECT_EQ(attributes[2].matcher.key, "key2"sv);
+    EXPECT_EQ(attributes[2].matcher.value_matcher->getPattern(), "value2");
+    EXPECT_TRUE(attributes[2].matcher.value_matcher->match("sometextsvalue2sometext"));
+    EXPECT_FALSE(attributes[2].matcher.value_matcher->match("sometext"));
+
+    EXPECT_EQ(attributes[3].matcher.key, "key3"sv);
+    EXPECT_EQ(attributes[3].matcher.value_matcher->getPattern(), "value3");
+    EXPECT_TRUE(attributes[3].matcher.value_matcher->match("value3sometext"));
+    EXPECT_FALSE(attributes[3].matcher.value_matcher->match("sometext"));
+
+    EXPECT_EQ(attributes[4].matcher.key, "key4"sv);
+    EXPECT_EQ(attributes[4].matcher.value_matcher->getPattern(), "value4");
+    EXPECT_TRUE(attributes[4].matcher.value_matcher->match("sometextvalue4"));
+    EXPECT_FALSE(attributes[4].matcher.value_matcher->match("sometext"));
+
+    EXPECT_EQ(attributes[5].matcher.key, "key5"sv);
+    EXPECT_EQ(attributes[5].matcher.value_matcher->getPattern(), "value5");
+    EXPECT_TRUE(attributes[5].matcher.value_matcher->match("some text value5 some text"));
+    EXPECT_FALSE(attributes[5].matcher.value_matcher->match("some text value5some text"));
+}
+
+TEST(SelectorMatchingVM, AttributeSelectorsClassID)
+{
+    std::string selector = "body.value0[key1=value1]#value2 a.value3 > span#value4";
+    const char * begin = selector.data();
+    const char * end = selector.data() + selector.size();
+    auto vm = SelectorMatchingVM::parseSelector(begin, end);
+
+    ASSERT_EQ(vm.instructions.size(), 3);
+    EXPECT_EQ(vm.instructions[0].expected_tag, "body"sv);
+    EXPECT_TRUE(vm.instructions[0].need_jump_to_next_instruction);
+    EXPECT_EQ(vm.instructions[1].expected_tag, "a"sv);
+    EXPECT_FALSE(vm.instructions[1].need_jump_to_next_instruction);
+    EXPECT_EQ(vm.instructions[2].expected_tag, "span"sv);
+    EXPECT_FALSE(vm.instructions[2].need_jump_to_next_instruction);
+
+    {
+        const auto & attributes = vm.instructions[0].attributes;
+        ASSERT_EQ(attributes.size(), 3);
+
+        EXPECT_EQ(attributes[0].matcher.key, "class"sv);
+        EXPECT_EQ(attributes[0].matcher.value_matcher->getPattern(), "value0");
+        EXPECT_TRUE(attributes[0].matcher.value_matcher->match("value0 value1"));
+        EXPECT_FALSE(attributes[0].matcher.value_matcher->match("value2 value1"));
+
+        EXPECT_EQ(attributes[1].matcher.key, "key1"sv);
+        EXPECT_EQ(attributes[1].matcher.value_matcher->getPattern(), "value1");
+        EXPECT_TRUE(attributes[1].matcher.value_matcher->match("value1"));
+        EXPECT_FALSE(attributes[1].matcher.value_matcher->match("not_value1"));
+
+        EXPECT_EQ(attributes[2].matcher.key, "id"sv);
+        EXPECT_EQ(attributes[2].matcher.value_matcher->getPattern(), "value2");
+        EXPECT_TRUE(attributes[2].matcher.value_matcher->match("value2"));
+        EXPECT_FALSE(attributes[2].matcher.value_matcher->match("value1"));
+    }
+    {
+        const auto & attributes = vm.instructions[1].attributes;
+        ASSERT_EQ(attributes.size(), 1);
+        EXPECT_EQ(attributes[0].matcher.key, "class"sv);
+        EXPECT_EQ(attributes[0].matcher.value_matcher->getPattern(), "value3");
+        EXPECT_TRUE(attributes[0].matcher.value_matcher->match("value3 value1"));
+        EXPECT_FALSE(attributes[0].matcher.value_matcher->match("value2 value1"));
+    }
+
+    {
+        const auto & attributes = vm.instructions[2].attributes;
+        ASSERT_EQ(attributes.size(), 1);
+        EXPECT_EQ(attributes[0].matcher.key, "id"sv);
+        EXPECT_EQ(attributes[0].matcher.value_matcher->getPattern(), "value4");
+        EXPECT_TRUE(attributes[0].matcher.value_matcher->match("value4"));
+        EXPECT_FALSE(attributes[0].matcher.value_matcher->match("not value4"));
+    }
+}
+
 TEST(SelectorMatchingVM, SingleTagWithAttributes)
 {
     std::string selector = "body[key1='value1'][key2 = \"value2\"]";
@@ -34,11 +131,11 @@ TEST(SelectorMatchingVM, SingleTagWithAttributes)
     ASSERT_EQ(attrs.size(), 2);
 
     EXPECT_EQ(attrs[0].matcher.key, "key1"sv);
-    EXPECT_EQ(attrs[0].matcher.value_matcher->pattern(), "value1");
+    EXPECT_EQ(attrs[0].matcher.value_matcher->getPattern(), "value1");
     EXPECT_FALSE(attrs[0].matched);
 
     EXPECT_EQ(attrs[1].matcher.key, "key2"sv);
-    EXPECT_EQ(attrs[1].matcher.value_matcher->pattern(), "value2");
+    EXPECT_EQ(attrs[1].matcher.value_matcher->getPattern(), "value2");
     EXPECT_FALSE(attrs[1].matched);
 
     EXPECT_FALSE(vm.instructions[0].need_jump_to_next_instruction);
@@ -108,11 +205,11 @@ void expectKeyValue(const Instruction& instruction) {
     ASSERT_EQ(attrs.size(), 2);
 
     EXPECT_EQ(attrs[0].matcher.key, "key1"sv);
-    EXPECT_EQ(attrs[0].matcher.value_matcher->pattern(), "value1");
+    EXPECT_EQ(attrs[0].matcher.value_matcher->getPattern(), "value1");
     EXPECT_FALSE(attrs[0].matched);
 
     EXPECT_EQ(attrs[1].matcher.key, "key2"sv);
-    EXPECT_EQ(attrs[1].matcher.value_matcher->pattern(), "value2");
+    EXPECT_EQ(attrs[1].matcher.value_matcher->getPattern(), "value2");
     EXPECT_FALSE(attrs[1].matched);
 }
 

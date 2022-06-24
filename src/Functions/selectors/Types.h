@@ -50,29 +50,18 @@ class IValueMatcher
 {
 public:
     virtual bool match(std::string_view value) const = 0;
-    virtual std::string_view pattern() const = 0;
+    virtual std::string_view getPattern() const = 0;
     virtual ~IValueMatcher() = default;
 };
 
-using ValuePatternPtr = std::unique_ptr<IValueMatcher>;
+using ValueMatcherPtr = std::unique_ptr<IValueMatcher>;
 
-struct AttributeMatcher
+struct AttributeSelector
 {
     CaseInsensitiveStringView key;
-    ValuePatternPtr value_matcher;
+    ValueMatcherPtr value_matcher;
 
     bool match(std::string_view value) const { return value_matcher->match(value); }
-};
-
-class ExactValueMatcher : public IValueMatcher
-{
-private:
-    std::string_view pattern_;
-
-public:
-    explicit ExactValueMatcher(std::string_view pattern) : pattern_(pattern) { }
-    bool match(std::string_view value) const override { return pattern_ == value; }
-    std::string_view pattern() const override { return pattern_; }
 };
 
 }

@@ -18,7 +18,7 @@ inline const char * parseNextAttribute(const char * begin, const char * end, Att
     if (*begin == '>')
         return begin;
 
-    const char * key_end = find_first_symbols<'=', ' ', '\t', '\n', '\r', '\f', '\v'>(begin, end);
+    const char * key_end = find_first_symbols<'>', '=', ' ', '\t', '\n', '\r', '\f', '\v'>(begin, end);
     if (key_end == end)
         return end;
 

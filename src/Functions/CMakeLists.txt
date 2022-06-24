@@ -103,6 +103,9 @@ endif()
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
+add_subdirectory(selectors)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_selectors)
+
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
 

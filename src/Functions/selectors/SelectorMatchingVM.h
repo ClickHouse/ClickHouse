@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.h"
+#include "ValueMatchers.h"
 
 #include <base/find_symbols.h>
 
@@ -13,43 +14,71 @@ namespace DB
 
 struct AttributeInfo
 {
-    AttributeMatcher matcher;
+    AttributeSelector matcher;
     bool matched = false;
 };
 
 inline const char * fillAttributes(std::vector<AttributeInfo> & attributes, const char * begin, const char * end)
 {
-    assert(*begin == '[');
-    ++begin;
-    while (true)
+    while (begin != end && *begin != ' ')
     {
-        AttributeMatcher attribute;
-        begin = find_first_not_symbols<' '>(begin, end);
-        if (begin == end)
-            return end;
+        AttributeSelector attribute;
 
         if (*begin == ']')
         {
             ++begin;
-            if (begin == end || *begin != '[')
+            if (begin == end || (*begin != '[' && *begin != '.' && *begin != '#'))
                 return begin;
-
-            ++begin;
         }
 
-        const char * key_end = find_first_symbols<' ', '='>(begin, end);
-        if (key_end == end)
+        const char attr_spec = *begin;
+        begin = find_first_not_symbols<' '>(begin + 1, end);
+
+        const char * word_end = find_first_symbols<' ', ']', '[', '=', '*', '^', '$', '~'>(begin, end);
+        auto word = std::string_view(begin, word_end - begin);
+        begin = word_end;
+
+        if (attr_spec == '.')
+        {
+            attribute.value_matcher = MakeContainsWordMatcher(word);
+            attribute.key = CaseInsensitiveStringView{"class"};
+            attributes.push_back({.matcher = std::move(attribute)});
+            continue;
+        }
+        else if (attr_spec == '#')
+        {
+            attribute.value_matcher = MakeExactMatcher(word);
+            attribute.key = CaseInsensitiveStringView{"id"};
+            attributes.push_back({.matcher = std::move(attribute)});
+            continue;
+        }
+        else if (attr_spec == '[')
+        {
+            attribute.key = CaseInsensitiveStringView{word};
+        }
+
+        const char * eq_pos = find_first_symbols<']', '=', '*', '^', '$', '~'>(begin, end);
+
+        if (eq_pos == end) {
+            // TODO: throw an exception
             return end;
+        }
 
-        attribute.key = std::string_view(begin, key_end - begin);
+        if (*eq_pos == ']')
+        {
+            attribute.value_matcher = MakeAlwaysTrueMatcher();
+            attributes.push_back({.matcher = std::move(attribute)});
+            begin = eq_pos;
+            continue;
+        }
 
-        begin = key_end;
-
-        const char * eq_pos = find_first_symbols<'='>(begin, end);
         if (eq_pos + 1 < end)
             begin = eq_pos + 1;
         else
             return end;
+
+        if (*begin == '=')
+            ++begin;
 
         begin = find_first_not_symbols<' '>(begin, end);
         if (begin == end || *begin == ']')
@@ -74,7 +103,27 @@ inline const char * fillAttributes(std::vector<AttributeInfo> & attributes, cons
         if (value_end == end)
             return end;
 
-        attribute.value_matcher = std::make_unique<ExactValueMatcher>(std::string_view(begin, value_end - begin));
+        switch (*eq_pos)
+        {
+            case '=':
+                attribute.value_matcher = MakeExactMatcher(std::string_view(begin, value_end - begin));
+                break;
+            case '*':
+                attribute.value_matcher = MakeSubstringMatcher(std::string_view(begin, value_end - begin));
+                break;
+            case '^':
+                attribute.value_matcher = MakeStartsWithMatcher(std::string_view(begin, value_end - begin));
+                break;
+            case '$':
+                attribute.value_matcher = MakeEndsWithMatcher(std::string_view(begin, value_end - begin));
+                break;
+            case '~':
+                attribute.value_matcher = MakeContainsWordMatcher(std::string_view(begin, value_end - begin));
+                break;
+            default:
+                // unreachable
+                return end;
+        }
         attributes.push_back({.matcher = std::move(attribute)});
 
         begin = value_end;
@@ -82,6 +131,8 @@ inline const char * fillAttributes(std::vector<AttributeInfo> & attributes, cons
         if (*begin == '\'' || *begin == '"')
             ++begin;
     }
+
+    return begin;
 }
 
 enum class MatchResult
@@ -110,7 +161,7 @@ struct Instruction
         ss << "<" << expected_tag.value << ">";
         for (const auto & attr : attributes)
         {
-            ss << "[" << attr.matched << ", " << attr.matcher.key.value << "=" << attr.matcher.value_matcher->pattern() << "]";
+            ss << "[" << attr.matched << ", " << attr.matcher.key.value << "=" << attr.matcher.value_matcher->getPattern() << "]";
         }
         ss << "need_jmp=" << need_jump_to_next_instruction;
         return ss.str();
@@ -384,13 +435,15 @@ struct SelectorMatchingVM
                     break;
             }
 
-            const char * next = find_first_symbols<' ', '['>(begin, end);
+            const char * next = find_first_symbols<' ', '[', '#', '.'>(begin, end);
 
             Instruction instruction;
 
             instruction.expected_tag = std::string_view(begin, next - begin);
+            if (instruction.expected_tag == std::string_view{})
+                instruction.expected_tag = std::string_view{"*"};
 
-            if (next != end && *next == '[')
+            if (next != end && *next != ' ')
                 begin = fillAttributes(instruction.attributes, next, end);
             else
                 begin = next;
