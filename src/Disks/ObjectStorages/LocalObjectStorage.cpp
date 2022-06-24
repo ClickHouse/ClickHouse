@@ -58,8 +58,11 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     if (!file_size.has_value())
         file_size = getFileSizeIfPossible(path);
 
+    ReadSettings modified_settings{read_settings};
+    modified_settings.local_fs_method = LocalFSReadMethod::pread;
+
     LOG_TEST(log, "Read object: {}", path);
-    return createReadBufferFromFileBase(path, read_settings, read_hint, file_size);
+    return createReadBufferFromFileBase(path, modified_settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT

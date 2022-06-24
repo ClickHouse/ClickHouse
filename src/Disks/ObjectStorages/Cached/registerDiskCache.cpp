@@ -44,7 +44,7 @@ void registerDiskCache(DiskFactory & factory)
         auto disk = disk_it->second;
         auto object_storage = disk->getObjectStorage(disk_name);
 
-        auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings);
+        auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
         object_storage->wrapWithCache(cache, name);
 
         return object_storage;
