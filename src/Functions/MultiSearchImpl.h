@@ -24,7 +24,9 @@ struct MultiSearchImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<std::string_view> & needles,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] PaddedPODArray<UInt64> & offsets)
+        [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
+        size_t /*max_hyperscan_regexp_length*/,
+        size_t /*max_hyperscan_regexp_total_length*/)
     {
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();

@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Functions/checkHyperscanRegexp.h>
 #include "Regexps.h"
 
 #include "config_functions.h"
@@ -47,9 +48,11 @@ struct MultiMatchAllIndicesImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<std::string_view> & needles,
         PaddedPODArray<ResultType> & res,
-        PaddedPODArray<UInt64> & offsets)
+        PaddedPODArray<UInt64> & offsets,
+        size_t max_hyperscan_regexp_length,
+        size_t max_hyperscan_regexp_total_length)
     {
-        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
     }
 
     static void vectorConstant(
@@ -58,10 +61,15 @@ struct MultiMatchAllIndicesImpl
         [[maybe_unused]] const std::vector<std::string_view> & needles,
         [[maybe_unused]] PaddedPODArray<ResultType> & res,
         [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
-        [[maybe_unused]] std::optional<UInt32> edit_distance)
+        [[maybe_unused]] std::optional<UInt32> edit_distance,
+        [[maybe_unused]] size_t max_hyperscan_regexp_length,
+        [[maybe_unused]] size_t max_hyperscan_regexp_total_length)
     {
-        offsets.resize(haystack_offsets.size());
 #if USE_VECTORSCAN
+        checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+
+        offsets.resize(haystack_offsets.size());
+
         const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, MultiSearchDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);

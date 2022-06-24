@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/checkHyperscanRegexp.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
@@ -110,9 +109,6 @@ public:
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 
-        if (Impl::is_using_hyperscan)
-            checkHyperscanRegexp(refs, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
-
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
@@ -121,7 +117,9 @@ public:
         auto & offsets_res = col_offsets->getData();
         // the implementations are responsible for resizing the output column
 
-        Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
+        Impl::vectorConstant(
+            col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res,
+            max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         if constexpr (Impl::is_column_array)
             return ColumnArray::create(std::move(col_res), std::move(col_offsets));
