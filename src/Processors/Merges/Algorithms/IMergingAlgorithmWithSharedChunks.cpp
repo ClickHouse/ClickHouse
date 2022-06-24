@@ -43,7 +43,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
         source.chunk->sort_columns = cursors[source_num].sort_columns;
     }
 
-    queue = SortingHeap<SortCursor>(cursors);
+    queue = SortingQueue<SortCursor>(cursors);
 }
 
 void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)

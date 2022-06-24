@@ -385,6 +385,7 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
+    STRESS = "stress"
     BUILD = "not running for current build"
     BACKWARD_INCOMPATIBLE = "test is backward incompatible"
 
@@ -420,6 +421,10 @@ class SettingsRandomizer:
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
+        "optimize_read_in_order": lambda: random.randint(0, 1),
+        "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
+        "optimize_aggregation_in_order": lambda: random.randint(0, 1),
+        "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
     }
 
     @staticmethod
@@ -679,6 +684,9 @@ class TestCase:
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
 
+        elif tags and ("no-stress" in tags) and args.stress:
+            return FailureReason.STRESS
+
         elif tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
@@ -879,7 +887,7 @@ class TestCase:
             "test": self.case_file,
             "stdout": self.stdout_file,
             "stderr": self.stderr_file,
-            "secure": "--secure" if args.secure else ""
+            "secure": "--secure" if args.secure else "",
         }
 
         # >> append to stderr (but not stdout since it is not used there),
@@ -1214,7 +1222,9 @@ class TestSuite:
             try:
                 return int(clickhouse_execute(args, "EXISTS TABLE test.hits"))
             except Exception as e:
-                print("Cannot check if dataset is available, assuming it's not: ", str(e))
+                print(
+                    "Cannot check if dataset is available, assuming it's not: ", str(e)
+                )
                 return False
 
         base_dir = os.path.abspath(args.queries)
@@ -1954,6 +1964,12 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         help="Run tests over s3 storage",
+    )
+    parser.add_argument(
+        "--stress",
+        action="store_true",
+        default=False,
+        help="Run stress tests",
     )
     parser.add_argument(
         "--no-random-settings",
