@@ -1,4 +1,4 @@
-#include <Functions/hyperscanRegexpChecker.h>
+#include <Functions/checkHyperscanRegexp.h>
 
 #include <Common/Exception.h>
 
@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void checkRegexp(const std::vector<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
+void checkHyperscanRegexp(const std::vector<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
 {
     if (max_hyperscan_regexp_length > 0 || max_hyperscan_regexp_total_length > 0)
     {
