@@ -24,7 +24,9 @@ struct MultiSearchFirstPositionImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<std::string_view> & needles,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] PaddedPODArray<UInt64> & offsets)
+        [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
+        size_t /*max_hyperscan_regexp_length*/,
+        size_t /*max_hyperscan_regexp_total_length*/)
     {
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
