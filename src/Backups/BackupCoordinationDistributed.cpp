@@ -174,7 +174,7 @@ Strings BackupCoordinationDistributed::setStatusAndWaitFor(const String & curren
 
 
 void BackupCoordinationDistributed::addReplicatedPartNames(
-    const String & table_zk_path,
+    const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
@@ -186,39 +186,39 @@ void BackupCoordinationDistributed::addReplicatedPartNames(
     }
 
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_zk_path);
+    String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_shared_id);
     zookeeper->createIfNotExists(path, "");
     path += "/" + escapeForFileName(replica_name);
     zookeeper->create(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_name_for_logs), zkutil::CreateMode::Persistent);
 }
 
-Strings BackupCoordinationDistributed::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
+Strings BackupCoordinationDistributed::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{mutex};
     prepareReplicatedPartNames();
-    return replicated_part_names->getPartNames(table_zk_path, replica_name);
+    return replicated_part_names->getPartNames(table_shared_id, replica_name);
 }
 
 
 void BackupCoordinationDistributed::addReplicatedDataPath(
-    const String & table_zk_path, const String & data_path)
+    const String & table_shared_id, const String & data_path)
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_zk_path);
+    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
     zookeeper->createIfNotExists(path, "");
-    path += "/";
-    zookeeper->create(path, data_path, zkutil::CreateMode::PersistentSequential);
+    path += "/" + escapeForFileName(data_path);
+    zookeeper->createIfNotExists(path, "");
 }
 
-Strings BackupCoordinationDistributed::getReplicatedDataPaths(const String & table_zk_path) const
+Strings BackupCoordinationDistributed::getReplicatedDataPaths(const String & table_shared_id) const
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_zk_path);
+    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
     Strings children = zookeeper->getChildren(path);
     Strings data_paths;
     data_paths.reserve(children.size());
     for (const String & child : children)
-        data_paths.push_back(zookeeper->get(path + "/" + child));
+        data_paths.push_back(unescapeForFileName(child));
     return data_paths;
 }
 

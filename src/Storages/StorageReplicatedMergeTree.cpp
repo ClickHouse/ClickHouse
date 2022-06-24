@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
 #include <Storages/Freeze.h>
 
 #include <Databases/DatabaseOnDisk.h>
@@ -7504,6 +7505,24 @@ void StorageReplicatedMergeTree::createTableSharedID()
 }
 
 
+std::optional<String> StorageReplicatedMergeTree::tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context)
+{
+    auto zk_path = tryExtractZkPathFromCreateQuery(create_query, global_context);
+    if (!zk_path)
+        return {};
+
+    String zk_name = zkutil::extractZooKeeperName(*zk_path);
+    zk_path = zkutil::extractZooKeeperPath(*zk_path, false, nullptr);
+    zkutil::ZooKeeperPtr zookeeper = (zk_name == getDefaultZooKeeperName()) ? global_context->getZooKeeper() : global_context->getAuxiliaryZooKeeper(zk_name);
+
+    String id;
+    if (!zookeeper->tryGet(fs::path(*zk_path) / "table_shared_id", id))
+        return {};
+
+    return id;
+}
+
+
 void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const
 {
     auto settings = getSettings();
@@ -8258,46 +8277,8 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
 {
     MergeTreeData::adjustCreateQueryForBackup(create_query);
 
-    /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
-    /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
-    /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
-    auto & create = create_query->as<ASTCreateQuery &>();
-    
-    if (!create.storage || !create.storage->engine)
-        throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query without table engine for a replicated table {}", getStorageID().getFullTableName());
-
-    auto & engine = *(create.storage->engine);
-    if (!engine.name.starts_with("Replicated") || !engine.name.ends_with("MergeTree"))
-        throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with an unexpected table engine {} for a replicated table {}", engine.name, getStorageID().getFullTableName());
-
-    if (create.uuid == UUIDHelpers::Nil)
-        return;
-
-    auto * engine_args_ast = typeid_cast<ASTExpressionList *>(engine.arguments.get());
-    if (!engine_args_ast)
-        return;
-
-    auto & engine_args = engine_args_ast->children;
-    if (engine_args.size() < 2)
-        return;
-
-    auto * zookeeper_path_ast = typeid_cast<ASTLiteral *>(engine_args[0].get());
-    auto * replica_name_ast = typeid_cast<ASTLiteral *>(engine_args[1].get());
-    if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
-        replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
-    {
-        String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
-        String & replica_name_arg = replica_name_ast->value.get<String>();
-        String table_uuid_str = toString(create.uuid);
-        if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
-            zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
-        const auto & config = getContext()->getConfigRef();
-        if ((zookeeper_path_arg == getDefaultZooKeeperPath(config)) && (replica_name_arg == getDefaultReplicaName(config))
-            && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
-        {
-            engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
-        }
-    }
+    if (getTableSharedID() != tryGetTableSharedIDFromCreateQuery(*create_query, getContext()))
+        throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Table {} has its shared ID to be different from one from the create query");
 }
 
 void StorageReplicatedMergeTree::backupData(
@@ -8309,8 +8290,8 @@ void StorageReplicatedMergeTree::backupData(
     auto backup_entries = backupParts(backup_entries_collector.getContext(), "", partitions);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
-    String full_zk_path = getZooKeeperName() + getZooKeeperPath();
-    coordination->addReplicatedDataPath(full_zk_path, data_path_in_backup);
+    String shared_id = getTableSharedID();
+    coordination->addReplicatedDataPath(shared_id, data_path_in_backup);
 
     std::unordered_map<String, SipHash> part_names_with_hashes_calculating;
     for (auto & [relative_path, backup_entry] : backup_entries)
@@ -8348,23 +8329,23 @@ void StorageReplicatedMergeTree::backupData(
     }
 
     /// Send our list of part names to the coordination (to compare with other replicas).
-    coordination->addReplicatedPartNames(full_zk_path, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
+    coordination->addReplicatedPartNames(shared_id, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
 
     /// This task will be executed after all replicas have collected their parts and the coordination is ready to
     /// give us the final list of parts to add to the BackupEntriesCollector.
-    auto post_collecting_task = [full_zk_path,
+    auto post_collecting_task = [shared_id,
                                  replica_name = getReplicaName(),
                                  coordination,
                                  backup_entries = std::move(backup_entries),
                                  &backup_entries_collector]()
     {
-        Strings data_paths = coordination->getReplicatedDataPaths(full_zk_path);
+        Strings data_paths = coordination->getReplicatedDataPaths(shared_id);
         std::vector<fs::path> data_paths_fs;
         data_paths_fs.reserve(data_paths.size());
         for (const auto & data_path : data_paths)
             data_paths_fs.push_back(data_path);
 
-        Strings part_names = coordination->getReplicatedPartNames(full_zk_path, replica_name);
+        Strings part_names = coordination->getReplicatedPartNames(shared_id, replica_name);
         std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
 
         for (const auto & [relative_path, backup_entry] : backup_entries)

@@ -24,7 +24,7 @@ public:
     /// getPartNames().
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
     void addPartNames(
-        const String & table_zk_path,
+        const String & table_shared_id,
         const String & table_name_for_logs,
         const String & replica_name,
         const std::vector<PartNameAndChecksum> & part_names_and_checksums);
@@ -32,7 +32,7 @@ public:
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addPartNames() but without duplications and without
     /// parts covered by another parts.
-    Strings getPartNames(const String & table_zk_path, const String & replica_name) const;
+    Strings getPartNames(const String & table_shared_id, const String & replica_name) const;
 
 private:
     void preparePartNames() const;
@@ -52,7 +52,7 @@ private:
         std::unique_ptr<CoveredPartsFinder> covered_parts_finder;
     };
 
-    std::map<String /* table_zk_path */, TableInfo> table_infos; /// Should be ordered because we need this map to be in the same order on every replica.
+    std::map<String /* table_shared_id */, TableInfo> table_infos; /// Should be ordered because we need this map to be in the same order on every replica.
     mutable bool part_names_prepared = false;
 };
 

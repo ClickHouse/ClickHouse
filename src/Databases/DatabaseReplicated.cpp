@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int NO_ACTIVE_REPLICAS;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
     extern const int CANNOT_RESTORE_TABLE;
 }
 
@@ -920,6 +921,45 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
     ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
     readStringUntilEOF(statement, in);
     return statement;
+}
+
+
+std::vector<std::pair<ASTPtr, StoragePtr>>
+DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const
+{
+    /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
+    /// reading from ZooKeeper is better because thus we won't be dependant on how fast the replication queue of this database is.
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+    auto zookeeper = getContext()->getZooKeeper();
+    auto escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
+    for (const auto & escaped_table_name : escaped_table_names)
+    {
+        String table_name = unescapeForFileName(escaped_table_name);
+        if (!filter(table_name))
+            continue;
+        String zk_metadata;
+        if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
+        
+        ParserCreateQuery parser;
+        auto create_table_query = parseQuery(parser, zk_metadata, 0, getContext()->getSettingsRef().max_parser_depth);
+
+        auto & create = create_table_query->as<ASTCreateQuery &>();
+        create.attach = false;
+        create.setTable(table_name);
+        create.setDatabase(getDatabaseName());
+
+        StoragePtr storage;
+        if (create.uuid != UUIDHelpers::Nil)
+        {
+            storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
+            if (storage)
+                storage->adjustCreateQueryForBackup(create_table_query);
+        }
+        res.emplace_back(create_table_query, storage);
+    }
+
+    return res;
 }
 
 

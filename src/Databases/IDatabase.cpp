@@ -21,20 +21,9 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
 }
 
-ASTPtr IDatabase::getCreateDatabaseQueryForBackup() const
-{
-    auto query = getCreateDatabaseQuery();
-
-    /// We don't want to see any UUIDs in backup (after RESTORE the database will have another UUID anyway).
-    auto & create = query->as<ASTCreateQuery &>();
-    create.uuid = UUIDHelpers::Nil;
-
-    return query;
-}
-
 std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
 {
-    /// Cannot restore any table because IDatabase doesn't own any tables.
+    /// Cannot backup any table because IDatabase doesn't own any tables.
     throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE,
                     "Database engine {} does not support backups, cannot backup tables in database {}",
                     getEngineName(), backQuoteIfNeed(getDatabaseName()));

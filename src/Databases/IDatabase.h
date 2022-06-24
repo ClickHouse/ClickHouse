@@ -332,9 +332,6 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
-    /// Returns a CREATE DATABASE query prepared for writing to a backup.
-    virtual ASTPtr getCreateDatabaseQueryForBackup() const;
-
     /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
     virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
 
