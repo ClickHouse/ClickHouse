@@ -1490,3 +1490,4 @@ ChaCha20_neon:
 #endif
 #endif
 #endif  // !OPENSSL_NO_ASM
+.section	.note.GNU-stack,"",%progbits
