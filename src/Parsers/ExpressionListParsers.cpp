@@ -703,10 +703,18 @@ public:
 
     void pushOperator(Operator op, bool count = true)
     {
-        if (count && op.func_name != "and" && op.func_name != "or" && op.func_name != "concat")
+        if (count)
         {
-            ++depth_diff;
-            ++depth_total;
+            if (op.func_name != "and" && op.func_name != "or" && op.func_name != "concat")
+            {
+                ++depth_diff;
+                ++depth_total;
+            }
+            else
+            {
+                depth_diff -= depth_total;
+                depth_total = 0;
+            }
         }
 
         operators.push_back(std::move(op));
@@ -2259,6 +2267,10 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             next = Action::OPERAND;
             ASTPtr tmp;
+
+            Expected stub;
+            if (ParserKeyword("IN PARTITION").checkWithoutMoving(pos, stub))
+                break;
 
             /// Try to find operators from 'op_table'
             auto cur_op = op_table.begin();
