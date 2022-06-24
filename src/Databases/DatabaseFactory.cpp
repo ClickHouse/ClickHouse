@@ -14,6 +14,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Common/logger_useful.h>
 #include <Common/Macros.h>
 
 #include "config_core.h"
@@ -334,18 +335,25 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
+            bool is_deprecated_syntax = false;
             if (engine_args.size() >= 5)
             {
                 auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
                 if (arg_value.getType() == Field::Types::Which::String)
+                {
                     configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+                }
                 else
+                {
                     use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
+                    LOG_WARNING(&Poco::Logger::get("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
+                    is_deprecated_syntax = true;
+                }
             }
-        }
 
-        if (engine_args.size() >= 6)
-            use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+            if (!is_deprecated_syntax && engine_args.size() >= 6)
+                use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+        }
 
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
             context->getSettingsRef().postgresql_connection_pool_size,
