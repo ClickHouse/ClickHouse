@@ -46,7 +46,7 @@ struct MultiMatchAnyImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<StringRef> & needles,
+        const std::vector<std::string_view> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
@@ -56,7 +56,7 @@ struct MultiMatchAnyImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<StringRef> & needles,
+        const std::vector<std::string_view> & needles,
         PaddedPODArray<Type> & res,
         [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
         [[maybe_unused]] std::optional<UInt32> edit_distance)
@@ -120,7 +120,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), nullptr, accum);
+            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, std::string(needles[j].data(), needles[j].size()), nullptr, accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)

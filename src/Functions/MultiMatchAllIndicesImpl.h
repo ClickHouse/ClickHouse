@@ -44,7 +44,7 @@ struct MultiMatchAllIndicesImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<StringRef> & needles,
+        const std::vector<std::string_view> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
@@ -54,7 +54,7 @@ struct MultiMatchAllIndicesImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<StringRef> & needles,
+        const std::vector<std::string_view> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets,
         [[maybe_unused]] std::optional<UInt32> edit_distance)

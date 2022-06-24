@@ -22,7 +22,7 @@ struct MultiSearchFirstIndexImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<StringRef> & needles,
+        const std::vector<std::string_view> & needles,
         PaddedPODArray<UInt64> & res,
         [[maybe_unused]] PaddedPODArray<UInt64> & offsets)
     {

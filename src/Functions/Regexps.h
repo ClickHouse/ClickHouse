@@ -278,15 +278,15 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, std::o
 /// template has its own copy of local static variables which must not be the same
 /// for different hyperscan compilations.
 template <bool save_indices, bool CompileForEditDistance>
-inline Regexps * get(const std::vector<StringRef> & patterns, std::optional<UInt32> edit_distance)
+inline Regexps * get(const std::vector<std::string_view> & patterns, std::optional<UInt32> edit_distance)
 {
     /// C++11 has thread-safe function-local static on most modern compilers.
     static Pool known_regexps; /// Different variables for different pattern parameters.
 
     std::vector<String> str_patterns;
     str_patterns.reserve(patterns.size());
-    for (const StringRef & ref : patterns)
-        str_patterns.push_back(ref.toString());
+    for (const auto & pattern : patterns)
+        str_patterns.push_back(std::string(pattern.data(), pattern.size()));
 
     /// Get the lock for finding database.
     std::unique_lock lock(known_regexps.mutex);
