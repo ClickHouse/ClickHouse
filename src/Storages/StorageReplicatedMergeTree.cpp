@@ -6602,7 +6602,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             Transaction transaction(*this, NO_TRANSACTION_RAW);
             {
                 auto data_parts_lock = lockParts();
-                renameTempPartsAndReplace(dst_parts, transaction, data_parts_lock);
+                for (auto & part : dst_parts)
+                    renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock);
             }
 
             for (size_t i = 0; i < dst_parts.size(); ++i)
@@ -6835,10 +6836,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 auto src_data_parts_lock = lockParts();
                 auto dest_data_parts_lock = dest_table_storage->lockParts();
 
-                std::mutex mutex;
-                DataPartsLock lock(mutex);
-
-                renameTempPartsAndReplace(dst_parts, transaction, lock);
+                for (auto & part : dst_parts)
+                    renameTempPartAndReplaceUnlocked(part, transaction, src_data_parts_lock);
 
                 for (size_t i = 0; i < dst_parts.size(); ++i)
                     dest_table_storage->lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
@@ -6849,8 +6848,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 else
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
-                parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, lock);
-                transaction.commit(&lock);
+                parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
+                transaction.commit(&src_data_parts_lock);
             }
 
             PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
