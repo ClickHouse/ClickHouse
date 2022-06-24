@@ -363,6 +363,32 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::DUMP_ALLOCATIONS:
+        {
+            ASTPtr value;
+
+            ParserKeyword max_depth {"MAX DEPTH"};
+            ParserKeyword min_bytes{"MIN BYTES"};
+
+            if (max_depth.ignore(pos, expected))
+            {
+                if (!ParserUnsignedInteger().parse(pos, value, expected))
+                    return false;
+
+                res->max_alloc_stack_depth = value->as<ASTLiteral>()->value.get<UInt64>();
+            }
+
+            if (min_bytes.ignore(pos, expected))
+            {
+                if (!ParserUnsignedInteger().parse(pos, value, expected))
+                    return false;
+
+                res->min_alloc_bytes = value->as<ASTLiteral>()->value.get<UInt64>();
+            }
+
+            break;
+        }
+
         case Type::UNFREEZE:
         {
             ASTPtr ast;

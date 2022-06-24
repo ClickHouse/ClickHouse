@@ -1,11 +1,16 @@
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <base/defines.h>
 #include <sys/mman.h>
+#include "Common/Dwarf.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/StackTrace.h>
 #include <Common/PODArray.h>
+#include <Common/SymbolIndex.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 namespace DB::ErrorCodes
 {
@@ -235,6 +240,115 @@ struct Tree
             bytes.push_back(current->allocated);
         }
     }
+
+    static void addressToLine(
+        DB::WriteBuffer & out,
+        const DB::SymbolIndex & symbol_index,
+        std::unordered_map<std::string, DB::Dwarf> & dwarfs,
+        const void * addr)
+    {
+        if (const auto * symbol = symbol_index.findSymbol(addr))
+        {
+            writeString(symbol->name, out);
+            writeString("\\n", out);
+        }
+        if (const auto * object = symbol_index.findObject(addr))
+        {
+            auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+            if (!std::filesystem::exists(object->name))
+                return;
+
+            DB::Dwarf::LocationInfo location;
+            std::vector<DB::Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+            if (dwarf_it->second.findAddress(uintptr_t(addr) - uintptr_t(object->address_begin), location, DB::Dwarf::LocationInfoMode::FAST, frames))
+            {
+                writeString(location.file.toString(), out);
+                writeChar(':', out);
+                writeIntText(location.line, out);
+            }
+            else
+                writeString(object->name, out);
+
+            writeString("\\n", out);
+        }
+    }
+
+    static void dumpNode(
+        DB::WriteBuffer & out,
+        TreeNode * node,
+        std::unordered_map<uintptr_t, size_t> & mapping,
+        const DB::SymbolIndex & symbol_index,
+        std::unordered_map<std::string, DB::Dwarf> & dwarfs)
+    {
+        auto addr = reinterpret_cast<intptr_t>(node->ptr);
+        size_t id = mapping.emplace(addr, mapping.size()).first->second;
+
+        out << "    n" << id << "[label=\"bytes: " << node->allocated << "\\n";
+        addressToLine(out, symbol_index, dwarfs, node->ptr);
+        out << "\"];\n";
+    }
+
+    void dumpAllocationsTree(DB::WriteBuffer & out, size_t max_depth, size_t max_bytes) const
+    {
+        struct Edge
+        {
+            uintptr_t from;
+            uintptr_t to;
+        };
+
+        std::vector<Edge> edges;
+        std::unordered_map<uintptr_t, size_t> mapping;
+        std::unordered_map<std::string, DB::Dwarf> dwarfs;
+
+        auto symbol_index_ptr = DB::SymbolIndex::instance();
+        const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+
+
+        out << "digraph\n{\n";
+        out << "  rankdir=\"LR\";\n";
+
+        /// Nodes
+
+        std::vector<ListNode *> nodes;
+
+        nodes.push_back(root.children);
+        while (!nodes.empty())
+        {
+            if (nodes.back() == nullptr)
+            {
+                nodes.pop_back();
+                continue;
+            }
+
+            TreeNode * current = nodes.back()->child;
+            nodes.back() = nodes.back()->next;
+
+            bool enough_bytes = max_bytes != 0 && current->allocated >= max_bytes;
+            bool enough_depth = max_depth != 0 && nodes.size() < max_depth;
+
+            if (enough_bytes)
+                dumpNode(out, current, mapping, symbol_index, dwarfs);
+
+            if (enough_depth && enough_bytes)
+            {
+                edges.push_back({uintptr_t(current->parent->ptr), uintptr_t(current->ptr)});
+                nodes.push_back(current->children);
+            }
+        }
+
+        out << "  { node [shape = rect]\n";
+
+        out << "  }\n";
+
+        /// Edges
+
+        for (const auto & edge : edges)
+        {
+            out << "  n" << edge.from << " -> n" << edge.to << ";\n";
+        }
+
+        out << "}\n";
+    }
 };
 
 struct AllocationTracker
@@ -290,6 +404,11 @@ struct AllocationTracker
         tree.dump(values, offsets, bytes);
     }
 
+    void dumpAllocationsTree(DB::WriteBuffer & buf, size_t max_depth, size_t max_bytes) const
+    {
+        tree.dumpAllocationsTree(buf, max_depth, max_bytes);
+    }
+
     using value_type = std::pair<void * const, Tree::TreeNode *>;
 
     StackAllocatorMemory memory;
@@ -329,7 +448,21 @@ struct RecursiveCallGuard
     bool & flag;
 };
 
-void enable_alocation_tracker(bool enable)
+void enable_allocation_tracker()
+{
+    /// Just in case
+    if (recursive_call_flag)
+        return;
+
+    /// If clearing causes deallocations
+    RecursiveCallGuard guard(recursive_call_flag);
+
+    auto & data = getTrackerData();
+    std::lock_guard lock(data.mutex);
+    data.is_enabled = true;
+}
+
+void disable_allocation_tracker()
 {
     /// Just in case
     if (recursive_call_flag)
@@ -341,10 +474,8 @@ void enable_alocation_tracker(bool enable)
     auto & data = getTrackerData();
     std::lock_guard lock(data.mutex);
 
-    if (!enable)
-        data.tracker.clear();
-
-    data.is_enabled = enable;
+    data.tracker.clear();
+    data.is_enabled = false;
 }
 
 void track_alloc(void * ptr, std::size_t size)
@@ -398,6 +529,60 @@ void dump_allocations(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UI
         if (data.is_enabled)
         {
             data.tracker.dump(values, offsets, bytes);
+        }
+    }
+}
+
+static void insertData(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
+{
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + length + 1;
+
+    chars.resize(new_size);
+    if (length)
+        memcpy(chars.data() + old_size, pos, length);
+    chars[old_size + length] = 0;
+    offsets.push_back(new_size);
+}
+
+/// Split str by line feed and write as separate row to ColumnString.
+static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const std::string & str)
+{
+    size_t start = 0;
+    size_t end = 0;
+    size_t size = str.size();
+
+    while (end < size)
+    {
+        if (str[end] == '\n')
+        {
+            insertData(chars, offsets, str.data() + start, end - start);
+            start = end + 1;
+        }
+
+        ++end;
+    }
+
+    if (start < end)
+        insertData(chars, offsets, str.data() + start, end - start);
+}
+
+void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, size_t max_depth, size_t max_bytes)
+{
+    if (recursive_call_flag)
+        return;
+
+    RecursiveCallGuard guard(recursive_call_flag);
+
+    auto & data = getTrackerData();
+    if (data.is_enabled)
+    {
+        std::lock_guard lock(data.mutex);
+        if (data.is_enabled)
+        {
+            DB::WriteBufferFromOwnString buf;
+            data.tracker.dumpAllocationsTree(buf, max_depth, max_bytes);
+            fillColumn(chars, offsets, buf.str());
         }
     }
 }

@@ -48,6 +48,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
@@ -200,6 +201,19 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
 }
 
+
+static QueryPipeline buildDumpAllocationsPipeline(size_t max_depth, size_t max_bytes)
+{
+    auto column = ColumnString::create();
+    auto & chars = column->getChars();
+    auto & offsets = column->getOffsets();
+    MemoryAllocationTracker::dump_allocations_tree(chars, offsets, max_depth, max_bytes);
+
+    auto source = std::make_shared<SourceFromSingleChunk>(
+        Block({ColumnWithTypeAndName{ColumnPtr(std::move(column)), std::make_shared<DataTypeString>(), "tree"}}));
+
+    return QueryPipeline(std::move(source));
+}
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
         : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
@@ -498,11 +512,15 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::STOP_ALLOCATION_TRACKER:
             getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
-            MemoryAllocationTracker::enable_alocation_tracker(false);
+            MemoryAllocationTracker::enable_allocation_tracker();
             break;
         case Type::START_ALLOCATION_TRACKER:
             getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
-            MemoryAllocationTracker::enable_alocation_tracker(true);
+            MemoryAllocationTracker::disable_allocation_tracker();
+            break;
+        case Type::DUMP_ALLOCATIONS:
+            getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
+            result.pipeline = buildDumpAllocationsPipeline(query.max_alloc_stack_depth, query.min_alloc_bytes);
             break;
         case Type::UNFREEZE:
         {
@@ -997,6 +1015,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_THREAD_FUZZER:
         case Type::STOP_ALLOCATION_TRACKER:
         case Type::START_ALLOCATION_TRACKER:
+        case Type::DUMP_ALLOCATIONS:
         case Type::UNKNOWN:
         case Type::END: break;
     }

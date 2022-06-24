@@ -68,6 +68,7 @@ public:
         STOP_THREAD_FUZZER,
         START_ALLOCATION_TRACKER,
         STOP_ALLOCATION_TRACKER,
+        DUMP_ALLOCATIONS,
         UNFREEZE,
         END
     };
@@ -94,6 +95,8 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+    UInt64 max_alloc_stack_depth{};
+    UInt64 min_alloc_bytes{};
 
     String filesystem_cache_path;
     String backup_name;
