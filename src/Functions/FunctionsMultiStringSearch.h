@@ -52,15 +52,14 @@ public:
         const auto & settings = context->getSettingsRef();
 
         if (Impl::is_using_hyperscan && !settings.allow_hyperscan)
-            throw Exception("Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
 
         return std::make_shared<FunctionsMultiStringSearch>(settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length);
     }
 
     FunctionsMultiStringSearch(size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_)
         : max_hyperscan_regexp_length(max_hyperscan_regexp_length_), max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
-    {
-    }
+    {}
 
     String getName() const override { return name; }
 
@@ -72,13 +71,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
         if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
+
         return Impl::getReturnType();
     }
 
@@ -94,17 +92,15 @@ public:
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
 
         if (!col_const_arr)
-            throw Exception(
-                "Illegal column " + arguments[1].column->getName() + ". The array is not const",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The array is not const", arguments[1].column->getName());
 
         Array src_arr = col_const_arr->getValue<Array>();
 
         if (src_arr.size() > LimitArgs)
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(src_arr.size())
-                    + ", should be at most " + std::to_string(LimitArgs),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
+                getName(), std::to_string(src_arr.size()), std::to_string(LimitArgs));
 
         std::vector<std::string_view> refs;
         refs.reserve(src_arr.size());
@@ -125,7 +121,7 @@ public:
         if (col_haystack_vector)
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
         else
-            throw Exception("Illegal column " + arguments[0].column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}", arguments[0].column->getName());
 
         if constexpr (Impl::is_column_array)
             return ColumnArray::create(std::move(col_res), std::move(col_offsets));
