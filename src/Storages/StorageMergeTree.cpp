@@ -1616,11 +1616,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             Transaction transaction(*this, local_context->getCurrentTransaction().get());
 
             auto data_parts_lock = lockParts();
-
             /// Populate transaction
-            for (MutableDataPartPtr & part : dst_parts)
-                renameTempPartAndReplace(part, transaction, &increment, &data_parts_lock);
-
+            renameTempPartsAndReplace(dst_parts, transaction, data_parts_lock, &increment);
             transaction.commit(&data_parts_lock);
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
@@ -1696,8 +1693,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             std::mutex mutex;
             DataPartsLock lock(mutex);
 
-            for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, transaction, &dest_table_storage->increment, &lock);
+            dest_table_storage->renameTempPartsAndReplace(dst_parts, transaction, lock, &dest_table_storage->increment);
 
             removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, lock);
             transaction.commit(&lock);

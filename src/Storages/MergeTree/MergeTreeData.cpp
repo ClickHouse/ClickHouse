@@ -2791,10 +2791,6 @@ bool MergeTreeData::renameTempPartAndAdd(
     MergeTreeDeduplicationLog * deduplication_log,
     std::string_view deduplication_token)
 {
-    if (&out_transaction.data != this)
-        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
-
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
@@ -2919,23 +2915,27 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
-    SimpleIncrement * increment,
-    DataPartsLock * lock)
+    SimpleIncrement * increment)
 {
+    auto part_lock = lockParts();
+
     DataPartsVector covered_parts;
-    {
-        if (!lock)
-        {
-            auto part_lock = lockParts();
-            renameTempPartAndReplaceImpl(part, increment, out_transaction, part_lock, &covered_parts);
-        }
-        else
-        {
-            renameTempPartAndReplaceImpl(part, increment, out_transaction, *lock, &covered_parts);
-        }
-    }
+    renameTempPartAndReplaceImpl(part, increment, out_transaction, part_lock, &covered_parts);
+
     return covered_parts;
 }
+
+void MergeTreeData::renameTempPartsAndReplace(
+    MutableDataPartsVector & parts,
+    Transaction & out_transaction,
+    DataPartsLock & lock,
+    SimpleIncrement * increment)
+{
+    for (auto & part : parts)
+        renameTempPartAndReplaceImpl(part, increment, out_transaction, lock);
+}
+
+
 
 void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock)
 
