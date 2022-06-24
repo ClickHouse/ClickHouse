@@ -312,11 +312,12 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
         case Type::DROP_FILESYSTEM_CACHE:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
             if (query.filesystem_cache_path.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data.cache->removeIfReleasable(query.drop_persistent_files);
+                    cache_data->cache->removeIfReleasable(query.drop_persistent_files);
             }
             else
             {
