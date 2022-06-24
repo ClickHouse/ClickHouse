@@ -72,13 +72,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        using ResultType = typename Impl::ResultType;
-
         const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & num_ptr = arguments[1].column;
+        const ColumnPtr & arr_ptr = arguments[2].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
 
-        const ColumnPtr & num_ptr = arguments[1].column;
         const ColumnConst * col_const_num = nullptr;
         UInt32 edit_distance = 0;
 
@@ -91,7 +90,6 @@ public:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The number is not const or does not fit in UInt32", arguments[1].column->getName());
 
-        const ColumnPtr & arr_ptr = arguments[2].column;
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
 
         if (!col_const_arr)
@@ -113,13 +111,14 @@ public:
         if (Impl::is_using_hyperscan)
             checkHyperscanRegexp(refs, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
+        using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
 
         auto & vec_res = col_res->getData();
         auto & offsets_res = col_offsets->getData();
 
-        /// The blame for resizing output is for the callee.
+        // the implementations are responsible for resizing the output column
         if (col_haystack_vector)
             Impl::vectorConstant(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res, edit_distance);

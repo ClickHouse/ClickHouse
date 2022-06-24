@@ -18,6 +18,10 @@
 namespace DB
 {
 /**
+  * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  *
   * multiSearchAny(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- find any of the const patterns inside haystack and return 0 or 1
   * multiSearchAnyUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchAnyCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
@@ -82,13 +86,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        using ResultType = typename Impl::ResultType;
-
         const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & arr_ptr = arguments[1].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
 
-        const ColumnPtr & arr_ptr = arguments[1].column;
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
 
         if (!col_const_arr)
@@ -111,13 +113,14 @@ public:
         if (Impl::is_using_hyperscan)
             checkHyperscanRegexp(refs, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
+        using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
 
         auto & vec_res = col_res->getData();
         auto & offsets_res = col_offsets->getData();
 
-        /// The blame for resizing output is for the callee.
+        // the implementations are responsible for resizing the output column
         if (col_haystack_vector)
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
         else
