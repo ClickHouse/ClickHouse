@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -679,6 +680,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
+    {
+        auto storage_policy = args.getContext()->getStoragePolicy(storage_settings->storage_policy);
+
+        for (const auto & disk : storage_policy->getDisks())
+        {
+            /// TODO: implement it the main issue in DataPartsExchange (not able to send directories metadata)
+            if (storage_settings->allow_remote_fs_zero_copy_replication
+                && disk->supportZeroCopyReplication() && metadata.hasProjections())
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections are not supported when zero-copy replication is enabled for table. "
+                                "Currently disk '{}' supports zero copy replication", disk->getName());
+            }
+        }
+
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
@@ -692,6 +707,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             std::move(storage_settings),
             args.has_force_restore_data_flag,
             renaming_restrictions);
+    }
     else
         return std::make_shared<StorageMergeTree>(
             args.table_id,
