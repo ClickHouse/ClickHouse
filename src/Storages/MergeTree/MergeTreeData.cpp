@@ -2809,7 +2809,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     MutableDataPartPtr & part,
     SimpleIncrement * increment,
     Transaction & out_transaction,
-    std::unique_lock<std::mutex> & lock,
+    DataPartsLock & lock,
     DataPartsVector * out_covered_parts,
     MergeTreeDeduplicationLog * deduplication_log,
     std::string_view deduplication_token)
@@ -2820,9 +2820,6 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     part->assertState({DataPartState::Temporary});
 
-    MergeTreePartInfo part_info = part->info;
-    String part_name;
-
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
@@ -2831,6 +2828,9 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
                 + existing_part_in_partition->name + ", newly added part: " + part->name,
                 ErrorCodes::CORRUPTED_DATA);
     }
+
+    MergeTreePartInfo part_info = part->info;
+    String part_name;
 
     /** It is important that obtaining new block number and adding that block to parts set is done atomically.
       * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
@@ -2935,10 +2935,7 @@ void MergeTreeData::renameTempPartsAndReplace(
         renameTempPartAndReplaceImpl(part, increment, out_transaction, lock);
 }
 
-
-
 void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock)
-
 {
     if (txn)
         transactions_enabled.store(true);
