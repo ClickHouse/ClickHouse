@@ -1,6 +1,8 @@
 #include <Backups/BackupCoordinationHelpers.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Common/Exception.h>
+#include <Common/escapeForFileName.h>
+#include <IO/ReadHelpers.h>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 
@@ -16,37 +18,26 @@ namespace ErrorCodes
 }
 
 
-struct BackupCoordinationReplicatedTablesInfo::HostAndTableName
+namespace
 {
-    String host_id;
-    DatabaseAndTableName table_name;
-
-    struct Less
+    struct LessReplicaName
     {
-        bool operator()(const HostAndTableName & lhs, const HostAndTableName & rhs) const
-        {
-            return (lhs.host_id < rhs.host_id) || ((lhs.host_id == rhs.host_id) && (lhs.table_name < rhs.table_name));
-        }
-
-        bool operator()(const std::shared_ptr<const HostAndTableName> & lhs, const std::shared_ptr<const HostAndTableName> & rhs) const
-        {
-            return operator()(*lhs, *rhs);
-        }
+        bool operator()(const std::shared_ptr<const String> & left, const std::shared_ptr<const String> & right) { return *left < *right; }
     };
-};
+}
 
 
-class BackupCoordinationReplicatedTablesInfo::CoveredPartsFinder
+class BackupCoordinationReplicatedPartNames::CoveredPartsFinder
 {
 public:
-    CoveredPartsFinder() = default;
+    explicit CoveredPartsFinder(const String & table_name_for_logs_) : table_name_for_logs(table_name_for_logs_) {}
 
-    void addPart(const String & new_part_name, const std::shared_ptr<const HostAndTableName> & host_and_table_name)
+    void addPartName(const String & new_part_name, const std::shared_ptr<const String> & replica_name)
     {
-        addPart(MergeTreePartInfo::fromPartName(new_part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING), host_and_table_name);
+        addPartName(MergeTreePartInfo::fromPartName(new_part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING), replica_name);
     }
 
-    void addPart(MergeTreePartInfo && new_part_info, const std::shared_ptr<const HostAndTableName> & host_and_table_name)
+    void addPartName(MergeTreePartInfo && new_part_info, const std::shared_ptr<const String> & replica_name)
     {
         auto new_min_block = new_part_info.min_block;
         auto new_max_block = new_part_info.max_block;
@@ -57,7 +48,7 @@ public:
         if (first_it == parts.end())
         {
             /// All max_blocks < part_info.min_block, so we can safely add the `part_info` to the list of parts.
-            parts.emplace(new_max_block, PartInfo{std::move(new_part_info), host_and_table_name});
+            parts.emplace(new_max_block, PartInfo{std::move(new_part_info), replica_name});
             return;
         }
 
@@ -68,7 +59,7 @@ public:
             {
                 /// (prev_info.max_block < part_info.min_block) AND (part_info.max_block < current_info.min_block),
                 /// so we can safely add the `part_info` to the list of parts.
-                parts.emplace(new_max_block, PartInfo{std::move(new_part_info), host_and_table_name});
+                parts.emplace(new_max_block, PartInfo{std::move(new_part_info), replica_name});
                 return;
             }
 
@@ -92,22 +83,19 @@ public:
             {
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Intersected parts detected: {} in the table {}.{}{} and {} in the table {}.{}{}. It should be investigated",
+                    "Intersected parts detected in the table {}: {} on replica {} and {} on replica {}. It should be investigated",
+                    table_name_for_logs,
                     part.info.getPartName(),
-                    part.host_and_table_name->table_name.first,
-                    part.host_and_table_name->table_name.second,
-                    part.host_and_table_name->host_id.empty() ? "" : (" on the host " + part.host_and_table_name->host_id),
+                    *part.replica_name,
                     new_part_info.getPartName(),
-                    host_and_table_name->table_name.first,
-                    host_and_table_name->table_name.second,
-                    host_and_table_name->host_id.empty() ? "" : (" on the host " + host_and_table_name->host_id));
+                    *replica_name);
             }
             ++last_it;
         }
 
         /// `part_info` will replace multiple parts [first_it..last_it)
         parts.erase(first_it, last_it);
-        parts.emplace(new_max_block, PartInfo{std::move(new_part_info), host_and_table_name});
+        parts.emplace(new_max_block, PartInfo{std::move(new_part_info), replica_name});
     }
 
     bool isCoveredByAnotherPart(const String & part_name) const
@@ -156,185 +144,175 @@ private:
     struct PartInfo
     {
         MergeTreePartInfo info;
-        std::shared_ptr<const HostAndTableName> host_and_table_name;
+        std::shared_ptr<const String> replica_name;
     };
 
     using Parts = std::map<Int64 /* max_block */, PartInfo>;
     std::unordered_map<String, Parts> partitions;
+    const String table_name_for_logs;
 };
 
 
-void BackupCoordinationReplicatedTablesInfo::addDataPath(const String & table_zk_path, const String & table_data_path)
-{
-    tables[table_zk_path].data_paths.push_back(table_data_path);
-}
+BackupCoordinationReplicatedPartNames::BackupCoordinationReplicatedPartNames() = default;
+BackupCoordinationReplicatedPartNames::~BackupCoordinationReplicatedPartNames() = default;
 
-Strings BackupCoordinationReplicatedTablesInfo::getDataPaths(const String & table_zk_path) const
-{
-    auto it = tables.find(table_zk_path);
-    if (it == tables.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "getDataPaths() called for unknown table_zk_path: {}", table_zk_path);
-    const auto & replicated_table = it->second;
-    return replicated_table.data_paths;
-}
-
-void BackupCoordinationReplicatedTablesInfo::addPartNames(
-    const String & host_id,
-    const DatabaseAndTableName & table_name,
+void BackupCoordinationReplicatedPartNames::addPartNames(
     const String & table_zk_path,
+    const String & table_name_for_logs,
+    const String & replica_name,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
-    auto & table = tables[table_zk_path];
-    auto & part_locations_by_names = table.part_locations_by_names;
-    auto host_and_table_name = std::make_shared<HostAndTableName>();
-    host_and_table_name->host_id = host_id;
-    host_and_table_name->table_name = table_name;
+    if (part_names_prepared)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after getPartNames()");
+
+    auto & table_info = table_infos[table_zk_path];
+    if (!table_info.covered_parts_finder)
+        table_info.covered_parts_finder = std::make_unique<CoveredPartsFinder>(table_name_for_logs);
+
+    auto replica_name_ptr = std::make_shared<String>(replica_name);
 
     for (const auto & part_name_and_checksum : part_names_and_checksums)
     {
         const auto & part_name = part_name_and_checksum.part_name;
         const auto & checksum = part_name_and_checksum.checksum;
-        auto it = part_locations_by_names.find(part_name);
-        if (it == part_locations_by_names.end())
+        auto it = table_info.parts_replicas.find(part_name);
+        if (it == table_info.parts_replicas.end())
         {
-            it = part_locations_by_names.emplace(part_name, PartLocations{}).first;
+            it = table_info.parts_replicas.emplace(part_name, PartReplicas{}).first;
             it->second.checksum = checksum;
         }
         else
         {
-            const auto & existing = it->second;
-            if (existing.checksum != checksum)
+            const auto & other = it->second;
+            if (other.checksum != checksum)
             {
-                const auto & existing_host_and_table_name = **existing.host_and_table_names.begin();
+                const String & other_replica_name = **other.replica_names.begin();
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Table {}.{} has part {} which is different from the part of table {}.{}. Must be the same",
-                    table_name.first,
-                    table_name.second,
+                    "Table {} on replica {} has part {} which is different from the part on replica {}. Must be the same",
+                    table_name_for_logs,
+                    replica_name,
                     part_name,
-                    existing_host_and_table_name.table_name.first,
-                    existing_host_and_table_name.table_name.second);
+                    other_replica_name);
             }
         }
 
-        auto & host_and_table_names = it->second.host_and_table_names;
+        auto & replica_names = it->second.replica_names;
 
-        /// `host_and_table_names` should be ordered because we need this vector to be in the same order on every replica.
-        host_and_table_names.insert(
-            std::upper_bound(host_and_table_names.begin(), host_and_table_names.end(), host_and_table_name, HostAndTableName::Less{}),
-            host_and_table_name);
+        /// `replica_names` should be ordered because we need this vector to be in the same order on every replica.
+        replica_names.insert(
+            std::upper_bound(replica_names.begin(), replica_names.end(), replica_name_ptr, LessReplicaName{}), replica_name_ptr);
+
+        table_info.covered_parts_finder->addPartName(part_name, replica_name_ptr);
     }
 }
 
-Strings BackupCoordinationReplicatedTablesInfo::getPartNames(const String & host_id, const DatabaseAndTableName & table_name, const String & table_zk_path) const
+Strings BackupCoordinationReplicatedPartNames::getPartNames(const String & table_zk_path, const String & replica_name) const
 {
-    if (!part_names_by_locations_prepared)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "preparePartNamesByLocations() was not called before getPartNames()");
-
-    auto it = tables.find(table_zk_path);
-    if (it == tables.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "getPartNames() called for unknown table_zk_path: {}", table_zk_path);
-    const auto & table = it->second;
-    auto it2 = table.part_names_by_locations.find(host_id);
-    if (it2 == table.part_names_by_locations.end())
+    preparePartNames();
+    auto it = table_infos.find(table_zk_path);
+    if (it == table_infos.end())
         return {};
-    const auto & part_names_by_host_id = it2->second;
-    auto it3 = part_names_by_host_id.find(table_name);
-    if (it3 == part_names_by_host_id.end())
+    const auto & replicas_parts = it->second.replicas_parts;
+    auto it2 = replicas_parts.find(replica_name);
+    if (it2 == replicas_parts.end())
         return {};
-    return it3->second;
+    return it2->second;
 }
 
-void BackupCoordinationReplicatedTablesInfo::preparePartNamesByLocations()
+void BackupCoordinationReplicatedPartNames::preparePartNames() const
 {
-    if (part_names_by_locations_prepared)
+    if (part_names_prepared)
         return;
-    part_names_by_locations_prepared = true;
 
     size_t counter = 0;
-    for (auto & table : tables | boost::adaptors::map_values)
+    for (const auto & table_info : table_infos | boost::adaptors::map_values)
     {
-        CoveredPartsFinder covered_parts_finder;
-        for (const auto & [part_name, part_locations] : table.part_locations_by_names)
-            covered_parts_finder.addPart(part_name, *part_locations.host_and_table_names.begin());
-
-        table.part_names_by_locations.clear();
-        for (const auto & [part_name, part_locations] : table.part_locations_by_names)
+        for (const auto & [part_name, part_replicas] : table_info.parts_replicas)
         {
-            if (covered_parts_finder.isCoveredByAnotherPart(part_name))
+            if (table_info.covered_parts_finder->isCoveredByAnotherPart(part_name))
                 continue;
-            size_t chosen_index = (counter++) % part_locations.host_and_table_names.size();
-            const auto & chosen_host_id = part_locations.host_and_table_names[chosen_index]->host_id;
-            const auto & chosen_table_name = part_locations.host_and_table_names[chosen_index]->table_name;
-            table.part_names_by_locations[chosen_host_id][chosen_table_name].push_back(part_name);
+            size_t chosen_index = (counter++) % part_replicas.replica_names.size();
+            const auto & chosen_replica_name = *part_replicas.replica_names[chosen_index];
+            table_info.replicas_parts[chosen_replica_name].push_back(part_name);
         }
     }
+
+    part_names_prepared = true;
 }
 
 
-BackupCoordinationDistributedBarrier::BackupCoordinationDistributedBarrier(
-    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, const String & logger_name_, const String & operation_name_)
+/// Helps to wait until all hosts come to a specified stage.
+BackupCoordinationStageSync::BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , log(&Poco::Logger::get(logger_name_))
-    , operation_name(operation_name_)
+    , log(log_)
 {
     createRootNodes();
 }
 
-void BackupCoordinationDistributedBarrier::createRootNodes()
+void BackupCoordinationStageSync::createRootNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
 }
 
-void BackupCoordinationDistributedBarrier::finish(const String & host_id, const String & error_message)
+void BackupCoordinationStageSync::syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout)
 {
-    if (error_message.empty())
-        LOG_TRACE(log, "Host {} has finished {}", host_id, operation_name);
-    else
-        LOG_ERROR(log, "Host {} has failed {} with message: {}", host_id, operation_name, error_message);
-
+   /// Put new stage to ZooKeeper.
     auto zookeeper = get_zookeeper();
-    if (error_message.empty())
-        zookeeper->create(zookeeper_path + "/" + host_id + ":ready", "", zkutil::CreateMode::Persistent);
-    else
-        zookeeper->create(zookeeper_path + "/" + host_id + ":error", error_message, zkutil::CreateMode::Persistent);
-}
+    zookeeper->createIfNotExists(zookeeper_path + "/" + current_host + "|" + std::to_string(new_stage), "");
 
-void BackupCoordinationDistributedBarrier::waitForAllHostsToFinish(const Strings & host_ids, const std::chrono::seconds timeout) const
-{
-    auto zookeeper = get_zookeeper();
+    if (wait_hosts.empty() || ((wait_hosts.size() == 1) && (wait_hosts.front() == current_host)))
+        return;
 
-    bool all_hosts_ready = false;
-    String not_ready_host_id;
-    String error_host_id;
-    String error_message;
+    /// Wait for other hosts.
 
-    /// Returns true of everything's ready, or false if we need to wait more.
-    auto process_nodes = [&](const Strings & nodes)
+    /// Current stages of all hosts.
+    std::optional<String> host_with_error;
+    std::optional<String> error_message;
+
+    std::map<String, std::optional<int>> unready_hosts;
+    for (const String & host : wait_hosts)
+        unready_hosts.emplace(host, std::optional<int>{});
+
+    /// Process ZooKeeper's nodes and set `all_hosts_ready` or `unready_host` or `error_message`.
+    auto process_zk_nodes = [&](const Strings & zk_nodes)
     {
-        std::unordered_set<std::string_view> set{nodes.begin(), nodes.end()};
-        for (const String & host_id : host_ids)
+        for (const String & zk_node : zk_nodes)
         {
-            if (set.contains(host_id + ":error"))
+            if (zk_node == "error")
             {
-                error_host_id = host_id;
-                error_message = zookeeper->get(zookeeper_path + "/" + host_id + ":error");
+                String str = zookeeper->get(zookeeper_path + "/" + zk_node);
+                size_t separator_pos = str.find('|');
+                if (separator_pos == String::npos)
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected value of zk node {}: {}", zookeeper_path + "/" + zk_node, str);
+                host_with_error = str.substr(0, separator_pos);
+                error_message = str.substr(separator_pos + 1);
                 return;
             }
-            if (!set.contains(host_id + ":ready"))
+            else if (!zk_node.starts_with("remove_watch-"))
             {
-                LOG_TRACE(log, "Waiting for host {} {}", host_id, operation_name);
-                not_ready_host_id = host_id;
-                return;
+                size_t separator_pos = zk_node.find('|');
+                if (separator_pos == String::npos)
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected zk node {}", zookeeper_path + "/" + zk_node);
+                String host = zk_node.substr(0, separator_pos);
+                int found_stage = parseFromString<int>(zk_node.substr(separator_pos + 1));
+                auto it = unready_hosts.find(host);
+                if (it != unready_hosts.end())
+                {
+                    auto & stage = it->second;
+                    if (!stage || (stage < found_stage))
+                        stage = found_stage;
+                    if (stage >= new_stage)
+                        unready_hosts.erase(it);
+                }
             }
         }
-
-        all_hosts_ready = true;
     };
 
+    /// Wait until all hosts are ready or an error happens or time is out.
     std::atomic<bool> watch_set = false;
     std::condition_variable watch_triggered_event;
 
@@ -347,33 +325,25 @@ void BackupCoordinationDistributedBarrier::waitForAllHostsToFinish(const Strings
     auto watch_triggered = [&] { return !watch_set; };
 
     bool use_timeout = (timeout.count() >= 0);
-    std::chrono::steady_clock::duration time_left = timeout;
+    std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::duration elapsed;
     std::mutex dummy_mutex;
 
-    while (true)
+    while (!unready_hosts.empty() && !error_message)
     {
-        if (use_timeout && (time_left.count() <= 0))
-        {
-            Strings children = zookeeper->getChildren(zookeeper_path);
-            process_nodes(children);
-            break;
-        }
-
         watch_set = true;
-        Strings children = zookeeper->getChildrenWatch(zookeeper_path, nullptr, watch_callback);
-        process_nodes(children);
+        Strings nodes = zookeeper->getChildrenWatch(zookeeper_path, nullptr, watch_callback);
+        process_zk_nodes(nodes);
 
-        if (!error_message.empty() || all_hosts_ready)
-            break;
-
+        if (!unready_hosts.empty() && !error_message)
         {
+            LOG_TRACE(log, "Waiting for host {}", unready_hosts.begin()->first);
             std::unique_lock dummy_lock{dummy_mutex};
             if (use_timeout)
             {
-                std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-                if (!watch_triggered_event.wait_for(dummy_lock, time_left, watch_triggered))
+                elapsed = std::chrono::steady_clock::now() - start_time;
+                if ((elapsed > timeout) || !watch_triggered_event.wait_for(dummy_lock, timeout - elapsed, watch_triggered))
                     break;
-                time_left -= (std::chrono::steady_clock::now() - start_time);
             }
             else
                 watch_triggered_event.wait(dummy_lock, watch_triggered);
@@ -385,32 +355,26 @@ void BackupCoordinationDistributedBarrier::waitForAllHostsToFinish(const Strings
         /// Remove watch by triggering it.
         zookeeper->create(zookeeper_path + "/remove_watch-", "", zkutil::CreateMode::EphemeralSequential);
         std::unique_lock dummy_lock{dummy_mutex};
-        watch_triggered_event.wait_for(dummy_lock, timeout, watch_triggered);
+        watch_triggered_event.wait(dummy_lock, watch_triggered);
     }
 
-    if (!error_message.empty())
+    if (error_message)
+        throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Error occurred on host {}: {}", *host_with_error, *error_message);
+
+    if (!unready_hosts.empty())
     {
         throw Exception(
             ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-            "Host {} failed {} with message: {}",
-            error_host_id,
-            operation_name,
-            error_message);
+            "Waited for host {} too long ({})",
+            unready_hosts.begin()->first,
+            to_string(elapsed));
     }
+}
 
-    if (all_hosts_ready)
-    {
-        LOG_TRACE(log, "All hosts have finished {}", operation_name);
-        return;
-    }
-
-
-    throw Exception(
-        ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-        "Host {} has failed {}: Time ({}) is out",
-        not_ready_host_id,
-        operation_name,
-        to_string(timeout));
+void BackupCoordinationStageSync::syncStageError(const String & current_host, const String & error_message)
+{
+    auto zookeeper = get_zookeeper();
+    zookeeper->createIfNotExists(zookeeper_path + "/error", current_host + "|" + error_message);
 }
 
 }

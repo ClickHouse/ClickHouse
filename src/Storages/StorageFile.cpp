@@ -208,7 +208,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         in.setProgressCallback(context);
     }
 
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
+    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
 }
