@@ -133,9 +133,11 @@ void MergeTreeSink::finishDelayedChunk()
 
         auto & part = partition.temp_part.part;
 
+        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
-        if (storage.renameTempPartAndAdd(part, context->getCurrentTransaction().get(), &storage.increment, nullptr, storage.getDeduplicationLog(), partition.block_dedup_token))
+        if (storage.renameTempPartAndAdd(part, context->getCurrentTransaction().get(), transaction, &storage.increment, storage.getDeduplicationLog(), partition.block_dedup_token))
         {
+            transaction.commit();
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
             storage.incrementInsertedPartsProfileEvent(part->getType());
 
