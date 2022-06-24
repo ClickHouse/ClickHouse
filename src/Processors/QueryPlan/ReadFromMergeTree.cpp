@@ -35,6 +35,7 @@
 #include <base/sort.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
+#include "Storages/SelectQueryInfo.h"
 
 namespace ProfileEvents
 {
@@ -69,6 +70,18 @@ static const PrewhereInfoPtr & getPrewhereInfo(const SelectQueryInfo & query_inf
 {
     return query_info.projection ? query_info.projection->prewhere_info
                                  : query_info.prewhere_info;
+}
+
+static int getSortDirection(const SelectQueryInfo & query_info)
+{
+    const InputOrderInfoPtr & order_info = query_info.input_order_info
+        ? query_info.input_order_info
+        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+
+    if (!order_info)
+        return 1;
+
+    return order_info->direction;
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
@@ -125,18 +138,20 @@ ReadFromMergeTree::ReadFromMergeTree(
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
 
-    /// build sort description for output stream
-    SortDescription sort_description;
-    const Names sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
-    Block const & header = output_stream->header;
-    for (const auto & column_name : sorting_key_columns)
-    {
-        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
-            == header.end())
-            break;
-        sort_description.emplace_back(column_name, 1);
+    { /// build sort description for output stream
+        SortDescription sort_description;
+        const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+        Block const & header = output_stream->header;
+        const int sort_direction = getSortDirection(query_info);
+        for (const auto & column_name : sorting_key_columns)
+        {
+            if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+                == header.end())
+                break;
+            sort_description.emplace_back(column_name, sort_direction);
+        }
+        output_stream->sort_description = std::move(sort_description);
     }
-    output_stream->sort_description = std::move(sort_description);
 }
 
 Pipe ReadFromMergeTree::readFromPool(

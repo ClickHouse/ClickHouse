@@ -1,137 +1,9 @@
--- enable optimize_distinct_in_order
--- distinct pipeline on empty table -> no optimization, table is empty
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctTransform
-    (Distinct)
-    DistinctTransform
-      (Expression)
-      ExpressionTransform
-        (ReadFromPreparedSource)
-        NullSource 0 → 1
--- insert into table
--- disable optimize_distinct_in_order
--- distinct all primary key columns -> no optimization
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctTransform
-    (Distinct)
-    DistinctTransform
-      (Expression)
-      ExpressionTransform
-        (ReadFromMergeTree)
-        MergeTreeInOrder 0 → 1
--- enable optimize_distinct_in_order
--- distinct with all primary key columns -> pre-distinct optimization only
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctTransform
-    (Distinct)
-    DistinctSortedChunkTransform
-      (Expression)
-      ExpressionTransform
-        (ReadFromMergeTree)
-        MergeTreeInOrder 0 → 1
--- distinct with primary key prefix -> pre-distinct optimization only
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctTransform
-    (Distinct)
-    DistinctSortedChunkTransform
-      (Expression)
-      ExpressionTransform
-        (ReadFromMergeTree)
-        MergeTreeInOrder 0 → 1
--- distinct with primary key prefix and order by on column in distinct -> pre-distinct and final distinct optimization
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctSortedTransform
-    (Sorting)
-    MergeSortingTransform
-      LimitsCheckingTransform
-        PartialSortingTransform
-          (Distinct)
-          DistinctSortedChunkTransform
-            (Expression)
-            ExpressionTransform
-              (ReadFromMergeTree)
-              MergeTreeInOrder 0 → 1
--- distinct with primary key prefix and order by on column _not_ in distinct -> pre-distinct optimization only
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctTransform
-    (Sorting)
-    MergeSortingTransform
-      LimitsCheckingTransform
-        PartialSortingTransform
-          (Distinct)
-          DistinctSortedChunkTransform
-            (Expression)
-            ExpressionTransform
-              (ReadFromMergeTree)
-              MergeTreeInOrder 0 → 1
--- distinct with non-primary key prefix -> no optimization
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctTransform
-    (Distinct)
-    DistinctTransform
-      (Expression)
-      ExpressionTransform
-        (ReadFromMergeTree)
-        MergeTreeInOrder 0 → 1
--- distinct with non-primary key prefix and order by on column in distinct -> final distinct optimization only
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctSortedTransform
-    (Sorting)
-    MergeSortingTransform
-      LimitsCheckingTransform
-        PartialSortingTransform
-          (Distinct)
-          DistinctTransform
-            (Expression)
-            ExpressionTransform
-              (ReadFromMergeTree)
-              MergeTreeInOrder 0 → 1
--- distinct with non-primary key prefix and order by on column _not_ in distinct -> no optimization
-(Expression)
-ExpressionTransform
-  (Distinct)
-  DistinctTransform
-    (Sorting)
-      (Distinct)
-      DistinctTransform
-        (Expression)
-        ExpressionTransform
-          (ReadFromMergeTree)
-          MergeTreeInOrder 0 → 1
--- the same values in every chunk, distinct in order should skip entire chunks with the same key as previous one
--- single-threaded distinct
+-- enable distinct in order optimization
+-- create table with only primary key columns
+-- the same values in every chunk, pre-distinct should skip entire chunks with the same key as previous one
 0
--- multi-threaded distinct
-0
--- skip part of chunk since it contains values from previous one
--- single-threaded distinct
-0
-1
-2
-3
-4
-5
-6
-7
-8
-9
--- multi-threaded distinct
+-- create table with only primary key columns
+-- pre-distinct should skip part of chunk since it contains values from previous one
 0
 1
 2
@@ -145,13 +17,23 @@ ExpressionTransform
 -- create table with not only primary key columns
 -- distinct with primary key prefix only
 0
--- distinct with full key
+-- distinct with primary key prefix only, order by sorted column
+0
+-- distinct with primary key prefix only, order by sorted column desc
+0
+-- distinct with full key, order by sorted column
 0	0
 0	1
 0	2
 0	3
 0	4
--- distinct with key prefix and non-sorted column
+-- distinct with full key, order by sorted column desc
+0	4
+0	3
+0	2
+0	1
+0	0
+-- distinct with key prefix and non-sorted column, order by non-sorted
 0	0
 0	1
 0	2
@@ -162,3 +44,36 @@ ExpressionTransform
 0	7
 0	8
 0	9
+-- distinct with key prefix and non-sorted column, order by non-sorted desc
+0	9
+0	8
+0	7
+0	6
+0	5
+0	4
+0	3
+0	2
+0	1
+0	0
+-- distinct with non-key prefix and non-sorted column, order by non-sorted
+0	0
+1	1
+2	2
+3	3
+4	4
+0	5
+1	6
+2	7
+3	8
+4	9
+-- distinct with non-key prefix and non-sorted column, order by non-sorted desc
+4	9
+3	8
+2	7
+1	6
+0	5
+4	4
+3	3
+2	2
+1	1
+0	0
