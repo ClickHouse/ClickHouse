@@ -155,40 +155,20 @@ struct Instruction
     std::vector<AttributeInfo> attributes;
     bool need_jump_to_next_instruction = false;
 
-    std::string ToString() const
-    {
-        std::ostringstream ss;
-        ss << "<" << expected_tag.value << ">";
-        for (const auto & attr : attributes)
-        {
-            ss << "[" << attr.matched << ", " << attr.matcher.key.value << "=" << attr.matcher.value_matcher->getPattern() << "]";
-        }
-        ss << "need_jmp=" << need_jump_to_next_instruction;
-        return ss.str();
-    }
-
     MatchResult match(CaseInsensitiveStringView tag_name) const
     {
-        std::cout << "try match <" << tag_name.value << ">"
-                  << " [" << ToString() << "]\n";
         if (expected_tag.value == "*" || expected_tag == tag_name)
         {
             if (!attributes.empty())
-            {
-                std::cout << "match result: need attributes\n";
                 return MatchResult::NEED_ATTRIBUTES;
-            }
 
-            std::cout << "match result: match\n";
             return MatchResult::MATCH;
         }
-        std::cout << "match result: not_match\n";
         return MatchResult::NOT_MATCH;
     }
 
     MatchResult handleAttribute(const Attribute & attribute)
     {
-        std::cout << "handle attribute: " << attribute.key.value << '=' << attribute.value << " [" << ToString() << "]\n";
         for (auto & attr : attributes)
         {
             if (!attr.matched && attr.matcher.key == attribute.key)
@@ -200,7 +180,6 @@ struct Instruction
                 else
                 {
                     reset();
-                    std::cout << "handleAttribute result: not_match\n";
                     return MatchResult::NOT_MATCH;
                 }
             }
@@ -209,10 +188,8 @@ struct Instruction
         if (isAllAttributesMatched())
         {
             reset();
-            std::cout << "handleAttribute result: match\n";
             return MatchResult::MATCH;
         }
-        std::cout << "handleAttribute result: need_attrs\n";
         return MatchResult::NEED_ATTRIBUTES;
     }
 
@@ -269,9 +246,6 @@ struct SelectorMatchingVM
 
     MatchResult handleOpeningTag(CaseInsensitiveStringView tag_name)
     {
-        std::cout << "got opening tag " << tag_name.value << '\n';
-        for (auto && entry : stack)
-            std::cout << "<" << entry.tag_name.value << "> jump=" << entry.jump << ", next=" << entry.next << std::endl;
         if (matched)
         {
             if (tag_name == last_matched_tag)
@@ -291,10 +265,6 @@ struct SelectorMatchingVM
 
     MatchResult handleClosingTag(CaseInsensitiveStringView tag_name)
     {
-        std::cout << "got closing tag " << tag_name.value << '\n';
-        for (auto && entry : stack)
-            std::cout << "<" << entry.tag_name.value << "> jump=" << entry.jump << ", next=" << entry.next << std::endl;
-
         if (matched)
         {
             if (tag_name == last_matched_tag)
@@ -331,8 +301,6 @@ struct SelectorMatchingVM
     MatchResult handleAttribute(const Attribute & attribute)
     {
         last_tag_attributes.push_back(attribute);
-        for (auto && entry : stack)
-            std::cout << "<" << entry.tag_name.value << "> jump=" << entry.jump << ", next=" << entry.next << std::endl;
         return dispatchInstructionResult(instructions[current_instruction_index].handleAttribute(attribute));
     }
 
@@ -363,7 +331,6 @@ struct SelectorMatchingVM
                     auto ind = stack[last_stack_jump_index].jump;
                     if (ind != -1)
                     {
-                        std::cout << "found jump, executing, ind on stack = " << last_stack_jump_index << "\n";
                         auto mr = instructions[ind].match(last_tag_name);
                         switch (mr)
                         {

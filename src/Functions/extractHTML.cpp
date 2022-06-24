@@ -59,7 +59,6 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst, 
 
         if (next == end)
         {
-            std::cout << __FILE_NAME__ << ":" << __LINE__ << " got end while scanning\n";
             if (cur_match_result == MatchResult::MATCH && match_start != nullptr)
             {
                 size_t bytes_to_copy = end - match_start;
@@ -80,13 +79,8 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst, 
         switch (cur_match_result)
         {
             case MatchResult::MATCH:
-                if (tag_preview.is_closing)
+                if (!tag_preview.is_closing)
                 {
-                    std::cout << __FILE_NAME__ << ":" << __LINE__ << " match on closing tag " << tag_preview.name.value << "\n";
-                }
-                else
-                {
-                    std::cout << __FILE_NAME__ << ":" << __LINE__ << " match on opening tag " << tag_preview.name.value << "\n";
                     if (prev_match_result == MatchResult::NOT_MATCH)
                         match_start = tag_scanner.last_tag_start;
                 }
@@ -94,7 +88,6 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst, 
             case MatchResult::NOT_MATCH:
                 if (tag_preview.is_closing)
                 {
-                    std::cout << __FILE_NAME__ << ":" << __LINE__ << " not_match on closing tag " << tag_preview.name.value << "\n";
                     if (prev_match_result == MatchResult::MATCH && match_start != nullptr)
                     {
                         if (dst != dst_begin)
@@ -107,13 +100,8 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst, 
                             return dst - dst_begin;
                     }
                 }
-                else
-                {
-                    std::cout << __FILE_NAME__ << ":" << __LINE__ << " not_match on opening tag " << tag_preview.name.value << "\n";
-                }
                 break;
             case MatchResult::NEED_ATTRIBUTES:
-                std::cout << __FILE_NAME__ << ":" << __LINE__ << "NEVER: need_attrs on opening tag " << tag_preview.name.value << "\n";
                 break;
         }
         prev_match_result = cur_match_result;
