@@ -71,22 +71,21 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
-#include <memory>
-#include <Columns/Collator.h>
-#include <Core/ColumnNumbers.h>
+#include <Functions/IFunction.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/QueryProcessingStage.h>
-#include <Functions/IFunction.h>
+#include <base/types.h>
+#include <base/sort.h>
+#include <Columns/Collator.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
+#include <Core/ColumnNumbers.h>
 #include <Interpreters/Aggregator.h>
 #include <base/map.h>
-#include <base/sort.h>
-#include <base/types.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/typeid_cast.h>
+#include <memory>
 
 
 namespace DB
@@ -1691,7 +1690,7 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 query_plan.addStep(std::move(expression_before_aggregation));
             }
 
-            // Let's just choose the safe option since we don't have enough information here.
+            // Let's just choose the safe option since we don't know the value of `to_stage` here.
             const bool should_produce_results_in_order_of_bucket_number = true;
 
             executeMergeAggregatedImpl(

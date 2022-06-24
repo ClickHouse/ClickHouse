@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/QueryProcessingStage.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 
@@ -35,7 +34,7 @@ private:
     size_t memory_efficient_merge_threads;
 
     /// Used to determine, should we resize pipeline to 1 at the end.
-    /// Needed in case of distributed memory efficient aggregation over another distributed aggregation.
+    /// Needed in case of distributed memory efficient aggregation over distributed table.
     const bool should_produce_results_in_order_of_bucket_number;
 };
 

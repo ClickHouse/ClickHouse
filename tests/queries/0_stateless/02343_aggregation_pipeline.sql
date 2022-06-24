@@ -1,12 +1,16 @@
+set max_threads = 16;
+set prefer_localhost_replica = 1;
+set optimize_aggregation_in_order = 0;
+
 -- { echoOn }
 
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_threads = 16;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number;
 
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_threads = 16;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number;
 
-explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings max_threads = 16, prefer_localhost_replica = 1, distributed_aggregation_memory_efficient = 1;
+explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 1;
 
-explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings max_threads = 16, prefer_localhost_replica = 1, distributed_aggregation_memory_efficient = 0;
+explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 0;
 
 -- { echoOff }
 
@@ -36,15 +40,19 @@ OPTIMIZE TABLE proj_agg_02343 FINAL;
 
 -- { echoOn }
 
-explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS max_threads = 16, prefer_localhost_replica = 1, distributed_aggregation_memory_efficient = 0, optimize_aggregation_in_order = 0;
+explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 0;
 
-explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS max_threads = 16, prefer_localhost_replica = 1, distributed_aggregation_memory_efficient = 1, optimize_aggregation_in_order = 0;
+explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 1;
 
 -- { echoOff }
 
 create table t(a UInt64) engine = MergeTree order by (a);
-create table tt as t engine = Distributed(test_cluster_two_shards, currentDatabase(), t);
+system stop merges t;
+create table dist_t as t engine = Distributed(test_cluster_two_shards, currentDatabase(), t, a % 2);
+system stop merges dist_t;
+insert into dist_t select number from numbers_mt(10);
+insert into dist_t select number from numbers_mt(10);
 
 -- { echoOn }
 
-explain pipeline select a from remote('127.0.0.{1,2}', currentDatabase(), tt) group by a settings max_threads = 16, prefer_localhost_replica = 1, distributed_aggregation_memory_efficient = 1, optimize_aggregation_in_order = 0;
+explain pipeline select a from remote('127.0.0.{1,2}', currentDatabase(), dist_t) group by a settings distributed_aggregation_memory_efficient = 1;
