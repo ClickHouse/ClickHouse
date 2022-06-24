@@ -26,12 +26,13 @@ T checkAndGetLiteralArgument(const ASTLiteral & arg, const String & arg_name)
         ErrorCodes::BAD_ARGUMENTS,
         "Argument '{}' must be a literal with type {}, got {}",
         arg_name,
-        fieldTypeToString(Field::TypeToEnum<T>::value),
+        fieldTypeToString(Field::TypeToEnum<NearestFieldType<std::decay_t<T>>>::value),
         fieldTypeToString(arg.value.getType()));
 }
 
 template String checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template UInt64 checkAndGetLiteralArgument(const ASTPtr &, const String &);
+template UInt8 checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template bool checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template String checkAndGetLiteralArgument(const ASTLiteral &, const String &);
 
