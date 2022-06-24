@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 template <typename T>
 T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name);
 
