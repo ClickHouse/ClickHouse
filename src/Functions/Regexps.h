@@ -167,9 +167,8 @@ struct Pool
 };
 
 template <bool save_indices, bool CompileForEditDistance>
-inline Regexps constructRegexps(const std::vector<String> & str_patterns, std::optional<UInt32> edit_distance)
+inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[maybe_unused]] std::optional<UInt32> edit_distance)
 {
-    (void)edit_distance;
     /// Common pointers
     std::vector<const char *> patterns;
     std::vector<unsigned int> flags;
@@ -270,7 +269,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, std::o
     if (err != HS_SUCCESS)
         throw Exception("Could not allocate scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-    return Regexps{db, scratch};
+    return {db, scratch};
 }
 
 /// If CompileForEditDistance is False, edit_distance must be nullopt
@@ -280,8 +279,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, std::o
 template <bool save_indices, bool CompileForEditDistance>
 inline Regexps * get(const std::vector<std::string_view> & patterns, std::optional<UInt32> edit_distance)
 {
-    /// C++11 has thread-safe function-local static on most modern compilers.
-    static Pool known_regexps; /// Different variables for different pattern parameters.
+    static Pool known_regexps; /// Different variables for different pattern parameters, thread-safe in C++11
 
     std::vector<String> str_patterns;
     str_patterns.reserve(patterns.size());

@@ -26,10 +26,11 @@ namespace ErrorCodes
 }
 
 
-template <typename Name, typename Type, bool MultiSearchDistance>
+template <typename Name, typename ResultType_, bool MultiSearchDistance>
 struct MultiMatchAllIndicesImpl
 {
-    using ResultType = Type;
+    using ResultType = ResultType_;
+
     static constexpr bool is_using_hyperscan = true;
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
@@ -45,18 +46,18 @@ struct MultiMatchAllIndicesImpl
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<std::string_view> & needles,
-        PaddedPODArray<Type> & res,
+        PaddedPODArray<ResultType> & res,
         PaddedPODArray<UInt64> & offsets)
     {
         vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
     }
 
     static void vectorConstant(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
-        const std::vector<std::string_view> & needles,
-        PaddedPODArray<Type> & res,
-        PaddedPODArray<UInt64> & offsets,
+        [[maybe_unused]] const ColumnString::Chars & haystack_data,
+        [[maybe_unused]] const ColumnString::Offsets & haystack_offsets,
+        [[maybe_unused]] const std::vector<std::string_view> & needles,
+        [[maybe_unused]] PaddedPODArray<ResultType> & res,
+        [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
         [[maybe_unused]] std::optional<UInt32> edit_distance)
     {
         offsets.resize(haystack_offsets.size());
@@ -76,7 +77,7 @@ struct MultiMatchAllIndicesImpl
                            unsigned int /* flags */,
                            void * context) -> int
         {
-            static_cast<PaddedPODArray<Type>*>(context)->push_back(id);
+            static_cast<PaddedPODArray<ResultType>*>(context)->push_back(id);
             return 0;
         };
         const size_t haystack_offsets_size = haystack_offsets.size();
@@ -102,11 +103,6 @@ struct MultiMatchAllIndicesImpl
             offset = haystack_offsets[i];
         }
 #else
-        (void)haystack_data;
-        (void)haystack_offsets;
-        (void)needles;
-        (void)res;
-        (void)offsets;
         throw Exception(
             "multi-search all indices is not implemented when vectorscan is off",
             ErrorCodes::NOT_IMPLEMENTED);

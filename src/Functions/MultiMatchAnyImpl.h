@@ -27,11 +27,13 @@ namespace ErrorCodes
 }
 
 
-template <typename Name, typename Type, bool FindAny, bool FindAnyIndex, bool MultiSearchDistance>
+template <typename Name, typename ResultType_, bool FindAny, bool FindAnyIndex, bool MultiSearchDistance>
 struct MultiMatchAnyImpl
 {
-    static_assert(static_cast<int>(FindAny) + static_cast<int>(FindAnyIndex) == 1);
-    using ResultType = Type;
+    static_assert(FindAny ^ FindAnyIndex);
+
+    using ResultType = ResultType_;
+
     static constexpr bool is_using_hyperscan = true;
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
@@ -47,7 +49,7 @@ struct MultiMatchAnyImpl
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<std::string_view> & needles,
-        PaddedPODArray<Type> & res,
+        PaddedPODArray<ResultType> & res,
         PaddedPODArray<UInt64> & offsets)
     {
         vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
@@ -57,7 +59,7 @@ struct MultiMatchAnyImpl
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<std::string_view> & needles,
-        PaddedPODArray<Type> & res,
+        PaddedPODArray<ResultType> & res,
         [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
         [[maybe_unused]] std::optional<UInt32> edit_distance)
     {
@@ -81,9 +83,9 @@ struct MultiMatchAnyImpl
                            void * context) -> int
         {
             if constexpr (FindAnyIndex)
-                *reinterpret_cast<Type *>(context) = id;
+                *reinterpret_cast<ResultType *>(context) = id;
             else if constexpr (FindAny)
-                *reinterpret_cast<Type *>(context) = 1;
+                *reinterpret_cast<ResultType *>(context) = 1;
             /// Once we hit the callback, there is no need to search for others.
             return 1;
         };
@@ -110,7 +112,7 @@ struct MultiMatchAnyImpl
             offset = haystack_offsets[i];
         }
 #else
-        /// Fallback if do not use vectorscan
+        // fallback if vectorscan is not compiled
         if constexpr (MultiSearchDistance)
             throw Exception(
                 "Edit distance multi-search is not implemented when vectorscan is off",
