@@ -1672,6 +1672,8 @@ void IMergeTreeDataPart::remove()
 
     metadata_manager->deleteAll(false);
     metadata_manager->assertAllDeleted(false);
+    
+    GinIndexStoreFactory::instance().remove(getFullRelativePath());
 
     std::list<IDataPartStorage::ProjectionChecksums> projection_checksums;
 
