@@ -36,12 +36,12 @@ public:
     static constexpr auto name = Impl::name;
     static FunctionPtr create(ContextPtr context)
     {
-        if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)
-            throw Exception(
-                "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+        const auto & settings = context->getSettingsRef();
 
-        return std::make_shared<FunctionsMultiStringFuzzySearch>(
-            context->getSettingsRef().max_hyperscan_regexp_length, context->getSettingsRef().max_hyperscan_regexp_total_length);
+        if (Impl::is_using_hyperscan && !settings.allow_hyperscan)
+            throw Exception("Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+
+        return std::make_shared<FunctionsMultiStringFuzzySearch>(settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length);
     }
 
     FunctionsMultiStringFuzzySearch(size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_)
