@@ -156,7 +156,7 @@ struct StringHashTableGrower : public HashTableGrower<initial_size_degree>
     void increaseSize()
     {
         this->size_degree += 1;
-        HashTableGrower<initial_size_degree>::updateCachedValues();
+        this->updateCachedValues();
     }
 };
 
