@@ -90,11 +90,6 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer &buffer) const
     return encoding_length;
 }
 
-void GinIndexPostingsBuilder::clear()
-{
-    roaring::api::roaring_bitmap_init_cleared(&bmp.roaring);
-}
-
 GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
 {
     char postings_list_size{0};
@@ -255,7 +250,6 @@ void GinIndexStore::writeSegment()
     for (const auto& [token, postings_list] : token_postings_list_pairs)
     {
         auto encoding_length = postings_list->serialize(*postings_file_stream);
-        postings_list->clear();
 
         encoding_lengths[current_index++] = encoding_length;
         current_segment.postings_start_offset += encoding_length;
