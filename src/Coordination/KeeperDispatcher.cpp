@@ -41,7 +41,7 @@ void KeeperDispatcher::requestThread()
 
     std::optional<KeeperStorage::RequestForSession> previous_request;
     bool collecting_quorum_requests = false;
-    const auto needs_quorum = [&](const auto & coordination_settings, const auto & request)
+    const auto needs_quorum = [](const auto & coordination_settings, const auto & request)
     {
         return coordination_settings->quorum_reads || !request.request->isReadRequest();
     };
@@ -64,8 +64,11 @@ void KeeperDispatcher::requestThread()
         {
             KeeperStorage::RequestsForSessions current_batch;
 
+            auto next_collecting_quorum_requests = collecting_quorum_requests;
+
             if (previous_request)
             {
+                assert(collecting_quorum_requests == needs_quorum(coordination_settings, *previous_request));
                 current_batch.push_back(std::move(*previous_request));
                 previous_request.reset();
             }
@@ -91,7 +94,7 @@ void KeeperDispatcher::requestThread()
                             if (collecting_quorum_requests != needs_quorum(coordination_settings, request))
                             {
                                 previous_request.emplace(std::move(request));
-                                collecting_quorum_requests = !collecting_quorum_requests;
+                                next_collecting_quorum_requests = !collecting_quorum_requests;
                                 break;
                             }
 
@@ -105,7 +108,7 @@ void KeeperDispatcher::requestThread()
                 else
                 {
                     previous_request.emplace(std::move(request));
-                    collecting_quorum_requests = !collecting_quorum_requests;
+                    next_collecting_quorum_requests = !collecting_quorum_requests;
                 }
 
                 if (shutdown_called)
@@ -169,6 +172,8 @@ void KeeperDispatcher::requestThread()
                 }
                 current_batch.clear();
             }
+
+            collecting_quorum_requests = next_collecting_quorum_requests;
         }
         catch (...)
         {
@@ -629,9 +634,12 @@ void KeeperDispatcher::onRequestCommit(uint64_t log_term, uint64_t log_idx)
 {
     const auto process_requests = [this](auto & request_queue)
     {
-        for (auto & request_info : request_queue)
+        for (const auto & request_info : request_queue)
         {
-            server->putLocalReadRequest(request_info);
+            if (server->isLeaderAlive())
+                server->putLocalReadRequest(request_info);
+            else
+                addErrorResponses({request_info}, Coordination::Error::ZCONNECTIONLOSS);
         }
 
         request_queue.clear();
