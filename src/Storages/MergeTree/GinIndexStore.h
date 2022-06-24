@@ -65,9 +65,6 @@ struct GinIndexPostingsBuilder
 
     /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
     static GinIndexPostingsListPtr deserialize(ReadBuffer &buffer);
-
-    /// Clear Roaring bmp
-    void clear();
 };
 
 using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
