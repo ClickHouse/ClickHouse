@@ -304,7 +304,7 @@ void ReplicatedMergeTreeSink::commitPart(
     zkutil::ZooKeeperPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const String & block_id,
-    DataPartStorageBuilderPtr part_builder)
+    DataPartStorageBuilderPtr /*part_builder*/)
 {
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
@@ -479,7 +479,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
         try
         {
-            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction, nullptr, "", part_builder);
+            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction, nullptr, "");
         }
         catch (const Exception & e)
         {
