@@ -462,7 +462,7 @@ protected:
 };
 
 
-using ParserExpression = ParserLambdaExpression;
+using ParserExpression2 = ParserLambdaExpression;
 
 
 class ParserExpressionWithOptionalAlias : public IParserBase
@@ -510,11 +510,8 @@ protected:
 };
 
 
-class ParserExpression2 : public IParserBase
+class ParserExpression : public IParserBase
 {
-private:
-    ParserTernaryOperatorExpression elem_parser;
-
 protected:
     const char * getName() const override { return "lambda expression"; }
 

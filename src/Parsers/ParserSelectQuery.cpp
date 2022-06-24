@@ -164,7 +164,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         // TEST
         ParserToken test(TokenType::DollarSign);
-        if (test.ignore(pos, expected))
+        if (!test.ignore(pos, expected))
         {
             if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
                 return false;
