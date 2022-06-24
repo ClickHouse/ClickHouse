@@ -1,0 +1,36 @@
+sudo: false
+
+language: cpp
+
+compiler:
+  - clang
+  - gcc
+
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    - llvm-toolchain-precise-3.8
+    packages:
+    - g++-6
+    - clang-3.8
+
+install:
+  - if [ "$CXX" = "g++" ]; then export CXX="g++-6"; fi
+  - if [ "$CXX" == "clang++" ]; then export CXX="clang++-3.8"; fi
+  - sudo apt-get install -qq git cmake
+
+before_script:
+  # not much better than git submodules, but there was never a need/want for the repo in this repo
+  - cd ..
+  - git clone https://github.com/google/googletest.git
+  - cd googletest
+  - git reset --hard d62d6c6556d96dda924382547c54a4b3afedb22c
+  - cmake CMakeLists.txt
+  - make
+
+  - cd ../base-x/tests
+  - make
+
+script:
+  - make run
