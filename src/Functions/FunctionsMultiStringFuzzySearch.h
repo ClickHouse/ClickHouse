@@ -13,7 +13,6 @@
 #include <Functions/hyperscanRegexpChecker.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <base/StringRef.h>
 
 #include <optional>
 
@@ -115,7 +114,7 @@ public:
                     + ", should be at most " + std::to_string(LimitArgs),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        std::vector<StringRef> refs;
+        std::vector<std::string_view> refs;
         refs.reserve(src_arr.size());
 
         for (const auto & el : src_arr)
