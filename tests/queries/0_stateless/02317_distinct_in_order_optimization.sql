@@ -36,6 +36,7 @@ select '-- distinct with non-primary key prefix and order by on column in distin
 explain pipeline select distinct b, c from distinct_in_order order by b settings max_threads=1;
 
 select '-- distinct with non-primary key prefix and order by on column _not_ in distinct -> no optimization';
+set optimize_read_in_order = 1; -- to avoid flaky test, in this query (Sorting) step depends on the setting
 explain pipeline select distinct b, c from distinct_in_order order by a settings max_threads=1;
 
 select '-- the same values in every chunk, distinct in order should skip entire chunks with the same key as previous one';
