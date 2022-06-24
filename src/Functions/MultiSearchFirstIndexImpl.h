@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 template <typename Name, typename Impl>
 struct MultiSearchFirstIndexImpl
 {
@@ -28,6 +33,12 @@ struct MultiSearchFirstIndexImpl
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/)
     {
+        // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
+        if (needles.size() > std::numeric_limits<UInt8>::max())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
+                name, std::to_string(needles.size()), std::to_string(std::numeric_limits<UInt8>::max()));
+
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
         res.resize(haystack_string_size);

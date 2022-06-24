@@ -21,16 +21,13 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int FUNCTION_NOT_ALLOWED;
 }
 
 
-template <typename Impl, size_t LimitArgs>
+template <typename Impl>
 class FunctionsMultiStringFuzzySearch : public IFunction
 {
-    static_assert(LimitArgs > 0);
-
 public:
     static constexpr auto name = Impl::name;
     static FunctionPtr create(ContextPtr context)
@@ -95,11 +92,6 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The array is not const", arguments[2].column->getName());
 
         Array src_arr = col_const_arr->getValue<Array>();
-
-        if (src_arr.size() > LimitArgs)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
-                getName(), std::to_string(src_arr.size()), std::to_string(LimitArgs));
 
         std::vector<std::string_view> refs;
         refs.reserve(src_arr.size());
