@@ -90,7 +90,8 @@ public:
     void scheduleRemoval(Duration duration, CacheKey cache_key)
     {
         std::unique_lock lock(mutex);
-        TimedCacheKey timer = {now() + duration, cache_key};
+        auto ts = now() + duration;
+        TimedCacheKey timer = {ts, cache_key};
         queue.push(timer);
         auto top = queue.top();
         lock.unlock();
@@ -128,6 +129,13 @@ public:
     {
         std::lock_guard lock(mutex);
         is_finished.store(true);
+        timer_cv.notify_one();
+    }
+
+    void clearRemovalQueue()
+    {
+        std::lock_guard lock(mutex);
+        queue = {};
         timer_cv.notify_one();
     }
 
@@ -308,6 +316,7 @@ public:
 
     void reset()
     {
+        removal_scheduler.clearRemovalQueue();
         cache->reset();
     }
 
