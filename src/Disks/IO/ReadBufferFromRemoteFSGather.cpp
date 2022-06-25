@@ -40,7 +40,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
         appendFilesystemCacheLog();
     }
 
-    current_file_path = fs::path(common_path_prefix) / path;
+    current_file_path = path;
     current_file_size = file_size;
     total_bytes_read_from_current_file = 0;
 
@@ -50,13 +50,12 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 #if USE_AWS_S3
 SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(const String & path, size_t file_size)
 {
-    auto remote_path = fs::path(common_path_prefix) / path;
     auto remote_file_reader_creator = [=, this]()
     {
         return std::make_unique<ReadBufferFromS3>(
             client_ptr,
             bucket,
-            remote_path,
+            path,
             version_id,
             max_single_read_retries,
             settings,
@@ -68,9 +67,9 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
 
     if (with_cache)
     {
-        auto cache_key = settings.remote_fs_cache->hash(remote_path);
+        auto cache_key = settings.remote_fs_cache->hash(path);
         return std::make_shared<CachedReadBufferFromFile>(
-            remote_path,
+            path,
             cache_key,
             settings.remote_fs_cache,
             remote_file_reader_creator,
@@ -108,7 +107,7 @@ SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferI
 {
     current_file_path = path;
     return std::make_unique<ReadBufferFromWebServer>(
-        fs::path(uri) / path,
+        path,
         context,
         settings,
         /* use_external_buffer */true,
@@ -119,17 +118,15 @@ SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferI
 #if USE_HDFS
 SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, settings);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, path, config, settings);
 }
 #endif
 
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
-    const std::string & common_path_prefix_,
-    const BlobsPathToSize & blobs_to_read_,
+    const PathsWithSize & blobs_to_read_,
     const ReadSettings & settings_)
     : ReadBuffer(nullptr, 0)
-    , common_path_prefix(common_path_prefix_)
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
@@ -325,7 +322,7 @@ size_t ReadBufferFromRemoteFSGather::getFileSize() const
 {
     size_t size = 0;
     for (const auto & object : blobs_to_read)
-        size += object.bytes_size;
+        size += object.size;
     return size;
 }
 

@@ -109,9 +109,9 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
-std::vector<String> DiskObjectStorage::getRemotePaths(const String & local_path) const
+PathsWithSize DiskObjectStorage::getObjectStoragePaths(const String & local_path) const
 {
-    return metadata_storage->getRemotePaths(local_path);
+    return metadata_storage->getObjectStoragePaths(local_path);
 }
 
 void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
@@ -121,7 +121,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, getRemotePaths(local_path));
+            paths_map.emplace_back(local_path, getObjectStoragePaths(local_path));
         }
         catch (const Exception & e)
         {
@@ -245,9 +245,9 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 {
     LOG_TRACE(log, "Remote path: {}, Path: {}", object_storage_root_path, path);
     String id;
-    auto blobs_paths = metadata_storage->getRemotePaths(path);
+    auto blobs_paths = metadata_storage->getObjectStoragePaths(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0];
+        id = blobs_paths[0].path;
     return id;
 }
 
@@ -472,8 +472,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> file_size) const
 {
     return object_storage->readObjects(
-        object_storage_root_path,
-        metadata_storage->getBlobs(path),
+        metadata_storage->getObjectStoragePaths(path),
         updateSettingsForReadWrite(path, settings),
         read_hint,
         file_size);

@@ -65,7 +65,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     std::string path;
     bool delete_metadata_only;
     bool remove_from_cache{false};
-    std::vector<std::string> paths_to_remove;
+    PathsWithSize paths_to_remove;
     bool if_exists;
 
     RemoveObjectStorageOperation(
@@ -96,19 +96,18 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         try
         {
             uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
-            auto remote_objects = metadata_storage.getRemotePaths(path);
+            auto objects = metadata_storage.getObjectStoragePaths(path);
 
-            /// FIXME:
-            String full_path = fs::path(metadata_storage.getPath()) / path;
-            bool is_remote = object_storage.isRemote();
-            if (!is_remote)
-                object_storage.removeCacheIfExists(full_path);
+            // String full_path = fs::path(metadata_storage.getPath()) / path;
+            // bool is_remote = object_storage.isRemote();
+            // if (!is_remote)
+            //     object_storage.removeCacheIfExists(full_path);
 
             tx->unlinkMetadata(path);
 
             if (hardlink_count == 0)
             {
-                paths_to_remove = remote_objects;
+                paths_to_remove = objects;
                 remove_from_cache = true;
             }
         }
@@ -140,7 +139,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         if (remove_from_cache)
         {
             for (const auto & path_to_remove : paths_to_remove)
-                object_storage.removeCacheIfExists(path_to_remove);
+                object_storage.removeCacheIfExists(path_to_remove.path);
         }
 
     }
@@ -149,10 +148,10 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
-    std::unordered_map<std::string, std::vector<std::string>> paths_to_remove;
+    std::unordered_map<std::string, PathsWithSize> paths_to_remove;
     bool keep_all_batch_data;
     NameSet file_names_remove_metadata_only;
-    std::vector<std::string> path_to_remove_from_cache;
+    PathsWithSize path_to_remove_from_cache;
 
     RemoveRecursiveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -175,14 +174,14 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             try
             {
                 uint32_t hardlink_count = metadata_storage.getHardlinkCount(path_to_remove);
-                auto remote_objects = metadata_storage.getRemotePaths(path_to_remove);
+                auto objects_paths = metadata_storage.getObjectStoragePaths(path_to_remove);
 
                 tx->unlinkMetadata(path_to_remove);
 
                 if (hardlink_count == 0)
                 {
-                    paths_to_remove[path_to_remove] = remote_objects;
-                    path_to_remove_from_cache.insert(path_to_remove_from_cache.end(), remote_objects.begin(), remote_objects.end());
+                    paths_to_remove[path_to_remove] = objects_paths;
+                    path_to_remove_from_cache.insert(path_to_remove_from_cache.end(), objects_paths.begin(), objects_paths.end());
                 }
 
             }
@@ -223,7 +222,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     {
         if (!keep_all_batch_data && object_storage.isRemote())
         {
-            std::vector<std::string> remove_from_remote;
+            PathsWithSize remove_from_remote;
             for (auto && [local_path, remote_paths] : paths_to_remove)
             {
                 if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
@@ -235,7 +234,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         }
 
         for (const auto & path_to_remove : path_to_remove_from_cache)
-            object_storage.removeCacheIfExists(path_to_remove);
+            object_storage.removeCacheIfExists(path_to_remove.path);
     }
 };
 
@@ -244,7 +243,7 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 {
     std::string path_from;
     std::string path_to;
-    std::vector<std::string> blobs_to_remove;
+    PathsWithSize blobs_to_remove;
 
     ReplaceFileObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -260,7 +259,7 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
     {
         if (metadata_storage.exists(path_to))
         {
-            blobs_to_remove = metadata_storage.getRemotePaths(path_to);
+            blobs_to_remove = metadata_storage.getObjectStoragePaths(path_to);
             tx->replaceFile(path_from, path_to);
         }
         else
@@ -331,14 +330,15 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     void execute(MetadataTransactionPtr tx) override
     {
         tx->createEmptyMetadataFile(to_path);
-        auto source_blobs = metadata_storage.getBlobs(from_path);
+        auto source_blobs = metadata_storage.getObjectStoragePaths(from_path); /// Full paths
+
         for (const auto & [blob_from, size] : source_blobs)
         {
             auto blob_name = object_storage.generateBlobNameForPath(to_path);
 
             auto blob_to = fs::path(remote_fs_root_path) / blob_name;
 
-            object_storage.copyObject(fs::path(remote_fs_root_path) / blob_from, blob_to);
+            object_storage.copyObject(blob_from, blob_to);
 
             tx->addBlobToMetadata(to_path, blob_name, size);
 

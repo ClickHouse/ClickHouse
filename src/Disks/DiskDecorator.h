@@ -82,7 +82,7 @@ public:
     DiskObjectStoragePtr getObjectStorage(const String &) override;
     const std::unordered_set<String> & getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
     const String & getCacheBasePath() const override { return delegate->getCacheBasePath(); }
-    std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
+    PathsWithSize getObjectStoragePaths(const String & path) const override { return delegate->getObjectStoragePaths(path); }
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }

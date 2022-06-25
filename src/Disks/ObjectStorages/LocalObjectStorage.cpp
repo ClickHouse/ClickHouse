@@ -36,17 +36,15 @@ bool LocalObjectStorage::exists(const std::string & path) const
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
-    const std::string & common_path_prefix,
-    const BlobsPathToSize & blobs_to_read,
+    const PathsWithSize & paths_to_read,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    if (blobs_to_read.size() != 1)
+    if (paths_to_read.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LocalObjectStorage support read only from single object");
 
-    std::string path = fs::path(common_path_prefix) / blobs_to_read[0].relative_path;
-    return readObject(path, read_settings, read_hint, file_size);
+    return readObject(paths_to_read[0].path, read_settings, read_hint, file_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
@@ -78,7 +76,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
 }
 
-void LocalObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
+void LocalObjectStorage::listPrefix(const std::string & path, PathsWithSize & children) const
 {
     fs::directory_iterator end_it;
     for (auto it = fs::directory_iterator(path); it != end_it; ++it)
@@ -92,9 +90,9 @@ void LocalObjectStorage::removeObject(const std::string & path)
         throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
-void LocalObjectStorage::removeObjects(const std::vector<std::string> & paths)
+void LocalObjectStorage::removeObjects(const PathsWithSize & paths)
 {
-    for (const auto & path : paths)
+    for (const auto & [path, _] : paths)
         removeObject(path);
 }
 
@@ -104,20 +102,15 @@ void LocalObjectStorage::removeObjectIfExists(const std::string & path)
         removeObject(path);
 }
 
-void LocalObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
+void LocalObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
 {
-    for (const auto & path : paths)
+    for (const auto & [path, _] : paths)
         removeObjectIfExists(path);
 }
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for LocalObjectStorage");
-}
-
-String LocalObjectStorage::getUniqueIdForBlob(const String & path)
-{
-    return toString(getINodeNumberFromPath(path));
 }
 
 void LocalObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT

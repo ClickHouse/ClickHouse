@@ -116,30 +116,24 @@ MetadataTransactionPtr MetadataStorageFromRemoteDisk::createTransaction() const
     return std::make_shared<MetadataStorageFromRemoteDiskTransaction>(*this);
 }
 
-std::vector<std::string> MetadataStorageFromRemoteDisk::getRemotePaths(const std::string & path) const
+PathsWithSize MetadataStorageFromRemoteDisk::getObjectStoragePaths(const std::string & path) const
 {
     auto metadata = readMetadata(path);
 
-    std::vector<std::string> remote_paths;
-    auto blobs = metadata->getBlobs();
+    PathsWithSize object_storage_paths = metadata->getBlobs(); /// Relative paths.
     auto root_path = metadata->getBlobsCommonPrefix();
-    remote_paths.reserve(blobs.size());
-    for (const auto & [remote_path, _] : blobs)
-        remote_paths.push_back(fs::path(root_path) / remote_path);
 
-    return remote_paths;
+    /// Relative paths -> absolute.
+    for (auto & [object_path, _] : object_storage_paths)
+        object_path = fs::path(root_path) / object_path;
+
+    return object_storage_paths;
 }
 
 uint32_t MetadataStorageFromRemoteDisk::getHardlinkCount(const std::string & path) const
 {
     auto metadata = readMetadata(path);
     return metadata->getRefCount();
-}
-
-BlobsPathToSize MetadataStorageFromRemoteDisk::getBlobs(const std::string & path) const
-{
-    auto metadata = readMetadata(path);
-    return metadata->getBlobs();
 }
 
 void MetadataStorageFromRemoteDiskTransaction::writeStringToFile( /// NOLINT
