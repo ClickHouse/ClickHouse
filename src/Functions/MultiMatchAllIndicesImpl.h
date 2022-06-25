@@ -27,7 +27,7 @@ namespace ErrorCodes
 }
 
 
-template <typename Name, typename ResultType_, bool MultiSearchDistance>
+template <typename Name, typename ResultType_, bool WithEditDistance>
 struct MultiMatchAllIndicesImpl
 {
     using ResultType = ResultType_;
@@ -69,8 +69,7 @@ struct MultiMatchAllIndicesImpl
         checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         offsets.resize(haystack_offsets.size());
-
-        const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, MultiSearchDistance>(needles, edit_distance);
+        const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
