@@ -27,13 +27,23 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
+// For more readable instantiations of MultiMatchAnyImpl<>
+struct MultiMatchTraits
+{
+enum class Find
+{
+    Any,
+    AnyIndex
+};
+};
 
-template <typename Name, typename ResultType_, bool FindAny, bool FindAnyIndex, bool MultiSearchDistance>
+template <typename Name, typename ResultType_, MultiMatchTraits::Find Find, bool WithEditDistance>
 struct MultiMatchAnyImpl
 {
-    static_assert(FindAny ^ FindAnyIndex);
-
     using ResultType = ResultType_;
+
+    static constexpr bool FindAny = (Find == MultiMatchTraits::Find::Any);
+    static constexpr bool FindAnyIndex = (Find == MultiMatchTraits::Find::AnyIndex);
 
     static constexpr bool is_using_hyperscan = true;
     /// Variable for understanding, if we used offsets for the output, most
@@ -68,14 +78,11 @@ struct MultiMatchAnyImpl
         size_t max_hyperscan_regexp_length,
         size_t max_hyperscan_regexp_total_length)
     {
-        (void)FindAny;
-        (void)FindAnyIndex;
-
         checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         res.resize(haystack_offsets.size());
 #if USE_VECTORSCAN
-        const auto & hyperscan_regex = MultiRegexps::get<FindAnyIndex, MultiSearchDistance>(needles, edit_distance);
+        const auto & hyperscan_regex = MultiRegexps::get<FindAnyIndex, WithEditDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
@@ -121,7 +128,7 @@ struct MultiMatchAnyImpl
         }
 #else
         // fallback if vectorscan is not compiled
-        if constexpr (MultiSearchDistance)
+        if constexpr (WithEditDistance)
             throw Exception(
                 "Edit distance multi-search is not implemented when vectorscan is off",
                 ErrorCodes::NOT_IMPLEMENTED);

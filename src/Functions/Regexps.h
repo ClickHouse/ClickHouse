@@ -166,7 +166,7 @@ struct Pool
     std::map<std::pair<std::vector<String>, std::optional<UInt32>>, RegexpsConstructor> storage;
 };
 
-template <bool save_indices, bool CompileForEditDistance>
+template <bool save_indices, bool WithEditDistance>
 inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[maybe_unused]] std::optional<UInt32> edit_distance)
 {
     /// Common pointers
@@ -180,7 +180,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     patterns.reserve(str_patterns.size());
     flags.reserve(str_patterns.size());
 
-    if constexpr (CompileForEditDistance)
+    if constexpr (WithEditDistance)
     {
         ext_exprs.reserve(str_patterns.size());
         ext_exprs_ptrs.reserve(str_patterns.size());
@@ -198,7 +198,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
          * as it is said in the Hyperscan documentation. https://intel.github.io/hyperscan/dev-reference/performance.html#single-match-flag
          */
         flags.push_back(HS_FLAG_DOTALL | HS_FLAG_SINGLEMATCH | HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8);
-        if constexpr (CompileForEditDistance)
+        if constexpr (WithEditDistance)
         {
             /// Hyperscan currently does not support UTF8 matching with edit distance.
             flags.back() &= ~HS_FLAG_UTF8;
@@ -223,7 +223,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     }
 
     hs_error_t err;
-    if constexpr (!CompileForEditDistance)
+    if constexpr (!WithEditDistance)
         err = hs_compile_multi(
             patterns.data(),
             flags.data(),
@@ -272,11 +272,11 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     return {db, scratch};
 }
 
-/// If CompileForEditDistance is False, edit_distance must be nullopt
+/// If WithEditDistance is False, edit_distance must be nullopt
 /// Also, we use templates here because each instantiation of function
 /// template has its own copy of local static variables which must not be the same
 /// for different hyperscan compilations.
-template <bool save_indices, bool CompileForEditDistance>
+template <bool save_indices, bool WithEditDistance>
 inline Regexps * get(const std::vector<std::string_view> & patterns, std::optional<UInt32> edit_distance)
 {
     static Pool known_regexps; /// Different variables for different pattern parameters, thread-safe in C++11
@@ -299,7 +299,7 @@ inline Regexps * get(const std::vector<std::string_view> & patterns, std::option
                  .first;
         it->second.setConstructor([&str_patterns = it->first.first, edit_distance]()
         {
-            return constructRegexps<save_indices, CompileForEditDistance>(str_patterns, edit_distance);
+            return constructRegexps<save_indices, WithEditDistance>(str_patterns, edit_distance);
         });
     }
 

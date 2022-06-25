@@ -13,7 +13,7 @@ struct NameMultiMatchAny
     static constexpr auto name = "multiMatchAny";
 };
 
-using FunctionMultiMatchAny = FunctionsMultiStringSearch<MultiMatchAnyImpl<NameMultiMatchAny, UInt8, true, false, false>>;
+using FunctionMultiMatchAny = FunctionsMultiStringSearch<MultiMatchAnyImpl<NameMultiMatchAny, /*ResultType*/ UInt8, MultiMatchTraits::Find::Any, /*WithEditDistance*/ false>>;
 
 }
 

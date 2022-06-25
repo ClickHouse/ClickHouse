@@ -13,7 +13,7 @@ struct NameMultiFuzzyMatchAllIndices
     static constexpr auto name = "multiFuzzyMatchAllIndices";
 };
 
-using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<MultiMatchAllIndicesImpl<NameMultiFuzzyMatchAllIndices, UInt64, true>>;
+using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<MultiMatchAllIndicesImpl<NameMultiFuzzyMatchAllIndices, /*ResultType*/ UInt64, /*WithEditDistance*/ true>>;
 
 }
 
