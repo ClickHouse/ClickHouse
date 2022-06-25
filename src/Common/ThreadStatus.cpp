@@ -164,12 +164,15 @@ ThreadStatus::~ThreadStatus()
 
     if (thread_group)
     {
-        std::lock_guard guard(thread_group->mutex);
-        thread_group->finished_threads_counters_memory.emplace_back(ThreadGroupStatus::ProfileEventsCountersAndMemory{
+        ThreadGroupStatus::ProfileEventsCountersAndMemory counters
+        {
             performance_counters.getPartiallyAtomicSnapshot(),
             memory_tracker.get(),
-            thread_id,
-        });
+            thread_id
+        };
+
+        std::lock_guard guard(thread_group->mutex);
+        thread_group->finished_threads_counters_memory.emplace_back(std::move(counters));
         thread_group->threads.erase(this);
     }
 
