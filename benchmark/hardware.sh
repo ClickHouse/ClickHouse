@@ -134,7 +134,7 @@ echo
 
 echo "Uploading the results (if possible)"
 
-UUID=$(clickhouse-local --query "SELECT generateUUIDv4()")
+UUID=$(./clickhouse local --query "SELECT generateUUIDv4()")
 
 ./clickhouse local --query "
   SELECT
