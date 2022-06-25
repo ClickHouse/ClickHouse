@@ -58,6 +58,7 @@ echo
 echo "Will perform benchmark. Results:"
 echo
 
+QUERY_NUM=1
 cat "$QUERIES_FILE" | sed "s/{table}/hits/g" | while read query; do
     sync
     if [ "${OS}" = "Darwin" ] 
@@ -72,8 +73,12 @@ cat "$QUERIES_FILE" | sed "s/{table}/hits/g" | while read query; do
         RES=$(./clickhouse client --time --format=Null --query="$query" 2>&1 ||:)
         [[ "$?" == "0" ]] && echo -n "${RES}" || echo -n "null"
         [[ "$i" != $TRIES ]] && echo -n ", "
+
+        echo "${QUERY_NUM},${i},${RES}" >> result.csv
     done
     echo "],"
+
+    QUERY_NUM=$((QUERY_NUM + 1))
 done
 
 
@@ -81,22 +86,23 @@ echo
 echo "Benchmark complete. System info:"
 echo
 
+touch {cpu_model,cpu,df,memory,memory_total,blk,mdstat,instance}.txt
+
 if [ "${OS}" = "Darwin" ] 
 then 
     echo '----Version, build id-----------'
     ./clickhouse local --query "SELECT format('Version: {}', version())"
-    sw_vers | grep BuildVersion
     ./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw
     ./clickhouse local --query "SELECT format('Current time: {}', toString(now(), 'UTC'))"
     echo '----CPU-------------------------'
-    sysctl hw.model 
-    sysctl -a | grep -E 'hw.activecpu|hw.memsize|hw.byteorder|cachesize'
+    sysctl hw.model | tee cpu_model.txt
+    sysctl -a | grep -E 'hw.activecpu|hw.memsize|hw.byteorder|cachesize' | tee cpu.txt
     echo '----Disk Free and Total--------'
-    df -h .
+    df -h . | tee df.txt
     echo '----Memory Free and Total-------'
-    vm_stat
+    vm_stat | tee memory.txt
     echo '----Physical Memory Amount------'
-    ls -l /var/vm
+    ls -l /var/vm | tee memory_total.txt
     echo '--------------------------------'
 else
     echo '----Version, build id-----------'
@@ -104,22 +110,49 @@ else
     ./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw
     ./clickhouse local --query "SELECT format('Current time: {}', toString(now(), 'UTC'))"
     echo '----CPU-------------------------'
-    cat /proc/cpuinfo | grep -i -F 'model name' | uniq
-    lscpu
+    cat /proc/cpuinfo | grep -i -F 'model name' | uniq | tee cpu_model.txt
+    lscpu | tee cpu.txt
     echo '----Block Devices---------------'
-    lsblk
+    lsblk | tee blk.txt
     echo '----Disk Free and Total--------'
-    df -h .
+    df -h . | tee df.txt
     echo '----Memory Free and Total-------'
-    free -h
+    free -h | tee memory.txt
     echo '----Physical Memory Amount------'
-    cat /proc/meminfo | grep MemTotal
+    cat /proc/meminfo | grep MemTotal | tee memory_total.txt
     echo '----RAID Info-------------------'
-    cat /proc/mdstat
+    cat /proc/mdstat| tee mdstat.txt
     echo '--------------------------------'
 fi
 echo
 
 echo "Instance type from IMDS (if available):"
-curl --connect-timeout 1 http://169.254.169.254/latest/meta-data/instance-type
+curl -s --connect-timeout 1 'http://169.254.169.254/latest/meta-data/instance-type' | tee instance.txt
 echo
+
+echo "Uploading the results (if possible)"
+
+./clickhouse local --query "
+  SELECT
+    (SELECT generateUUIDv4()) AS test_id,
+    c1 AS query_num,
+    c2 AS try_num,
+    c3 AS time,
+    version() AS version,
+    now() AS test_time,
+    (SELECT value FROM system.settings WHERE name = 'max_threads') AS threads,
+    filesystemCapacity() AS fs_capacity,
+    filesystemAvailable() AS fs_available,
+    file('cpu_model.txt') AS cpu_model,
+    file('cpu.txt') AS cpu,
+    file('df.txt') AS df,
+    file('memory.txt') AS memory,
+    file('memory_total.txt') AS memory_total,
+    file('blk.txt') AS blk,
+    file('mdstat.txt') AS mdstat,
+    file('instance.txt') AS instance
+  FROM file('result.csv')
+" | tee upload.tsv | ./clickhouse client --host play.clickhouse.com --secure --user benchmark --query "
+  INSERT INTO hardware_benchmark_results
+  (test_id, query_num, try_num, time, version, test_time, threads, fs_capacity, fs_available, cpu_model, cpu, df, memory, memory_total, blk, mdstat, instance)
+  FORMAT TSV"
