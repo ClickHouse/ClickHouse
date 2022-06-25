@@ -1,8 +1,10 @@
 # We use vectorscan, a portable and API/ABI-compatible drop-in replacement for hyperscan.
 
-if (ARCH_AMD64 OR ARCH_AARCH64)
+if (ARCH_AMD64)
     option (ENABLE_VECTORSCAN "Enable vectorscan library" ${ENABLE_LIBRARIES})
 endif()
+
+# TODO: vectorscan supports ARM yet some tests involving cyrillic letters fail (PR #38171) ... needs further investigation
 
 # TODO PPC should generally work but needs manual generation of ppc/config.h file on a PPC machine
 
