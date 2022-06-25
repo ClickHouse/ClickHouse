@@ -203,7 +203,7 @@ CREATE USER benchmark IDENTIFIED WITH no_password SETTINGS max_rows_to_read = 1,
 
 CREATE QUOTA benchmark
 KEYED BY ip_address
-FOR RANDOMIZED INTERVAL 1 MINUTE MAX query_inserts = 1, written_bytes = 100000,
+FOR RANDOMIZED INTERVAL 1 MINUTE MAX query_inserts = 4, written_bytes = 100000,
 FOR RANDOMIZED INTERVAL 1 HOUR MAX query_inserts = 10, written_bytes = 500000,
 FOR RANDOMIZED INTERVAL 1 DAY MAX query_inserts = 50, written_bytes = 2000000
 TO benchmark;
