@@ -1,107 +1,25 @@
 #!/bin/bash -e
 
-if [[ -n $1 ]]; then
-    SCALE=$1
-else
-    SCALE=100
-fi
-
-TABLE="hits_${SCALE}m_obfuscated"
-DATASET="${TABLE}_v1.tar.xz"
 QUERIES_FILE="queries.sql"
 TRIES=3
 
-# Note: on older Ubuntu versions, 'axel' does not support IPv6. If you are using IPv6-only servers on very old Ubuntu, just don't install 'axel'.
+mkdir -p clickhouse-benchmark
+pushd clickhouse-benchmark
 
-FASTER_DOWNLOAD=wget
-if command -v axel >/dev/null; then
-    FASTER_DOWNLOAD=axel
-else
-    echo "It's recommended to install 'axel' for faster downloads."
+# Download the binary
+if [[ ! -x clickhouse ]]; then
+    curl https://clickhouse.com/ | sh
 fi
-
-if command -v pixz >/dev/null; then
-    TAR_PARAMS='-Ipixz'
-else
-    echo "It's recommended to install 'pixz' for faster decompression of the dataset."
-fi
-
-mkdir -p clickhouse-benchmark-$SCALE
-pushd clickhouse-benchmark-$SCALE
-
-OS=$(uname -s)
-ARCH=$(uname -m)
-
-DIR=
-
-if [ "${OS}" = "Linux" ]
-then
-    if [ "${ARCH}" = "x86_64" ]
-    then
-        DIR="amd64"
-    elif [ "${ARCH}" = "aarch64" ]
-    then
-        DIR="aarch64"
-    elif [ "${ARCH}" = "powerpc64le" ]
-    then
-        DIR="powerpc64le"
-    fi
-elif [ "${OS}" = "FreeBSD" ]
-then
-    if [ "${ARCH}" = "x86_64" ]
-    then
-        DIR="freebsd"
-    elif [ "${ARCH}" = "aarch64" ]
-    then
-        DIR="freebsd-aarch64"
-    elif [ "${ARCH}" = "powerpc64le" ]
-    then
-        DIR="freebsd-powerpc64le"
-    fi
-elif [ "${OS}" = "Darwin" ]
-then
-    if [ "${ARCH}" = "x86_64" ]
-    then
-        DIR="macos"
-    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
-    then
-        DIR="macos-aarch64"
-    fi
-fi
-
-if [ -z "${DIR}" ]
-then
-    echo "The '${OS}' operating system with the '${ARCH}' architecture is not supported."
-    exit 1
-fi
-
-URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
-echo
-echo "Will download ${URL}"
-echo
-curl -O "${URL}" && chmod a+x clickhouse || exit 1
-echo
-echo "Successfully downloaded the ClickHouse binary"
-
-chmod a+x clickhouse
 
 if [[ ! -f $QUERIES_FILE ]]; then
     wget "https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/$QUERIES_FILE"
-fi
-
-if [[ ! -d data ]]; then
-    if [[ ! -f $DATASET ]]; then
-        $FASTER_DOWNLOAD "https://datasets.clickhouse.com/hits/partitions/$DATASET"
-    fi
-
-    tar $TAR_PARAMS --strip-components=1 --directory=. -x -v -f $DATASET
 fi
 
 uptime
 
 echo "Starting clickhouse-server"
 
-./clickhouse server > server.log 2>&1 &
+./clickhouse server >/dev/null 2>&1 &
 PID=$!
 
 function finish {
@@ -114,15 +32,33 @@ echo "Waiting for clickhouse-server to start"
 
 for i in {1..30}; do
     sleep 1
-    ./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM $TABLE" 2>/dev/null && break || echo '.'
+    ./clickhouse client --query "SELECT 'Ok.'" 2>/dev/null && break || echo -n '.'
     if [[ $i == 30 ]]; then exit 1; fi
 done
+
+if [[ $(./clickhouse client --query "EXISTS hits") == '1' && $(./clickhouse client --query "SELECT count() FROM hits") == '100000000' ]]; then
+    echo "Dataset already downloaded"
+else
+    echo "Will download the dataset"
+    ./clickhouse client --max_insert_threads $(nproc || 4) --progress --query "
+        CREATE OR REPLACE TABLE hits ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+        AS SELECT * FROM url('https://datasets.clickhouse.com/hits/native/hits_100m_obfuscated_{0..255}.native.zst')"
+
+    ./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM hits"
+fi
+
+if [[ $(./clickhouse client --query "SELECT count() FROM system.parts WHERE table = 'hits' AND database = 'default' AND active") == '1' ]]; then
+    echo "Dataset already prepared"
+else
+    echo "Will prepare the dataset"
+    ./clickhouse client --query "OPTIMIZE TABLE hits FINAL"
+fi
 
 echo
 echo "Will perform benchmark. Results:"
 echo
 
-cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
+cat "$QUERIES_FILE" | sed "s/{table}/hits/g" | while read query; do
     sync
     if [ "${OS}" = "Darwin" ] 
     then 
@@ -133,7 +69,7 @@ cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
 
     echo -n "["
     for i in $(seq 1 $TRIES); do
-        RES=$(./clickhouse client --max_memory_usage 100G --time --format=Null --query="$query" 2>&1 ||:)
+        RES=$(./clickhouse client --time --format=Null --query="$query" 2>&1 ||:)
         [[ "$?" == "0" ]] && echo -n "${RES}" || echo -n "null"
         [[ "$i" != $TRIES ]] && echo -n ", "
     done
@@ -180,10 +116,10 @@ else
     cat /proc/meminfo | grep MemTotal
     echo '----RAID Info-------------------'
     cat /proc/mdstat
-    #echo '----PCI-------------------------'
-    #lspci
-    #echo '----All Hardware Info-----------'
-    #lshw
     echo '--------------------------------'
 fi
+echo
+
+echo "Instance type from IMDS (if available):"
+curl --connect-timeout 1 http://169.254.169.254/latest/meta-data/instance-type
 echo

@@ -15,14 +15,18 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-**Engine Parameters**
+## Engine Parameters
 
-- `db_name` — Possible values:
+### db_name
+
+`db_name` — Possible values:
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-- `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
+### tables_regexp
+
+`tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 
 Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
