@@ -7,9 +7,9 @@ sidebar_label: PARTITION
 
 The following operations with [partitions](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 
--   [DETACH PARTITION\|Part](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
--   [DROP PARTITION\|Part](#drop-partitionpart) — Deletes a partition or part.
--   [ATTACH PARTITION\|Part](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
+-   [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
+-   [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
+-   [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
 -   [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
 -   [MOVE PARTITION TO TABLE](#move_to_table-partition) — Moves the data partition from one table to another.
