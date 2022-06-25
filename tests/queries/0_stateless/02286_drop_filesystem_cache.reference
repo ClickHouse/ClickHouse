@@ -135,3 +135,4 @@ SELECT count() FROM system.filesystem_cache;
 SYSTEM DROP FILESYSTEM CACHE 'local_cache_2/';
 SELECT count() FROM system.filesystem_cache;
 0
+
