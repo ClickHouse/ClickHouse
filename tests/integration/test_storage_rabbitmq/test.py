@@ -2780,5 +2780,5 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
             try_no = try_no + 1
             if try_no == 20:
                 break
-        sleep(1)
+        time.sleep(1)
     assert result.strip() == "kek"
