@@ -1,4 +1,4 @@
-#include "LRUFileCache.h"
+#include "FileCache.h"
 
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
+#include <Common/LRUFileCache.h>
 
 namespace fs = std::filesystem;
 
@@ -22,13 +23,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
+FileCache::FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
     : IFileCache(cache_base_path_, cache_settings_)
     , main_priority(std::make_shared<LRUFileCache>())
     , stash_priority(std::make_shared<LRUFileCache>())
     , max_stash_element_size(cache_settings_.max_elements)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
-    , log(&Poco::Logger::get("LRUFileCache"))
+    , log(&Poco::Logger::get("FileCache"))
     , allow_to_remove_persistent_segments_from_cache_by_default(cache_settings_.allow_to_remove_persistent_segments_from_cache_by_default)
 {
 }
@@ -173,7 +174,7 @@ FileSegments FileCache::getImpl(
     return result;
 }
 
-FileSegments LRUFileCache::splitRangeIntoCells(
+FileSegments FileCache::splitRangeIntoCells(
     const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
@@ -296,7 +297,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     }
 }
 
-FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent)
+FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent)
 {
     assertInitialized();
 
@@ -356,7 +357,7 @@ FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
     return FileSegmentsHolder(std::move(file_segments));
 }
 
-LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
+FileCache::FileSegmentCell * FileCache::addCell(
     const Key & key, size_t offset, size_t size,
     FileSegment::State state, bool is_persistent,
     std::lock_guard<std::mutex> & cache_lock)
@@ -395,11 +396,9 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
             }
             else
             {
-                auto queue_iter = record->second;
-                queue_iter->hits++;
-                stash_queue.moveToEnd(queue_iter, cache_lock);
-
-                result_state = queue_iter->hits >= enable_cache_hits_threshold ? FileSegment::State::EMPTY : FileSegment::State::SKIP_CACHE;
+                auto priority_iter = record->second;
+                priority_iter->use(cache_lock);
+                result_state = priority_iter->hits() >= enable_cache_hits_threshold ? FileSegment::State::EMPTY : FileSegment::State::SKIP_CACHE;
             }
         }
 
@@ -426,7 +425,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
-FileSegmentsHolder LRUFileCache::setDownloading(
+FileSegmentsHolder FileCache::setDownloading(
     const Key & key,
     size_t offset,
     size_t size,
@@ -691,7 +690,7 @@ bool FileCache::tryReserveForMainList(
     return true;
 }
 
-void LRUFileCache::removeIfExists(const Key & key)
+void FileCache::removeIfExists(const Key & key)
 {
     assertInitialized();
 
@@ -742,7 +741,7 @@ void LRUFileCache::removeIfExists(const Key & key)
     }
 }
 
-void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
+void FileCache::removeIfReleasable(bool remove_persistent_files)
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
@@ -786,8 +785,8 @@ void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
     }
 
     /// Remove all access information.
-    records.clear();
-    stash_queue.removeAll(cache_lock);
+    stash_records.clear();
+    stash_priority->removeAll(cache_lock);
 
 #ifndef NDEBUG
     assertCacheCorrectness(cache_lock);
@@ -1070,73 +1069,7 @@ FileCache::FileSegmentCell::FileSegmentCell(
     }
 }
 
-IFileCache::LRUQueue::Iterator IFileCache::LRUQueue::add(
-    const IFileCache::Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & /* cache_lock */)
-{
-#ifndef NDEBUG
-    for (const auto & [entry_key, entry_offset, entry_size, entry_hits] : queue)
-    {
-        if (entry_key == key && entry_offset == offset)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
-                key.toString(), offset, size);
-    }
-#endif
-
-    cache_size += size;
-    return queue.insert(queue.end(), FileKeyAndOffset(key, offset, size));
-}
-
-void IFileCache::LRUQueue::remove(Iterator queue_it, std::lock_guard<std::mutex> & /* cache_lock */)
-{
-    cache_size -= queue_it->size;
-    queue.erase(queue_it);
-}
-
-void IFileCache::LRUQueue::removeAll(std::lock_guard<std::mutex> & /* cache_lock */)
-{
-    queue.clear();
-    cache_size = 0;
-}
-
-void IFileCache::LRUQueue::moveToEnd(Iterator queue_it, std::lock_guard<std::mutex> & /* cache_lock */)
-{
-    queue.splice(queue.end(), queue, queue_it);
-}
-
-void IFileCache::LRUQueue::incrementSize(Iterator queue_it, size_t size_increment, std::lock_guard<std::mutex> & /* cache_lock */)
-{
-    cache_size += size_increment;
-    queue_it->size += size_increment;
-}
-
-bool IFileCache::LRUQueue::contains(
-    const IFileCache::Key & key, size_t offset, std::lock_guard<std::mutex> & /* cache_lock */) const
-{
-    /// This method is used for assertions in debug mode.
-    /// So we do not care about complexity here.
-    for (const auto & [entry_key, entry_offset, size, _] : queue)
-    {
-        if (key == entry_key && offset == entry_offset)
-            return true;
-    }
-    return false;
-}
-
-String IFileCache::LRUQueue::toString(std::lock_guard<std::mutex> & /* cache_lock */) const
-{
-    String result;
-    for (const auto & [key, offset, size, _] : queue)
-    {
-        if (!result.empty())
-            result += ", ";
-        result += fmt::format("{}: [{}, {}]", key.toString(), offset, offset + size - 1);
-    }
-    return result;
-}
-
-String LRUFileCache::dumpStructure(const Key & key)
+String FileCache::dumpStructure(const Key & key)
 {
     std::lock_guard cache_lock(mutex);
     return dumpStructureUnlocked(key, cache_lock);

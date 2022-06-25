@@ -1,157 +1,99 @@
 #pragma once
 
-#include <atomic>
-#include <chrono>
-#include <list>
-#include <memory>
-#include <mutex>
-#include <unordered_map>
-#include <unordered_set>
-#include <boost/functional/hash.hpp>
-#include <boost/noncopyable.hpp>
-#include <map>
-
-#include <Common/logger_useful.h>
-#include <Common/FileSegment.h>
-#include <Common/IFileCache.h>
-
+#include <Common/IFileCachePriority.h>
 
 namespace DB
 {
 
-/**
- * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
- * Implements LRU eviction policy.
- */
-class LRUFileCache final : public IFileCache
+class LRUFileCache : public IFileCachePriority
 {
 public:
-    LRUFileCache(
-        const String & cache_base_path_,
-        const FileCacheSettings & cache_settings_);
+    using LRUQueue = std::list<FileCacheRecord>;
+    using LRUQueueIterator = typename LRUQueue::iterator;
+    class WriteableIterator;
 
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent) override;
-
-    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
-
-    FileSegments getSnapshot() const override;
-
-    void initialize() override;
-
-    void removeIfExists(const Key & key) override;
-
-    void removeIfReleasable(bool remove_persistent_files) override;
-
-    std::vector<String> tryGetCachePaths(const Key & key) override;
-
-    size_t getUsedCacheSize() const override;
-
-    size_t getFileSegmentsNum() const override;
-
-private:
-    struct FileSegmentCell : private boost::noncopyable
+    class ReadableIterator : public IIterator
     {
-        FileSegmentPtr file_segment;
+    public:
+        ReadableIterator(LRUFileCache * file_cache_, LRUQueueIterator queue_iter_) : file_cache(file_cache_), queue_iter(queue_iter_) { }
 
-        /// Iterator is put here on first reservation attempt, if successful.
-        std::optional<LRUQueue::Iterator> queue_iterator;
+        void next() override { queue_iter++; }
 
-        /// Pointer to file segment is always hold by the cache itself.
-        /// Apart from pointer in cache, it can be hold by cache users, when they call
-        /// getorSet(), but cache users always hold it via FileSegmentsHolder.
-        bool releasable() const {return file_segment.unique(); }
+        bool valid() const override { return queue_iter != file_cache->queue.end(); }
 
-        size_t size() const { return file_segment->reserved_size; }
+        Key & key() const override { return queue_iter->key; }
 
-        FileSegmentCell(FileSegmentPtr file_segment_, LRUFileCache * cache, std::lock_guard<std::mutex> & cache_lock);
+        size_t offset() const override { return queue_iter->offset; }
 
-        FileSegmentCell(FileSegmentCell && other) noexcept
-            : file_segment(std::move(other.file_segment))
-            , queue_iterator(other.queue_iterator) {}
+        size_t size() const override { return queue_iter->size; }
+
+        size_t hits() const override { return queue_iter->hits; }
+
+        Iterator getSnapshot() override { return std::make_shared<WriteableIterator>(file_cache, queue_iter); }
+
+    protected:
+        LRUFileCache * file_cache;
+        LRUQueueIterator queue_iter;
     };
 
-    using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
-    using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
+    class WriteableIterator : public ReadableIterator
+    {
+    public:
+        WriteableIterator(LRUFileCache * file_cache_, LRUQueueIterator queue_iter_) : ReadableIterator(file_cache_, queue_iter_) { }
 
-    CachedFiles files;
-    LRUQueue queue;
+        void remove(std::lock_guard<std::mutex> &) override
+        {
+            file_cache->cache_size -= queue_iter->size;
+            file_cache->queue.erase(queue_iter);
+        }
 
-    LRUQueue stash_queue;
-    AccessRecord records;
+        void incrementSize(size_t size_increment, std::lock_guard<std::mutex> &) override
+        {
+            file_cache->cache_size += size_increment;
+            queue_iter->size += size_increment;
+        }
 
-    size_t max_stash_element_size;
-    size_t enable_cache_hits_threshold;
-
-    Poco::Logger * log;
-    bool allow_to_remove_persistent_segments_from_cache_by_default;
-
-    FileSegments getImpl(
-        const Key & key, const FileSegment::Range & range,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    FileSegmentCell * getCell(
-        const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
-
-    FileSegmentCell * addCell(
-        const Key & key, size_t offset, size_t size,
-        FileSegment::State state, bool is_persistent,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
-
-    bool tryReserve(
-        const Key & key, size_t offset, size_t size,
-        std::lock_guard<std::mutex> & cache_lock) override;
-
-    bool tryReserveForMainList(
-        const Key & key, size_t offset, size_t size,
-        QueryContextPtr query_context,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    void remove(
-        Key key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) override;
-
-    bool isLastFileSegmentHolder(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) override;
-
-    size_t getAvailableCacheSize() const;
-
-    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
-
-    FileSegments splitRangeIntoCells(
-        const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock);
-
-    String dumpStructureUnlocked(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
-
-    void fillHolesWithEmptyFileSegments(
-        FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, bool is_persistent, std::lock_guard<std::mutex> & cache_lock);
-
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent) override;
-
-    size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
-
-    size_t getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
-
-    size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
-
-    void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
-
-    void reduceSizeToDownloaded(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */) override;
+        void use(std::lock_guard<std::mutex> &) override
+        {
+            queue_iter->hits++;
+            file_cache->queue.splice(file_cache->queue.end(), file_cache->queue, queue_iter);
+        }
+    };
 
 public:
-    String dumpStructure(const Key & key_) override;
+    LRUFileCache() = default;
 
-    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
+    Iterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> &) override
+    {
+        auto iter = queue.insert(queue.end(), FileCacheRecord(key, offset, size));
+        cache_size += size;
+        return std::make_shared<WriteableIterator>(this, iter);
+    }
 
-    void assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock);
+    bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> &) override
+    {
+        for (const auto & record : queue)
+        {
+            if (key == record.key && offset == record.offset)
+                return true;
+        }
+        return false;
+    }
 
-    void assertQueueCorrectness(std::lock_guard<std::mutex> & cache_lock);
+    void removeAll(std::lock_guard<std::mutex> &) override
+    {
+        queue.clear();
+        cache_size = 0;
+    }
+
+    Iterator getNewIterator(std::lock_guard<std::mutex> &) override { return std::make_shared<ReadableIterator>(this, queue.begin()); }
+
+    size_t getElementsNum(std::lock_guard<std::mutex> &) const override { return queue.size(); }
+
+    std::string toString(std::lock_guard<std::mutex> &) const override { return {}; }
+
+private:
+    LRUQueue queue;
 };
 
-}
+};

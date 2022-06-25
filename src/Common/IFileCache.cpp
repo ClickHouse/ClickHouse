@@ -140,7 +140,7 @@ void IFileCache::QueryContext::remove(const Key & key, size_t offset, size_t siz
         auto record = records.find({key, offset});
         if (record != records.end())
         {
-            lru_queue.remove(record->second, cache_lock);
+            record->second->remove(cache_lock);
             records.erase({key, offset});
         }
     }
@@ -162,10 +162,10 @@ void IFileCache::QueryContext::reserve(const Key & key, size_t offset, size_t si
         auto record = records.find({key, offset});
         if (record == records.end())
         {
-            auto queue_iter = lru_queue.add(key, offset, 0, cache_lock);
+            auto queue_iter = priority->add(key, offset, 0, cache_lock);
             record = records.insert({{key, offset}, queue_iter}).first;
         }
-        record->second->size += size;
+        record->second->incrementSize(size, cache_lock);
     }
     cache_size += size;
 }
@@ -177,7 +177,7 @@ void IFileCache::QueryContext::use(const Key & key, size_t offset, std::lock_gua
 
     auto record = records.find({key, offset});
     if (record != records.end())
-        lru_queue.moveToEnd(record->second, cache_lock);
+        record->second->use(cache_lock);
 }
 
 IFileCache::QueryContextHolder::QueryContextHolder(

@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/FileCache_fwd.h>
+#include <Common/IFileCachePriority.h>
 
 #include <boost/noncopyable.hpp>
 #include <list>
@@ -28,16 +29,7 @@ friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 
 public:
-    struct Key
-    {
-        UInt128 key;
-        String toString() const;
-
-        Key() = default;
-        explicit Key(const UInt128 & key_) : key(key_) {}
-
-        bool operator==(const Key & other) const { return key == other.key; }
-    };
+    using Key = IFileCachePriority::Key;
 
     IFileCache(
         const String & cache_base_path_,
@@ -133,49 +125,6 @@ protected:
 
     void assertInitialized() const;
 
-    class LRUQueue
-    {
-    public:
-        struct FileKeyAndOffset
-        {
-            Key key;
-            size_t offset;
-            size_t size;
-            size_t hits = 0;
-
-            FileKeyAndOffset(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) {}
-        };
-
-        using Iterator = typename std::list<FileKeyAndOffset>::iterator;
-
-        size_t getTotalCacheSize(std::lock_guard<std::mutex> & /* cache_lock */) const { return cache_size; }
-
-        size_t getElementsNum(std::lock_guard<std::mutex> & /* cache_lock */) const { return queue.size(); }
-
-        Iterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
-
-        void remove(Iterator queue_it, std::lock_guard<std::mutex> & cache_lock);
-
-        void moveToEnd(Iterator queue_it, std::lock_guard<std::mutex> & cache_lock);
-
-        /// Space reservation for a file segment is incremental, so we need to be able to increment size of the queue entry.
-        void incrementSize(Iterator queue_it, size_t size_increment, std::lock_guard<std::mutex> & cache_lock);
-
-        String toString(std::lock_guard<std::mutex> & cache_lock) const;
-
-        bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) const;
-
-        Iterator begin() { return queue.begin(); }
-
-        Iterator end() { return queue.end(); }
-
-        void removeAll(std::lock_guard<std::mutex> & cache_lock);
-
-    private:
-        std::list<FileKeyAndOffset> queue;
-        size_t cache_size = 0;
-    };
-
     using AccessKeyAndOffset = std::pair<Key, size_t>;
     struct KeyAndOffsetHash
     {
@@ -185,14 +134,14 @@ protected:
         }
     };
 
-    using AccessRecord = std::unordered_map<AccessKeyAndOffset, LRUQueue::Iterator, KeyAndOffsetHash>;
+    using FileCacheRecords = std::unordered_map<AccessKeyAndOffset, IFileCachePriority::Iterator, KeyAndOffsetHash>;
 
     /// Used to track and control the cache access of each query.
     /// Through it, we can realize the processing of different queries by the cache layer.
     struct QueryContext
     {
-        LRUQueue lru_queue;
-        AccessRecord records;
+        FileCacheRecords records;
+        FileCachePriorityPtr priority;
 
         size_t cache_size = 0;
         size_t max_cache_size;
@@ -213,7 +162,7 @@ protected:
 
         size_t getCacheSize() const { return cache_size; }
 
-        LRUQueue & queue() { return lru_queue; }
+        FileCachePriorityPtr getPriority() { return priority; }
 
         bool isSkipDownloadIfExceed() const { return skip_download_if_exceeds_query_cache; }
     };
