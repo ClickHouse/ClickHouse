@@ -234,17 +234,18 @@ class HashTableGrower
 
     size_t cached_mask = (1ULL << initial_size_degree) - 1;
     size_t cached_max_fill = 1ULL << (initial_size_degree - 1);
-
-protected:
     UInt8 size_degree = initial_size_degree;
 
-    void updateCachedValues()
+public:
+    UInt8 sizeDegree() const { return size_degree; }
+
+    void increaseSizeDegree(UInt8 delta)
     {
+        size_degree += delta;
         cached_mask = (1ULL << size_degree) - 1;
         cached_max_fill = 1ULL << (size_degree - 1);
     }
 
-public:
     static constexpr auto initial_count = 1ULL << initial_size_degree;
 
     /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
@@ -253,24 +254,17 @@ public:
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
 
-    size_t maxFill() const { return cached_max_fill; }
-    size_t mask() const { return cached_mask; }
-
     /// From the hash value, get the cell number in the hash table.
-    size_t place(size_t x) const         { return x & mask(); }
+    size_t place(size_t x) const { return x & cached_mask; }
 
     /// The next cell in the collision resolution chain.
-    size_t next(size_t pos) const        { ++pos; return pos & mask(); }
+    size_t next(size_t pos) const { return (pos + 1) & cached_mask; }
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
-    bool overflow(size_t elems) const    { return elems > maxFill(); }
+    bool overflow(size_t elems) const { return elems > cached_max_fill; }
 
     /// Increase the size of the hash table.
-    void increaseSize()
-    {
-        size_degree += size_degree >= 23 ? 1 : 2;
-        updateCachedValues();
-    }
+    void increaseSize() { increaseSizeDegree(size_degree >= 23 ? 1 : 2); }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
@@ -280,13 +274,13 @@ public:
              : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
                  ? initial_size_degree
                  : (static_cast<size_t>(log2(num_elems - 1)) + 2));
-        updateCachedValues();
+        increaseSizeDegree(0);
     }
 
     void setBufSize(size_t buf_size_)
     {
         size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
-        updateCachedValues();
+        increaseSizeDegree(0);
     }
 };
 
