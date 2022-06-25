@@ -493,7 +493,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, allow_experimental_database_materialized_postgresql, false, "Allow to create database with Engine=MaterializedPostgreSQL(...).", 0) \
     M(Bool, system_events_show_zero_values, false, "Include all metrics, even with zero values", 0) \
     M(MySQLDataTypesSupport, mysql_datatypes_support_level, 0, "Which MySQL types should be converted to corresponding ClickHouse types (rather than being represented as String). Can be empty or any combination of 'decimal', 'datetime64', 'date2Date32' or 'date2String'. When empty MySQL's DECIMAL and DATETIME/TIMESTAMP with non-zero precision are seen as String on ClickHouse's side.", 0) \
-    M(Bool, optimize_trivial_insert_select, true, "Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query", 0) \
+    M(Bool, optimize_trivial_insert_select, false, "Optimize trivial 'INSERT INTO table1 SELECT ... FROM table2' query by setting `max_block_size` to `min_insert_block_size` and `max_threads` to `max_insert_threads`. This is not always beneficial.", 0) \
     M(Bool, allow_non_metadata_alters, true, "Allow to execute alters which affects not only tables metadata, but also data on disk", 0) \
     M(Bool, enable_global_with_statement, true, "Propagate WITH statements to UNION queries and all subqueries", 0) \
     M(Bool, aggregate_functions_null_for_empty, false, "Rewrite all aggregate functions in a query, adding -OrNull suffix to them", 0) \
