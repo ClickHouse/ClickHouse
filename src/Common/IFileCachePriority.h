@@ -3,6 +3,9 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <Common/Exception.h>
+#include <Common/IFileCache.h>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -19,7 +22,16 @@ using FileCachePriorityPtr = std::shared_ptr<IFileCachePriority>;
 class IFileCachePriority
 {
 public:
-    using Key = UInt128;
+    struct Key
+    {
+        UInt128 key;
+        String toString() const;
+
+        Key() = default;
+        explicit Key(const UInt128 & key_) : key(key_) {}
+
+        bool operator==(const Key & other) const { return key == other.key; }
+    };
 
     class IIterator;
     friend class IIterator;

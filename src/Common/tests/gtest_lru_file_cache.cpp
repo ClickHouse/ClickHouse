@@ -1,7 +1,7 @@
 #include <iomanip>
 #include <iostream>
 #include <gtest/gtest.h>
-#include <Common/LRUFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileSegment.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
