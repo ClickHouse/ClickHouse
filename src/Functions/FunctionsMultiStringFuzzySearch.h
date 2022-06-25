@@ -74,15 +74,14 @@ public:
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
         assert(col_haystack_vector); // getReturnTypeImpl() checks the data type
 
-        const ColumnConst * col_const_num = nullptr;
         UInt32 edit_distance = 0;
 
-        if ((col_const_num = checkAndGetColumnConst<ColumnUInt8>(num_ptr.get())))
-            edit_distance = col_const_num->getValue<UInt8>();
-        else if ((col_const_num = checkAndGetColumnConst<ColumnUInt16>(num_ptr.get())))
-            edit_distance = col_const_num->getValue<UInt16>();
-        else if ((col_const_num = checkAndGetColumnConst<ColumnUInt32>(num_ptr.get())))
-            edit_distance = col_const_num->getValue<UInt32>();
+        if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(num_ptr.get()))
+            edit_distance = col_const_uint8->getValue<UInt8>();
+        else if (const auto * col_const_uint16 = checkAndGetColumnConst<ColumnUInt16>(num_ptr.get()))
+            edit_distance = col_const_uint16->getValue<UInt16>();
+        else if (const auto * col_const_uint32 = checkAndGetColumnConst<ColumnUInt32>(num_ptr.get()))
+            edit_distance = col_const_uint32->getValue<UInt32>();
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The number is not const or does not fit in UInt32", arguments[1].column->getName());
 
