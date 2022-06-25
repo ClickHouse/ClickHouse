@@ -140,6 +140,8 @@ Chunk RabbitMQSource::generateImpl()
 
     size_t total_rows = 0;
 
+    buffer->allowNext();
+
     while (true)
     {
         auto new_rows = executor.execute();
