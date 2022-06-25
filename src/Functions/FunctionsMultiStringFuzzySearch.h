@@ -30,18 +30,17 @@ class FunctionsMultiStringFuzzySearch : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
+
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-
-        if (Impl::is_using_hyperscan && !settings.allow_hyperscan)
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
-
-        return std::make_shared<FunctionsMultiStringFuzzySearch>(settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length);
+        return std::make_shared<FunctionsMultiStringFuzzySearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length);
     }
 
-    FunctionsMultiStringFuzzySearch(size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_)
-        : max_hyperscan_regexp_length(max_hyperscan_regexp_length_), max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
+    FunctionsMultiStringFuzzySearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_)
+        : allow_hyperscan(allow_hyperscan_)
+        , max_hyperscan_regexp_length(max_hyperscan_regexp_length_)
+        , max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
     {}
 
     String getName() const override { return name; }
@@ -108,7 +107,7 @@ public:
 
         Impl::vectorConstant(
             col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res, edit_distance,
-            max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+            allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         if constexpr (Impl::is_column_array)
             return ColumnArray::create(std::move(col_res), std::move(col_offsets));
@@ -117,6 +116,7 @@ public:
     }
 
 private:
+    const bool allow_hyperscan;
     const size_t max_hyperscan_regexp_length;
     const size_t max_hyperscan_regexp_total_length;
 };

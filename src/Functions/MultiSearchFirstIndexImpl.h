@@ -16,7 +16,6 @@ template <typename Name, typename Impl>
 struct MultiSearchFirstIndexImpl
 {
     using ResultType = UInt64;
-    static constexpr bool is_using_hyperscan = false;
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
@@ -30,6 +29,7 @@ struct MultiSearchFirstIndexImpl
         const std::vector<std::string_view> & needles,
         PaddedPODArray<UInt64> & res,
         [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
+        bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/)
     {
