@@ -1,6 +1,5 @@
 #!/bin/bash -e
 
-TABLE="hits_100m_obfuscated"
 QUERIES_FILE="queries.sql"
 TRIES=3
 
@@ -20,7 +19,7 @@ uptime
 
 echo "Starting clickhouse-server"
 
-./clickhouse server > server.log 2>&1 &
+./clickhouse server >/dev/null 2>&1 &
 PID=$!
 
 function finish {
@@ -37,21 +36,29 @@ for i in {1..30}; do
     if [[ $i == 30 ]]; then exit 1; fi
 done
 
-echo "Will download the dataset"
-./clickhouse client --max_insert_threads $(nproc || 4) --progress --query "
-  CREATE OR REPLACE TABLE ${TABLE} ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
-  AS SELECT * FROM url('https://datasets.clickhouse.com/hits/native/hits_100m_obfuscated_{0..255}.native.zst')"
+if [[ $(./clickhouse client --query "EXISTS hits") == '1' && $(./clickhouse client --query "SELECT count() FROM hits") == '100000000' ]]; then
+    echo "Dataset already downloaded"
+else
+    echo "Will download the dataset"
+    ./clickhouse client --max_insert_threads $(nproc || 4) --progress --query "
+        CREATE OR REPLACE TABLE hits ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+        AS SELECT * FROM url('https://datasets.clickhouse.com/hits/native/hits_100m_obfuscated_{0..255}.native.zst')"
 
-./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM ${TABLE}"
+    ./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM hits"
+fi
 
-echo "Will prepare the dataset"
-./clickhouse client --query "OPTIMIZE TABLE ${TABLE} FINAL"
+if [[ $(./clickhouse client --query "SELECT count() FROM system.parts WHERE table = 'hits' AND database = 'default' AND active") == '1' ]]; then
+    echo "Dataset already prepared"
+else
+    echo "Will prepare the dataset"
+    ./clickhouse client --query "OPTIMIZE TABLE hits FINAL"
+fi
 
 echo
 echo "Will perform benchmark. Results:"
 echo
 
-cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
+cat "$QUERIES_FILE" | sed "s/{table}/hits/g" | while read query; do
     sync
     if [ "${OS}" = "Darwin" ] 
     then 
