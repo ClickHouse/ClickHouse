@@ -120,6 +120,8 @@ public:
 
     void checkTableCanBeDropped() const override;
 
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+
     void dropInnerTableIfAny(bool no_delay, ContextPtr context) override;
 
     void drop() override;
@@ -166,19 +168,22 @@ public:
 
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
 
-    ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
+    ASTPtr getFinalQuery() const { return final_query->clone(); }
 
     ASTPtr getSourceTableSelectQuery();
 
-    Block getInputHeader() const;
+    StoragePtr getTargetTable() const;
 
-    const Block & getOutputHeader() const;
+    const Block & getOutputHeader();
+
+    String getBlocksTableName() const
+    {
+        return getStorageID().table_name + "_blocks";
+    }
 
 private:
     Poco::Logger * log;
 
-    /// Stored query, e.g. SELECT * FROM * GROUP BY tumble(now(), *)
-    ASTPtr select_query;
     /// Used to generate the mergeable state of select_query, e.g. SELECT * FROM * GROUP BY windowID(____timestamp, *)
     ASTPtr mergeable_query;
     /// Used to fetch the mergeable state and generate the final result. e.g. SELECT * FROM * GROUP BY tumble(____timestamp, *)
@@ -214,7 +219,7 @@ private:
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
     std::shared_mutex fire_signal_mutex;
-    mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block
+    mutable std::mutex output_header_lock; /// Mutex to protect access to output header block
 
     IntervalKind::Kind window_kind;
     IntervalKind::Kind hop_kind;
@@ -232,7 +237,6 @@ private:
     String window_column_name;
     String timestamp_column_name;
 
-    StorageID select_table_id = StorageID::createEmpty();
     StorageID target_table_id = StorageID::createEmpty();
     StorageID inner_table_id = StorageID::createEmpty();
 
@@ -244,9 +248,8 @@ private:
     String window_view_timezone;
     String function_now_timezone;
 
-    ASTPtr innerQueryParser(const ASTSelectQuery & query);
     void eventTimeParser(const ASTCreateQuery & query);
-    ASTPtr initInnerQuery(ASTSelectQuery query, ContextPtr context);
+    void innerQueryParser(const ASTSelectQuery & query, ContextPtr context);
 
     UInt32 getCleanupBound();
     ASTPtr getCleanupQuery();
@@ -263,11 +266,8 @@ private:
     void updateMaxWatermark(UInt32 watermark);
     void updateMaxTimestamp(UInt32 timestamp);
 
-    ASTPtr getFinalQuery() const { return final_query->clone(); }
-    ASTPtr getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id);
+    ASTPtr getInnerTableCreateQuery(const StorageID & inner_table_id);
 
-    StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
-    StoragePtr getTargetTable() const;
 };
 }

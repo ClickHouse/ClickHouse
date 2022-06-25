@@ -70,6 +70,7 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/WindowView/StorageWindowView.h>
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
@@ -372,7 +373,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
+        {
+            if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
+                metadata_snapshot = window_view->getTargetTable()->getInMemoryMetadataPtr();
+            else
+                metadata_snapshot = storage->getInMemoryMetadataPtr();
+        }
 
         storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
     }

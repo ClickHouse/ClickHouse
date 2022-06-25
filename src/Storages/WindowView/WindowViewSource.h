@@ -11,6 +11,7 @@ class WindowViewSource : public ISource
 {
 public:
     WindowViewSource(
+        const Block & header_,
         std::shared_ptr<StorageWindowView> storage_,
         const bool is_events_,
         String window_view_timezone_,
@@ -20,7 +21,7 @@ public:
         : ISource(
             is_events_ ? Block(
                 {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")})
-                       : storage_->getOutputHeader())
+                       : header_)
         , storage(storage_)
         , is_events(is_events_)
         , window_view_timezone(window_view_timezone_)
@@ -32,7 +33,7 @@ public:
             header.insert(
                 ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark"));
         else
-            header = storage->getOutputHeader();
+            header = header_;
     }
 
     String getName() const override { return "WindowViewSource"; }

@@ -4,6 +4,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/WindowView/StorageWindowView.h>
 
 namespace DB
 {
@@ -102,7 +103,11 @@ static NamesAndTypesList getColumnsFromTableExpression(
     {
         auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
-        auto table_metadata_snapshot = table->getInMemoryMetadataPtr();
+        StorageMetadataPtr table_metadata_snapshot;
+        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
+            table_metadata_snapshot = window_view->getTargetTable()->getInMemoryMetadataPtr();
+        else
+            table_metadata_snapshot = table->getInMemoryMetadataPtr();
         const auto & columns = table_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();

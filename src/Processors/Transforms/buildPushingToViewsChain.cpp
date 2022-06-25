@@ -128,20 +128,6 @@ private:
     ContextPtr context;
 };
 
-/// Insert into WindowView.
-class PushingToWindowViewSink final : public SinkToStorage
-{
-public:
-    PushingToWindowViewSink(const Block & header, StorageWindowView & window_view_, StoragePtr storage_holder_, ContextPtr context_);
-    String getName() const override { return "PushingToWindowViewSink"; }
-    void consume(Chunk chunk) override;
-
-private:
-    StorageWindowView & window_view;
-    StoragePtr storage_holder;
-    ContextPtr context;
-};
-
 /// For every view, collect exception.
 /// Has single output with empty header.
 /// If any exception happen before view processing, pass it.
@@ -312,10 +298,24 @@ Chain buildPushingToViewsChain(
         }
         else if (auto * window_view = dynamic_cast<StorageWindowView *>(dependent_table.get()))
         {
-            runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
-            query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
-            out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms);
+            type = QueryViewsLogElement::ViewType::WINDOW;
+            result_chain.addTableLock(
+                window_view->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
+
+            auto wv_metadata_snapshot = window_view->getInMemoryMetadataPtr();
+            target_name = window_view->getStorageID().getFullTableName();
+
+            Names insert_columns;
+            const auto & inner_table_columns = wv_metadata_snapshot->getColumns();
+            for (const auto & column : storage_header)
+            {
+                if (inner_table_columns.hasPhysical(column.name))
+                    insert_columns.emplace_back(column.name);
+            }
+
+            InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
+            out = interpreter.buildChain(dependent_table, wv_metadata_snapshot, insert_columns, view_thread_status, view_counter_ms);
+            out.addStorageHolder(dependent_table);
         }
         else
             out = buildPushingToViewsChain(
@@ -335,6 +335,19 @@ Chain buildPushingToViewsChain(
             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
             out.addSource(std::move(executing_inner_query));
+        }
+        else if (type == QueryViewsLogElement::ViewType::WINDOW)
+        {
+            auto converting = ActionsDAG::makeConvertingActions(
+                storage_header.getColumnsWithTypeAndName(),
+                views_data->views.back().sample_block.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+
+            auto transform
+                = std::make_shared<ConvertingTransform>(storage_header, std::make_shared<ExpressionActions>(std::move(converting)));
+            transform->setRuntimeData(view_thread_status, view_counter_ms);
+
+            out.addSource(std::move(transform));
         }
 
         chains.emplace_back(std::move(out));
@@ -388,12 +401,6 @@ Chain buildPushingToViewsChain(
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
         auto sink = std::make_shared<PushingToLiveViewSink>(live_view_header, *live_view, storage, context);
-        sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        result_chain.addSource(std::move(sink));
-    }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
-    {
-        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
@@ -585,29 +592,6 @@ void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    auto * process = context->getProcessListElement();
-    if (process)
-        process->updateProgressIn(local_progress);
-    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
-    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
-}
-
-
-PushingToWindowViewSink::PushingToWindowViewSink(
-    const Block & header, StorageWindowView & window_view_,
-    StoragePtr storage_holder_, ContextPtr context_)
-    : SinkToStorage(header)
-    , window_view(window_view_)
-    , storage_holder(std::move(storage_holder_))
-    , context(std::move(context_))
-{
-}
-
-void PushingToWindowViewSink::consume(Chunk chunk)
-{
-    Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    StorageWindowView::writeIntoWindowView(
-        window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
     auto * process = context->getProcessListElement();
     if (process)
         process->updateProgressIn(local_progress);
