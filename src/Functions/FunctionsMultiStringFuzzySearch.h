@@ -74,7 +74,6 @@ public:
         assert(col_haystack_vector); // getReturnTypeImpl() checks the data type
 
         UInt32 edit_distance = 0;
-
         if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(num_ptr.get()))
             edit_distance = col_const_uint8->getValue<UInt8>();
         else if (const auto * col_const_uint16 = checkAndGetColumnConst<ColumnUInt16>(num_ptr.get()))
@@ -85,15 +84,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The number is not const or does not fit in UInt32", arguments[1].column->getName());
 
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
-
         if (!col_const_arr)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The array is not const", arguments[2].column->getName());
 
         Array src_arr = col_const_arr->getValue<Array>();
-
         std::vector<std::string_view> refs;
         refs.reserve(src_arr.size());
-
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 

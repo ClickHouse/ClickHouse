@@ -85,15 +85,12 @@ public:
         assert(col_haystack_vector); // getReturnTypeImpl() checks the data type
 
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
-
         if (!col_const_arr)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The array is not const", arguments[1].column->getName());
 
         Array src_arr = col_const_arr->getValue<Array>();
-
         std::vector<std::string_view> refs;
         refs.reserve(src_arr.size());
-
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 
