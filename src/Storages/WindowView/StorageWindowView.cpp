@@ -78,7 +78,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
-    extern const int LOGICAL_ERROR;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_WAS_NOT_DROPPED;
@@ -1266,11 +1265,11 @@ void StorageWindowView::innerQueryParser(const ASTSelectQuery & query, ContextPt
 
     output_header.clear();
 
-    auto select_query_ = query.clone();
+    auto select_query = query.clone();
 
     WindowFunctionMatcher::Data query_info_data;
     query_info_data.check_duplicate_window = true;
-    WindowFunctionMatcher::Visitor(query_info_data).visit(select_query_);
+    WindowFunctionMatcher::Visitor(query_info_data).visit(select_query);
 
     if (!query_info_data.is_tumble && !query_info_data.is_hop)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -1324,7 +1323,7 @@ void StorageWindowView::innerQueryParser(const ASTSelectQuery & query, ContextPt
         time_zone = &DateLUT::instance();
 
     /// Parse mergeable query
-    mergeable_query = select_query_->clone();
+    mergeable_query = select_query->clone();
     ReplaceFunctionNowData func_now_data;
     ReplaceFunctionNowVisitor(func_now_data).visit(mergeable_query);
     is_time_column_func_now = func_now_data.is_time_column_func_now;
