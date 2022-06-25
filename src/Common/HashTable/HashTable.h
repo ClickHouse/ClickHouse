@@ -226,15 +226,16 @@ void insertSetMapped(MappedType & dest, const ValueType & src) { dest = src.seco
 
 
 /** Determines the size of the hash table, and when and how much it should be resized.
+  * This structure is aligned to cache line boundary and also occupies it all.
   */
 template <size_t initial_size_degree = 8>
-class HashTableGrower
+class alignas(64) HashTableGrower
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
+    UInt8 size_degree = initial_size_degree;
     size_t cached_mask = (1ULL << initial_size_degree) - 1;
     size_t cached_max_fill = 1ULL << (initial_size_degree - 1);
-    UInt8 size_degree = initial_size_degree;
 
 public:
     UInt8 sizeDegree() const { return size_degree; }
@@ -284,6 +285,7 @@ public:
     }
 };
 
+static_assert(sizeof(HashTableGrower<>) == 64);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
