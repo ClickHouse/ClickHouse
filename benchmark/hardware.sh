@@ -58,7 +58,9 @@ echo
 echo "Will perform benchmark. Results:"
 echo
 
+>result.csv
 QUERY_NUM=1
+
 cat "$QUERIES_FILE" | sed "s/{table}/hits/g" | while read query; do
     sync
     if [ "${OS}" = "Darwin" ] 
@@ -132,12 +134,11 @@ echo
 
 echo "Uploading the results (if possible)"
 
+UUID=$(clickhouse-local --query "SELECT generateUUIDv4()")
+
 ./clickhouse local --query "
   SELECT
-    (SELECT generateUUIDv4()) AS test_id,
-    c1 AS query_num,
-    c2 AS try_num,
-    c3 AS time,
+    '${UUID}' AS run_id,
     version() AS version,
     now() AS test_time,
     (SELECT value FROM system.settings WHERE name = 'max_threads') AS threads,
@@ -151,8 +152,63 @@ echo "Uploading the results (if possible)"
     file('blk.txt') AS blk,
     file('mdstat.txt') AS mdstat,
     file('instance.txt') AS instance
+" | tee meta.tsv | ./clickhouse client --host play.clickhouse.com --secure --user benchmark --query "
+  INSERT INTO benchmark_runs
+  (run_id, version, test_time, threads, fs_capacity, fs_available, cpu_model, cpu, df, memory, memory_total, blk, mdstat, instance)
+  FORMAT TSV" || echo "Cannot upload results."
+
+./clickhouse local --query "
+  SELECT
+    '${UUID}' AS run_id,
+    c1 AS query_num,
+    c2 AS try_num,
+    c3 AS time
   FROM file('result.csv')
-" | tee upload.tsv | ./clickhouse client --host play.clickhouse.com --secure --user benchmark --query "
-  INSERT INTO hardware_benchmark_results
-  (test_id, query_num, try_num, time, version, test_time, threads, fs_capacity, fs_available, cpu_model, cpu, df, memory, memory_total, blk, mdstat, instance)
-  FORMAT TSV"
+" | tee results.tsv | ./clickhouse client --host play.clickhouse.com --secure --user benchmark --query "
+  INSERT INTO benchmark_results
+  (run_id, query_num, try_num, time)
+  FORMAT TSV" || echo "Cannot upload results. Please send the output to feedback@clickhouse.com"
+
+<<////
+
+Server Setup:
+
+CREATE TABLE benchmark_runs
+(
+    run_id UUID,
+    version String,
+    test_time DateTime,
+    threads String,
+    fs_capacity UInt64,
+    fs_available UInt64,
+    cpu_model String,
+    cpu String,
+    df String,
+    memory String,
+    memory_total String,
+    blk String,
+    mdstat String,
+    instance String
+) ENGINE = ReplicatedMergeTree ORDER BY run_id;
+
+CREATE TABLE benchmark_results
+(
+    run_id UUID,
+    query_num UInt8,
+    try_num UInt8,
+    time Decimal32(3)
+) ENGINE = ReplicatedMergeTree ORDER BY (run_id, query_num, try_num);
+
+CREATE USER benchmark IDENTIFIED WITH no_password SETTINGS max_rows_to_read = 1, max_result_rows = 1, max_execution_time = 1;
+
+CREATE QUOTA benchmark
+KEYED BY ip_address
+FOR RANDOMIZED INTERVAL 1 MINUTE MAX query_inserts = 1, written_bytes = 100000,
+FOR RANDOMIZED INTERVAL 1 HOUR MAX query_inserts = 10, written_bytes = 500000,
+FOR RANDOMIZED INTERVAL 1 DAY MAX query_inserts = 50, written_bytes = 2000000
+TO benchmark;
+
+GRANT INSERT ON benchmark_runs TO benchmark;
+GRANT INSERT ON benchmark_results TO benchmark;
+
+////
