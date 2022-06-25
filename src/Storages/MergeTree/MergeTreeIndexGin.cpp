@@ -228,8 +228,7 @@ bool MergeTreeConditionGinFilter::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
-             || element.function == RPNElement::ALWAYS_FALSE
-             || element.function == RPNElement::FUNCTION_LIKE)
+             || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
         }
@@ -276,8 +275,7 @@ bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranule
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
-             || element.function == RPNElement::FUNCTION_HAS
-             || element.function == RPNElement::FUNCTION_LIKE)
+             || element.function == RPNElement::FUNCTION_HAS)
         {
             rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_in_store), true);
 
@@ -555,7 +553,7 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
     else if (function_name == "like")
     {
         out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_LIKE;
+        out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(params);
         const auto & value = const_value.get<String>();
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
