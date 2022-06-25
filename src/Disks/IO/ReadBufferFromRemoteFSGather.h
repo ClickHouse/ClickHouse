@@ -27,8 +27,7 @@ friend class ReadIndirectBufferFromRemoteFS;
 
 public:
     ReadBufferFromRemoteFSGather(
-        const std::string & common_path_prefix_,
-        const BlobsPathToSize & blobs_to_read_,
+        const PathsWithSize & blobs_to_read_,
         const ReadSettings & settings_);
 
     ~ReadBufferFromRemoteFSGather() override;
@@ -54,9 +53,7 @@ public:
 protected:
     virtual SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) = 0;
 
-    std::string common_path_prefix;
-
-    BlobsPathToSize blobs_to_read;
+    PathsWithSize blobs_to_read;
 
     ReadSettings settings;
 
@@ -112,11 +109,10 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & version_id_,
-        const std::string & common_path_prefix_,
-        const BlobsPathToSize & blobs_to_read_,
+        const PathsWithSize & blobs_to_read_,
         size_t max_single_read_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , version_id(version_id_)
@@ -142,12 +138,11 @@ class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFS
 public:
     ReadBufferFromAzureBlobStorageGather(
         std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
-        const std::string & common_path_prefix_,
-        const BlobsPathToSize & blobs_to_read_,
+        const PathsWithSize & blobs_to_read_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
         , blob_container_client(blob_container_client_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
@@ -169,11 +164,10 @@ class ReadBufferFromWebServerGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromWebServerGather(
             const String & uri_,
-            const std::string & common_path_prefix_,
-            const BlobsPathToSize & blobs_to_read_,
+            const PathsWithSize & blobs_to_read_,
             ContextPtr context_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
         , uri(uri_)
         , context(context_)
     {
@@ -195,15 +189,12 @@ public:
     ReadBufferFromHDFSGather(
             const Poco::Util::AbstractConfiguration & config_,
             const String & hdfs_uri_,
-            const std::string & common_path_prefix_,
-            const BlobsPathToSize & blobs_to_read_,
+            const PathsWithSize & blobs_to_read_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
         , config(config_)
+        , hdfs_uri(hdfs_uri_)
     {
-        const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);
-        hdfs_directory = hdfs_uri_.substr(begin_of_path);
-        hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
     SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
@@ -211,7 +202,6 @@ public:
 private:
     const Poco::Util::AbstractConfiguration & config;
     String hdfs_uri;
-    String hdfs_directory;
 };
 #endif
 
