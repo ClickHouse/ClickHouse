@@ -16,6 +16,10 @@ time curl -F data=@hits.csv 'http://localhost:9000/imp?name=hits'
 
 # 27m 47.546s
 
+sed -i 's/query.timeout.sec=60/query.timeout.sec=6000/' .questdb/conf/server.conf
+questdb-6.4.1-rt-linux-amd64/bin/questdb.sh stop
+questdb-6.4.1-rt-linux-amd64/bin/questdb.sh start
+
 ./run.sh 2>&1 | tee log.txt
 
 du -bcs .questdb/db/hits
