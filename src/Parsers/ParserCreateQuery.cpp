@@ -467,6 +467,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
@@ -572,6 +573,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (s_lparen.ignore(pos, expected))
     {
         if (!table_properties_p.parse(pos, columns_list, expected))
+            return false;
+
+        if (s_comma.checkWithoutMoving(pos, expected) && !s_comma.ignore(pos, expected))
             return false;
 
         if (!s_rparen.ignore(pos, expected))
