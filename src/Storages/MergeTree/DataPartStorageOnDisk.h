@@ -104,8 +104,6 @@ public:
         const DiskPtr & disk,
         Poco::Logger * log) const override;
 
-    void rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) override;
-
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 
 private:
@@ -158,6 +156,17 @@ public:
     DataPartStorageBuilderPtr getProjection(const std::string & name) const override;
 
     DataPartStoragePtr getStorage() const override;
+
+    /// Rename part.
+    /// Ideally, new_root_path should be the same as current root (but it is not true).
+    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
+    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    void rename(
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
+        Poco::Logger * log,
+        bool remove_new_dir_if_exists,
+        bool fsync_part_dir) override;
 
     void commit() override;
 
