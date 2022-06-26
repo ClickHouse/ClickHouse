@@ -70,7 +70,7 @@ size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & f
             // clang-format off
 #define M(NAME) \
         case ClearableSetVariants::Type::NAME: \
-            count = buildFilterForRange(*data.NAME, filter, range_begin, range_end, data, clear_data); \
+            count = buildFilterForRange(*data.NAME, filter, range_begin, range_end, clear_data); \
             break;
 
         APPLY_FOR_SET_VARIANTS(M)
@@ -82,7 +82,7 @@ size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & f
 
 template <typename Method>
 size_t DistinctSortedChunkTransform::buildFilterForRange(
-    Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, ClearableSetVariants & variants, bool clear_data)
+    Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data)
 {
     typename Method::State state(other_columns, other_columns_sizes, nullptr);
     if (clear_data)
@@ -91,7 +91,7 @@ size_t DistinctSortedChunkTransform::buildFilterForRange(
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
     {
-        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+        auto emplace_result = state.emplaceKey(method.data, i, data.string_pool);
 
         /// emit the record if there is no such key in the current set, skip otherwise
         filter[i] = emplace_result.isInserted();
@@ -111,7 +111,7 @@ void DistinctSortedChunkTransform::setCurrentKey(const size_t row_pos)
     }
 }
 
-bool DistinctSortedChunkTransform::isCurrentKey(const size_t row_pos)
+bool DistinctSortedChunkTransform::isCurrentKey(const size_t row_pos) const
 {
     for (size_t i = 0; i < sorted_columns.size(); ++i)
     {
@@ -122,7 +122,7 @@ bool DistinctSortedChunkTransform::isCurrentKey(const size_t row_pos)
     return true;
 }
 
-size_t DistinctSortedChunkTransform::getRangeEnd(size_t range_begin, size_t range_end)
+size_t DistinctSortedChunkTransform::getRangeEnd(size_t range_begin, size_t range_end) const
 {
     size_t low = range_begin;
     size_t high = range_end - 1;
@@ -172,7 +172,7 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
     ///     otherwise: apply ordinary distinct
     /// (3) repeat until chunk is processed
     IColumn::Filter filter(chunk_rows);
-    auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter);
+    auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter); /// try to process chuck as continuation of previous one
     size_t range_end = range_begin;
     while (range_end != chunk_rows)
     {

@@ -11,6 +11,9 @@ namespace DB
 
 ///
 /// DISTINCT optimization for sorted chunks
+/// It also checks if current chunks is continuation of previous one,
+/// i.e. sorting prefix value of last row in previous chunk is the same as of first row in current one,
+/// so it can correctly process sorted stream as well
 ///
 class DistinctSortedChunkTransform : public ISimpleTransform
 {
@@ -32,12 +35,11 @@ private:
     std::tuple<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumn::Filter & filter);
     size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
     inline void setCurrentKey(size_t row_pos);
-    inline bool isCurrentKey(size_t row_pos);
-    inline size_t getRangeEnd(size_t range_begin, size_t range_end);
+    inline bool isCurrentKey(size_t row_pos) const;
+    inline size_t getRangeEnd(size_t range_begin, size_t range_end) const;
 
     template <typename Method>
-    size_t buildFilterForRange(
-        Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, ClearableSetVariants & variants, bool clear_data);
+    size_t buildFilterForRange(Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
 
 
     ClearableSetVariants data;
