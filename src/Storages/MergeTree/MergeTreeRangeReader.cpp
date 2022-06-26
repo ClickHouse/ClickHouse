@@ -321,6 +321,7 @@ void MergeTreeRangeReader::ReadResult::clear()
     total_rows_per_granule = 0;
     filter_holder = nullptr;
     filter = nullptr;
+    deleted_mask_filter_holder = nullptr;
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns)
