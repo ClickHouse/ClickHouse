@@ -120,7 +120,7 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
-    if (path.starts_with(remote_fs_root_path))
+    if (!remote_fs_root_path.empty() && path.starts_with(remote_fs_root_path))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected relative path");
 
     total_size += size;

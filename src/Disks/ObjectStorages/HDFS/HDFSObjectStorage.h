@@ -50,7 +50,6 @@ public:
         , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
         , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
-        , hdfs_root_path(hdfs_root_path_)
     {}
 
     bool exists(const std::string & hdfs_uri) const override;
@@ -118,7 +117,6 @@ private:
     HDFSFSPtr hdfs_fs;
 
     SettingsPtr settings;
-    String hdfs_root_path;
 };
 
 }

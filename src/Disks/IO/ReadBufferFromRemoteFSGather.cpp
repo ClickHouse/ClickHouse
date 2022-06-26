@@ -84,16 +84,20 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
 #if USE_AZURE_BLOB_STORAGE
 SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    current_file_path = path;
-    return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, /* use_external_buffer */true, read_until_position);
+    return std::make_unique<ReadBufferFromAzureBlobStorage>(
+        blob_container_client,
+        path,
+        max_single_read_retries,
+        max_single_download_retries,
+        settings.remote_fs_buffer_size,
+        /* use_external_buffer */true,
+        read_until_position);
 }
 #endif
 
 
 SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    current_file_path = path;
     return std::make_unique<ReadBufferFromWebServer>(
         fs::path(uri) / path,
         context,
