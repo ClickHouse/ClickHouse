@@ -60,7 +60,7 @@ void DistinctSortedChunkTransform::initChunkProcessing(const Columns & input_col
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
 }
 
-size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end)
+size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data)
 {
     size_t count = 0;
     switch (data.type)
@@ -70,7 +70,7 @@ size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & f
             // clang-format off
 #define M(NAME) \
         case ClearableSetVariants::Type::NAME: \
-            count = buildFilterForRange(*data.NAME, filter, range_begin, range_end, data); \
+            count = buildFilterForRange(*data.NAME, filter, range_begin, range_end, data, clear_data); \
             break;
 
         APPLY_FOR_SET_VARIANTS(M)
@@ -82,10 +82,11 @@ size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & f
 
 template <typename Method>
 size_t DistinctSortedChunkTransform::buildFilterForRange(
-    Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, ClearableSetVariants & variants)
+    Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, ClearableSetVariants & variants, bool clear_data)
 {
     typename Method::State state(other_columns, other_columns_sizes, nullptr);
-    method.data.clear();
+    if (clear_data)
+        method.data.clear();
 
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
@@ -139,20 +140,26 @@ size_t DistinctSortedChunkTransform::getRangeEnd(size_t range_begin, size_t rang
     return range_end;
 }
 
-size_t DistinctSortedChunkTransform::getStartPosition(const size_t chunk_rows)
+std::tuple<size_t,size_t> DistinctSortedChunkTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
 {
-    if (!current_key.empty()) // current_key is empty on very first transform() call
-    {
-        if (other_columns.empty() && isCurrentKey(0))
-            return getRangeEnd(0, chunk_rows);
-    }
-    return 0;
+    /// current_key is empty on very first transform() call
+    /// or first row doesn't match a key from previous transform()
+    if (current_key.empty() || !isCurrentKey(0))
+        return {0, 0};
+
+    size_t output_rows = 0;
+    const size_t range_end = getRangeEnd(0, chunk_rows);
+    if (other_columns.empty())
+        std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
+    else
+        output_rows = ordinaryDistinctOnRange(filter, 0, range_end, false);
+
+    return {range_end, output_rows};
 }
 
 void DistinctSortedChunkTransform::transform(Chunk & chunk)
 {
     const size_t chunk_rows = chunk.getNumRows();
-    size_t output_rows = 0;
     Columns input_columns = chunk.detachColumns();
 
     /// split input columns into sorted and other("non-sorted") columns
@@ -165,10 +172,7 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
     ///     otherwise: apply ordinary distinct
     /// (3) repeat until chunk is processed
     IColumn::Filter filter(chunk_rows);
-    size_t range_begin = getStartPosition(chunk_rows);
-    if (range_begin > 0)
-        std::fill(filter.begin(), filter.begin() + range_begin, 0); /// skip rows already included in distinct on previous transform()
-
+    auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter);
     size_t range_end = range_begin;
     while (range_end != chunk_rows)
     {
@@ -188,7 +192,7 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
         else
         {
             // ordinary distinct in range if there are "non-sorted" columns
-            output_rows += ordinaryDistinctOnRange(filter, range_begin, range_end);
+            output_rows += ordinaryDistinctOnRange(filter, range_begin, range_end, true);
         }
 
         // set where next range start
