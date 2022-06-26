@@ -38,3 +38,7 @@ sudo systemctl restart heavydb
 
 /opt/heavyai/bin/heavysql -t -p HyperInteractive < create.sql
 time /opt/heavyai/bin/heavysql -t -p HyperInteractive <<< "COPY hits FROM '$(pwd)/hits.csv' WITH (HEADER = 'false');"
+
+# Loaded: 99997497 recs, Rejected: 0 recs in 572.633000 secs
+
+./run.sh 2>&1 | tee log.txt

@@ -15,6 +15,12 @@ sudo systemctl restart postgresql
 sudo -u postgres psql -c "CREATE DATABASE test"
 sudo -u postgres psql test -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
 
+# Import the data
+
+wget 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+gzip -d hits.tsv.gz
+chmod 777 ~ hits.tsv
+
 sudo -u postgres psql test < create.sql
 sudo -u postgres psql test -c "SELECT create_hypertable('hits', 'eventtime')"
 sudo -u postgres psql test -c "CREATE INDEX ix_counterid ON hits (counterid)"
@@ -22,3 +28,7 @@ sudo -u postgres psql test -c "ALTER TABLE hits SET (timescaledb.compress, times
 sudo -u postgres psql test -c "SELECT add_compression_policy('hits', INTERVAL '1s')"
 
 sudo -u postgres psql test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
+
+# 1619875.288 seconds (26:59.875)
+
+./run.sh 2>&1 | tee log.txt
