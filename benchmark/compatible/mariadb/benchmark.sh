@@ -3,7 +3,7 @@
 # Install
 
 sudo apt-get update
-sudo apt-get install mariadb-server
+sudo apt-get install -y mariadb-server
 sudo bash -c "echo -e '[mysql]\nlocal-infile=1\n\n[mysqld]\nlocal-infile=1\n' > /etc/mysql/conf.d/local_infile.cnf"
 sudo service mariadb restart
 
