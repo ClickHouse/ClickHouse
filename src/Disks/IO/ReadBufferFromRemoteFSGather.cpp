@@ -95,7 +95,7 @@ SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferI
 {
     current_file_path = path;
     return std::make_unique<ReadBufferFromWebServer>(
-        path,
+        fs::path(uri) / path,
         context,
         settings,
         /* use_external_buffer */true,
