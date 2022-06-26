@@ -45,5 +45,6 @@ time /opt/heavyai/bin/heavysql -t -p HyperInteractive <<< "COPY hits FROM '$(pwd
 
 du -bcs /var/lib/heavyai/
 
-cat log.txt | grep -P 'Total time|null' | sed -r -e 's/^.*Total time: ([0-9]+) ms$/\1/' | awk '{ if ($1 == "null") { print } else { print $1 / 1000 } }' |
+cat log.txt | grep -P 'Total time|null' | sed -r -e 's/^.*Total time: ([0-9]+) ms$/\1/' |
+  awk '{ if ($1 == "null") { print } else { print $1 / 1000 } }' |
   awk '{ if (i % 3 == 0) { printf "[" }; printf $1; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
