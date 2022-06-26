@@ -14,4 +14,6 @@ gzip -d hits.csv.gz
 curl -G --data-urlencode "query=$(cat create.sql)" 'http://localhost:9000/exec?timings=true'
 time curl -F data=@hits.csv 'http://localhost:9000/imp?name=hits'
 
-#
+# 27m 47.546s
+
+./run.sh 2>&1 | tee log.txt
