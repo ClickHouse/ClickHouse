@@ -17,7 +17,7 @@ sudo -u postgres psql test -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
 
 # Import the data
 
-wget 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
 gzip -d hits.tsv.gz
 chmod 777 ~ hits.tsv
 

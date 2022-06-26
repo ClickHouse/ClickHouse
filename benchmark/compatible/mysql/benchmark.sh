@@ -9,7 +9,7 @@ sudo service mysql restart
 
 # Load the data
 
-wget 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
 gzip -d hits.tsv.gz
 
 sudo mysql -e "CREATE DATABASE test"
@@ -19,3 +19,11 @@ time sudo mysql test -e "LOAD DATA LOCAL INFILE 'hits.tsv' INTO TABLE hits"
 # 2:37:52 elapsed
 
 ./run.sh 2>&1 | tee log.txt
+
+sudo du -bcs /var/lib/mysql
+
+cat log.txt |
+  grep -P 'rows? in set|^ERROR' |
+  sed -r -e 's/^ERROR.*$/null/; s/^.*?\((([0-9.]+) min )?([0-9.]+) sec\).*?$/\2 \3/' |
+  awk '{ if ($2) { print $1 * 60 + $2 } else { print $1 } }' |
+  awk '{ if (i % 3 == 0) { printf "[" }; printf $1; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
