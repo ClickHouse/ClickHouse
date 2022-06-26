@@ -9,7 +9,7 @@
 #include "config_functions.h"
 #include <Common/config.h>
 
-#if USE_HYPERSCAN
+#if USE_VECTORSCAN
 #    include <hs.h>
 #endif
 
@@ -60,7 +60,7 @@ struct MultiMatchAllIndicesImpl
         [[maybe_unused]] std::optional<UInt32> edit_distance)
     {
         offsets.resize(haystack_offsets.size());
-#if USE_HYPERSCAN
+#if USE_VECTORSCAN
         const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, MultiSearchDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
@@ -97,7 +97,7 @@ struct MultiMatchAllIndicesImpl
                 on_match,
                 &res);
             if (err != HS_SUCCESS)
-                throw Exception("Failed to scan with hyperscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
+                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
             offsets[i] = res.size();
             offset = haystack_offsets[i];
         }
@@ -108,9 +108,9 @@ struct MultiMatchAllIndicesImpl
         (void)res;
         (void)offsets;
         throw Exception(
-            "multi-search all indices is not implemented when hyperscan is off (is it x86 processor?)",
+            "multi-search all indices is not implemented when vectorscan is off",
             ErrorCodes::NOT_IMPLEMENTED);
-#endif // USE_HYPERSCAN
+#endif // USE_VECTORSCAN
     }
 };
 
