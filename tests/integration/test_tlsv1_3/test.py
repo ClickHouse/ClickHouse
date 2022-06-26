@@ -18,7 +18,7 @@ instance = cluster.add_instance(
         "certs/server-key.pem",
         "certs/server-cert.pem",
         "certs/ca-cert.pem",
-        "certs/dhparam4096.pem"
+        "certs/dhparam4096.pem",
     ],
     user_configs=["configs/users_with_ssl_auth.xml"],
 )
