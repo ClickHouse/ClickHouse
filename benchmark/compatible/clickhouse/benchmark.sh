@@ -18,3 +18,5 @@ clickhouse-client --time --query "INSERT INTO hits FORMAT TSV" < hits.tsv
 # Run the queries
 
 ./run.sh
+
+du -bcs /var/lib/clickhouse

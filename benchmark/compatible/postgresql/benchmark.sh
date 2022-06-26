@@ -15,4 +15,4 @@ sudo -u postgres psql test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
 # COPY 99997497
 # Time: 2341543.463 ms (39:01.543)
 
-./run.sh | tee log.txt
+./run.sh 2>&1 | tee log.txt

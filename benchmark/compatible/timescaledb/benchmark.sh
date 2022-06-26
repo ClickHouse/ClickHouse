@@ -9,7 +9,16 @@ sudo bash -c 'echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ $(
 wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | sudo apt-key add -
 sudo apt-get update
 sudo apt install timescaledb-2-postgresql-14
+sudo bash -c "echo \"shared_preload_libraries = 'timescaledb'\" >> /etc/postgresql/14/main/postgresql.conf"
 sudo systemctl restart postgresql
 
-sudo su postgres -c psql -c "CREATE DATABASE test"
-sudo su postgres -c psql test -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+sudo -u postgres psql -c "CREATE DATABASE test"
+sudo -u postgres psql test -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+
+sudo -u postgres psql test < create.sql
+sudo -u postgres psql test -c "SELECT create_hypertable('hits', 'eventtime')"
+sudo -u postgres psql test -c "CREATE INDEX ix_counterid ON hits (counterid)"
+sudo -u postgres psql test -c "ALTER TABLE hits SET (timescaledb.compress, timescaledb.compress_orderby = 'counterid, eventdate, userid, eventtime')"
+sudo -u postgres psql test -c "SELECT add_compression_policy('hits', INTERVAL '1s')"
+
+sudo -u postgres psql test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
