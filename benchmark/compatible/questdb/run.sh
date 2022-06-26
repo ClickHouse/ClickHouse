@@ -8,6 +8,7 @@ cat queries.sql | while read query; do
 
     echo "$query";
     for i in $(seq 1 $TRIES); do
-        /opt/heavyai/bin/heavysql -t -p HyperInteractive <<< "${query}" | grep 'Total time' || echo 'null'
+        curl -s -G --data-urlencode "query=${query}" 'http://localhost:9000/exec?timings=true'
+        echo
     done;
 done;
