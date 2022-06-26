@@ -772,7 +772,7 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
             {
                 std::lock_guard segment_lock(file_segment->mutex);
                 file_segment->detach(cache_lock, segment_lock);
-                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+                to_remove.emplace_back(file_segment);
             }
         }
     }

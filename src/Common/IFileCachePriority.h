@@ -3,9 +3,9 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/IFileCache.h>
-#include <Core/Types.h>
 
 namespace DB
 {
@@ -28,7 +28,7 @@ public:
         String toString() const;
 
         Key() = default;
-        explicit Key(const UInt128 & key_) : key(key_) {}
+        explicit Key(const UInt128 & key_) : key(key_) { }
 
         bool operator==(const Key & other) const { return key == other.key; }
     };
@@ -80,7 +80,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support incrementSize() for IIterator.");
         }
 
-        virtual Key & key() const = 0;
+        virtual Key key() const = 0;
 
         virtual size_t offset() const = 0;
 
