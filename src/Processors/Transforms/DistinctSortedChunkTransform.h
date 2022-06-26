@@ -29,15 +29,15 @@ protected:
 
 private:
     void initChunkProcessing(const Columns & input_columns);
-    size_t getStartPosition(size_t chunk_rows);
-    size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end);
+    std::tuple<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumn::Filter & filter);
+    size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
     inline void setCurrentKey(size_t row_pos);
     inline bool isCurrentKey(size_t row_pos);
     inline size_t getRangeEnd(size_t range_begin, size_t range_end);
 
     template <typename Method>
-    size_t
-    buildFilterForRange(Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, ClearableSetVariants & variants);
+    size_t buildFilterForRange(
+        Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, ClearableSetVariants & variants, bool clear_data);
 
 
     ClearableSetVariants data;
