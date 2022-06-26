@@ -1,6 +1,7 @@
 Machine: c6a.4xlarge, EBS 500GB gp2, Ubuntu 22.04.
 
-Loading time: 475.529
+Loading time: 475.529 seconds
+Dataset size: 14 345 515 782 bytes
 
 [0.027, 0.001, 0.001],
 [0.035, 0.015, 0.021],

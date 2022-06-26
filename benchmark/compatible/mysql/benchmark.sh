@@ -18,4 +18,4 @@ time sudo mysql test -e "LOAD DATA LOCAL INFILE 'hits.tsv' INTO TABLE hits"
 
 # 2:37:52 elapsed
 
-./run.sh | tee log.txt
+./run.sh 2>&1 | tee log.txt

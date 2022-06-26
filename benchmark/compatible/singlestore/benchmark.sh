@@ -33,6 +33,10 @@ time sudo docker exec -it memsql-ciab memsql -vvv -p"${ROOT_PASSWORD}" --databas
 
 ./run.sh 2>&1 | tee log.txt
 
+sudo docker exec memsql-ciab du -bcs /var/lib/memsql
+
+# 29836263469 bytes
+
 cat log.txt |
   grep -P 'rows? in set|^ERROR' result.txt |
   sed -r -e 's/^ERROR.*$/null/; s/^.*?\((([0-9.]+) min )?([0-9.]+) sec\).*?$/\2 \3/' |
