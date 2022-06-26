@@ -1,8 +1,8 @@
 #!/bin/bash
 
 sudo apt-get update
-sudo apt-get install postgresql-common
-sudo apt-get install postgresql-14
+sudo apt-get install -y postgresql-common
+sudo apt-get install -y postgresql-14
 
 wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
 gzip -d hits.tsv.gz

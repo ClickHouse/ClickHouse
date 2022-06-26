@@ -3,7 +3,7 @@
 # Install
 
 sudo apt-get update
-sudo apt-get install docker.io
+sudo apt-get install -y docker.io
 sudo docker run -d -p 3306:3306 -e ANALYTICS_ONLY=1 --name mcs_container mariadb/columnstore
 
 export PASSWORD="tsFgm457%3cj"

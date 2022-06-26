@@ -1,8 +1,8 @@
 #!/bin/bash
 
 sudo apt-get update
-sudo apt-get install docker.io
-sudo apt-get install postgresql-client
+sudo apt-get install -y docker.io
+sudo apt-get install -y postgresql-client
 
 sudo docker run -d --name citus -p 5432:5432 -e POSTGRES_PASSWORD=mypass citusdata/citus:11.0
 
