@@ -12,9 +12,9 @@ gzip -d hits.tsv.gz
 echo "*:*:*:*:mypass" > .pgpass
 chmod 400 .pgpass
 
-psql -U postgres -h localhost --no-password -t -c 'CREATE DATABASE test'
-psql -U postgres -h localhost --no-password test -t < create.sql
-psql -U postgres -h localhost --no-password test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
+psql -U postgres -h localhost -d postgres --no-password -t -c 'CREATE DATABASE test'
+psql -U postgres -h localhost -d postgres --no-password test -t < create.sql
+psql -U postgres -h localhost -d postgres --no-password test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
 
 # COPY 99997497
 # Time: 2182125.360 ms (36:22.125)
