@@ -19,9 +19,9 @@ public:
 
         void next() override { queue_iter++; }
 
-        bool valid() const override { return queue_iter != file_cache->queue.end(); }
+        bool valid() const override { return (file_cache->queue.size() && (queue_iter != file_cache->queue.end())); }
 
-        Key & key() const override { return queue_iter->key; }
+        Key key() const override { return queue_iter->key; }
 
         size_t offset() const override { return queue_iter->offset; }
 
