@@ -10,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -64,6 +65,12 @@ struct MultiSearchImpl
         }
         if (iteration == 0)
             std::fill(res.begin(), res.end(), 0);
+    }
+
+    template <typename... Args>
+    static void vectorVector(Args &&...)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needles", name);
     }
 };
 

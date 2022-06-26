@@ -75,7 +75,7 @@ struct MultiMatchAnyImpl
         const ColumnString::Offsets & haystack_offsets,
         const Array & needles_arr,
         PaddedPODArray<ResultType> & res,
-        [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
+        PaddedPODArray<UInt64> & /*offsets*/,
         [[maybe_unused]] std::optional<UInt32> edit_distance,
         bool allow_hyperscan,
         size_t max_hyperscan_regexp_length,
@@ -93,7 +93,7 @@ struct MultiMatchAnyImpl
 
         res.resize(haystack_offsets.size());
 #if USE_VECTORSCAN
-        const auto & hyperscan_regex = MultiRegexps::get<FindAnyIndex, WithEditDistance>(needles, edit_distance);
+        const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
@@ -120,10 +120,10 @@ struct MultiMatchAnyImpl
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
             UInt64 length = haystack_offsets[i] - offset - 1;
-            /// Vectorscan restriction.
+            // vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
-            /// Zero the result, scan, check, update the offset.
+            // zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
                 hyperscan_regex->getDB(),
@@ -156,6 +156,141 @@ struct MultiMatchAnyImpl
                 else if (FindAnyIndex && accum[i])
                     res[i] = j + 1;
             }
+        }
+#endif // USE_VECTORSCAN
+    }
+
+    static void vectorVector(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const ColumnArray & needles_col,
+        PaddedPODArray<ResultType> & res,
+        PaddedPODArray<UInt64> & offsets,
+        bool allow_hyperscan,
+        size_t max_hyperscan_regexp_length,
+        size_t max_hyperscan_regexp_total_length)
+    {
+        vectorVector(haystack_data, haystack_offsets, needles_col, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+    }
+
+    static void vectorVector(
+        [[maybe_unused]] const ColumnString::Chars & haystack_data,
+        [[maybe_unused]] const ColumnString::Offsets & haystack_offsets,
+        [[maybe_unused]] const ColumnArray & needles_col,
+        [[maybe_unused]] PaddedPODArray<ResultType> & res,
+        PaddedPODArray<UInt64> & /*offsets*/,
+        [[maybe_unused]] std::optional<UInt32> edit_distance,
+        bool allow_hyperscan,
+        [[maybe_unused]] size_t max_hyperscan_regexp_length,
+        [[maybe_unused]] size_t max_hyperscan_regexp_total_length)
+    {
+        if (!allow_hyperscan)
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
+
+        res.resize(haystack_offsets.size());
+#if USE_VECTORSCAN
+        size_t prev_haystack_offset = 0;
+        for (size_t i = 0; i < haystack_offsets.size(); ++i)
+        {
+            Field field;
+            needles_col.get(i, field);
+            Array & needles_arr = DB::get<Array &>(field);
+
+            std::vector<std::string_view> needles;
+            needles.reserve(needles_arr.size());
+            for (const auto & needle : needles_arr)
+                needles.emplace_back(needle.get<String>());
+
+            checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+
+            const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
+            hs_scratch_t * scratch = nullptr;
+            hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
+
+            if (err != HS_SUCCESS)
+                throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+            MultiRegexps::ScratchPtr smart_scratch(scratch);
+
+            auto on_match = []([[maybe_unused]] unsigned int id,
+                               unsigned long long /* from */, // NOLINT
+                               unsigned long long /* to */, // NOLINT
+                               unsigned int /* flags */,
+                               void * context) -> int
+            {
+                if constexpr (FindAnyIndex)
+                    *reinterpret_cast<ResultType *>(context) = id;
+                else if constexpr (FindAny)
+                    *reinterpret_cast<ResultType *>(context) = 1;
+                /// Once we hit the callback, there is no need to search for others.
+                return 1;
+            };
+
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+
+            // vectorscan restriction.
+            if (cur_haystack_length > std::numeric_limits<UInt32>::max())
+                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
+
+            // zero the result, scan, check, update the offset.
+            res[i] = 0;
+            err = hs_scan(
+                hyperscan_regex->getDB(),
+                reinterpret_cast<const char *>(haystack_data.data()) + prev_haystack_offset,
+                cur_haystack_length,
+                0,
+                smart_scratch.get(),
+                on_match,
+                &res[i]);
+            if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
+                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
+
+            prev_haystack_offset = haystack_offsets[i];
+        }
+#else
+        // fallback if vectorscan is not compiled
+        if constexpr (WithEditDistance)
+            throw Exception(
+                "Edit distance multi-search is not implemented when vectorscan is off",
+                ErrorCodes::NOT_IMPLEMENTED);
+
+        memset(res.data(), 0, res.size() * sizeof(res.front()));
+
+        size_t prev_haystack_offset = 0;
+
+        for (size_t i = 0; i < haystack_offsets.size(); ++i)
+        {
+            const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+
+            Field field;
+            needles_col.get(i, field);
+            Array & needles_arr = DB::get<Array &>(field);
+
+            std::vector<std::string_view> needles;
+            needles.reserve(needles_arr.size());
+            for (const auto & needle : needles_arr)
+                needles.emplace_back(needle.get<String>());
+
+            checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+
+            for (size_t j = 0; j < needles_arr.size(); ++j)
+            {
+                String needle = needles_arr[j].safeGet<String>();
+                const auto & regexp = Regexps::Regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+                const bool match = regexp.getRE2()->Match(
+                        {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
+                        0,
+                        cur_haystack_length,
+                        re2_st::RE2::UNANCHORED,
+                        nullptr,
+                        0);
+                if constexpr (FindAny)
+                    res[i] |= match;
+                else if (FindAnyIndex && match)
+                    res[i] = j + 1;
+            }
+            prev_haystack_offset = haystack_offsets[i];
         }
 #endif // USE_VECTORSCAN
     }

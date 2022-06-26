@@ -46,7 +46,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -70,7 +70,8 @@ public:
         const ColumnPtr & arr_ptr = arguments[2].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
-        assert(col_haystack_vector); // getReturnTypeImpl() checks the data type
+        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
+        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         UInt32 edit_distance = 0;
         if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(num_ptr.get()))
@@ -82,9 +83,12 @@ public:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The number is not const or does not fit in UInt32", arguments[1].column->getName());
 
-        const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
-        if (!col_const_arr)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The array is not const", arguments[2].column->getName());
+        const ColumnArray * col_needles = checkAndGetColumn<ColumnArray>(arr_ptr.get());
+        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
+        assert(static_cast<bool>(col_needles) ^ static_cast<bool>(col_needles_const));
+
+        if (col_haystack_const && col_needles)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);
 
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
@@ -94,10 +98,19 @@ public:
         auto & offsets_res = col_offsets->getData();
         // the implementations are responsible for resizing the output column
 
-        Array needles_arr = col_const_arr->getValue<Array>();
-        Impl::vectorConstant(
-            col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needles_arr, vec_res, offsets_res, edit_distance,
-            allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+        if (col_needles_const)
+        {
+            Array needles_arr = col_needles_const->getValue<Array>();
+            Impl::vectorConstant(
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needles_arr, vec_res, offsets_res, edit_distance,
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+        }
+        else
+        {
+            Impl::vectorVector(
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), *col_needles, vec_res, offsets_res, edit_distance,
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+        }
 
         if constexpr (Impl::is_column_array)
             return ColumnArray::create(std::move(col_res), std::move(col_offsets));
