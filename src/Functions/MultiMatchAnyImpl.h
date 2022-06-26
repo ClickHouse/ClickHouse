@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -59,20 +60,20 @@ struct MultiMatchAnyImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<std::string_view> & needles,
+        const Array & needles_arr,
         PaddedPODArray<ResultType> & res,
         PaddedPODArray<UInt64> & offsets,
         bool allow_hyperscan,
         size_t max_hyperscan_regexp_length,
         size_t max_hyperscan_regexp_total_length)
     {
-        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
+        vectorConstant(haystack_data, haystack_offsets, needles_arr, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
     }
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<std::string_view> & needles,
+        const Array & needles_arr,
         PaddedPODArray<ResultType> & res,
         [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
         [[maybe_unused]] std::optional<UInt32> edit_distance,
@@ -82,6 +83,11 @@ struct MultiMatchAnyImpl
     {
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
+
+        std::vector<std::string_view> needles;
+        needles.reserve(needles_arr.size());
+        for (const auto & needle : needles_arr)
+            needles.emplace_back(needle.get<String>());
 
         checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 

@@ -86,12 +86,6 @@ public:
         if (!col_const_arr)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The array is not const", arguments[2].column->getName());
 
-        Array src_arr = col_const_arr->getValue<Array>();
-        std::vector<std::string_view> refs;
-        refs.reserve(src_arr.size());
-        for (const auto & el : src_arr)
-            refs.emplace_back(el.get<String>());
-
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
@@ -100,8 +94,9 @@ public:
         auto & offsets_res = col_offsets->getData();
         // the implementations are responsible for resizing the output column
 
+        Array needles_arr = col_const_arr->getValue<Array>();
         Impl::vectorConstant(
-            col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res, edit_distance,
+            col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needles_arr, vec_res, offsets_res, edit_distance,
             allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         if constexpr (Impl::is_column_array)

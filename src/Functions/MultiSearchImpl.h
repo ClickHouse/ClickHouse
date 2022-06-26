@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 
 
@@ -26,7 +27,7 @@ struct MultiSearchImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<std::string_view> & needles,
+        const Array & needles_arr,
         PaddedPODArray<UInt8> & res,
         [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
         bool /*allow_hyperscan*/,
@@ -34,10 +35,15 @@ struct MultiSearchImpl
         size_t /*max_hyperscan_regexp_total_length*/)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
-        if (needles.size() > std::numeric_limits<UInt8>::max())
+        if (needles_arr.size() > std::numeric_limits<UInt8>::max())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
-                name, std::to_string(needles.size()), std::to_string(std::numeric_limits<UInt8>::max()));
+                name, std::to_string(needles_arr.size()), std::to_string(std::numeric_limits<UInt8>::max()));
+
+        std::vector<std::string_view> needles;
+        needles.reserve(needles_arr.size());
+        for (const auto & needle : needles_arr)
+            needles.emplace_back(needle.get<String>());
 
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
