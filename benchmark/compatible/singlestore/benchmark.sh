@@ -5,8 +5,8 @@
 sudo apt-get update
 sudo apt-get install docker.io
 
-export LICENSE_KEY="BDA4OGMxMGFlNDRkYTQ0MmU4N2NkYjk4Y2MwYTUxMTQ5AAAAAAAAAAAEAAAAAAAAACgwNAIYTJwt51SEitrak4T9P7TyYzWzIRstlokzAhgy+cgwXnsXTU9gzedJ/ztTg1TPdc4jrlQAAA=="
-export ROOT_PASSWORD="H@I}xfqKsw}[wfG,oLpH"
+export LICENSE_KEY="..."
+export ROOT_PASSWORD="..."
 
 sudo docker run -i --init \
     --name memsql-ciab \
