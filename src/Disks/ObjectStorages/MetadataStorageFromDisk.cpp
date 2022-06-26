@@ -304,12 +304,15 @@ PathsWithSize MetadataStorageFromDisk::getObjectStoragePaths(const std::string &
 {
     auto metadata = readMetadata(path);
 
-    PathsWithSize object_storage_paths = metadata->getBlobs(); /// Relative paths.
-    auto root_path = metadata->getBlobsCommonPrefix();
+    auto object_storage_relative_paths = metadata->getBlobsRelativePaths(); /// Relative paths.
+    fs::path root_path = metadata->getBlobsCommonPrefix();
+
+    PathsWithSize object_storage_paths;
+    object_storage_paths.reserve(object_storage_relative_paths.size());
 
     /// Relative paths -> absolute.
-    for (auto & [object_path, _] : object_storage_paths)
-        object_path = fs::path(root_path) / object_path;
+    for (auto & [object_relative_path, size] : object_storage_relative_paths)
+        object_storage_paths.emplace_back(root_path / object_relative_path, size);
 
     return object_storage_paths;
 }

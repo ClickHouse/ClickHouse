@@ -106,7 +106,12 @@ SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferI
 #if USE_HDFS
 SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, path, config);
+    size_t begin_of_path = path.find('/', path.find("//") + 2);
+    auto hdfs_path = path.substr(begin_of_path);
+    auto hdfs_uri = path.substr(0, begin_of_path);
+    LOG_TEST(log, "HDFS uri: {}, path: {}", hdfs_path, hdfs_uri);
+
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config);
 }
 #endif
 
@@ -310,7 +315,7 @@ size_t ReadBufferFromRemoteFSGather::getFileSize() const
 {
     size_t size = 0;
     for (const auto & object : blobs_to_read)
-        size += object.size;
+        size += object.bytes_size;
     return size;
 }
 

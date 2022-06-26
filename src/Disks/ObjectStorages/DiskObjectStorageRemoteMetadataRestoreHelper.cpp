@@ -85,7 +85,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
     LOG_TRACE(disk->log, "Migrate file {} to restorable schema", disk->metadata_storage->getPath() + path);
 
     auto objects = disk->metadata_storage->getObjectStoragePaths(path);
-    for (const auto & [object_path, size] : objects)
+    for (const auto & [object_path, _] : objects)
     {
         ObjectAttributes metadata {
             {"path", path}
