@@ -132,7 +132,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
         version_id,
         paths_to_read,
         settings_ptr->s3_settings.max_single_read_retries,
-        read_settings);
+        disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {

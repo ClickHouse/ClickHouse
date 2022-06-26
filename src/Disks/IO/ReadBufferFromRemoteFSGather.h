@@ -195,6 +195,8 @@ public:
         , config(config_)
         , hdfs_uri(hdfs_uri_)
     {
+         const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);
+         hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
     SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
@@ -203,6 +205,7 @@ private:
     const Poco::Util::AbstractConfiguration & config;
     String hdfs_uri;
 };
+
 #endif
 
 }
