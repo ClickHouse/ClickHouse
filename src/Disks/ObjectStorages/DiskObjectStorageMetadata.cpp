@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
+    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
@@ -50,8 +51,8 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
             remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
         }
         assertChar('\n', buf);
-        storage_objects[i].path = remote_fs_object_path;
-        storage_objects[i].size = remote_fs_object_size;
+        storage_objects[i].relative_path = remote_fs_object_path;
+        storage_objects[i].bytes_size = remote_fs_object_size;
     }
 
     readIntText(ref_count, buf);
@@ -119,6 +120,9 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
+    if (path.starts_with(remote_fs_root_path))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected relative path");
+
     total_size += size;
     storage_objects.emplace_back(path, size);
 }

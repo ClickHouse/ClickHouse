@@ -30,13 +30,13 @@ using ObjectAttributes = std::map<std::string, std::string>;
 struct PathWithSize
 {
     std::string path;
-    uint64_t size; /// Size in bytes
+    uint64_t bytes_size;
 
     PathWithSize() = default;
 
-    PathWithSize(const std::string & path_, uint64_t size_)
+    PathWithSize(const std::string & path_, uint64_t bytes_size_)
         : path(path_)
-        , size(size_)
+        , bytes_size(bytes_size_)
     {}
 };
 
