@@ -16,3 +16,8 @@ sudo -u postgres psql test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
 # Time: 2341543.463 ms (39:01.543)
 
 ./run.sh 2>&1 | tee log.txt
+
+sudo du -bcs /var/lib/postgresql/14/main/
+
+cat log.txt | grep -oP 'Time: \d+\.\d+ ms' | sed -r -e 's/Time: ([0-9]+\.[0-9]+) ms/\1/' |
+    awk '{ if (i % 3 == 0) { printf "[" }; printf $1; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'

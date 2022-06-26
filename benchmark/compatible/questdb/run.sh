@@ -8,7 +8,7 @@ cat queries.sql | while read query; do
 
     echo "$query";
     for i in $(seq 1 $TRIES); do
-        curl -sS -G --data-urlencode "query=${query}" 'http://localhost:9000/exec?timings=true' ||
+        curl -sS --max-time 6000 -G --data-urlencode "query=${query}" 'http://localhost:9000/exec?timings=true' ||
             (questdb-6.4.1-rt-linux-amd64/bin/questdb.sh stop && questdb-6.4.1-rt-linux-amd64/bin/questdb.sh start && sleep 5)
         echo
     done;
