@@ -188,7 +188,6 @@ class ReadBufferFromHDFSGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromHDFSGather(
             const Poco::Util::AbstractConfiguration & config_,
-            const String &,
             const PathsWithSize & blobs_to_read_,
             const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
