@@ -345,7 +345,7 @@ public:
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const;
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;

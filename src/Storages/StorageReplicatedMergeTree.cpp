@@ -4154,8 +4154,12 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 }
 
 
-DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot,
-    const String & source_replica_path, DiskPtr replaced_disk, String replaced_part_path)
+DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
+    const String & part_name,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & source_replica_path,
+    DiskPtr replaced_disk,
+    String replaced_part_path)
 {
     auto zookeeper = getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);

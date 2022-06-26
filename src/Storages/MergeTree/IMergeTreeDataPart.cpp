@@ -1358,20 +1358,7 @@ bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & stora
     return data_part_storage->shallParticipateInMerges(*storage_policy);
 }
 
-// UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DataPartStoragePtr & data_part_storage_, const String & from)
-// {
-//     if (data_part_storage_->isFile(from))
-//         return data_part_storage_->getFileSize(from);
-//     std::vector<std::string> files;
-//     disk_->listFiles(from, files);
-//     UInt64 res = 0;
-//     for (const auto & file : files)
-//         res += calculateTotalSizeOnDisk(data_part_storage_, fs::path(from) / file);
-//     return res;
-// }
-
-
-void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
+void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const
 try
 {
     assertOnDisk();

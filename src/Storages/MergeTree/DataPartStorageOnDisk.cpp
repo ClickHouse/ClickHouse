@@ -691,7 +691,12 @@ DataPartStoragePtr DataPartStorageOnDisk::clone(
     return std::make_shared<DataPartStorageOnDisk>(single_disk_volume, to, dir_path);
 }
 
-void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir)
+void DataPartStorageBuilderOnDisk::rename(
+    const std::string & new_root_path,
+    const std::string & new_part_dir,
+    Poco::Logger * log,
+    bool remove_new_dir_if_exists,
+    bool fsync_part_dir)
 {
     if (!exists())
         throw Exception(
@@ -699,7 +704,6 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
             "Part directory {} doesn't exist. Most likely it is a logical error.",
             std::string(fs::path(volume->getDisk()->getPath()) / root_path / part_dir));
 
-    /// Why "" ?
     String to = fs::path(new_root_path) / new_part_dir / "";
 
     if (volume->getDisk()->exists(to))
@@ -725,9 +729,6 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
         }
     }
 
-    // metadata_manager->deleteAll(true);
-    // metadata_manager->assertAllDeleted(true);
-
     String from = getRelativePath();
 
     /// Why?
@@ -735,7 +736,6 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
     volume->getDisk()->moveDirectory(from, to);
     part_dir = new_part_dir;
     root_path = new_root_path;
-    // metadata_manager->updateAll(true);
 
     SyncGuardPtr sync_guard;
     if (fsync_part_dir)

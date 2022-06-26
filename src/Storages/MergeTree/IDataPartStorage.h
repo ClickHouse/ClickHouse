@@ -191,17 +191,6 @@ public:
         const DiskPtr & disk,
         Poco::Logger * log) const = 0;
 
-    /// Rename part.
-    /// Ideally, new_root_path should be the same as current root (but it is not true).
-    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
-    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
-    virtual void rename(
-        const std::string & new_root_path,
-        const std::string & new_part_dir,
-        Poco::Logger * log,
-        bool remove_new_dir_if_exists,
-        bool fsync_part_dir) = 0;
-
     /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
     virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
@@ -243,6 +232,17 @@ public:
     virtual std::shared_ptr<IDataPartStorageBuilder> getProjection(const std::string & name) const = 0;
 
     virtual DataPartStoragePtr getStorage() const = 0;
+
+    /// Rename part.
+    /// Ideally, new_root_path should be the same as current root (but it is not true).
+    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
+    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    virtual void rename(
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
+        Poco::Logger * log,
+        bool remove_new_dir_if_exists,
+        bool fsync_part_dir) = 0;
 
     virtual void commit() = 0;
 };
