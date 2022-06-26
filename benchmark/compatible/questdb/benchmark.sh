@@ -24,6 +24,6 @@ questdb-6.4.1-rt-linux-amd64/bin/questdb.sh start
 
 du -bcs .questdb/db/hits
 
-cat log2.txt | grep -P '"timings"|"error"|Failed to connect|Operation timed out' | sed -r -e 's/^.*"error".*$|Failed to connect|Operation timed out/null/; s/^.*"compiler":([0-9]*),"execute":([0-9]*),.*$/\1 \2/' |
+cat log.txt | grep -P '"timings"|"error"|null' | sed -r -e 's/^.*"error".*$/null/; s/^.*"compiler":([0-9]*),"execute":([0-9]*),.*$/\1 \2/' |
   awk '{ print ($1 + $2) / 1000000000 }' | sed -r -e 's/^0$/null/' |
   awk '{ if (i % 3 == 0) { printf "[" }; printf $1; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
