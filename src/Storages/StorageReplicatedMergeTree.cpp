@@ -8160,10 +8160,19 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 
 void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    MergeTreeData::adjustCreateQueryForBackup(create_query);
+    /// Adjust the create query using values from ZooKeeper.
+    auto zookeeper = getZooKeeper();
+    auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
+    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
 
-    if (getTableSharedID() != tryGetTableSharedIDFromCreateQuery(*create_query, getContext()))
-        throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Table {} has its shared ID to be different from one from the create query");
+    auto current_metadata = getInMemoryMetadataPtr();
+    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
+    auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
+    applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
+
+    /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
+    if (tryGetTableSharedIDFromCreateQuery(*create_query, getContext()) != getTableSharedID())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} has its shared ID to be different from one from the create query");
 }
 
 void StorageReplicatedMergeTree::backupData(
