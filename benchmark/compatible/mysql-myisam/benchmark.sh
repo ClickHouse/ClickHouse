@@ -16,7 +16,7 @@ sudo mysql -e "CREATE DATABASE test"
 sudo mysql test < create.sql
 time sudo mysql test -e "LOAD DATA LOCAL INFILE 'hits.tsv' INTO TABLE hits"
 
-#
+# 41m8.979s
 
 ./run.sh 2>&1 | tee log.txt
 

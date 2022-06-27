@@ -17,7 +17,7 @@ psql -U postgres -h localhost -d postgres --no-password test -t < create.sql
 psql -U postgres -h localhost -d postgres --no-password test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
 
 # COPY 99997497
-# Time: 2182125.360 ms (36:22.125)
+# Time: 1579203.482 ms (26:19.203)
 
 ./run.sh 2>&1 | tee log.txt
 
