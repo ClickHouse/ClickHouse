@@ -726,17 +726,19 @@ void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & 
 
             finalizeRequest(request_info);
         }
-
-        request_queue.clear();
     };
 
-    std::lock_guard lock(leader_waiter_mutex);
-    auto request_queue_it = leader_waiters.find(KeeperServer::NodeInfo{.term = log_term, .last_committed_index = log_idx});
-    if (request_queue_it != leader_waiters.end())
+    KeeperStorage::RequestsForSessions requests;
     {
-        process_requests(request_queue_it->second);
-        leader_waiters.erase(request_queue_it);
+        std::lock_guard lock(leader_waiter_mutex);
+        auto request_queue_it = leader_waiters.find(KeeperServer::NodeInfo{.term = log_term, .last_committed_index = log_idx});
+        if (request_queue_it != leader_waiters.end())
+        {
+            requests = std::move(request_queue_it->second);
+            leader_waiters.erase(request_queue_it);
+        }
     }
+    process_requests(requests);
 }
 
 bool KeeperDispatcher::isServerActive() const
