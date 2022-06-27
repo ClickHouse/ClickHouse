@@ -1324,7 +1324,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
     {
-        IMergeTreeDataPart & part = *it;
+        const DataPartPtr & part = *it;
 
         part->remove_time.store(part->modification_time, std::memory_order_relaxed);
         auto creation_csn = part->version.creation_csn.load(std::memory_order_relaxed);
@@ -1339,6 +1339,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
         modifyPartState(it, DataPartState::Outdated);
         removePartContributionToDataVolume(part);
+
+        /// Explicitly set removal_tid_lock for parts w/o transaction (i.e. w/o txn_version.txt)
+        /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
+        if (!part->version.isRemovalTIDLocked())
+        {
+            TransactionInfoContext transaction_context{getStorageID(), part->name};
+            part->version.lockRemovalTID(Tx::PrehistoricTID, transaction_context);
+        }
     };
 
     /// All parts are in "Active" state after loading
