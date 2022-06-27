@@ -1,5 +1,7 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/9587#issuecomment-944431385
 
+SET optimize_trivial_insert_select = 1;
+
 CREATE TABLE source (a Int32) ENGINE=MergeTree() ORDER BY tuple();
 CREATE TABLE source_null AS source ENGINE=Null;
 CREATE TABLE dest_a (count UInt32, min Int32, max Int32, count_subquery Int32, min_subquery Int32, max_subquery Int32) ENGINE=MergeTree() ORDER BY tuple();

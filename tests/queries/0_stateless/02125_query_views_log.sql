@@ -1,3 +1,5 @@
+SET optimize_trivial_insert_select = 1;
+
 drop table if exists src;
 drop table if exists dst;
 drop table if exists mv1;

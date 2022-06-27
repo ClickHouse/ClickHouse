@@ -1,4 +1,4 @@
-SET use_uncompressed_cache = 0;
+SET use_uncompressed_cache = 0, optimize_trivial_insert_select = 1;
 
 DROP TABLE IF EXISTS adaptive_table;
 
