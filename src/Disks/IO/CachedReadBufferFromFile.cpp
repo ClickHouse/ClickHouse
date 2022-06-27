@@ -1023,17 +1023,11 @@ bool CachedReadBufferFromFile::nextImplStep()
 
 off_t CachedReadBufferFromFile::seek(off_t offset, int whence)
 {
-    if (initialized)
+    if (initialized && !allow_seeks)
     {
-        if (!allow_seeks)
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-                "Seek is allowed only before first read attempt from the buffer");
-        }
-
-        file_segments_holder.reset();
-        initialized = false;
+        throw Exception(
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+            "Seek is allowed only before first read attempt from the buffer");
     }
 
     size_t new_pos = offset;
@@ -1067,11 +1061,51 @@ off_t CachedReadBufferFromFile::seek(off_t offset, int whence)
     }
 
     first_offset = file_offset_of_buffer_end = new_pos;
-    initialized = false;
-    implementation_buffer.reset();
     resetWorkingBuffer();
 
-    return offset;
+    if (file_segments_holder && current_file_segment_it != file_segments_holder->file_segments.end())
+    {
+        // auto & file_segments = file_segments_holder->file_segments;
+        // LOG_TRACE(
+        //     log,
+        //     "Having {} file segments to read: {}, current offset: {}",
+        //     file_segments_holder->file_segments.size(), file_segments_holder->toString(), file_offset_of_buffer_end);
+
+        // auto it = std::upper_bound(
+        //     file_segments.begin(),
+        //     file_segments.end(),
+        //     new_pos,
+        //     [](size_t pos, const FileSegmentPtr & file_segment) { return pos < file_segment->range().right; });
+
+        // if (it != file_segments.end())
+        // {
+        //     if (it != file_segments.begin() && (*std::prev(it))->range().right == new_pos)
+        //         current_file_segment_it = std::prev(it);
+        //     else
+        //         current_file_segment_it = it;
+
+        //     [[maybe_unused]] const auto & file_segment = *current_file_segment_it;
+        //     assert(file_offset_of_buffer_end <= file_segment->range().right);
+        //     assert(file_offset_of_buffer_end >= file_segment->range().left);
+
+        //     resetWorkingBuffer();
+        //     swap(*implementation_buffer);
+        //     implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
+        //     swap(*implementation_buffer);
+
+        //     LOG_TRACE(log, "Found suitable file segment: {}", file_segment->range().toString());
+
+        //     LOG_TRACE(log, "seek2 Internal buffer size: {}", internal_buffer.size());
+        //     return new_pos;
+        // }
+
+        file_segments_holder.reset();
+    }
+
+    implementation_buffer.reset();
+    initialized = false;
+
+    return new_pos;
 }
 
 size_t CachedReadBufferFromFile::getTotalSizeToRead()
@@ -1097,6 +1131,7 @@ void CachedReadBufferFromFile::setReadUntilPosition(size_t position)
 
     read_until_position = position;
     initialized = false;
+    implementation_buffer.reset();
 }
 
 void CachedReadBufferFromFile::setReadUntilEnd()

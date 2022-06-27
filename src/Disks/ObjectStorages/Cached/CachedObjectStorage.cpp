@@ -31,8 +31,7 @@ CachedObjectStorage:: CachedObjectStorage(ObjectStoragePtr object_storage_, File
 
 IFileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    std::string path_id = object_storage->getUniqueIdForBlob(path);
-    return cache->hash(path_id);
+    return cache->hash(path);
 }
 
 String CachedObjectStorage::getCachePath(const std::string & path) const
@@ -73,14 +72,13 @@ bool CachedObjectStorage::exists(const std::string & path) const
 }
 
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NOLINT
-    const std::string & common_path_prefix,
-    const BlobsPathToSize & blobs_to_read,
+    const PathsWithSize & paths_to_read,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
     auto modified_read_settings = getReadSettingsForCache(read_settings);
-    auto impl = object_storage->readObjects(common_path_prefix, blobs_to_read, modified_read_settings, read_hint, file_size);
+    auto impl = object_storage->readObjects(paths_to_read, modified_read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
     if (impl->isIntegratedWithFilesystemCache()
@@ -96,14 +94,14 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
         auto implementation_buffer_creator = [=, this]()
         {
             auto implementation_buffer =
-                object_storage->readObjects(common_path_prefix, blobs_to_read, modified_read_settings, read_hint, file_size);
+                object_storage->readObjects(paths_to_read, modified_read_settings, read_hint, file_size);
             return std::make_unique<BoundedReadBuffer>(std::move(implementation_buffer));
         };
 
-        if (blobs_to_read.size() != 1)
+        if (paths_to_read.size() != 1)
             throw Exception(ErrorCodes::CANNOT_USE_CACHE, "Unable to read multiple objects, support not added");
 
-        std::string path = fs::path(common_path_prefix) / blobs_to_read[0].relative_path;
+        std::string path = paths_to_read[0].path;
         IFileCache::Key key = getCacheKey(path);
 
         return std::make_unique<CachedReadBufferFromFile>(
@@ -215,9 +213,9 @@ void CachedObjectStorage::removeObject(const std::string & path)
     object_storage->removeObject(path);
 }
 
-void CachedObjectStorage::removeObjects(const std::vector<std::string> & paths)
+void CachedObjectStorage::removeObjects(const PathsWithSize & paths)
 {
-    for (const auto & path : paths)
+    for (const auto & [path, _] : paths)
         removeCacheIfExists(path);
 
     object_storage->removeObjects(paths);
@@ -229,17 +227,12 @@ void CachedObjectStorage::removeObjectIfExists(const std::string & path)
     object_storage->removeObjectIfExists(path);
 }
 
-void CachedObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
+void CachedObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
 {
-    for (const auto & path : paths)
+    for (const auto & [path, _] : paths)
         removeCacheIfExists(path);
 
     object_storage->removeObjectsIfExist(paths);
-}
-
-String CachedObjectStorage::getUniqueIdForBlob(const String & path)
-{
-    return object_storage->getUniqueIdForBlob(path);
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
@@ -260,13 +253,16 @@ void CachedObjectStorage::copyObject( // NOLINT
 }
 
 std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+    const std::string & new_namespace,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr context)
 {
     /// TODO: add something here?
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
+void CachedObjectStorage::listPrefix(const std::string & path, PathsWithSize & children) const
 {
     object_storage->listPrefix(path, children);
 }
