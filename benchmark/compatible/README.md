@@ -2,7 +2,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 
 - [x] ClickHouse
 - [x] MySQL InnoDB
-- [ ] MySQL MyISAM
+- [x] MySQL MyISAM
 - [ ] MariaDB
 - [x] MariaDB ColumnStore
 - [x] MemSQL/SingleStore
