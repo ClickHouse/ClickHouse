@@ -3,6 +3,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Aggregator.h>
+#include "Core/ColumnNumbers.h"
 
 namespace DB
 {
@@ -26,6 +27,8 @@ struct GroupingSetsParams
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 Block appendGroupingSetColumn(Block header);
+Block generateOutputHeader(const Block & input_header);
+Block generateOutputHeader(const Block & input_header, const ColumnNumbers & keys);
 
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep

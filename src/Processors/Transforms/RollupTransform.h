@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
@@ -23,12 +24,16 @@ private:
     const ColumnNumbers keys;
     const ColumnsMask aggregates_mask;
 
+    std::unique_ptr<Aggregator> output_aggregator;
+
+    Block intermediate_header;
+
     Chunks consumed_chunks;
     Chunk rollup_chunk;
     size_t last_removed_key = 0;
     size_t set_counter = 0;
 
-    Chunk merge(Chunks && chunks, bool final);
+    Chunk merge(Chunks && chunks, bool is_input, bool final);
 };
 
 }

@@ -41,8 +41,12 @@
 
 #include <Dictionaries/DictionaryStructure.h>
 
+#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include "Columns/ColumnNullable.h"
+#include "Core/ColumnsWithTypeAndName.h"
+#include "DataTypes/IDataType.h"
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
@@ -64,6 +68,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -393,7 +398,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             }
                         }
 
-                        NameAndTypePair key{column_name, node->result_type};
+                        NameAndTypePair key{column_name, makeNullable(node->result_type)};
 
                         grouping_set_list.push_back(key);
 
@@ -447,7 +452,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         }
                     }
 
-                    NameAndTypePair key{column_name, node->result_type};
+                    NameAndTypePair key = select_query->group_by_with_rollup || select_query->group_by_with_cube ? NameAndTypePair{ column_name, makeNullable(node->result_type) } : NameAndTypePair{column_name, node->result_type};
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
@@ -1418,6 +1423,28 @@ void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(Expres
     }
 }
 
+void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool /* only_types */)
+{
+    const auto * select_query = getAggregatingQuery();
+
+    if (!select_query->groupBy() || !(select_query->group_by_with_rollup || select_query->group_by_with_cube))
+        return;
+
+    auto source_columns = before_aggregation->getResultColumns();
+    ColumnsWithTypeAndName result_columns;
+
+    for (const auto & source_column : source_columns)
+    {
+        if (isAggregateFunction(source_column.type))
+            result_columns.push_back(source_column);
+        else
+            result_columns.emplace_back(makeNullable(source_column.type), source_column.name);
+    }
+    ExpressionActionsChain::Step & step = chain.lastStep(before_aggregation->getNamesAndTypesList());
+
+    step.actions() = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position);
+}
+
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -1597,6 +1624,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
+    LOG_DEBUG(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "Before output: {}", step.actions()->getNamesAndTypesList().toString());
+
     NamesWithAliases result_columns;
 
     ASTs asts = select_query->select()->children;
@@ -1638,7 +1667,11 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     }
 
     auto actions = chain.getLastActions();
+    LOG_DEBUG(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "Before projection: {}", actions->getNamesAndTypesList().toString());
+
     actions->project(result_columns);
+    LOG_DEBUG(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "After projection: {}", actions->getNamesAndTypesList().toString());
+
     return actions;
 }
 
@@ -1861,6 +1894,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
+
+            before_aggregation_with_nullable = chain.getLastActions();
+            query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
 
             finalize_chain(chain);
 
