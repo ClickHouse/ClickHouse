@@ -38,6 +38,7 @@ cat > /tmp/actions-hooks/pre-run.sh << 'EOF'
 #!/bin/bash
 set -xuo pipefail
 
+echo "Runner's public DNS: $(ec2metadata --public-hostname)"
 EOF
 
 cat > /tmp/actions-hooks/post-run.sh << 'EOF'
