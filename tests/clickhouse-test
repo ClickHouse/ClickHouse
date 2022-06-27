@@ -491,7 +491,7 @@ class SettingsRandomizer:
         if random.random() < 0.2
         else random.randint(1, 1024 * 1024 * 1024),
         "local_filesystem_read_method": lambda: random.choice(
-            ["read", "pread", "mmap", "pread_threadpool"]
+            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
