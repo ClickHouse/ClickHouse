@@ -2254,11 +2254,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         table_aliases->setStepDescription("Add table aliases");
         query_plan.addStep(std::move(table_aliases));
     }
-
-    if (processing_stage == QueryProcessingStage::FetchColumns && query_info.additional_filter_ast)
-    {
-
-    }
 }
 
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
