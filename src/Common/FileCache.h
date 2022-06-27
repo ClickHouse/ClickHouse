@@ -22,9 +22,8 @@
 namespace DB
 {
 
-/**
- * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
- */
+/// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
+/// Different caching algorithms are implemented based on IFileCachePriority.
 class FileCache : private boost::noncopyable
 {
     friend class FileSegment;

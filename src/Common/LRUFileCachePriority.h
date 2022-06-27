@@ -5,8 +5,8 @@
 namespace DB
 {
 
-/// Based on the LRU algorithm implementation, the data with the lowest priority is stored at
-/// the head of the queue, and the data with the highest priority is stored at the tail.
+/// Based on the LRU algorithm implementation, the record with the lowest priority is stored at
+/// the head of the queue, and the record with the highest priority is stored at the tail.
 class LRUFileCachePriority : public IFileCachePriority
 {
 public:
