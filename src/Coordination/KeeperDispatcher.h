@@ -80,6 +80,18 @@ private:
     std::unordered_map<KeeperServer::NodeInfo, std::vector<KeeperStorage::RequestForSession>> leader_waiters;
     std::mutex leader_waiter_mutex;
 
+    struct UnprocessedRequests
+    {
+        size_t unprocessed_num{0};
+        bool is_read{false};
+        std::list<KeeperStorage::RequestForSession> request_queue;
+    };
+
+    void finalizeRequest(const KeeperStorage::RequestForSession & request_for_session);
+
+    std::unordered_map<int64_t, UnprocessedRequests> unprocessed_requests_for_session;
+    std::mutex unprocessed_request_mutex;
+
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -119,7 +131,7 @@ public:
         return server && server->checkInit();
     }
 
-    void onRequestCommit(uint64_t log_term, uint64_t log_idx);
+    void onRequestCommit(const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx);
 
     /// Is server accepting requests, i.e. connected to the cluster
     /// and achieved quorum

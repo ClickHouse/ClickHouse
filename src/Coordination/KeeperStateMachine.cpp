@@ -242,7 +242,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const ext_op_params& 
         }
     }
 
-    commit_callback(params.log_term, params.log_idx);
+    commit_callback(request_for_session, params.log_term, params.log_idx);
     last_committed_idx = params.log_idx;
     return nullptr;
 }
