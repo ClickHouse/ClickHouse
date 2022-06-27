@@ -28,13 +28,13 @@ public:
     void createDirectories(const String & path) override;
     void clearDirectory(const String & path) override;
     void moveDirectory(const String & from_path, const String & to_path) override;
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
     void createFile(const String & path) override;
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
-    void listFiles(const String & path, std::vector<String> & file_names) override;
+    void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -56,7 +56,8 @@ public:
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
-    Poco::Timestamp getLastModified(const String & path) override;
+    time_t getLastChanged(const String & path) const override;
+    Poco::Timestamp getLastModified(const String & path) const override;
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     void truncateFile(const String & path, size_t size) override;
@@ -77,7 +78,7 @@ public:
     std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
-    DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
+    MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
 

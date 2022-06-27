@@ -25,6 +25,7 @@ class Client:
         user=None,
         password=None,
         database=None,
+        host=None,
         ignore_error=False,
         query_id=None,
     ):
@@ -36,6 +37,7 @@ class Client:
             user=user,
             password=password,
             database=database,
+            host=host,
             ignore_error=ignore_error,
             query_id=query_id,
         ).get_answer()
@@ -49,6 +51,7 @@ class Client:
         user=None,
         password=None,
         database=None,
+        host=None,
         ignore_error=False,
         query_id=None,
     ):
@@ -66,13 +69,12 @@ class Client:
 
         if user is not None:
             command += ["--user", user]
-
         if password is not None:
             command += ["--password", password]
-
         if database is not None:
             command += ["--database", database]
-
+        if host is not None:
+            command += ["--host", host]
         if query_id is not None:
             command += ["--query_id", query_id]
 

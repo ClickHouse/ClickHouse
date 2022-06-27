@@ -17,6 +17,11 @@ namespace std
     using namespace experimental::coroutines_v1;
 }
 
+#if __has_warning("-Wdeprecated-experimental-coroutine")
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-experimental-coroutine"
+#endif
+
 #else
 #include <coroutine>
 #pragma GCC diagnostic push

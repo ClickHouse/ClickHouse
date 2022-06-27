@@ -6,14 +6,14 @@ namespace DB
 {
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
+    DataPartStorageBuilderPtr data_part_storage_builder_,
     const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , volume(data_part->volume)
-    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
+    , data_part_storage_builder(std::move(data_part_storage_builder_))
     , reset_columns(reset_columns_)
 {
     if (reset_columns)
@@ -40,6 +40,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     /// worth it
     if (empty_columns.empty() || isCompactPart(data_part))
         return {};
+
+    for (const auto & column : empty_columns)
+        LOG_TRACE(storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;

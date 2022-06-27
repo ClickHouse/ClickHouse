@@ -35,6 +35,7 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
+#include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -43,6 +44,7 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
@@ -199,6 +201,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDescribeQuery>())
     {
         return std::make_unique<InterpreterDescribeQuery>(query, context);
+    }
+    else if (query->as<ASTDescribeCacheQuery>())
+    {
+        return std::make_unique<InterpreterDescribeCacheQuery>(query, context);
     }
     else if (query->as<ASTExplainQuery>())
     {

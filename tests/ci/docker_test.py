@@ -124,6 +124,7 @@ class TestDockerImageCheck(unittest.TestCase):
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version --cache-from type=registry,ref=name:version "
             "--cache-from type=registry,ref=name:latest "
             "--cache-to type=inline,mode=max --push --progress plain path",
@@ -142,6 +143,7 @@ class TestDockerImageCheck(unittest.TestCase):
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version2 "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
             "--cache-to type=inline,mode=max --progress plain path",
@@ -159,6 +161,7 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_machine.assert_not_called()
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
             "--cache-to type=inline,mode=max --progress plain path",

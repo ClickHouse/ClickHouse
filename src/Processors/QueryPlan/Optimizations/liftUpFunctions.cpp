@@ -1,5 +1,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/Exception.h>
@@ -41,6 +42,11 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 
     if (!sorting_step || !expression_step)
         return 0;
+
+    // Filling step position should be preserved
+    if (!child_node->children.empty())
+        if (typeid_cast<FillingStep *>(child_node->children.front()->step.get()))
+            return 0;
 
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
