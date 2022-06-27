@@ -292,7 +292,6 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 {
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
-    bool locked_uuid = false;
     try
     {
         std::unique_lock lock{mutex};
@@ -302,9 +301,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// Do some checks before renaming file from .tmp to .sql
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
-        /// We will get en exception if some table with the same UUID exists (even if it's detached table or table from another database)
-        DatabaseCatalog::instance().addUUIDMapping(query.uuid);
-        locked_uuid = true;
+        chassert(DatabaseCatalog::instance().hasUUIDMapping(query.uuid));
 
         auto txn = query_context->getZooKeeperMetadataTransaction();
         if (txn && !query_context->isInternalSubquery())
@@ -321,8 +318,6 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     catch (...)
     {
         fs::remove(table_metadata_tmp_path);
-        if (locked_uuid)
-            DatabaseCatalog::instance().removeUUIDMappingFinally(query.uuid);
         throw;
     }
     if (table->storesDataOnDisk())
