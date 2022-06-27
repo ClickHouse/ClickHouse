@@ -2172,4 +2172,7 @@ if __name__ == "__main__":
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
 
+    if args.db_engine and args.db_engine == "Ordinary":
+        MESSAGES_TO_RETRY.append(" locking attempt on ")
+
     main(args)
