@@ -29,10 +29,11 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs")
 
 elseif (ARCH_PPC64LE)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -DNO_WARN_X86_INTRINSICS")
+    # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
 
 elseif (ARCH_AMD64)
     set (TEST_FLAG "-mssse3")

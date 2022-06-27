@@ -17,6 +17,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Kafka/KafkaSink.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -418,7 +420,6 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 {
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
     conf.set("client.id", client_id);
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
@@ -680,12 +681,11 @@ bool StorageKafka::streamToViews()
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
 
-        limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
-                                                 ? kafka_settings->kafka_flush_interval_ms
-                                                 : getContext()->getSettingsRef().stream_flush_interval_ms;
+        Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
+                                          ? kafka_settings->kafka_flush_interval_ms
+                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-        limits.timeout_overflow_mode = OverflowMode::BREAK;
-        source->setLimits(limits);
+        source->setTimeLimit(max_execution_time);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

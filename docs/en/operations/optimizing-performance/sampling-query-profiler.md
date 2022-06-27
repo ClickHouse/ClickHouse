@@ -3,7 +3,7 @@ sidebar_position: 54
 sidebar_label: Query Profiling
 ---
 
-# Sampling Query Profiler {#sampling-query-profiler}
+# Sampling Query Profiler
 
 ClickHouse runs sampling profiler that allows analyzing query execution. Using profiler you can find source code routines that used the most frequently during query execution. You can trace CPU time and wall-clock time spent including idle time.
 

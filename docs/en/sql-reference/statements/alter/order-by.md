@@ -3,7 +3,7 @@ sidebar_position: 41
 sidebar_label: ORDER BY
 ---
 
-# Manipulating Key Expressions {#manipulations-with-key-expressions}
+# Manipulating Key Expressions
 
 ``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression

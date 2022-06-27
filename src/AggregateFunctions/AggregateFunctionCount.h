@@ -53,10 +53,19 @@ public:
         ++data(place).count;
     }
 
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** /*columns*/,
+        size_t length,
+        Arena * /*arena*/) const override
+    {
+        data(place).count += length;
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena *,
         ssize_t if_argument_pos) const override
@@ -75,7 +84,7 @@ public:
     void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena *,
@@ -213,7 +222,7 @@ public:
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena *,
         ssize_t if_argument_pos) const override

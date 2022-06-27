@@ -43,13 +43,13 @@ public:
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
-    Pipe loadAll() override;
+    QueryPipeline loadAll() override;
 
-    Pipe loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -65,7 +65,7 @@ private:
     void getUpdateFieldAndDate(Poco::URI & uri);
 
     // wrap buffer using encoding from made request
-    Pipe createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
+    QueryPipeline createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
 
     Poco::Logger * log;
 

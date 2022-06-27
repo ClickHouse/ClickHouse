@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Common/noexcept_scope.h>
 
 namespace DB
 {
@@ -38,11 +39,24 @@ void MergeTreeTransaction::setSnapshot(CSN new_snapshot)
 MergeTreeTransaction::State MergeTreeTransaction::getState() const
 {
     CSN c = csn.load();
-    if (c == Tx::UnknownCSN || c == Tx::CommittingCSN)
+    if (c == Tx::UnknownCSN)
         return RUNNING;
+    if (c == Tx::CommittingCSN)
+        return COMMITTING;
     if (c == Tx::RolledBackCSN)
         return ROLLED_BACK;
     return COMMITTED;
+}
+
+bool MergeTreeTransaction::waitStateChange(CSN current_state_csn) const
+{
+    CSN current_value = current_state_csn;
+    while (current_value == current_state_csn && !TransactionLog::instance().isShuttingDown())
+    {
+        csn.wait(current_value);
+        current_value = csn.load();
+    }
+    return current_value != current_state_csn;
 }
 
 void MergeTreeTransaction::checkIsNotCancelled() const
@@ -133,8 +147,8 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         std::lock_guard lock{mutex};
         checkIsNotCancelled();
 
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         part_to_remove->version.lockRemovalTID(tid, context);
+        NOEXCEPT_SCOPE;
         storages.insert(storage);
         if (maybe_lock)
             table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
@@ -158,7 +172,7 @@ void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & 
 bool MergeTreeTransaction::isReadOnly() const
 {
     std::lock_guard lock{mutex};
-    assert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
+    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
 }
 
@@ -204,7 +218,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     /// and we will be able to remove old entries from transaction log in ZK.
     /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
     [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
-    assert(prev_value == Tx::CommittingCSN);
+    chassert(prev_value == Tx::CommittingCSN);
     for (const auto & part : creating_parts)
     {
         part->version.creation_csn.store(csn);
@@ -321,7 +335,7 @@ String MergeTreeTransaction::dumpDescription() const
     {
         String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
-        assert(!part->version.creation_csn || part->version.creation_csn <= snapshot);
+        chassert(!part->version.creation_csn || part->version.creation_csn <= snapshot);
     }
 
     for (const auto & mutation : mutations)

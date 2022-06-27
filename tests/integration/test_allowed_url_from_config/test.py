@@ -33,7 +33,7 @@ def start_cluster():
 def test_config_with_hosts(start_cluster):
     assert (
         node1.query(
-            "CREATE TABLE table_test_1_1 (word String) Engine=URL('http://host:80', HDFS)"
+            "CREATE TABLE table_test_1_1 (word String) Engine=URL('http://host:80', CSV)"
         )
         == ""
     )
@@ -44,7 +44,7 @@ def test_config_with_hosts(start_cluster):
         == ""
     )
     assert "not allowed" in node1.query_and_get_error(
-        "CREATE TABLE table_test_1_4 (word String) Engine=URL('https://host:123', S3)"
+        "CREATE TABLE table_test_1_4 (word String) Engine=URL('https://host:123', CSV)"
     )
     assert "not allowed" in node1.query_and_get_error(
         "CREATE TABLE table_test_1_4 (word String) Engine=URL('https://yandex2.ru', CSV)"
@@ -60,7 +60,7 @@ def test_config_with_only_primary_hosts(start_cluster):
     )
     assert (
         node2.query(
-            "CREATE TABLE table_test_2_2 (word String) Engine=URL('https://host:123', S3)"
+            "CREATE TABLE table_test_2_2 (word String) Engine=URL('https://host:123', CSV)"
         )
         == ""
     )
@@ -72,25 +72,25 @@ def test_config_with_only_primary_hosts(start_cluster):
     )
     assert (
         node2.query(
-            "CREATE TABLE table_test_2_4 (word String) Engine=URL('https://yandex.ru:87', HDFS)"
+            "CREATE TABLE table_test_2_4 (word String) Engine=URL('https://yandex.ru:87', CSV)"
         )
         == ""
     )
     assert "not allowed" in node2.query_and_get_error(
-        "CREATE TABLE table_test_2_5 (word String) Engine=URL('https://host', HDFS)"
+        "CREATE TABLE table_test_2_5 (word String) Engine=URL('https://host', CSV)"
     )
     assert "not allowed" in node2.query_and_get_error(
         "CREATE TABLE table_test_2_5 (word String) Engine=URL('https://host:234', CSV)"
     )
     assert "not allowed" in node2.query_and_get_error(
-        "CREATE TABLE table_test_2_6 (word String) Engine=URL('https://yandex2.ru', S3)"
+        "CREATE TABLE table_test_2_6 (word String) Engine=URL('https://yandex2.ru', CSV)"
     )
 
 
 def test_config_with_only_regexp_hosts(start_cluster):
     assert (
         node3.query(
-            "CREATE TABLE table_test_3_1 (word String) Engine=URL('https://host:80', HDFS)"
+            "CREATE TABLE table_test_3_1 (word String) Engine=URL('https://host:80', CSV)"
         )
         == ""
     )
@@ -104,7 +104,7 @@ def test_config_with_only_regexp_hosts(start_cluster):
         "CREATE TABLE table_test_3_3 (word String) Engine=URL('https://host', CSV)"
     )
     assert "not allowed" in node3.query_and_get_error(
-        "CREATE TABLE table_test_3_4 (word String) Engine=URL('https://yandex2.ru', S3)"
+        "CREATE TABLE table_test_3_4 (word String) Engine=URL('https://yandex2.ru', CSV)"
     )
 
 
@@ -123,7 +123,7 @@ def test_config_without_allowed_hosts_section(start_cluster):
     )
     assert (
         node4.query(
-            "CREATE TABLE table_test_4_3 (word String) Engine=URL('https://host', HDFS)"
+            "CREATE TABLE table_test_4_3 (word String) Engine=URL('https://host', CSV)"
         )
         == ""
     )
@@ -135,7 +135,7 @@ def test_config_without_allowed_hosts_section(start_cluster):
     )
     assert (
         node4.query(
-            "CREATE TABLE table_test_4_5 (word String) Engine=URL('ftp://something.com', S3)"
+            "CREATE TABLE table_test_4_5 (word String) Engine=URL('ftp://something.com', CSV)"
         )
         == ""
     )
@@ -149,13 +149,13 @@ def test_config_without_allowed_hosts(start_cluster):
         "CREATE TABLE table_test_5_2 (word String) Engine=S3('https://host:80/bucket/key', CSV)"
     )
     assert "not allowed" in node5.query_and_get_error(
-        "CREATE TABLE table_test_5_3 (word String) Engine=URL('https://host', HDFS)"
+        "CREATE TABLE table_test_5_3 (word String) Engine=URL('https://host', CSV)"
     )
     assert "not allowed" in node5.query_and_get_error(
         "CREATE TABLE table_test_5_4 (word String) Engine=URL('https://yandex.ru', CSV)"
     )
     assert "not allowed" in node5.query_and_get_error(
-        "CREATE TABLE table_test_5_5 (word String) Engine=URL('ftp://something.com', S3)"
+        "CREATE TABLE table_test_5_5 (word String) Engine=URL('ftp://something.com', CSV)"
     )
 
 
