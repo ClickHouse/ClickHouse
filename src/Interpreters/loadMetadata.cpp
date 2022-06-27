@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 static void executeCreateQuery(
@@ -212,7 +213,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 
 static void convertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const DatabasePtr & database)
 {
-    /// It's kind of C++ script that creates temporary table with Atomic engine,
+    /// It's kind of C++ script that creates temporary database with Atomic engine,
     /// moves all tables to it, drops old database and then renames new one to old name.
 
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");

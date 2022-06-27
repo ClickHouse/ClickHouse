@@ -304,10 +304,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), getMergeTreeVerboseHelp(is_extended_storage_def));
         }
     }
-    else if (!args.attach && !args.local_context.lock()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
-                                                   "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause.");
+                                                   "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause."
+                                                   "See also allow_deprecated_syntax_for_merge_tree setting.");
     }
 
     /// For Replicated.
@@ -318,9 +319,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
         DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
-
-    if (is_replicated_database && !is_extended_storage_def)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for *MergeTree tables in Replicated databases");
 
     if (replicated)
     {

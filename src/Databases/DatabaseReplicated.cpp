@@ -608,6 +608,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// and make possible creation of new table with the same UUID.
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
+        query_context->setSetting("allow_deprecated_database_ordinary", 1);
         executeQuery(query, query_context, true);
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
