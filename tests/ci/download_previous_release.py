@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 
-###########################################################################
-#                                                                         #
-# TODO (@vdimir, @Avogar)                                                 #
-# Merge with one from https://github.com/ClickHouse/ClickHouse/pull/27928 #
-#                                                                         #
-###########################################################################
-
 import re
 import os
 import logging
 
 import requests
+
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
 
@@ -67,7 +63,7 @@ def find_previous_release(server_version, releases):
     return False, None
 
 
-def get_previous_release(server_version=None):
+def get_previous_release(server_version):
     page = 1
     found = False
     while not found:
@@ -97,13 +93,16 @@ def get_previous_release(server_version=None):
     return previous_release
 
 
-def download_packet(url, out_path):
-    """
-    TODO: use dowload_build_with_progress from build_download_helper.py
-    """
-
-    response = requests.get(url)
-    logging.info("Downloading %s", url)
+def download_packet(url, out_path, retries=10, backoff_factor=0.3):
+    session = requests.Session()
+    retry = Retry(
+        total=retries, read=retries, connect=retries, backoff_factor=backoff_factor
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    response = session.get(url)
+    print(url)
     if response.ok:
         open(out_path, "wb").write(response.content)
 

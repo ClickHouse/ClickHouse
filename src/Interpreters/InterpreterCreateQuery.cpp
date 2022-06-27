@@ -1455,7 +1455,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
-    if (create.select && !create.attach
+    if (create.select && !create.attach && !create.is_create_empty
         && !create.is_ordinary_view && !create.is_live_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {

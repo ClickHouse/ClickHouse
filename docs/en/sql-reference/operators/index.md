@@ -43,28 +43,38 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 
 ## Comparison Operators
 
+### equals function
 `a = b` – The `equals(a, b)` function.
 
 `a == b` – The `equals(a, b)` function.
 
+### notEquals function
 `a != b` – The `notEquals(a, b)` function.
 
 `a <> b` – The `notEquals(a, b)` function.
 
+### lessOrEquals function
 `a <= b` – The `lessOrEquals(a, b)` function.
 
+### greaterOrEquals function
 `a >= b` – The `greaterOrEquals(a, b)` function.
 
+### less function
 `a < b` – The `less(a, b)` function.
 
+### greater function
 `a > b` – The `greater(a, b)` function.
 
+### like function
 `a LIKE s` – The `like(a, b)` function.
 
+### notLike function
 `a NOT LIKE s` – The `notLike(a, b)` function.
 
+### ilike function
 `a ILIKE s` – The `ilike(a, b)` function.
 
+### BETWEEN function
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
@@ -73,20 +83,28 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 
 See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
 
+### in function
 `a IN ...` – The `in(a, b)` function.
 
+### notIn function
 `a NOT IN ...` – The `notIn(a, b)` function.
 
+### globalIn function
 `a GLOBAL IN ...` – The `globalIn(a, b)` function.
 
+### globalNotIn function
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
+### in subquery function
 `a = ANY (subquery)` – The `in(a, subquery)` function.  
 
+### notIn subquery function
 `a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
+### in subquery function
 `a = ALL (subquery)` – The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
+### notIn subquery function
 `a != ALL (subquery)` – The `notIn(a, subquery)` function. 
 
 

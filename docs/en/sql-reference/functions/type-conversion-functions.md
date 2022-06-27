@@ -32,7 +32,7 @@ Integer value in the `Int8`, `Int16`, `Int32`, `Int64`, `Int128` or `Int256` dat
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behavior of functions for the [NaN and Inf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) arguments is undefined. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
+The behavior of functions for the [NaN and Inf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) arguments is undefined. Remember about [numeric conversions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -131,7 +131,7 @@ Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data typ
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behavior of functions for negative agruments and for the [NaN and Inf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
+The behavior of functions for negative agruments and for the [NaN and Inf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric conversions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -689,7 +689,7 @@ x::t
 
 -    Converted value.
 
-:::note    
+:::note
 If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
 :::
 
@@ -1433,7 +1433,7 @@ Result:
 
 Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision.
 
-:::note    
+:::note
 The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
 :::
 

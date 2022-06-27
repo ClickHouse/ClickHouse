@@ -4,7 +4,7 @@ sidebar_label: Build on Mac OS X
 description: How to build ClickHouse on Mac OS X
 ---
 
-# How to Build ClickHouse on Mac OS X 
+# How to Build ClickHouse on Mac OS X
 
 :::info You don't have to build ClickHouse yourself!
 You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start). Follow **macOS (Intel)** or **macOS (Apple silicon)** installation instructions.
@@ -20,9 +20,9 @@ It is also possible to compile with Apple's XCode `apple-clang` or Homebrew's `g
 
 First install [Homebrew](https://brew.sh/)
 
-## For Apple's Clang (discouraged): Install Xcode and Command Line Tools {#install-xcode-and-command-line-tools}
+## For Apple's Clang (discouraged): Install XCode and Command Line Tools {#install-xcode-and-command-line-tools}
 
-Install the latest [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
+Install the latest [XCode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
 
 Open it at least once to accept the end-user license agreement and automatically install the required components.
 
@@ -37,7 +37,7 @@ sudo xcode-select --install
 
 ``` bash
 brew update
-brew install cmake ninja libtool gettext llvm gcc binutils
+brew install cmake ninja libtool gettext llvm gcc binutils grep findutils
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -62,7 +62,7 @@ cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
 
-To build using Xcode's native AppleClang compiler in Xcode IDE (this option is only for development builds and workflows, and is **not recommended** unless you know what you are doing):
+To build using XCode native AppleClang compiler in XCode IDE (this option is only for development builds and workflows, and is **not recommended** unless you know what you are doing):
 
 ``` bash
 cd ClickHouse
@@ -71,7 +71,7 @@ mkdir build
 cd build
 XCODE_IDE=1 ALLOW_APPLECLANG=1 cmake -G Xcode -DCMAKE_BUILD_TYPE=Debug -DENABLE_JEMALLOC=OFF ..
 cmake --open .
-# ...then, in Xcode IDE select ALL_BUILD scheme and start the building process.
+# ...then, in XCode IDE select ALL_BUILD scheme and start the building process.
 # The resulting binary will be created at: ./programs/Debug/clickhouse
 ```
 
@@ -91,9 +91,9 @@ cmake --build build
 
 ## Caveats {#caveats}
 
-If you intend to run `clickhouse-server`, make sure to increase the system’s maxfiles variable.
+If you intend to run `clickhouse-server`, make sure to increase the system’s `maxfiles` variable.
 
-:::note    
+:::note
 You’ll need to use sudo.
 :::
 
