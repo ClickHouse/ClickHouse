@@ -12,9 +12,9 @@ sudo service mariadb restart
 wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
 gzip -d hits.tsv.gz
 
-sudo mysql -e "CREATE DATABASE test"
-sudo mysql test < create.sql
-time sudo mysql test -e "LOAD DATA LOCAL INFILE 'hits.tsv' INTO TABLE hits"
+sudo mariadb -e "CREATE DATABASE test"
+sudo mariadb test < create.sql
+time sudo mariadb test -e "LOAD DATA LOCAL INFILE 'hits.tsv' INTO TABLE hits"
 
 # 2:23:45 elapsed
 

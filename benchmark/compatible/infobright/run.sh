@@ -7,6 +7,6 @@ cat queries.sql | while read query; do
     echo 3 | sudo tee /proc/sys/vm/drop_caches
 
     for i in $(seq 1 $TRIES); do
-        sudo mariadb test -vvv -e "${query}"
+        sudo docker exec memsql-ciab memsql -vvv -p"${ROOT_PASSWORD}" --database=test -e "USE test; ${query}"
     done;
 done;
