@@ -218,7 +218,7 @@ function run_tests
     if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
         # filter tests array in bash https://stackoverflow.com/a/40375567
         for index in "${!test_files[@]}"; do
-            [ $(( index )) != "$CHPC_TEST_RUN_BY_HASH_NUM" ] && \
+            [ $(( index % CHPC_TEST_RUN_BY_HASH_TOTAL )) != "$CHPC_TEST_RUN_BY_HASH_NUM" ] && \
                 unset -v 'test_files[$index]'
         done
         # to have sequential indexes...
