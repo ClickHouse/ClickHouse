@@ -69,7 +69,6 @@ AggregatingStep::AggregatingStep(
     Aggregator::Params params_,
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
-    bool only_merge_,
     size_t max_block_size_,
     size_t aggregation_in_order_max_block_bytes_,
     size_t merge_threads_,
@@ -78,11 +77,11 @@ AggregatingStep::AggregatingStep(
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_)
-    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
+    : ITransformingStep(
+        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), grouping_sets_params_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(final_)
-    , only_merge(only_merge_)
     , max_block_size(max_block_size_)
     , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
     , merge_threads(merge_threads_)
@@ -123,7 +122,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final, only_merge);
+    const auto src_header = pipeline.getHeader();
+    auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
     if (!grouping_sets_params.empty())
     {
@@ -155,7 +155,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 Aggregator::Params params_for_set
                 {
-                    transform_params->params.src_header,
                     grouping_sets_params[i].used_keys,
                     transform_params->params.aggregates,
                     transform_params->params.overflow_row,
@@ -170,10 +169,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.min_free_disk_space,
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
-                    transform_params->params.intermediate_header,
-                    transform_params->params.stats_collecting_params
-                };
-                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final, only_merge);
+                    /* only_merge */ false,
+                    transform_params->params.stats_collecting_params};
+                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
 
                 if (streams > 1)
                 {
@@ -236,15 +234,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 grouping_node = &dag->materializeNode(*grouping_node);
                 index.push_back(grouping_node);
 
-                size_t missign_column_index = 0;
                 const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
 
                 for (size_t i = 0; i < output_header.columns(); ++i)
                 {
                     auto & col = output_header.getByPosition(i);
-                    if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
+                    const auto it = std::find_if(
+                        missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
+                    if (it != missing_columns.end())
                     {
-                        ++missign_column_index;
                         auto column_with_default = col.column->cloneEmpty();
                         col.type->insertDefaultInto(*column_with_default);
                         auto column = ColumnConst::create(std::move(column_with_default), 0);
@@ -392,6 +390,14 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
         IQueryPlanStep::describePipeline(aggregating_sorted, settings);
         IQueryPlanStep::describePipeline(aggregating_in_order, settings);
     }
+}
+
+void AggregatingStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(),
+        appendGroupingColumn(params.getHeader(input_streams.front().header, final), grouping_sets_params),
+        getDataStreamTraits());
 }
 
 }

@@ -39,14 +39,10 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Result, typename Error>
-void throwIfError(Aws::Utils::Outcome<Result, Error> & response)
+bool isNotFoundError(Aws::S3::S3Errors error)
 {
-    if (!response.IsSuccess())
-    {
-        const auto & err = response.GetError();
-        throw Exception(std::to_string(static_cast<int>(err.GetErrorType())) + ": " + err.GetMessage(), ErrorCodes::S3_ERROR);
-    }
+    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
+        || error == Aws::S3::S3Errors::NO_SUCH_KEY;
 }
 
 template <typename Result, typename Error>
@@ -55,7 +51,21 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
+        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+    }
+}
+
+template <typename Result, typename Error>
+void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response, bool if_exists)
+{
+    /// In this case even if absence of key may be ok for us,
+    /// the log will be polluted with error messages from aws sdk.
+    /// Looks like there is no way to suppress them.
+
+    if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
+    {
+        const auto & err = response.GetError();
+        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
     }
 }
 
@@ -99,8 +109,7 @@ bool S3ObjectStorage::exists(const std::string & path) const
 
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
-    const std::string & common_path_prefix,
-    const BlobsPathToSize & blobs_to_read,
+    const PathsWithSize & paths_to_read,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
@@ -118,8 +127,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     auto settings_ptr = s3_settings.get();
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        client.get(), bucket, version_id, common_path_prefix, blobs_to_read,
-        settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
+        client.get(),
+        bucket,
+        version_id,
+        paths_to_read,
+        settings_ptr->s3_settings.max_single_read_retries,
+        disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
@@ -182,7 +195,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(finalize_callback), path);
 }
 
-void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
+void S3ObjectStorage::listPrefix(const std::string & path, PathsWithSize & children) const
 {
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
@@ -211,10 +224,9 @@ void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & chi
     } while (outcome.GetResult().GetIsTruncated());
 }
 
-void S3ObjectStorage::removeObject(const std::string & path)
+void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
 {
     auto client_ptr = client.get();
-    auto settings_ptr = s3_settings.get();
 
     // If chunk size is 0, only use single delete request
     // This allows us to work with GCS, which doesn't support DeleteObjects
@@ -225,7 +237,7 @@ void S3ObjectStorage::removeObject(const std::string & path)
         request.SetKey(path);
         auto outcome = client_ptr->DeleteObject(request);
 
-        throwIfError(outcome);
+        throwIfUnexpectedError(outcome, if_exists);
     }
     else
     {
@@ -240,25 +252,25 @@ void S3ObjectStorage::removeObject(const std::string & path)
         request.SetDelete(delkeys);
         auto outcome = client_ptr->DeleteObjects(request);
 
-        throwIfError(outcome);
+        throwIfUnexpectedError(outcome, if_exists);
     }
 }
 
-void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
+void S3ObjectStorage::removeObjectsImpl(const PathsWithSize & paths, bool if_exists)
 {
     if (paths.empty())
         return;
 
-    auto client_ptr = client.get();
-    auto settings_ptr = s3_settings.get();
-
     if (!s3_capabilities.support_batch_delete)
     {
-        for (const auto & path : paths)
-            removeObject(path);
+        for (const auto & [path, _] : paths)
+            removeObjectImpl(path, if_exists);
     }
     else
     {
+        auto client_ptr = client.get();
+        auto settings_ptr = s3_settings.get();
+
         size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
         size_t current_position = 0;
 
@@ -269,12 +281,12 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
             for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
             {
                 Aws::S3::Model::ObjectIdentifier obj;
-                obj.SetKey(paths[current_position]);
+                obj.SetKey(paths[current_position].path);
                 current_chunk.push_back(obj);
 
                 if (!keys.empty())
                     keys += ", ";
-                keys += paths[current_position];
+                keys += paths[current_position].path;
             }
 
             Aws::S3::Model::Delete delkeys;
@@ -283,64 +295,30 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
             auto outcome = client_ptr->DeleteObjects(request);
-            throwIfError(outcome);
+
+            throwIfUnexpectedError(outcome, if_exists);
         }
     }
+}
+
+void S3ObjectStorage::removeObject(const std::string & path)
+{
+    removeObjectImpl(path, false);
 }
 
 void S3ObjectStorage::removeObjectIfExists(const std::string & path)
 {
-    auto client_ptr = client.get();
-    Aws::S3::Model::ObjectIdentifier obj;
-    obj.SetKey(path);
-
-    Aws::S3::Model::Delete delkeys;
-    delkeys.SetObjects({obj});
-
-    Aws::S3::Model::DeleteObjectsRequest request;
-    request.SetBucket(bucket);
-    request.SetDelete(delkeys);
-    auto outcome = client_ptr->DeleteObjects(request);
-    if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
-        throwIfError(outcome);
+    removeObjectImpl(path, true);
 }
 
-void S3ObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
+void S3ObjectStorage::removeObjects(const PathsWithSize & paths)
 {
-    if (paths.empty())
-        return;
+    removeObjectsImpl(paths, false);
+}
 
-    auto client_ptr = client.get();
-    auto settings_ptr = s3_settings.get();
-
-
-    size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
-    size_t current_position = 0;
-
-    while (current_position < paths.size())
-    {
-        std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
-        String keys;
-        for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
-        {
-            Aws::S3::Model::ObjectIdentifier obj;
-            obj.SetKey(paths[current_position]);
-            current_chunk.push_back(obj);
-
-            if (!keys.empty())
-                keys += ", ";
-            keys += paths[current_position];
-        }
-
-        Aws::S3::Model::Delete delkeys;
-        delkeys.SetObjects(current_chunk);
-        Aws::S3::Model::DeleteObjectsRequest request;
-        request.SetBucket(bucket);
-        request.SetDelete(delkeys);
-        auto outcome = client_ptr->DeleteObjects(request);
-        if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
-            throwIfError(outcome);
-    }
+void S3ObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
+{
+    removeObjectsImpl(paths, true);
 }
 
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const

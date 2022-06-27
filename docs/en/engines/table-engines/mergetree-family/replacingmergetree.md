@@ -33,16 +33,18 @@ For a description of request parameters, see [statement description](../../../sq
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 :::
 
-**ReplacingMergeTree Parameters**
+## ReplacingMergeTree Parameters
 
--   `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
+### ver
+
+`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
     When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
     -   The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
     -   With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
 
-**Query clauses**
+## Query clauses
 
 When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 

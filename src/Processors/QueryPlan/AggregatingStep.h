@@ -11,13 +11,10 @@ struct GroupingSetsParams
 {
     GroupingSetsParams() = default;
 
-    GroupingSetsParams(ColumnNumbers used_keys_, ColumnNumbers missing_keys_)
-        : used_keys(std::move(used_keys_))
-        , missing_keys(std::move(missing_keys_))
-    {}
+    GroupingSetsParams(Names used_keys_, Names missing_keys_) : used_keys(std::move(used_keys_)), missing_keys(std::move(missing_keys_)) { }
 
-    ColumnNumbers used_keys;
-    ColumnNumbers missing_keys;
+    Names used_keys;
+    Names missing_keys;
 };
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
@@ -33,7 +30,6 @@ public:
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
-        bool only_merge_,
         size_t max_block_size_,
         size_t aggregation_in_order_max_block_bytes_,
         size_t merge_threads_,
@@ -55,10 +51,11 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
 private:
+    void updateOutputStream() override;
+
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
     bool final;
-    bool only_merge;
     size_t max_block_size;
     size_t aggregation_in_order_max_block_bytes;
     size_t merge_threads;
