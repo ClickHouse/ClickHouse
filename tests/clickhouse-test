@@ -5,6 +5,7 @@
 # pylint: disable=too-many-lines
 
 import enum
+from queue import Full
 import shutil
 import sys
 import os
@@ -1581,15 +1582,18 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
         for _ in range(jobs):
             parallel_tests_array.append((None, batch_size, test_suite))
 
-        with closing(multiprocessing.Pool(processes=jobs)) as pool:
-            pool.map_async(run_tests_array, parallel_tests_array)
+        try:
+            with closing(multiprocessing.Pool(processes=jobs)) as pool:
+                pool.map_async(run_tests_array, parallel_tests_array)
 
-            for suit in test_suite.parallel_tests:
-                queue.put(suit, timeout=args.timeout * 1.1)
+                for suit in test_suite.parallel_tests:
+                    queue.put(suit, timeout=args.timeout * 1.1)
 
-            for _ in range(jobs):
-                queue.put(None, timeout=args.timeout * 1.1)
+                for _ in range(jobs):
+                    queue.put(None, timeout=args.timeout * 1.1)
 
+                queue.close()
+        except Full:
             queue.close()
 
         pool.join()
