@@ -100,8 +100,21 @@ private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 
     static SchemaCache & getSchemaCache();
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context);
-    static void addColumnsToCache(const Strings & urls, const ColumnsDescription & columns, const ContextPtr & context);
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & urls,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
+    static void addColumnsToCache(
+        const Strings & urls,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
     static std::optional<time_t> getLastModificationTime(const String & url, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context);
 };
 

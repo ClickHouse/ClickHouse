@@ -221,4 +221,22 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
     return result;
 }
 
+String getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    return getKeysForSchemaCache({source}, format, format_settings, context).front();
+}
+
+Strings getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    /// For some formats data schema depends on some settings, so it's possible that
+    /// two queries to the same source will get two different schemas. To process this
+    /// case we add som additional information specific for the format to the cache key.
+    /// For example, for Protobuf format additional information is the path to the schema
+    /// and message name.
+    String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
+    Strings cache_keys;
+    std::transform(sources.begin(), sources.end(), std::back_inserter(cache_keys), [&](const auto & source){ return source + format + additional_format_info; });
+    return cache_keys;
+}
+
 }

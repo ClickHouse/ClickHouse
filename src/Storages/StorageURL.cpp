@@ -574,7 +574,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (context->getSettingsRef().use_cache_for_url_schema_inference)
-        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, context);
+        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, format, format_settings, context);
 
     ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -606,7 +606,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 
     if (context->getSettingsRef().use_cache_for_url_schema_inference)
-        addColumnsToCache(urls_to_check, columns, context);
+        addColumnsToCache(urls_to_check, columns, format, format_settings, context);
 
     return columns;
 }
@@ -795,7 +795,12 @@ SchemaCache & IStorageURLBase::getSchemaCache()
     return schema_cache;
 }
 
-std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(const Strings & urls, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context)
+std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
+    const Strings & urls,
+    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
 {
     auto & schema_cache = getSchemaCache();
     for (const auto & url : urls)
@@ -811,7 +816,8 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(const 
             return last_mod_time;
         };
 
-        auto columns = schema_cache.tryGet(url, get_last_mod_time);
+        String cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
+        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
     }
@@ -819,10 +825,16 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(const 
     return std::nullopt;
 }
 
-void IStorageURLBase::addColumnsToCache(const Strings & urls, const ColumnsDescription & columns, const ContextPtr & context)
+void IStorageURLBase::addColumnsToCache(
+    const Strings & urls,
+    const ColumnsDescription & columns,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
 {
     auto & schema_cache = getSchemaCache();
-    schema_cache.addMany(urls, columns, context->getSettingsRef().cache_ttl_for_url_schema_inference.totalSeconds());
+    Strings cache_keys = getKeysForSchemaCache(urls, format_name, format_settings, context);
+    schema_cache.addMany(cache_keys, columns, context->getSettingsRef().cache_ttl_for_url_schema_inference.totalSeconds());
 }
 
 std::optional<time_t> IStorageURLBase::getLastModificationTime(const String & url, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context)

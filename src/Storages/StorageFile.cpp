@@ -309,7 +309,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (context->getSettingsRef().use_cache_for_file_schema_inference)
-        columns_from_cache = tryGetColumnsFromCache(paths);
+        columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
     ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -326,7 +326,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 
     if (context->getSettingsRef().use_cache_for_file_schema_inference)
-        addColumnsToCache(paths, columns, context);
+        addColumnsToCache(paths, columns, format, format_settings, context);
 
     return columns;
 }
@@ -1211,7 +1211,8 @@ SchemaCache & StorageFile::getSchemaCache()
     return schema_cache;
 }
 
-std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(const Strings & paths)
+std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(
+    const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context)
 {
     /// Check if the cache contains one of the paths.
     auto & schema_cache = getSchemaCache();
@@ -1226,7 +1227,8 @@ std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(const Stri
             return file_stat.st_mtim.tv_sec;
         };
 
-        auto columns = schema_cache.tryGet(path, get_last_mod_time);
+        String cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);
+        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
     }
@@ -1234,10 +1236,16 @@ std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(const Stri
     return std::nullopt;
 }
 
-void StorageFile::addColumnsToCache(const Strings & paths, const ColumnsDescription & columns, const ContextPtr & context)
+void StorageFile::addColumnsToCache(
+    const Strings & paths,
+    const ColumnsDescription & columns,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
 {
     auto & schema_cache = getSchemaCache();
-    schema_cache.addMany(paths, columns, context->getSettingsRef().cache_ttl_for_file_schema_inference.totalSeconds());
+    Strings cache_keys = getKeysForSchemaCache(paths, format_name, format_settings, context);
+    schema_cache.addMany(cache_keys, columns, context->getSettingsRef().cache_ttl_for_file_schema_inference.totalSeconds());
 }
 
 }
