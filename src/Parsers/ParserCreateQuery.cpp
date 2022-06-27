@@ -575,8 +575,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!table_properties_p.parse(pos, columns_list, expected))
             return false;
 
-        if (s_comma.checkWithoutMoving(pos, expected) && !s_comma.ignore(pos, expected))
-            return false;
+        s_comma.ignore(pos, expected);
 
         if (!s_rparen.ignore(pos, expected))
             return false;
