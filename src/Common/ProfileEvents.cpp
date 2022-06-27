@@ -474,6 +474,10 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
+    M(IOUringSQEQueueFullRetries, "Total number of retries to get an SQE due to the io_uring queue being full") \
+    M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
+    M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
+    M(IOUringShortReads, "Total number of short (partial) reads returned by io_uring") \
 
 namespace ProfileEvents
 {
