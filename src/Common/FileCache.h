@@ -24,7 +24,7 @@ namespace DB
 
 /**
  * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
- */ 
+ */
 class FileCache : private boost::noncopyable
 {
     friend class FileSegment;
