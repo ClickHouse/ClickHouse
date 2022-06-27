@@ -1,4 +1,5 @@
 #include <Processors/Transforms/DistinctSortedChunkTransform.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -160,8 +161,10 @@ std::tuple<size_t,size_t> DistinctSortedChunkTransform::continueWithPrevRange(co
 void DistinctSortedChunkTransform::transform(Chunk & chunk)
 {
     const size_t chunk_rows = chunk.getNumRows();
-    Columns input_columns = chunk.detachColumns();
+    if (0 == chunk_rows)
+        return;
 
+    Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns
     initChunkProcessing(input_columns);
 
