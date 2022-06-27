@@ -57,6 +57,11 @@ cat <<EOT > /etc/docker/daemon.json
 {
   "ipv6": true,
   "fixed-cidr-v6": "2001:db8:1::/64",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-file": "5",
+    "max-size": "1000m"
+  },
   "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
   "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
 }
