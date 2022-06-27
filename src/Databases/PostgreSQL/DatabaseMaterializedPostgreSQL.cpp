@@ -63,9 +63,9 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         return;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
-            /* replication_identifier */database_name,
+            /* replication_identifier */ READ_NO_TSA(database_name),    /// FIXME
             remote_database_name,
-            database_name,
+            READ_NO_TSA(database_name),     /// FIXME
             connection_info,
             getContext(),
             is_attach,
@@ -99,7 +99,8 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         else
         {
             /// Nested table does not exist and will be created by replication thread.
-            storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
+            /// FIXME TSA
+            storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(READ_NO_TSA(database_name), table_name), getContext(), remote_database_name, table_name);
         }
 
         /// Cache MaterializedPostgreSQL wrapper over nested table.
@@ -210,7 +211,8 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 
     std::lock_guard lock(handler_mutex);
 
-    auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
+    /// FIXME TSA
+    auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(READ_NO_TSA(database_name), table_name), getContext(), remote_database_name, table_name);
     auto ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
     assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
     return ast_storage;
@@ -234,7 +236,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
     auto * alter = query->as<ASTAlterQuery>();
 
     alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
-    alter->setDatabase(database_name);
+    alter->setDatabase(READ_NO_TSA(database_name));     /// FIXME
     alter->set(alter->command_list, command_list);
 
     return query;
