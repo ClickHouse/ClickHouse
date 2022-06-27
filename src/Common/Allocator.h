@@ -10,7 +10,7 @@
 
 #include <pcg_random.hpp>
 #include <Common/thread_local_rng.h>
-#include <Common/MemoryAllocationTracker.h>
+#include <Common/MemoryAllocationTracker_fwd.h>
 
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>

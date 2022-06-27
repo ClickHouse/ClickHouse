@@ -2,7 +2,7 @@
 #include <new>
 #include <Common/config.h>
 #include <Common/memory.h>
-#include <Common/MemoryAllocationTracker.h>
+#include <Common/MemoryAllocationTracker_fwd.h>
 
 #if defined(OS_DARWIN) && (USE_JEMALLOC)
 /// In case of OSX jemalloc register itself as a default zone allocator.

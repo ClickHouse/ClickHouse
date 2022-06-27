@@ -95,8 +95,10 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+
     UInt64 max_alloc_stack_depth{};
     Int64 min_alloc_bytes= -1;
+    bool dump_alloc_tree = false;
 
     String filesystem_cache_path;
     String backup_name;

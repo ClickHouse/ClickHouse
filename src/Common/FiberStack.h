@@ -4,7 +4,7 @@
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-#include <Common/MemoryAllocationTracker.h>
+#include <Common/MemoryAllocationTracker_fwd.h>
 #include <base/getPageSize.h>
 #include <sys/time.h>
 #include <sys/resource.h>

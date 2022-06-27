@@ -370,6 +370,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             ParserKeyword max_depth {"MAX DEPTH"};
             ParserKeyword min_bytes{"MIN BYTES"};
+            ParserKeyword tree{"TREE"};
+            ParserKeyword flamegraph{"FLAMEGRAPH"};
+
+            if (tree.ignore(pos, expected))
+                res->dump_alloc_tree = true;
+            else if (flamegraph.ignore(pos, expected))
+                res->dump_alloc_tree = false;
 
             if (max_depth.ignore(pos, expected))
             {

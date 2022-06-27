@@ -5,7 +5,7 @@
 #include <cstdlib>
 
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/MemoryAllocationTracker.h>
+#include <Common/MemoryAllocationTracker_fwd.h>
 
 
 /// Implementation of std::allocator interface that tracks memory with MemoryTracker.

@@ -5,9 +5,9 @@
 #include <sys/mman.h>
 #include "Common/Dwarf.h"
 #include <Common/Exception.h>
-#include <Common/formatReadable.h>
 #include <Common/StackTrace.h>
-#include <Common/PODArray.h>
+#include <Common/MemoryAllocationTracker.h>
+#include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -46,7 +46,7 @@ struct StackAllocatorMemory
 
     ~StackAllocatorMemory()
     {
-        while(data)
+        while (data)
         {
             void * to_delete = static_cast<void *>(data);
             data = *static_cast<char **>(to_delete);
@@ -216,55 +216,60 @@ struct Tree
             values.push_back(val);
     }
 
-    void dump(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UInt64> & offsets, DB::PaddedPODArray<UInt64> & bytes) const
+    Traces dump(size_t max_depth, size_t max_bytes, bool only_leafs) const
     {
-        std::vector<UInt64> frame;
+        Traces traces;
+        Trace::Frames frames;
+        std::vector<size_t> allocated;
         std::vector<ListNode *> nodes;
 
         nodes.push_back(root.children);
-        append(values, offsets, frame);
-        bytes.push_back(root.allocated);
+
+        if (!only_leafs)
+            traces.push_back({frames, root.allocated});
+
         while (!nodes.empty())
         {
             if (nodes.back() == nullptr)
             {
                 nodes.pop_back();
-                if (!frame.empty())
-                    frame.pop_back();
+                if (!frames.empty())
+                {
+                    traces.push_back({frames, allocated.back()});
+                    frames.pop_back();
+                    allocated.pop_back();
+                }
                 continue;
             }
 
             TreeNode * current = nodes.back()->child;
             nodes.back() = nodes.back()->next;
 
-            nodes.push_back(current->children);
-            frame.push_back(reinterpret_cast<intptr_t>(current->ptr));
-            append(values, offsets, frame);
-            bytes.push_back(current->allocated);
+            bool enough_bytes = current->allocated >= max_bytes;
+            bool enough_depth = max_depth == 0 || nodes.size() < max_depth;
+
+            if (enough_bytes)
+            {
+                frames.push_back(reinterpret_cast<intptr_t>(current->ptr));
+
+                if (only_leafs && !allocated.empty())
+                    allocated.back() -= current->allocated;
+
+                if (enough_depth)
+                {
+                    allocated.push_back(current->allocated);
+                    nodes.push_back(current->children);
+                }
+                else
+                {
+                    traces.push_back({frames, current->allocated});
+                    frames.pop_back();
+                }
+            }
         }
+
+        return traces;
     }
-
-    struct DumpTree
-    {
-        struct Node
-        {
-            uintptr_t id{};
-            const void * ptr{};
-            size_t allocated{};
-        };
-
-        struct Edge
-        {
-            uintptr_t from{};
-            uintptr_t to{};
-        };
-
-        using Nodes = std::vector<Node>;
-        using Edges = std::vector<Edge>;
-
-        Nodes nodes;
-        Edges edges;
-    };
 
     DumpTree dumpAllocationsTree(size_t max_depth, size_t max_bytes) const
     {
@@ -352,12 +357,12 @@ struct AllocationTracker
         allocations.clear();
     }
 
-    void dump(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UInt64> & offsets, DB::PaddedPODArray<UInt64> & bytes) const
+    Traces dump(size_t max_depth, size_t max_bytes, bool only_leafs) const
     {
-        tree.dump(values, offsets, bytes);
+        return tree.dump(max_depth, max_bytes, only_leafs);
     }
 
-    Tree::DumpTree dumpAllocationsTree(size_t max_depth, size_t max_bytes) const
+    DumpTree dumpAllocationsTree(size_t max_depth, size_t max_bytes) const
     {
         return tree.dumpAllocationsTree(max_depth, max_bytes);
     }
@@ -468,10 +473,10 @@ void track_free(void * ptr, std::size_t size)
     }
 }
 
-void dump_allocations(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UInt64> & offsets, DB::PaddedPODArray<UInt64> & bytes)
+Traces dump_allocations(size_t max_depth, size_t max_bytes, bool only_leafs)
 {
     if (recursive_call_flag)
-        return;
+        return {};
 
     RecursiveCallGuard guard(recursive_call_flag);
 
@@ -480,11 +485,30 @@ void dump_allocations(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UI
     {
         std::lock_guard lock(data.mutex);
         if (data.is_enabled)
-        {
-            data.tracker.dump(values, offsets, bytes);
-        }
+            return data.tracker.dump(max_depth, max_bytes, only_leafs);
     }
+
+    return {};
 }
+
+DumpTree dump_allocations_tree(size_t max_depth, size_t max_bytes)
+{
+    if (recursive_call_flag)
+        return {};
+
+    RecursiveCallGuard guard(recursive_call_flag);
+
+    auto & data = getTrackerData();
+    if (data.is_enabled)
+    {
+        std::lock_guard lock(data.mutex);
+        if (data.is_enabled)
+            return data.tracker.dumpAllocationsTree(max_depth, max_bytes);
+    }
+
+    return {};
+}
+
 
 static void insertData(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
 {
@@ -565,7 +589,7 @@ static void addressToLine(
 
 static void dumpNode(
     DB::WriteBuffer & out,
-    const Tree::DumpTree::Node & node,
+    const DumpTree::Node & node,
     std::unordered_map<uintptr_t, size_t> & mapping,
     const DB::SymbolIndex & symbol_index,
     std::unordered_map<std::string, DB::Dwarf> & dwarfs)
@@ -580,22 +604,7 @@ static void dumpNode(
 
 void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, size_t max_depth, size_t max_bytes)
 {
-    Tree::DumpTree tree;
-
-    {
-        if (recursive_call_flag)
-            return;
-
-        RecursiveCallGuard guard(recursive_call_flag);
-
-        auto & data = getTrackerData();
-        if (data.is_enabled)
-        {
-            std::lock_guard lock(data.mutex);
-            if (data.is_enabled)
-                tree = data.tracker.dumpAllocationsTree(max_depth, max_bytes);
-        }
-    }
+    auto tree = dump_allocations_tree(max_depth, max_bytes);
 
     DB::WriteBufferFromOwnString out;
 
@@ -619,6 +628,38 @@ void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray
             << " -> n" << mapping[edge.to] << ";\n";
 
     out << "}\n";
+
+    fillColumn(chars, offsets, out.str());
+}
+
+void dump_allocations_flamegraph(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, size_t max_depth, size_t max_bytes)
+{
+    auto traces = dump_allocations(max_depth, max_bytes, true);
+
+    DB::WriteBufferFromOwnString out;
+
+    std::unordered_map<uintptr_t, size_t> mapping;
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
+
+    auto symbol_index_ptr = DB::SymbolIndex::instance();
+    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+
+    for (const auto & trace : traces)
+    {
+        for (size_t i = 0; i < trace.frames.size(); ++i)
+        {
+            if (i)
+                out << ";";
+
+            const void * ptr = reinterpret_cast<const void *>(trace.frames[i]);
+            if (const auto * symbol = symbol_index.findSymbol(ptr))
+                writeString(demangle(symbol->name), out);
+            else
+                DB::writePointerHex(ptr, out);
+        }
+
+        out << ' ' << trace.allocated << "\n";
+    }
 
     fillColumn(chars, offsets, out.str());
 }

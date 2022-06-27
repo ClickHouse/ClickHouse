@@ -50,6 +50,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/MemoryAllocationTracker.h>
 #include <csignal>
 #include <algorithm>
 
@@ -202,7 +203,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 }
 
 
-static QueryPipeline buildDumpAllocationsPipeline(UInt64 max_depth, Int64 max_bytes)
+static QueryPipeline buildDumpAllocationsPipeline(UInt64 max_depth, Int64 max_bytes, bool tree)
 {
     if (max_bytes < 0)
         max_bytes = 1024 * 1024;
@@ -210,7 +211,11 @@ static QueryPipeline buildDumpAllocationsPipeline(UInt64 max_depth, Int64 max_by
     auto column = ColumnString::create();
     auto & chars = column->getChars();
     auto & offsets = column->getOffsets();
-    MemoryAllocationTracker::dump_allocations_tree(chars, offsets, max_depth, max_bytes);
+
+    if (tree)
+        MemoryAllocationTracker::dump_allocations_tree(chars, offsets, max_depth, max_bytes);
+    else
+        MemoryAllocationTracker::dump_allocations_flamegraph(chars, offsets, max_depth, max_bytes);
 
     auto source = std::make_shared<SourceFromSingleChunk>(
         Block({ColumnWithTypeAndName{ColumnPtr(std::move(column)), std::make_shared<DataTypeString>(), "tree"}}));
@@ -524,7 +529,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::DUMP_ALLOCATIONS:
             getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
-            result.pipeline = buildDumpAllocationsPipeline(query.max_alloc_stack_depth, query.min_alloc_bytes);
+            result.pipeline = buildDumpAllocationsPipeline(query.max_alloc_stack_depth, query.min_alloc_bytes, query.dump_alloc_tree);
             break;
         case Type::UNFREEZE:
         {

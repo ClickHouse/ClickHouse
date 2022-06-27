@@ -1,6 +1,6 @@
 #include <Common/memory.h>
 #include <cstdlib>
-#include <Common/MemoryAllocationTracker.h>
+#include <Common/MemoryAllocationTracker_fwd.h>
 
 
 /** These functions can be substituted instead of regular ones when memory tracking is needed.
