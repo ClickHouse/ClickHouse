@@ -7,20 +7,30 @@ sidebar_label: Window Functions
 
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
-| Feature | Support or workaround |
-| --------| ----------|
-| ad hoc window specification (`count(*) over (partition by id order by time desc)`) | supported |
-| expressions involving window functions, e.g. `(count(*) over ()) / 2)` | not supported, wrap in a subquery ([feature request](https://github.com/ClickHouse/ClickHouse/issues/19857)) |
-| `WINDOW` clause (`select ... from table window w as (partition by id)`) | supported |
-| `ROWS` frame | supported |
-| `RANGE` frame | supported, the default |
-| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame | not supported, specify the number of seconds instead |
-| `GROUPS` frame | not supported |
-| Calculating aggregate functions over a frame (`sum(value) over (order by time)`) | all aggregate functions are supported |
-| `rank()`, `dense_rank()`, `row_number()` | supported |
-| `lag/lead(value, offset)` | Not supported. Workarounds: |
-|  | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`|
-|  | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
+| Feature                                                                            | Support or workaround                                                                                                                                                                       |
+|------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ad hoc window specification (`count(*) over (partition by id order by time desc)`) | supported                                                                                                                                                                                   |
+| expressions involving window functions, e.g. `(count(*) over ()) / 2)`             | supported                                                                                                                                                                                   |
+| `WINDOW` clause (`select ... from table window w as (partition by id)`)            | supported                                                                                                                                                                                   |
+| `ROWS` frame                                                                       | supported                                                                                                                                                                                   |
+| `RANGE` frame                                                                      | supported, the default                                                                                                                                                                      |
+| `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | not supported, specify the number of seconds instead                                                                                                                                        |
+| `GROUPS` frame                                                                     | not supported                                                                                                                                                                               |
+| Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | all aggregate functions are supported                                                                                                                                                       |
+| `rank()`, `dense_rank()`, `row_number()`                                           | supported                                                                                                                                                                                   |
+| `lag/lead(value, offset)`                                                          | Not supported. Workarounds:                                                                                                                                                                 |
+|                                                                                    | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`                                                                  |
+|                                                                                    | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
+
+## ClickHouse-specific Window Functions
+
+### nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
+
+Finds non-negative derivative for given `metric_column` by `timestamp_column`. 
+`INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
+The computed value is the following for each row:
+- `0` for 1st row,
+- ${metric_i - metric_{i-1} \over timestamp_i - timestamp_{i-1}}  * interval$ for $i_th$ row.
 
 ## References
 
