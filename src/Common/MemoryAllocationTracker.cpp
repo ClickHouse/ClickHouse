@@ -248,14 +248,15 @@ struct Tree
     {
         struct Node
         {
+            uintptr_t id{};
             const void * ptr{};
             size_t allocated{};
         };
 
         struct Edge
         {
-            const void * from{};
-            const void * to{};
+            uintptr_t from{};
+            uintptr_t to{};
         };
 
         using Nodes = std::vector<Node>;
@@ -273,7 +274,7 @@ struct Tree
         std::vector<ListNode *> nodes;
 
         nodes.push_back(root.children);
-        tree.nodes.emplace_back(DumpTree::Node{root.ptr, root.allocated});
+        tree.nodes.emplace_back(DumpTree::Node{uintptr_t(&root), root.ptr, root.allocated});
 
         while (!nodes.empty())
         {
@@ -291,8 +292,8 @@ struct Tree
 
             if (enough_bytes)
             {
-                tree.nodes.emplace_back(DumpTree::Node{current->ptr, current->allocated});
-                tree.edges.emplace_back(DumpTree::Edge{current->parent->ptr, current->ptr});
+                tree.nodes.emplace_back(DumpTree::Node{uintptr_t(current), current->ptr, current->allocated});
+                tree.edges.emplace_back(DumpTree::Edge{uintptr_t(current->parent), uintptr_t(current)});
 
                 if (enough_depth)
                     nodes.push_back(current->children);
@@ -569,8 +570,7 @@ static void dumpNode(
     const DB::SymbolIndex & symbol_index,
     std::unordered_map<std::string, DB::Dwarf> & dwarfs)
 {
-    auto addr = reinterpret_cast<intptr_t>(node.ptr);
-    size_t id = mapping.emplace(addr, mapping.size()).first->second;
+    size_t id = mapping.emplace(node.id, mapping.size()).first->second;
 
     out << "    n" << id << "[label=\"Allocated: "
         << formatReadableSizeWithBinarySuffix(node.allocated) << " (" << node.allocated << ")\n";
@@ -615,8 +615,8 @@ void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray
     out << "  }\n";
 
     for (const auto & edge : tree.edges)
-        out << "  n" << mapping[reinterpret_cast<uintptr_t>(edge.from)]
-            << " -> n" << mapping[reinterpret_cast<uintptr_t>(edge.to)] << ";\n";
+        out << "  n" << mapping[edge.from]
+            << " -> n" << mapping[edge.to] << ";\n";
 
     out << "}\n";
 
