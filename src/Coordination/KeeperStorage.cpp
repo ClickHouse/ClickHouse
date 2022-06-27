@@ -19,6 +19,7 @@
 #include <mutex>
 #include <functional>
 #include <base/defines.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -1186,7 +1187,8 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
                 if (request.list_request_type == ALL)
                     return true;
 
-                auto child_it = container.find(fmt::format("{}{}{}", request.path, (request.path.ends_with('/') ? "" : "/"), child));
+                auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
+                auto child_it = container.find(child_path);
                 if (child_it == container.end())
                     onStorageInconsistency();
 
