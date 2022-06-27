@@ -20,7 +20,6 @@ public:
 
 private:
     AggregatingTransformParamsPtr params;
-    size_t keys_size;
 };
 
 }

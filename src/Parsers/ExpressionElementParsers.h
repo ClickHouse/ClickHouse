@@ -217,18 +217,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Parse collation
-  * COLLATE utf8_unicode_ci NOT NULL
-  */
-class ParserCollation : public IParserBase
-{
-protected:
-    const char * getName() const override { return "collation"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-private:
-    static const char * valid_collations[];
-};
-
 /// Fast path of cast operator "::".
 /// It tries to read literal as text.
 /// If it fails, later operator will be transformed to function CAST.
@@ -429,15 +417,6 @@ class ParserOrderByElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of ORDER BY expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/** Element of INTERPOLATE expression
-  */
-class ParserInterpolateElement : public IParserBase
-{
-protected:
-    const char * getName() const override { return "element of INTERPOLATE expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -90,9 +90,6 @@ def test_backup_from_old_version(started_cluster):
 
     assert node1.query("CHECK TABLE dest_table") == "1\n"
 
-    node1.query("DROP TABLE source_table")
-    node1.query("DROP TABLE dest_table")
-
 
 def test_backup_from_old_version_setting(started_cluster):
     node2.query(
@@ -139,9 +136,6 @@ def test_backup_from_old_version_setting(started_cluster):
     assert node2.query("SELECT sum(A) FROM dest_table") == "3\n"
 
     assert node2.query("CHECK TABLE dest_table") == "1\n"
-
-    node2.query("DROP TABLE source_table")
-    node2.query("DROP TABLE dest_table")
 
 
 def test_backup_from_old_version_config(started_cluster):
@@ -196,9 +190,6 @@ def test_backup_from_old_version_config(started_cluster):
 
     assert node3.query("CHECK TABLE dest_table") == "1\n"
 
-    node3.query("DROP TABLE source_table")
-    node3.query("DROP TABLE dest_table")
-
 
 def test_backup_and_alter(started_cluster):
     node4.query(
@@ -232,6 +223,3 @@ def test_backup_and_alter(started_cluster):
 
     assert node4.query("SELECT sum(A) FROM test.backup_table") == "2\n"
     assert node4.query("SELECT B + 2 FROM test.backup_table") == "4\n"
-
-    node4.query("DROP TABLE test.backup_table")
-    node4.query("DROP DATABASE test")

@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -16,7 +15,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
@@ -55,9 +54,6 @@ std::pair<String, StoragePtr> createTableFromAST(
 {
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
-
-    if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor().visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
@@ -117,10 +113,11 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
-
-    /// Clean the query from temporary flags.
-    cleanupObjectDefinitionFromTemporaryFlags(*create);
+    {
+        WriteBufferFromOwnString query_buf;
+        formatAST(*query, query_buf, true);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
+    }
 
     if (!create->is_dictionary)
         create->attach = true;
@@ -128,6 +125,20 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->temporary);
     create->database.reset();
+    create->as_database.clear();
+    create->as_table.clear();
+    create->if_not_exists = false;
+    create->is_populate = false;
+    create->replace_view = false;
+    create->replace_table = false;
+    create->create_or_replace = false;
+
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
+    if (!create->isView())
+        create->select = nullptr;
+
+    create->format = nullptr;
+    create->out_file = nullptr;
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -400,13 +411,11 @@ void DatabaseOnDisk::renameTable(
     }
     catch (const Exception &)
     {
-        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         throw;
     }
     catch (const Poco::Exception & e)
     {
-        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
@@ -450,11 +459,11 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
-        else if (!is_system_storage && throw_on_error)
+        else if (is_system_storage)
+            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
+        else if (throw_on_error)
             throw;
     }
-    if (!ast && is_system_storage)
-        ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
     return ast;
 }
 
@@ -698,7 +707,6 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     /// setup create table query storage info.
     auto ast_engine = std::make_shared<ASTFunction>();
     ast_engine->name = storage->getName();
-    ast_engine->no_empty_args = true;
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 

@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
-#include <Interpreters/TransactionLog.h>
+
 
 namespace DB
 {
@@ -55,7 +55,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
-            time(nullptr), fake_query_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            time(nullptr), fake_query_context, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
 bool MutatePlainMergeTreeTask::executeStep()
@@ -83,8 +83,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
 
-                /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, merge_mutate_entry->txn.get());
+                storage.renameTempPartAndReplace(new_part);
                 storage.updateMutationEntriesErrors(future_part, true, "");
                 write_part_log({});
 
@@ -93,11 +92,7 @@ bool MutatePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
-                if (merge_mutate_entry->txn)
-                    merge_mutate_entry->txn->onException();
-                String exception_message = getCurrentExceptionMessage(false);
-                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), "{}", exception_message);
-                storage.updateMutationEntriesErrors(future_part, false, exception_message);
+                storage.updateMutationEntriesErrors(future_part, false, getCurrentExceptionMessage(false));
                 write_part_log(ExecutionStatus::fromCurrentException());
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;

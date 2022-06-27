@@ -39,12 +39,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 {
     /// Actually it means that parallel reading from replicas enabled
     /// and we have to collaborate with initiator.
-    /// In this case we won't set approximate rows, because it will be accounted multiple times.
-    /// Also do not count amount of read rows if we read in order of sorting key,
-    /// because we don't know actual amount of read rows in case when limit is set.
-    if (!extension_.has_value() && !reader_settings.read_in_order)
+    /// In this case we won't set approximate rows, because it will be accounted multiple times
+    if (!extension_.has_value())
         addTotalRowsApprox(total_rows);
-
     ordered_names = header_without_virtual_columns.getNames();
 }
 
@@ -64,11 +61,11 @@ void MergeTreeSelectProcessor::initializeReaders()
     owned_mark_cache = storage.getContext()->getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, storage_snapshot->getMetadataForQuery(),
-        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
+        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
     if (prewhere_info)
         pre_reader = data_part->getReader(task_columns.pre_columns, storage_snapshot->getMetadataForQuery(),
-            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
+            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
 }
 

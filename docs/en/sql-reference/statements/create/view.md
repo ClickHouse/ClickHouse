@@ -1,13 +1,13 @@
 ---
-sidebar_position: 37
-sidebar_label: VIEW
+toc_priority: 37
+toc_title: VIEW
 ---
 
-# CREATE VIEW
+# CREATE VIEW {#create-view}
 
 Creates a new view. Views can be [normal](#normal), [materialized](#materialized), [live](#live-view), and [window](#window-view) (live view and window view are experimental features).
 
-## Normal View
+## Normal View {#normal}
 
 Syntax:
 
@@ -35,7 +35,7 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Materialized View
+## Materialized View {#materialized}
 
 ``` sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
@@ -49,11 +49,10 @@ When creating a materialized view with `TO [db].[table]`, you must not use `POPU
 
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
-:::note    
-Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in the `SELECT` query result, ClickHouse uses a default value, even if the column is not [Nullable](../../data-types/nullable.md). A safe practice would be to add aliases for every column when using Materialized views.
+!!! important "Important"
+    Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in the `SELECT` query result, ClickHouse uses a default value, even if the column is not [Nullable](../../data-types/nullable.md). A safe practice would be to add aliases for every column when using Materialized views.
 
-Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
-:::
+    Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
 
 If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
 
@@ -67,11 +66,12 @@ Views look the same as normal tables. For example, they are listed in the result
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
 
-## Live View [Experimental]
+## Live View [Experimental] {#live-view}
 
-:::note    
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of live views and `WATCH` query using [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view) setting. Input the command `set allow_experimental_live_view = 1`.
-:::
+!!! important "Important"
+    This is an experimental feature that may change in backwards-incompatible ways in the future releases.
+    Enable usage of live views and `WATCH` query using [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view) setting. Input the command `set allow_experimental_live_view = 1`.
+
 
 ```sql
 CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
@@ -83,17 +83,16 @@ Live views are triggered by insert into the innermost table specified in the que
 
 Live views work similarly to how a query in a distributed table works. But instead of combining partial results from different servers they combine partial result from current data with partial result from the new data. When a live view query includes a subquery then the cached partial result is only stored for the innermost subquery.
 
-:::info    
-- [Table function](../../../sql-reference/table-functions/index.md) is not supported as the innermost table.
-- Tables that do not have inserts such as a [dictionary](../../../sql-reference/dictionaries/index.md), [system table](../../../operations/system-tables/index.md), a [normal view](#normal), or a [materialized view](#materialized) will not trigger a live view.
-- Only queries where one can combine partial result from the old data plus partial result from the new data will work. Live view will not work for queries that require the complete data set to compute the final result or aggregations where the state of the aggregation must be preserved.
-- Does not work with replicated or distributed tables where inserts are performed on different nodes.
-- Can't be triggered by multiple tables.
+!!! info "Limitations"
+    - [Table function](../../../sql-reference/table-functions/index.md) is not supported as the innermost table.
+    - Tables that do not have inserts such as a [dictionary](../../../sql-reference/dictionaries/index.md), [system table](../../../operations/system-tables/index.md), a [normal view](#normal), or a [materialized view](#materialized) will not trigger a live view.
+    - Only queries where one can combine partial result from the old data plus partial result from the new data will work. Live view will not work for queries that require the complete data set to compute the final result or aggregations where the state of the aggregation must be preserved.
+    - Does not work with replicated or distributed tables where inserts are performed on different nodes.
+    - Can't be triggered by multiple tables.
 
-See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
-:::
+    See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
 
-### Monitoring Live View Changes
+### Monitoring Live View Changes {#live-view-monitoring}
 
 You can monitor changes in the `LIVE VIEW` query result using [WATCH](../../../sql-reference/statements/watch.md) query.
 
@@ -161,11 +160,11 @@ You can execute [SELECT](../../../sql-reference/statements/select/index.md) quer
 SELECT * FROM [db.]live_view WHERE ...
 ```
 
-### Force Live View Refresh
+### Force Live View Refresh {#live-view-alter-refresh}
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 
-### WITH TIMEOUT Clause
+### WITH TIMEOUT Clause {#live-view-with-timeout}
 
 When a live view is created with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view.
 
@@ -182,7 +181,7 @@ CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
 ```
 
-### WITH REFRESH Clause
+### WITH REFRESH Clause {#live-view-with-refresh}
 
 When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
 
@@ -233,7 +232,7 @@ WATCH lv
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv does not exist..
 ```
 
-### Live View Usage
+### Live View Usage {#live-view-usage}
 
 Most common uses of live view tables include:
 
@@ -245,27 +244,25 @@ Most common uses of live view tables include:
 **See Also**
 -   [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
 
-## Window View [Experimental]
+## Window View [Experimental] {#window-view}
 
-:::info    
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
-:::
+!!! important "Important"
+    This is an experimental feature that may change in backwards-incompatible ways in the future releases.
+    Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ... GROUP BY time_window_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY time_window_function
 ```
 
 Window view can aggregate data by time window and output the results when the window is ready to fire. It stores the partial aggregation results in an inner(or specified) table to reduce latency and can push the processing result to a specified table or push notifications using the WATCH query.
 
-Creating a window view is similar to creating `MATERIALIZED VIEW`. Window view needs an inner storage engine to store intermediate data. The inner storage can be specified by using `INNER ENGINE` clause, the window view will use `AggregatingMergeTree` as the default inner engine.
+Creating a window view is similar to creating `MATERIALIZED VIEW`. Window view needs an inner storage engine to store intermediate data. The inner storage will use `AggregatingMergeTree` as the default engine.
 
-When creating a window view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
-
-### Time Window Functions
+### Time Window Functions {#window-view-timewindowfunctions}
 
 [Time window functions](../../functions/time-window-functions.md) are used to get the lower and upper window bound of records. The window view needs to be used with a time window function.
 
-### TIME ATTRIBUTES
+### TIME ATTRIBUTES {#window-view-timeattributes}
 
 Window view supports **processing time** and **event time** process.
 
@@ -299,9 +296,7 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 Note that elements emitted by a late firing should be treated as updated results of a previous computation. Instead of firing at the end of windows, the window view will fire immediately when the late event arrives. Thus, it will result in multiple outputs for the same window. Users need to take these duplicated results into account or deduplicate them.
 
-You can modify `SELECT` query that was specified in the window view by using `ALTER TABLE … MODIFY QUERY` statement. The data structure resulting in a new `SELECT` query should be the same as the original `SELECT` query when with or without `TO [db.]name` clause. Note that the data in the current window will be lost because the intermediate state cannot be reused.
-
-### Monitoring New Windows
+### Monitoring New Windows {#window-view-monitoring}
 
 Window view supports the [WATCH](../../../sql-reference/statements/watch.md) query to monitoring changes, or use `TO` syntax to output the results to a table.
 
@@ -314,13 +309,12 @@ WATCH [db.]window_view
 
 `WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
 
-### Settings
+### Settings {#window-view-settings}
 
 - `window_view_clean_interval`: The clean interval of window view in seconds to free outdated data. The system will retain the windows that have not been fully triggered according to the system time or `WATERMARK` configuration, and the other data will be deleted.
 - `window_view_heartbeat_interval`: The heartbeat interval in seconds to indicate the watch query is alive.
-- `wait_for_window_view_fire_signal_timeout`: Timeout for waiting for window view fire signal in event time processing.
 
-### Example
+### Example {#window-view-example}
 
 Suppose we need to count the number of click logs per 10 seconds in a log table called `data`, and its table structure is:
 
@@ -362,7 +356,7 @@ CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_st
 
 Additional examples can be found among stateful tests of ClickHouse (they are named `*window_view*` there).
 
-### Window View Usage
+### Window View Usage {#window-view-usage}
 
 The window view is useful in the following scenarios:
 

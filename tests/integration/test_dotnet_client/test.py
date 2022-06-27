@@ -44,7 +44,7 @@ def dotnet_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]

@@ -37,8 +37,6 @@ function(add_contrib cmake_folder)
 
         file(GLOB contrib_files "${base_folder}/*")
         if (NOT contrib_files)
-            # Checking out *all* submodules takes > 5 min. Therefore, the smoke build ("FastTest") in CI initializes only the set of
-            # submodules minimally needed for a build and we cannot assume here that all submodules are populated.
             message(STATUS "submodule ${base_folder} is missing or empty. to fix try run:")
             message(STATUS "    git submodule update --init")
             return()
@@ -96,7 +94,6 @@ if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
 
-add_contrib (wyhash-cmake wyhash)
 add_contrib (cityhash102)
 add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)
@@ -122,13 +119,9 @@ add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-
-if (ENABLE_CURL_BUILD)
-    add_contrib (curl-cmake curl)
-    add_contrib (azure-cmake azure)
-    add_contrib (sentry-native-cmake sentry-native) # requires: curl
-endif()
-
+add_contrib (curl-cmake curl)
+add_contrib (azure-cmake azure)
+add_contrib (sentry-native-cmake sentry-native) # requires: curl
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -142,7 +135,6 @@ add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
-add_contrib (hashidsxx-cmake hashidsxx)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)

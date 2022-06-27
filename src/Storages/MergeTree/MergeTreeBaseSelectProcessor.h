@@ -5,7 +5,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
@@ -29,7 +29,7 @@ struct ParallelReadingExtension
 };
 
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
-class MergeTreeBaseSelectProcessor : public ISource
+class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
 public:
     MergeTreeBaseSelectProcessor(
@@ -101,9 +101,6 @@ protected:
     bool use_uncompressed_cache;
 
     Names virt_column_names;
-
-    /// These columns will be filled by the merge tree range reader
-    Names non_const_virtual_column_names;
 
     DataTypePtr partition_value_type;
 

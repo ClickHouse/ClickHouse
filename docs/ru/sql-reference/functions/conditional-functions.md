@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: "Условные функции"
+toc_priority: 43
+toc_title: "Условные функции"
 ---
 
 # Условные функции {#uslovnye-funktsii}

@@ -52,7 +52,6 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
 
         {"elapsed", std::make_shared<DataTypeFloat64>()},
         {"is_cancelled", std::make_shared<DataTypeUInt8>()},
-        {"is_all_data_sent", std::make_shared<DataTypeUInt8>()},
         {"read_rows", std::make_shared<DataTypeUInt64>()},
         {"read_bytes", std::make_shared<DataTypeUInt64>()},
         {"total_rows_approx", std::make_shared<DataTypeUInt64>()},
@@ -121,7 +120,6 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
 
         res_columns[i++]->insert(process.elapsed_seconds);
         res_columns[i++]->insert(process.is_cancelled);
-        res_columns[i++]->insert(process.is_all_data_sent);
         res_columns[i++]->insert(process.read_rows);
         res_columns[i++]->insert(process.read_bytes);
         res_columns[i++]->insert(process.total_rows);

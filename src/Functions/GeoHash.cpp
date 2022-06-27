@@ -306,7 +306,7 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
 
     return GeohashesInBoxPreparedArgs
     {
-        std::max<UInt64>(1, static_cast<UInt64>(lon_items) * lat_items),
+        std::max<UInt64>(1, UInt64(lon_items) * lat_items),
         lon_items,
         lat_items,
         lon_min,

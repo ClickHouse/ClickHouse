@@ -12,9 +12,9 @@
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
-#include <Common/atomicRename.h>
+#include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
@@ -92,7 +92,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();
@@ -119,11 +119,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && r
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-    {
-        auto table = getTable();
-        table->flushAndShutdown();
         temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
-    }
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -205,12 +201,6 @@ void DatabaseCatalog::shutdownImpl()
     view_dependencies.clear();
 }
 
-bool DatabaseCatalog::isPredefinedDatabaseName(const std::string_view & database_name)
-{
-    return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
-        || database_name == INFORMATION_SCHEMA_UPPERCASE;
-}
-
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
@@ -243,7 +233,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         {
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
-                exception->emplace(fmt::format("Table {} doesn't exist", table_id.getNameForLogs()), ErrorCodes::UNKNOWN_TABLE);
+                exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
             return {};
         }
 
@@ -273,7 +263,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         /// If table_id has no UUID, then the name of database was specified by user and table_id was not resolved through context.
         /// Do not allow access to TEMPORARY_DATABASE because it contains all temporary tables of all contexts and users.
         if (exception)
-            exception->emplace(fmt::format("Direct access to `{}` database is not allowed", TEMPORARY_DATABASE), ErrorCodes::DATABASE_ACCESS_DENIED);
+            exception->emplace(ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", String(TEMPORARY_DATABASE));
         return {};
     }
 
@@ -284,7 +274,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (databases.end() == it)
         {
             if (exception)
-                exception->emplace(fmt::format("Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName())), ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName()));
             return {};
         }
         database = it->second;
@@ -292,7 +282,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
-            exception->emplace(fmt::format("Table {} doesn't exist", table_id.getNameForLogs()), ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
     if (!table)
         database = nullptr;
 
@@ -657,7 +647,7 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
     {
         std::unique_lock lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
-        assert(db_guard_iter->second.first.contains(""));
+        assert(db_guard_iter->second.first.count(""));
     }
     DatabaseGuard & db_guard = db_guard_iter->second;
     return std::unique_lock{db_guard.second};
@@ -955,7 +945,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]()
     {
-        return !tables_marked_dropped_ids.contains(uuid);
+        return tables_marked_dropped_ids.count(uuid) == 0;
     });
 }
 

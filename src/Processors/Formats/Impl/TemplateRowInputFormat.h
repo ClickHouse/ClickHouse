@@ -116,7 +116,8 @@ public:
                          const ParsedTemplateFormatString & format_,
                          const ParsedTemplateFormatString & row_format_,
                          std::string row_between_delimiter,
-                         const FormatSettings & format_settings_);
+                         const FormatSettings & format_settings_,
+                         ContextPtr context_);
 
     DataTypes readRowAndGetDataTypes() override;
 
@@ -125,6 +126,7 @@ private:
     const ParsedTemplateFormatString format;
     const ParsedTemplateFormatString row_format;
     FormatSettings format_settings;
+    ContextPtr context;
     TemplateFormatReader format_reader;
     bool first_row = true;
 };

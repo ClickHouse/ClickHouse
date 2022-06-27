@@ -173,15 +173,15 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
 {
     String name_with_dot = name_without_dot + ".";
 
-    /// First we need to check if we have column with name name_without_dot
-    /// and if not - check if we have names that start with name_with_dot
-    for (auto it = columns.begin(); it != columns.end(); ++it)
+    auto begin = columns.begin();
+    for (; begin != columns.end(); ++begin)
     {
-        if (it->name == name_without_dot)
-            return std::make_pair(it, std::next(it));
-    }
+        if (begin->name == name_without_dot)
+            return std::make_pair(begin, std::next(begin));
 
-    auto begin = std::find_if(columns.begin(), columns.end(), [&](const auto & column){ return startsWith(column.name, name_with_dot); });
+        if (startsWith(begin->name, name_with_dot))
+            break;
+    }
 
     if (begin == columns.end())
         return std::make_pair(begin, begin);
@@ -196,7 +196,7 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
 {
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
@@ -222,8 +222,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    if (add_subcolumns)
-        addSubcolumns(column.name, column.type);
+    addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -231,11 +230,8 @@ void ColumnsDescription::remove(const String & column_name)
 {
     auto range = getNameRange(columns, column_name);
     if (range.first == range.second)
-    {
-        String exception_message = fmt::format("There is no column {} in table", column_name);
-        appendHintsMessage(exception_message, column_name);
-        throw Exception(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-    }
+        throw Exception("There is no column " + column_name + " in table.",
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
     for (auto list_it = range.first; list_it != range.second;)
     {
@@ -248,11 +244,7 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
 {
     auto it = columns.get<1>().find(column_from);
     if (it == columns.get<1>().end())
-    {
-        String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
-        appendHintsMessage(exception_message, column_from);
-        throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception("Cannot find column " + column_from + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
     {
@@ -396,15 +388,6 @@ NamesAndTypesList ColumnsDescription::getSubcolumns(const String & name_in_stora
 {
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
     return NamesAndTypesList(range.first, range.second);
-}
-
-NamesAndTypesList ColumnsDescription::getNested(const String & column_name) const
-{
-    auto range = getNameRange(columns, column_name);
-    NamesAndTypesList nested;
-    for (auto & it = range.first; it != range.second; ++it)
-        nested.emplace_back(it->name, it->type);
-    return nested;
 }
 
 void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
@@ -573,27 +556,6 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetCo
     return tryGetColumn(GetColumnsOptions(kind).withSubcolumns(), column_name);
 }
 
-std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const
-{
-    auto it = columns.get<1>().find(column_name);
-    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
-        return *it;
-
-    if (options.with_subcolumns)
-    {
-        auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
-            return ColumnDescription{jt->name, jt->type};
-    }
-
-    return {};
-}
-
-std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const
-{
-    return tryGetColumnDescription(GetColumnsOptions(kind).withSubcolumns(), column_name);
-}
-
 NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto column = tryGetColumnOrSubcolumn(kind, column_name);
@@ -632,13 +594,6 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
     return (it != columns.get<1>().end()
         && (defaultKindToGetKind(it->default_desc.kind) & kind))
             || hasSubcolumn(column_name);
-}
-
-bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
-{
-    auto range = getNameRange(columns, column_name);
-    return range.first != range.second &&
-        defaultKindToGetKind(range.first->default_desc.kind) & kind;
 }
 
 bool ColumnsDescription::hasDefaults() const
@@ -788,18 +743,6 @@ void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
     if (range.first != range.second)
         subcolumns.get<1>().erase(range.first, range.second);
-}
-
-std::vector<String> ColumnsDescription::getAllRegisteredNames() const
-{
-    std::vector<String> names;
-    names.reserve(columns.size());
-    for (const auto & column : columns)
-    {
-        if (column.name.find('.') == std::string::npos)
-            names.push_back(column.name);
-    }
-    return names;
 }
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)

@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
-#include <Common/atomicRename.h>
+#include <Common/renameat2.h>
 #include <Common/hex.h>
 
 #include <Core/Defines.h>
@@ -31,7 +31,6 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Interpreters/Context.h>
@@ -55,7 +54,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -73,7 +71,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -99,7 +97,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
-    extern const int SYNTAX_ERROR;
 }
 
 namespace fs = std::filesystem;
@@ -462,12 +459,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
-        if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
-        {
-            throw Exception("Cannot support collation, please set compatibility_ignore_collation_in_create_table=true", ErrorCodes::NOT_IMPLEMENTED);
-        }
-
         DataTypePtr column_type = nullptr;
+
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
@@ -486,21 +479,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             else if (make_columns_nullable)
             {
                 column_type = makeNullable(column_type);
-            }
-            else if (!hasNullable(column_type) &&
-                     col_decl.default_specifier == "DEFAULT" &&
-                     col_decl.default_expression &&
-                     col_decl.default_expression->as<ASTLiteral>() &&
-                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
-            {
-                if (column_type->lowCardinality())
-                {
-                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
-                    assert(low_cardinality_type);
-                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
-                }
-                else
-                    column_type = makeNullable(column_type);
             }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
@@ -530,9 +508,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
                 default_expr_list->children.emplace_back(
                     setAlias(
-                        col_decl.default_specifier == "EPHEMERAL" ? /// can be ASTLiteral::value NULL
-                            std::make_shared<ASTLiteral>(data_type_ptr->getDefault()) :
-                            col_decl.default_expression->clone(),
+                        col_decl.default_expression->clone(),
                         tmp_column_name));
             }
             else
@@ -558,32 +534,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         column.name = col_decl.name;
 
-        /// ignore or not other database extensions depending on compatibility settings
-        if (col_decl.default_specifier == "AUTO_INCREMENT"
-            && !context_->getSettingsRef().compatibility_ignore_auto_increment_in_create_table)
-        {
-            throw Exception(
-                "AUTO_INCREMENT is not supported. To ignore the keyword in column declaration, set "
-                "`compatibility_ignore_auto_increment_in_create_table` to true",
-                ErrorCodes::SYNTAX_ERROR);
-        }
-
         if (col_decl.default_expression)
         {
-            ASTPtr default_expr =
-                col_decl.default_specifier == "EPHEMERAL" && col_decl.default_expression->as<ASTLiteral>()->value.isNull() ?
-                    std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(col_decl.type)->getDefault()) :
-                    col_decl.default_expression->clone();
-
+            ASTPtr default_expr = col_decl.default_expression->clone();
             if (col_decl.type)
                 column.type = name_type_it->type;
             else
-            {
                 column.type = defaults_sample_block.getByName(column.name).type;
-                /// set nullability for case of column declaration w/o type but with default expression
-                if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
-                    column.type = makeNullable(column.type);
-            }
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
             column.default_desc.expression = default_expr;
@@ -591,7 +548,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         else if (col_decl.type)
             column.type = name_type_it->type;
         else
-            throw Exception{"Neither default value expression nor type is provided for a column", ErrorCodes::LOGICAL_ERROR};
+            throw Exception();
 
         if (col_decl.comment)
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
@@ -610,7 +567,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (!attach && context_->getSettingsRef().flatten_nested)
+    if (context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -1001,12 +958,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
 
-            if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
+            if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
                 ptr && !getContext()->getClientInfo().is_replicated_database_internal)
             {
                 create.setDatabase(database_name);
                 guard->releaseTableLock();
-                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
             }
         }
 
@@ -1092,38 +1049,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id)
-    {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
-            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
-            getContext()
-        ))
-        {
-            Block input_block = InterpreterSelectWithUnionQuery(
-                create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
-
-            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-            ColumnsWithTypeAndName input_columns;
-            ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : input_block)
-            {
-                if (const auto * output_column = output_block.findByName(input_column.name))
-                {
-                    input_columns.push_back(input_column.cloneEmpty());
-                    output_columns.push_back(output_column->cloneEmpty());
-                }
-            }
-
-            ActionsDAG::makeConvertingActions(
-                input_columns,
-                output_columns,
-                ActionsDAG::MatchColumnsMode::Position
-            );
-        }
-    }
-
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
@@ -1138,7 +1063,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
     }
 
@@ -1255,10 +1180,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
-        if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
-            database->waitDetachedTableNotInUse(create.uuid);
-        else
+        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
+        if (throw_if_table_in_use)
             database->checkDetachedTableNotInUse(create.uuid);
+        else
+            database->waitDetachedTableNotInUse(create.uuid);
     }
 
     StoragePtr res;
@@ -1292,7 +1218,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only tables with a Replicated engine or tables which do not store data on disk are allowed in a Replicated database");
+                            "Only table with Replicated engine or tables which does not store data on disk are allowed in Replicated database");
     }
 
     if (from_path && !res->storesDataOnDisk())
@@ -1455,19 +1381,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
-    if (create.select && !create.attach && !create.is_create_empty
-        && !create.is_ordinary_view && !create.is_live_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+    if (create.select && !create.attach
+        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
+        && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        if (create.is_window_view)
-        {
-            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
-            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
-        }
-        else
-            insert->select = create.select->clone();
+        insert->select = create.select->clone();
 
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
@@ -1530,9 +1450,7 @@ BlockIO InterpreterCreateQuery::execute()
     if (!create.cluster.empty())
     {
         prepareOnClusterQuery(create, getContext(), create.cluster);
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
     }
 
     getContext()->checkAccess(getRequiredAccess());

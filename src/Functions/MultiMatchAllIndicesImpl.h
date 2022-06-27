@@ -11,6 +11,8 @@
 
 #if USE_HYPERSCAN
 #    include <hs.h>
+#else
+#    include "MatchImpl.h"
 #endif
 
 

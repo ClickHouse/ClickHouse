@@ -1,12 +1,12 @@
 ---
-sidebar_position: 221
+toc_priority: 221
 ---
 
-# stochasticLinearRegression
+# stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
-### Parameters
+### Parameters {#agg_functions-stochasticlinearregression-parameters}
 
 There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
 
@@ -19,7 +19,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 3.  `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
 4.  `method for updating weights`, they are: `Adam` (by default), `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
 
-### Usage
+### Usage {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
 To predict we use function [evalMLMethod](../../../sql-reference/functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
@@ -59,7 +59,7 @@ The query will return a column of predicted values. Note that first argument of 
 
 `test_data` is a table like `train_data` but may not contain target value.
 
-### Notes
+### Notes {#agg_functions-stochasticlinearregression-notes}
 
 1.  To merge two models user may create such query:
     `sql  SELECT state1 + state2 FROM your_models`
