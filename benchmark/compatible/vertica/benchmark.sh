@@ -9,3 +9,7 @@ sudo docker exec vertica /opt/vertica/bin/vsql -U dbadmin -c "$(cat create.sql)"
 
 wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
 gzip -d hits.tsv.gz
+
+sudo docker cp hits.tsv vertica:/hits.tsv
+
+time sudo docker exec vertica /opt/vertica/bin/vsql -U dbadmin -c "COPY hits FROM '/hits.tsv' DELIMITER E'\\t'"
