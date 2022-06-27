@@ -278,7 +278,7 @@ def test_store_cleanup(started_cluster):
     assert "300" in store
     assert "456" in store
     assert "kek" not in store  # changed
-    assert "12" not in store  # changed
+    assert "\n12\n" not in store  # changed
     assert "d---------" not in node1.exec_in_container(
         ["ls", "-l", f"{path_to_data}/store"]
     )  # changed
