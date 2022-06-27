@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <unistd.h>
@@ -6,7 +7,8 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <base/errnoToString.h>
-#include <base/logger_useful.h>
+#include <base/sort.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <Poco/Logger.h>
 #include <Common/ErrorCodes.h>
@@ -14,6 +16,10 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
+#include <Core/Types.h>
+#include <base/types.h>
+#include <consistent_hashing.h>
+#include <base/find_symbols.h>
 
 namespace ProfileEvents
 {
@@ -56,7 +62,7 @@ LocalFileHolder::~LocalFileHolder()
     }
 }
 
-RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
+RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBuffer>(buff_size)
 {
 }
 
@@ -94,7 +100,7 @@ bool RemoteReadBuffer::nextImpl()
         return status;
     }
 
-    //file_buffer::pos should increase correspondingly when RemoteReadBuffer is consumed, otherwise start_offset will be incorrect.
+    /// file_buffer::pos should increase correspondingly when RemoteReadBuffer is consumed, otherwise start_offset will be incorrect.
     local_file_holder->file_buffer->position() = local_file_holder->file_buffer->buffer().begin() + BufferBase::offset();
     auto start_offset = local_file_holder->file_buffer->getPosition();
     auto end_offset = start_offset + local_file_holder->file_buffer->internalBuffer().size();
@@ -162,28 +168,56 @@ ExternalDataSourceCache & ExternalDataSourceCache::instance()
 void ExternalDataSourceCache::recoverTask()
 {
     std::vector<fs::path> invalid_paths;
-    for (auto const & group_dir : fs::directory_iterator{root_dir})
+    for (size_t i = 0, sz = root_dirs.size(); i < sz; ++i)
     {
-        for (auto const & cache_dir : fs::directory_iterator{group_dir.path()})
+        const auto & root_dir = root_dirs[i];
+        for (auto const & group_dir : fs::directory_iterator{root_dir})
         {
-            String path = cache_dir.path();
-            auto cache_controller = RemoteCacheController::recover(path);
-            if (!cache_controller)
+            for (auto const & cache_dir : fs::directory_iterator{group_dir.path()})
             {
-                invalid_paths.emplace_back(path);
-                continue;
-            }
-            auto cache_load_func = [&] { return cache_controller; };
-            if (!lru_caches->getOrSet(path, cache_load_func))
-            {
-                invalid_paths.emplace_back(path);
+                String subpath = cache_dir.path().stem();
+                String path = cache_dir.path();
+                size_t root_dir_idx = ConsistentHashing(sipHash64(subpath.c_str(), subpath.size()), sz);
+                if (root_dir_idx != i)
+                {
+                    // When the root_dirs has been changed, to simplify just delete the old cached files.
+                    LOG_TRACE(
+                        log,
+                        "Drop file({}) since root_dir is not match. prev dir is {}, and it should be {}",
+                        path,
+                        root_dirs[i],
+                        root_dirs[root_dir_idx]);
+                    invalid_paths.emplace_back(path);
+                    continue;
+                }
+                auto cache_controller = RemoteCacheController::recover(path);
+                if (!cache_controller)
+                {
+                    invalid_paths.emplace_back(path);
+                    continue;
+                }
+                auto cache_load_func = [&] { return cache_controller; };
+                if (!lru_caches->getOrSet(path, cache_load_func))
+                {
+                    invalid_paths.emplace_back(path);
+                }
             }
         }
     }
     for (auto & path : invalid_paths)
         fs::remove_all(path);
     initialized = true;
-    LOG_INFO(log, "Recovered from directory:{}", root_dir);
+
+    auto root_dirs_to_string = [&]()
+    {
+        String res;
+        for (const auto & root_dir : root_dirs)
+        {
+            res += root_dir + ",";
+        }
+        return res;
+    };
+    LOG_INFO(log, "Recovered from directory:{}", root_dirs_to_string());
 }
 
 void ExternalDataSourceCache::initOnce(ContextPtr context, const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_)
@@ -195,14 +229,18 @@ void ExternalDataSourceCache::initOnce(ContextPtr context, const String & root_d
     }
     LOG_INFO(
         log, "Initializing local cache for remote data sources. Local cache root path: {}, cache size limit: {}", root_dir_, limit_size_);
-    root_dir = root_dir_;
+    splitInto<','>(root_dirs, root_dir_);
+    ::sort(root_dirs.begin(), root_dirs.end());
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
     lru_caches = std::make_unique<RemoteFileCacheType>(limit_size_);
 
     /// Create if root_dir not exists.
-    if (!fs::exists(fs::path(root_dir)))
+    for (const auto & root_dir : root_dirs)
     {
-        fs::create_directories(fs::path(root_dir));
+        if (!fs::exists(fs::path(root_dir)))
+        {
+            fs::create_directories(fs::path(root_dir));
+        }
     }
 
     recover_task_holder = context->getSchedulePool().createTask("recover local cache metadata for remote files", [this] { recoverTask(); });
@@ -215,7 +253,8 @@ String ExternalDataSourceCache::calculateLocalPath(IRemoteFileMetadataPtr metada
     String full_path = metadata->getName() + ":" + metadata->remote_path + ":" + metadata->getVersion();
     UInt128 hashcode = sipHash128(full_path.c_str(), full_path.size());
     String hashcode_str = getHexUIntLowercase(hashcode);
-    return fs::path(root_dir) / hashcode_str.substr(0, 3) / hashcode_str;
+    size_t root_dir_idx = ConsistentHashing(sipHash64(hashcode_str.c_str(), hashcode_str.size()), root_dirs.size());
+    return fs::path(root_dirs[root_dir_idx]) / hashcode_str.substr(0, 3) / hashcode_str;
 }
 
 std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>> ExternalDataSourceCache::createReader(

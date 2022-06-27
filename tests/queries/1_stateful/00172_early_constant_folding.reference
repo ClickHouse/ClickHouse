@@ -1,0 +1,6 @@
+(Expression)
+ExpressionTransform
+  (ReadFromStorage)
+  AggregatingTransform
+    ExpressionTransform
+      SourceFromSingleChunk 0 → 1

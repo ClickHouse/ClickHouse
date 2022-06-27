@@ -394,14 +394,17 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = false; //-V519
 
+    if (inner_storage)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " INNER" << (settings.hilite ? hilite_none : "");
+        inner_storage->formatImpl(settings, state, frame);
+    }
+
     if (storage)
         storage->formatImpl(settings, state, frame);
 
     if (dictionary)
         dictionary->formatImpl(settings, state, frame);
-
-    if (is_populate)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
 
     if (is_watermark_strictly_ascending)
     {
@@ -422,6 +425,11 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ALLOWED_LATENESS " << (settings.hilite ? hilite_none : "");
         lateness_function->formatImpl(settings, state, frame);
     }
+
+    if (is_populate)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
+    else if (is_create_empty)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
 
     if (select)
     {

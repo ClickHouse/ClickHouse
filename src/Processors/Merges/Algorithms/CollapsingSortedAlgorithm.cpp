@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 /// Maximum number of messages about incorrect data in the log.

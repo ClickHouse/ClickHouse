@@ -38,13 +38,10 @@ StorageMongoDB::StorageMongoDB(
     const ConstraintsDescription & constraints_,
     const String & comment)
     : IStorage(table_id_)
-    , host(host_)
-    , port(port_)
     , database_name(database_name_)
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , options(options_)
     , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -73,16 +70,16 @@ void StorageMongoDB::connectIfNotConnected()
         auto auth_db = database_name;
         if (auth_source != query_params.end())
             auth_db = auth_source->second;
-#       if POCO_VERSION >= 0x01070800
-            if (!username.empty() && !password.empty())
-            {
-                Poco::MongoDB::Database poco_db(auth_db);
-                if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                    throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
-            }
-#       else
-            authenticate(*connection, database_name, username, password);
-#       endif
+#if POCO_VERSION >= 0x01070800
+        if (!username.empty() && !password.empty())
+        {
+            Poco::MongoDB::Database poco_db(auth_db);
+            if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
+                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+#else
+        authenticate(*connection, database_name, username, password);
+#endif
         authenticated = true;
     }
 }
@@ -168,7 +165,7 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
-        return StorageMongoDB::create(
+        return std::make_shared<StorageMongoDB>(
             args.table_id,
             configuration.host,
             configuration.port,

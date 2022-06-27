@@ -65,6 +65,8 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
         storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
+            storage.clearOldBrokenPartsFromDetachedDirecory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -471,6 +473,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     for (const String & replica : replicas)
     {
         String pointer;
+        // No Need to check return value to delete mutations.
         zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/mutation_pointer", pointer);
         if (pointer.empty())
             return; /// One replica hasn't done anything yet so we can't delete any mutations.

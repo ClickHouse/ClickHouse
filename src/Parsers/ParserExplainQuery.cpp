@@ -7,6 +7,7 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSystemQuery.h>
 
 namespace DB
 {
@@ -62,6 +63,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCreateTableQuery create_p;
     ParserSelectWithUnionQuery select_p;
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
+    ParserSystemQuery system_p;
     ASTPtr query;
     if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
     {
@@ -88,7 +90,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (select_p.parse(pos, query, expected) ||
         create_p.parse(pos, query, expected) ||
-        insert_p.parse(pos, query, expected))
+        insert_p.parse(pos, query, expected) ||
+        system_p.parse(pos, query, expected))
         explain_query->setExplainedQuery(std::move(query));
     else
         return false;

@@ -1,6 +1,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Core/Settings.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <filesystem>
 #include <Coordination/Defines.h>
 #include <IO/WriteHelpers.h>
@@ -37,7 +37,7 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
 }
 
 
-const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro";
+const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)

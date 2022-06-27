@@ -11,74 +11,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     const Block & header_,
     ReadBuffer & in_,
     const Params & params_,
+    bool is_binary_,
     bool with_names_,
     bool with_types_,
     const FormatSettings & format_settings_,
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , format_settings(format_settings_)
+    , data_types(header_.getDataTypes())
+    , is_binary(is_binary_)
     , with_names(with_names_)
     , with_types(with_types_)
     , format_reader(std::move(format_reader_))
+    , column_indexes_by_names(header_.getNamesToIndexesMap())
 {
-    const auto & sample = getPort().getHeader();
-    size_t num_columns = sample.columns();
-
-    data_types.resize(num_columns);
-    column_indexes_by_names.reserve(num_columns);
-
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        const auto & column_info = sample.getByPosition(i);
-
-        data_types[i] = column_info.type;
-        column_indexes_by_names.emplace(column_info.name, i);
-    }
-}
-
-void RowInputFormatWithNamesAndTypes::setupAllColumnsByTableSchema()
-{
-    const auto & header = getPort().getHeader();
-    column_mapping->column_indexes_for_input_fields.resize(header.columns());
-    column_mapping->names_of_columns = header.getNames();
-
-    for (size_t i = 0; i < column_mapping->column_indexes_for_input_fields.size(); ++i)
-        column_mapping->column_indexes_for_input_fields[i] = i;
-}
-
-void RowInputFormatWithNamesAndTypes::addInputColumn(const String & column_name, std::vector<bool> & read_columns)
-{
-    column_mapping->names_of_columns.push_back(column_name);
-
-    const auto column_it = column_indexes_by_names.find(column_name);
-    if (column_it == column_indexes_by_names.end())
-    {
-        if (format_settings.skip_unknown_fields)
-        {
-            column_mapping->column_indexes_for_input_fields.push_back(std::nullopt);
-            return;
-        }
-
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Unknown field found in {} header: '{}' at position {}\nSet the 'input_format_skip_unknown_fields' parameter explicitly to ignore and proceed",
-            getName(), column_name, column_mapping->column_indexes_for_input_fields.size());
-    }
-
-    const auto column_index = column_it->second;
-
-    if (read_columns[column_index])
-        throw Exception("Duplicate field found while parsing TSV header: " + column_name, ErrorCodes::INCORRECT_DATA);
-
-    read_columns[column_index] = true;
-    column_mapping->column_indexes_for_input_fields.emplace_back(column_index);
 }
 
 void RowInputFormatWithNamesAndTypes::readPrefix()
@@ -88,10 +40,11 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     if (getCurrentUnitNumber() != 0)
         return;
 
-    if (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8())
+    /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
+    /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
+    /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
+    if (!is_binary && (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8()))
     {
-        /// We assume that column name or type cannot contain BOM, so, if format has header,
-        /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
         skipBOMIfExists(*in);
     }
 
@@ -102,25 +55,17 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     {
         if (format_settings.with_names_use_header)
         {
-            std::vector<bool> read_columns(data_types.size(), false);
             auto column_names = format_reader->readNames();
-            for (const auto & name : column_names)
-                addInputColumn(name, read_columns);
-
-            for (size_t i = 0; i != read_columns.size(); ++i)
-            {
-                if (!read_columns[i])
-                    column_mapping->not_presented_columns.push_back(i);
-            }
+            column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
         }
         else
         {
-            setupAllColumnsByTableSchema();
+            column_mapping->setupByHeader(getPort().getHeader());
             format_reader->skipNames();
         }
     }
     else if (!column_mapping->is_set)
-        setupAllColumnsByTableSchema();
+        column_mapping->setupByHeader(getPort().getHeader());
 
     if (with_types)
     {
@@ -150,15 +95,6 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
         }
         else
             format_reader->skipTypes();
-    }
-}
-
-void RowInputFormatWithNamesAndTypes::insertDefaultsForNotSeenColumns(MutableColumns & columns, RowReadExtension & ext)
-{
-    for (auto index : column_mapping->not_presented_columns)
-    {
-        columns[index]->insertDefault();
-        ext.read_columns[index] = false;
     }
 }
 
@@ -201,7 +137,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
 
     format_reader->skipRowEndDelimiter();
 
-    insertDefaultsForNotSeenColumns(columns, ext);
+    column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
     if (!format_settings.defaults_for_omitted_fields)
@@ -297,9 +233,8 @@ FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(
     bool with_names_,
     bool with_types_,
     FormatWithNamesAndTypesReader * format_reader_,
-    DataTypePtr default_type_,
-    bool allow_bools_as_numbers_)
-    : IRowSchemaReader(in_, format_settings, default_type_, allow_bools_as_numbers_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
+    DataTypePtr default_type_)
+    : IRowSchemaReader(in_, format_settings, default_type_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
 {
 }
 
@@ -320,7 +255,7 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
         std::vector<String> data_type_names = format_reader->readTypes();
         if (data_type_names.size() != names.size())
             throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                ErrorCodes::INCORRECT_DATA,
                 "The number of column names {} differs with the number of types {}", names.size(), data_type_names.size());
 
         NamesAndTypesList result;

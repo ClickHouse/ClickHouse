@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -7,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 
 #include <Common/config.h>
@@ -31,6 +32,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperSet;
     extern const Event ZooKeeperList;
     extern const Event ZooKeeperCheck;
+    extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
@@ -1197,6 +1199,21 @@ void ZooKeeper::check(
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
+}
+
+void ZooKeeper::sync(
+     const String & path,
+     SyncCallback callback)
+{
+    ZooKeeperSyncRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperSyncRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
 
 

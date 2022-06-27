@@ -81,6 +81,7 @@ struct FormatSettings
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
+        bool output_string_as_string = false;
     } arrow;
 
     struct
@@ -91,6 +92,7 @@ struct FormatSettings
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
+        bool null_as_default = false;
     } avro;
 
     String bool_true_representation = "true";
@@ -108,6 +110,7 @@ struct FormatSettings
         String null_representation = "\\N";
         char tuple_delimiter = ',';
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } csv;
 
     struct HiveText
@@ -148,6 +151,7 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_row_groups = {};
+        bool output_string_as_string = false;
     } parquet;
 
     struct Pretty
@@ -170,6 +174,8 @@ struct FormatSettings
 
     struct
     {
+        bool input_flatten_google_wrappers = false;
+        bool output_nullables_with_google_wrappers = false;
         /**
          * Some buffers (kafka / rabbit) split the rows internally using callback,
          * and always send one row per message, so we can push there formats
@@ -215,6 +221,7 @@ struct FormatSettings
         String null_representation = "\\N";
         bool input_format_enum_as_number = false;
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } tsv;
 
     struct
@@ -232,6 +239,7 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_stripes = {};
+        bool output_string_as_string = false;
     } orc;
 
     /// For capnProto format we should determine how to
@@ -260,6 +268,12 @@ struct FormatSettings
         UInt64 number_of_columns = 0;
         MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
+
+    struct MySQLDump
+    {
+        String table_name;
+        bool map_column_names = true;
+    } mysql_dump;
 };
 
 }

@@ -21,7 +21,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -311,7 +311,7 @@ void registerStorageMySQL(StorageFactory & factory)
 
         mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
-        return StorageMySQL::create(
+        return std::make_shared<StorageMySQL>(
             args.table_id,
             std::move(pool),
             configuration.database,

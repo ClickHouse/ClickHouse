@@ -261,6 +261,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && part->is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus(error));
+            storage.incrementInsertedPartsProfileEvent(part->getType());
         }
         catch (...)
         {
@@ -305,7 +306,7 @@ void ReplicatedMergeTreeSink::commitPart(
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->relative_path;
+    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -313,8 +314,6 @@ void ReplicatedMergeTreeSink::commitPart(
     constexpr size_t max_iterations = 10;
 
     bool is_already_existing_part = false;
-
-    String old_part_name = part->name;
 
     while (true)
     {
@@ -477,7 +476,8 @@ void ReplicatedMergeTreeSink::commitPart(
 
         try
         {
-            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction);
+            auto lock = storage.lockParts();
+            renamed = storage.renameTempPartAndAdd(part, transaction, lock);
         }
         catch (const Exception & e)
         {
@@ -498,6 +498,8 @@ void ReplicatedMergeTreeSink::commitPart(
                     " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
                     part->name);
         }
+
+        storage.lockSharedData(*part, false, {});
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
@@ -553,11 +555,13 @@ void ReplicatedMergeTreeSink::commitPart(
             }
             else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
             {
+                storage.unlockSharedData(*part);
                 transaction.rollback();
                 throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
             else
             {
+                storage.unlockSharedData(*part);
                 /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
                 transaction.rollback();
                 throw Exception("Unexpected logical error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
@@ -567,12 +571,14 @@ void ReplicatedMergeTreeSink::commitPart(
         }
         else if (Coordination::isHardwareError(multi_code))
         {
+            storage.unlockSharedData(*part);
             transaction.rollback();
             throw Exception("Unrecoverable network error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
                             + Coordination::errorMessage(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
         else
         {
+            storage.unlockSharedData(*part);
             transaction.rollback();
             throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
                             + Coordination::errorMessage(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
@@ -595,16 +601,13 @@ void ReplicatedMergeTreeSink::commitPart(
 
         waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
-
-    /// Cleanup shared locks made with old name
-    part->cleanupOldName(old_part_name);
 }
 
 void ReplicatedMergeTreeSink::onStart()
 {
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context);
 }
 
 void ReplicatedMergeTreeSink::onFinish()

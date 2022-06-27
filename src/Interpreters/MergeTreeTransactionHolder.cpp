@@ -53,7 +53,7 @@ void MergeTreeTransactionHolder::onDestroy() noexcept
     {
         try
         {
-            TransactionLog::instance().commitTransaction(txn);
+            TransactionLog::instance().commitTransaction(txn, /* throw_on_unknown_status */ false);
             return;
         }
         catch (...)

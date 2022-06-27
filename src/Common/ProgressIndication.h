@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
 #include <base/types.h>
@@ -16,11 +17,11 @@ namespace DB
 
 struct ThreadEventData
 {
-    Int64 time() const noexcept { return user_ms + system_ms; }
+    UInt64 time() const noexcept { return user_ms + system_ms; }
 
-    Int64 user_ms      = 0;
-    Int64 system_ms    = 0;
-    Int64 memory_usage = 0;
+    UInt64 user_ms      = 0;
+    UInt64 system_ms    = 0;
+    UInt64 memory_usage = 0;
 };
 
 using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
@@ -44,7 +45,7 @@ public:
     /// 1. onProgress in clickhouse-client;
     /// 2. ProgressCallback via setProgressCallback methrod in:
     ///    - context (used in clickhouse-local, can also be added in arbitrary place)
-    ///    - SourceWithProgress (also in streams)
+    ///    - ISource (also in streams)
     ///    - readBufferFromFileDescriptor (for file processing progress)
     bool updateProgress(const Progress & value);
 
@@ -92,6 +93,16 @@ private:
 
     std::unordered_map<String, double> host_cpu_usage;
     HostToThreadTimesMap thread_data;
+    /// In case of all of the above:
+    /// - clickhouse-local
+    /// - input_format_parallel_parsing=true
+    /// - write_progress_on_update=true
+    ///
+    /// It is possible concurrent access to the following:
+    /// - writeProgress() (class properties) (guarded with progress_mutex)
+    /// - thread_data/host_cpu_usage (guarded with profile_events_mutex)
+    mutable std::mutex profile_events_mutex;
+    mutable std::mutex progress_mutex;
 };
 
 }

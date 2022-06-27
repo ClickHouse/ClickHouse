@@ -80,6 +80,73 @@ DUPLICATE_ENDPOINT_CONFIG = """
 </clickhouse>
 """
 
+LOCALHOST_WITH_REMOTE = """
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <hostname_checks_enabled>true</hostname_checks_enabled>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>localhost</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>127.0.0.2</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+"""
+
+MULTIPLE_LOCAL_WITH_REMOTE = """
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <hostname_checks_enabled>true</hostname_checks_enabled>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>127.0.0.1</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>127.0.1.1</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>127.0.0.2</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+"""
+
 NORMAL_CONFIG = """
 <clickhouse>
     <keeper_server>
@@ -108,18 +175,18 @@ NORMAL_CONFIG = """
 
 def test_duplicate_endpoint(started_cluster):
     node1.stop_clickhouse()
-    node1.replace_config(
-        "/etc/clickhouse-server/config.d/enable_keeper1.xml", DUPLICATE_ENDPOINT_CONFIG
-    )
 
-    with pytest.raises(Exception):
-        node1.start_clickhouse(start_wait_sec=10)
+    def assert_config_fails(config):
+        node1.replace_config(
+            "/etc/clickhouse-server/config.d/enable_keeper1.xml", config
+        )
+        with pytest.raises(Exception):
+            node1.start_clickhouse(start_wait_sec=10)
 
-    node1.replace_config(
-        "/etc/clickhouse-server/config.d/enable_keeper1.xml", DUPLICATE_ID_CONFIG
-    )
-    with pytest.raises(Exception):
-        node1.start_clickhouse(start_wait_sec=10)
+    assert_config_fails(DUPLICATE_ENDPOINT_CONFIG)
+    assert_config_fails(DUPLICATE_ID_CONFIG)
+    assert_config_fails(LOCALHOST_WITH_REMOTE)
+    assert_config_fails(MULTIPLE_LOCAL_WITH_REMOTE)
 
     node1.replace_config(
         "/etc/clickhouse-server/config.d/enable_keeper1.xml", NORMAL_CONFIG

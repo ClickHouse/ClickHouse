@@ -3,11 +3,18 @@ sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
 ---
 
-# [experimental] MaterializedPostgreSQL {#materialize-postgresql}
+# [experimental] MaterializedPostgreSQL
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. Such tables can be automatically reloaded in the background in case required setting is turned on (can be used starting from 22.1). Safest way for now is to use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
+
+:::note
+This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+```sql
+SET allow_experimental_database_materialized_postgresql=1
+```
+:::
 
 ## Creating a Database {#creating-a-database}
 
@@ -137,27 +144,27 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::warning 
+:::warning
 Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 :::
 
 ## Settings {#settings}
 
-1. `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
+### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
     Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
 
     Default value: empty list — means whole PostgreSQL database will be replicated.
 
-2. `materialized_postgresql_schema` {#materialized-postgresql-schema}
+### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
     Default value: empty string. (Default schema is used)
 
-3. `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
+### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
     Default value: empty list. (Default schema is used)
 
-4. `materialized_postgresql_allow_automatic_update` {#materialized-postgresql-allow-automatic-update}
+### `materialized_postgresql_allow_automatic_update` {#materialized-postgresql-allow-automatic-update}
 
     Do not use this setting before 22.1 version.
 
@@ -170,7 +177,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Default value: `0`.
 
-5. `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
+### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
     Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
 
@@ -180,11 +187,11 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Default value: `65536`.
 
-6. `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
+### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
     A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
 
-7. `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
+### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
     A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
