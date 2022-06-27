@@ -70,7 +70,7 @@ namespace detail
 }
 
 // Unlike HashTableGrower always grows to power of 2.
-struct UniqCombinedHashTableGrower : public HashTableGrower<>
+struct UniqCombinedHashTableGrower : public HashTableGrowerWithPrecalculation<>
 {
     void increaseSize() { increaseSizeDegree(1); }
 };
