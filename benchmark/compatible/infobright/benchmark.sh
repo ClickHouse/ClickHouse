@@ -24,3 +24,9 @@ time sudo docker run -it --rm --volume $(pwd):/workdir --network host mysql:5 my
     FIELDS TERMINATED BY '\\t' ENCLOSED BY '' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' STARTING BY ''"
 
 # 38m37.466s
+
+sudo docker exec mysql_ib du -bcs /mnt/mysql_data/ /usr/local/infobright-4.0.7-x86_64/cache
+
+# 13 760 341 294
+
+./run.sh 2>&1 | log

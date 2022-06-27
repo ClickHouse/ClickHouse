@@ -1,3 +1,5 @@
+Run all tests on c6a.4xlarge, 500 GB gp2.
+
 - [x] ClickHouse
 - [x] MySQL InnoDB
 - [ ] MySQL MyISAM
@@ -8,7 +10,7 @@
 - [ ] Greenplum
 - [x] TimescaleDB
 - [x] Citus
-- [ ] Vertica (without publishing)
+- [x] Vertica (without publishing)
 - [x] QuestDB
 - [x] DuckDB
 - [x] MonetDB
@@ -20,7 +22,7 @@
 - [ ] CrateDB
 - [ ] Spark SQL
 - [ ] Starrocks
-- [ ] ShitholeSQL
+- [ ] ShitholeDB
 - [ ] Hive
 - [ ] Impala
 - [ ] Hyper
@@ -52,3 +54,4 @@
 - [ ] Starburst Galaxy
 - [ ] MS SQL Server with Column Store Index (without publishing)
 - [ ] Dremio (without publishing) 
+- [ ] Exasol
