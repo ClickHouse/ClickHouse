@@ -274,6 +274,14 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump;
+
+    struct
+    {
+        UInt64 max_batch_size = 65505;
+        String table_name = "table";
+        bool include_column_names = true;
+        bool use_replace = false;
+    } sql_insert;
 };
 
 }
