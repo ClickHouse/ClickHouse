@@ -781,6 +781,14 @@ Names ExpressionActions::getRequiredColumns() const
     return names;
 }
 
+bool ExpressionActions::isRequiredInputColumn(const String & column_name) const
+{
+    for (const auto & input : required_columns)
+        if (column_name == input.name)
+            return true;
+    return false;
+}
+
 bool ExpressionActions::hasArrayJoin() const
 {
     return getActionsDAG().hasArrayJoin();

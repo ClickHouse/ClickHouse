@@ -189,12 +189,13 @@ void FilterTransform::transform(Chunk & chunk)
     }
 
     /// Filter the rest of the columns.
+    bool filter_is_input_column = expression->isRequiredInputColumn(filter_column_name);
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & current_type = transformed_header.safeGetByPosition(i).type;
         auto & current_column = columns[i];
 
-        if (i == filter_column_position)
+        if (i == filter_column_position && !filter_is_input_column)
         {
             /// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
             /// NOTE User could pass column with something different than 0 and 1 for filter.

@@ -97,6 +97,8 @@ public:
     /// Get a list of input columns.
     Names getRequiredColumns() const;
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return required_columns; }
+    /// Check if `column_name` is input column
+    bool isRequiredInputColumn(const String & column_name) const;
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, size_t & num_rows, bool dry_run = false) const;

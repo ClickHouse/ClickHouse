@@ -1154,9 +1154,13 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
+        bool prewhere_is_input_column = !prewhere_info->actions; 
 
         if (prewhere_info->actions)
-           prewhere_info->actions->execute(block);
+        {
+            prewhere_is_input_column = prewhere_info->actions->isRequiredInputColumn(prewhere_info->column_name);
+            prewhere_info->actions->execute(block);
+        }
 
         prewhere_column_pos = block.getPositionByName(prewhere_info->column_name);
 
@@ -1165,7 +1169,11 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         for (auto & col : block)
             result.columns.emplace_back(std::move(col.column));
 
-        current_step_filter.swap(result.columns[prewhere_column_pos]);
+        if (!prewhere_is_input_column)
+            current_step_filter.swap(result.columns[prewhere_column_pos]);
+        else
+            current_step_filter = result.columns[prewhere_column_pos];
+
         combined_filter = current_step_filter;
     }
 
@@ -1230,7 +1238,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         {
             if (prewhere_info->remove_column)
                 result.columns.erase(result.columns.begin() + prewhere_column_pos);
-            else
+            else if (!result.columns[prewhere_column_pos])
                 result.columns[prewhere_column_pos] =
                         getSampleBlock().getByName(prewhere_info->column_name).type->
                                 createColumnConst(result.num_rows, 1u)->convertToFullColumnIfConst();
