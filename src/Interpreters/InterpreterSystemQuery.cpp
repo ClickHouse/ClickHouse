@@ -317,7 +317,7 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data.cache->removeIfReleasable(/* remove_persistent_files */false);
+                    cache_data->cache->removeIfReleasable(/* remove_persistent_files */false);
             }
             else
             {
