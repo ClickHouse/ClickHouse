@@ -112,12 +112,6 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
-{
-    type = Type::FinishSorting;
-    prefix_description = std::move(prefix_description_);
-}
-
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     if (type == Type::FinishSorting)

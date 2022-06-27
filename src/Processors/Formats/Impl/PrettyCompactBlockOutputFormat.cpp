@@ -149,6 +149,7 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 void PrettyCompactBlockOutputFormat::writeRow(
     size_t row_num,
     const Block & header,
+    const Serializations & serializations,
     const Columns & columns,
     const WidthsPerColumn & widths,
     const Widths & max_widths)
@@ -186,7 +187,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
     writeCString("\n", out);
 }
 
-void PrettyCompactBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
+void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 {
     UInt64 max_rows = format_settings.pretty.max_rows;
 
@@ -201,11 +202,18 @@ void PrettyCompactBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         {
             if (!mono_chunk)
             {
-                mono_chunk = std::move(chunk);
+                mono_chunk = chunk.clone();
                 return;
             }
 
-            mono_chunk.append(chunk);
+            MutableColumns mutation = mono_chunk.mutateColumns();
+            for (size_t position = 0; position < mutation.size(); ++position)
+            {
+                auto column = chunk.getColumns()[position];
+                mutation[position]->insertRangeFrom(*column, 0, column->size());
+            }
+            size_t rows = mutation[0]->size();
+            mono_chunk.setColumns(std::move(mutation), rows);
             return;
         }
         else
@@ -233,8 +241,13 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
     writeHeader(header, max_widths, name_widths);
 
+    size_t num_columns = header.columns();
+    Serializations serializations(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
+
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
-        writeRow(i, header, columns, widths, max_widths);
+        writeRow(i, header, serializations, columns, widths, max_widths);
 
     writeBottom(max_widths);
 

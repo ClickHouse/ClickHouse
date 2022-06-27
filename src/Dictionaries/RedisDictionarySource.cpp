@@ -9,7 +9,6 @@
 #include <Poco/Redis/Type.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-#include <QueryPipeline/QueryPipeline.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -127,7 +126,7 @@ namespace DB
         __builtin_unreachable();
     }
 
-    QueryPipeline RedisDictionarySource::loadAll()
+    Pipe RedisDictionarySource::loadAll()
     {
         auto connection = getConnection();
 
@@ -137,7 +136,7 @@ namespace DB
         /// Get only keys for specified storage type.
         auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
         if (all_keys.isNull())
-            return QueryPipeline(std::make_shared<RedisSource>(
+            return Pipe(std::make_shared<RedisSource>(
                 std::move(connection), RedisArray{},
                 configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
 
@@ -178,12 +177,12 @@ namespace DB
             keys = hkeys;
         }
 
-        return QueryPipeline(std::make_shared<RedisSource>(
+        return Pipe(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
     }
 
-    QueryPipeline RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
+    Pipe RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
         auto connection = getConnection();
 
@@ -198,12 +197,12 @@ namespace DB
         for (UInt64 id : ids)
             keys << DB::toString(id);
 
-        return QueryPipeline(std::make_shared<RedisSource>(
+        return Pipe(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
     }
 
-    QueryPipeline RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+    Pipe RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
     {
         auto connection = getConnection();
 
@@ -228,7 +227,7 @@ namespace DB
             keys.add(key);
         }
 
-        return QueryPipeline(std::make_shared<RedisSource>(
+        return Pipe(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
     }

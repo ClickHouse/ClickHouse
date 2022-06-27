@@ -110,7 +110,7 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         Arena * arena_)
-        : ISource(params_->getHeader(), false)
+        : ISource(params_->getHeader())
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))

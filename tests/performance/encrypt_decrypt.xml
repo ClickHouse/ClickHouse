@@ -8,6 +8,7 @@
           <values>
               <!-- materialize(plaitext) is to avoid all-args-are-const optimization, resulting in executing function exactly once. -->
               <value>encrypt('aes-128-cbc', materialize(plaintext), key16, iv16)</value>
+              <value>encrypt('aes-128-cfb128', materialize(plaintext), key16, iv16)</value>
               <value>encrypt('aes-128-ctr', materialize(plaintext), key16, iv16)</value>
               <value>encrypt('aes-128-ecb', materialize(plaintext), key16)</value>
               <value>encrypt('aes-128-ofb', materialize(plaintext), key16, iv16)</value>
@@ -27,6 +28,7 @@
 
               <!-- decrypt + encrypt since it is really hard to compose decrypt-only case -->
               <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), key16, iv16), key16, iv16)</value>
+              <value>decrypt('aes-128-cfb128', encrypt('aes-128-cfb128', materialize(plaintext), key16, iv16), key16, iv16)</value>
               <value>decrypt('aes-128-ctr', encrypt('aes-128-ctr', materialize(plaintext), key16, iv16), key16, iv16)</value>
               <value>decrypt('aes-128-ecb', encrypt('aes-128-ecb', materialize(plaintext), key16), key16)</value>
               <value>decrypt('aes-128-ofb', encrypt('aes-128-ofb', materialize(plaintext), key16, iv16), key16, iv16)</value>

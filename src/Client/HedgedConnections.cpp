@@ -345,7 +345,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
-}
+};
 
 bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLocation & location)
 {

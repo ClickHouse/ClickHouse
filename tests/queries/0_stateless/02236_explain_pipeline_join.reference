@@ -4,14 +4,16 @@ ExpressionTransform
   JoiningTransform 2 → 1
     (Expression)
     ExpressionTransform
-      (Limit)
-      Limit
-        (ReadFromStorage)
-        Numbers 0 → 1
-    (Expression)
-    FillingRightJoinSide
-      ExpressionTransform
+      (SettingQuotaAndLimits)
         (Limit)
         Limit
           (ReadFromStorage)
           Numbers 0 → 1
+    (Expression)
+    FillingRightJoinSide
+      ExpressionTransform
+        (SettingQuotaAndLimits)
+          (Limit)
+          Limit
+            (ReadFromStorage)
+            Numbers 0 → 1

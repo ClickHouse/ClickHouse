@@ -3,7 +3,7 @@ sidebar_position: 48
 sidebar_label: DateTime
 ---
 
-# Datetime
+# Datetime {#data_type-datetime}
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
 
@@ -17,7 +17,7 @@ Supported range of values: \[1970-01-01 00:00:00, 2106-02-07 06:28:15\].
 
 Resolution: 1 second.
 
-## Usage Remarks
+## Usage Remarks {#usage-remarks}
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. The time zone affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01’).
 
@@ -33,7 +33,7 @@ ClickHouse outputs values depending on the value of the [date_time_output_format
 
 When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
 
-## Examples
+## Examples {#examples}
 
 **1.** Creating a table with a `DateTime`-type column and inserting data into it:
 
@@ -134,7 +134,7 @@ Similar issue exists for Casey Antarctic station in year 2010. They changed time
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
 
-## See Also
+## See Also {#see-also}
 
 -   [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 -   [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)

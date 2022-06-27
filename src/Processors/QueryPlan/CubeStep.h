@@ -21,7 +21,6 @@ public:
 
     const Aggregator::Params & getParams() const;
 private:
-    size_t keys_size;
     AggregatingTransformParamsPtr params;
 };
 

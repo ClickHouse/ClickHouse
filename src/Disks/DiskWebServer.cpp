@@ -9,12 +9,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <IO/ReadBufferFromFile.h>
-
+#include <Disks/IDiskRemote.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -95,7 +91,7 @@ void DiskWebServer::initialize(const String & uri_path) const
 }
 
 
-class DiskWebServerDirectoryIterator final : public IDirectoryIterator
+class DiskWebServerDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
     explicit DiskWebServerDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
@@ -177,7 +173,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = IObjectStorage::getThreadPoolReader();
+        auto reader = IDiskRemote::getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);
     }
     else
@@ -188,7 +184,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 }
 
 
-DirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path) const
+DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
 {
     std::vector<fs::path> dir_file_paths;
     if (files.find(path) == files.end())

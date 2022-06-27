@@ -2,7 +2,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 
 
 namespace DB
@@ -86,7 +85,6 @@ void PushingPipelineExecutor::start()
 
     started = true;
     executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
-    executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
     if (!executor->executeStep(&input_wait_flag))
         throw Exception(ErrorCodes::LOGICAL_ERROR,

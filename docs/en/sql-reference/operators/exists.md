@@ -1,4 +1,4 @@
-# EXISTS
+# EXISTS {#exists-operator}
 
 The `EXISTS` operator checks how many records are in the result of a subquery. If it is empty, then the operator returns `0`. Otherwise, it returns `1`.
 

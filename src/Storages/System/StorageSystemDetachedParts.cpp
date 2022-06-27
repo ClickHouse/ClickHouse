@@ -6,7 +6,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {

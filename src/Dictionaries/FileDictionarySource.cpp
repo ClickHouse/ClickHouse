@@ -46,7 +46,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-QueryPipeline FileDictionarySource::loadAll()
+Pipe FileDictionarySource::loadAll()
 {
     LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
@@ -54,7 +54,7 @@ QueryPipeline FileDictionarySource::loadAll()
     source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 
-    return QueryPipeline(std::move(source));
+    return Pipe(std::move(source));
 }
 
 

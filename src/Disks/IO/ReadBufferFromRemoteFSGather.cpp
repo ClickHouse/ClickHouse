@@ -1,5 +1,6 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
+#include <Disks/IDiskRemote.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 
@@ -130,7 +131,7 @@ void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
 }
 
 
-IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
+ReadBufferFromRemoteFSGather::ReadResult ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     /**
      * Set `data` to current working and internal buffers.

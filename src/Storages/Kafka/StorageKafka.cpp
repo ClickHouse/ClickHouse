@@ -17,8 +17,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Kafka/KafkaSink.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -681,11 +679,12 @@ bool StorageKafka::streamToViews()
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
 
-        Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
-                                          ? kafka_settings->kafka_flush_interval_ms
-                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
+        limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
+                                                 ? kafka_settings->kafka_flush_interval_ms
+                                                 : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-        source->setTimeLimit(max_execution_time);
+        limits.timeout_overflow_mode = OverflowMode::BREAK;
+        source->setLimits(limits);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

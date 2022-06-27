@@ -408,29 +408,6 @@ Block Aggregator::Params::getHeader(
     return materializeBlock(res);
 }
 
-ColumnRawPtrs Aggregator::Params::makeRawKeyColumns(const Block & block) const
-{
-    ColumnRawPtrs key_columns(keys_size);
-
-    for (size_t i = 0; i < keys_size; ++i)
-        key_columns[i] = block.safeGetByPosition(i).column.get();
-
-    return key_columns;
-}
-
-Aggregator::AggregateColumnsConstData Aggregator::Params::makeAggregateColumnsData(const Block & block) const
-{
-    AggregateColumnsConstData aggregate_columns(aggregates_size);
-
-    for (size_t i = 0; i < aggregates_size; ++i)
-    {
-        const auto & aggregate_column_name = aggregates[i].column_name;
-        aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.getByName(aggregate_column_name).column).getData();
-    }
-
-    return aggregate_columns;
-}
-
 void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 {
     Strings res;
@@ -888,38 +865,6 @@ void Aggregator::executeOnBlockSmall(
     executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
 }
 
-void Aggregator::mergeOnBlockSmall(
-    AggregatedDataVariants & result,
-    size_t row_begin,
-    size_t row_end,
-    const AggregateColumnsConstData & aggregate_columns_data,
-    const ColumnRawPtrs & key_columns) const
-{
-    /// `result` will destroy the states of aggregate functions in the destructor
-    result.aggregator = this;
-
-    /// How to perform the aggregation?
-    if (result.empty())
-    {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
-        result.keys_size = params.keys_size;
-        result.key_sizes = key_sizes;
-    }
-
-    if (false) {} // NOLINT
-#define M(NAME, IS_TWO_LEVEL) \
-    else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
-                         result.without_key, /* no_more_keys= */ false, \
-                         row_begin, row_end, \
-                         aggregate_columns_data, key_columns);
-
-    APPLY_FOR_AGGREGATED_VARIANTS(M)
-#undef M
-    else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-}
-
 void Aggregator::executeImpl(
     AggregatedDataVariants & result,
     size_t row_begin,
@@ -1236,7 +1181,8 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
     AggregatedDataVariants & data_variants,
     size_t row_begin,
     size_t row_end,
-    AggregateFunctionInstruction * aggregate_instructions) const
+    AggregateFunctionInstruction * aggregate_instructions,
+    Arena * arena) const
 {
     /// `data_variants` will destroy the states of aggregate functions in the destructor
     data_variants.aggregator = this;
@@ -1252,28 +1198,15 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
                 inst->offsets[static_cast<ssize_t>(row_begin) - 1],
                 inst->offsets[row_end - 1],
                 res + inst->state_offset,
-                inst->batch_arguments, data_variants.aggregates_pool);
+                inst->batch_arguments, arena);
         else
             inst->batch_that->addBatchSinglePlaceFromInterval(
                 row_begin,
                 row_end,
                 res + inst->state_offset,
                 inst->batch_arguments,
-                data_variants.aggregates_pool);
+                arena);
     }
-}
-
-void NO_INLINE Aggregator::mergeOnIntervalWithoutKeyImpl(
-    AggregatedDataVariants & data_variants,
-    size_t row_begin,
-    size_t row_end,
-    const AggregateColumnsConstData & aggregate_columns_data) const
-{
-    /// `data_variants` will destroy the states of aggregate functions in the destructor
-    data_variants.aggregator = this;
-    data_variants.init(AggregatedDataVariants::Type::without_key);
-
-    mergeWithoutKeyStreamsImpl(data_variants, row_begin, row_end, aggregate_columns_data);
 }
 
 
@@ -2636,20 +2569,33 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
 
 template <bool no_more_keys, typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
+    Block & block,
     Arena * aggregates_pool,
     Method & method [[maybe_unused]],
     Table & data,
-    AggregateDataPtr overflow_row,
-    size_t row_begin,
-    size_t row_end,
-    const AggregateColumnsConstData & aggregate_columns_data,
-    const ColumnRawPtrs & key_columns) const
+    AggregateDataPtr overflow_row) const
 {
+    ColumnRawPtrs key_columns(params.keys_size);
+    AggregateColumnsConstData aggregate_columns(params.aggregates_size);
+
+    /// Remember the columns we will work with
+    for (size_t i = 0; i < params.keys_size; ++i)
+        key_columns[i] = block.safeGetByPosition(i).column.get();
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const auto & aggregate_column_name = params.aggregates[i].column_name;
+        aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.getByName(aggregate_column_name).column).getData();
+    }
+
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
-    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
+    /// For all rows.
+    size_t rows = block.rows();
 
-    for (size_t i = row_begin; i < row_end; ++i)
+    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+
+    for (size_t i = 0; i < rows; ++i)
     {
         AggregateDataPtr aggregate_data = nullptr;
 
@@ -2685,69 +2631,45 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     {
         /// Merge state of aggregate functions.
         aggregate_functions[j]->mergeBatch(
-            row_begin, row_end,
+            0, rows,
             places.get(), offsets_of_aggregate_states[j],
-            aggregate_columns_data[j]->data(),
+            aggregate_columns[j]->data(),
             aggregates_pool);
     }
+
+    /// Early release memory.
+    block.clear();
 }
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
-    Block block,
+    Block & block,
     Arena * aggregates_pool,
     Method & method,
     Table & data,
     AggregateDataPtr overflow_row,
     bool no_more_keys) const
 {
-    const AggregateColumnsConstData & aggregate_columns_data = params.makeAggregateColumnsData(block);
-    const ColumnRawPtrs & key_columns = params.makeRawKeyColumns(block);
-
-    mergeStreamsImpl<Method, Table>(
-        aggregates_pool,
-        method,
-        data,
-        overflow_row,
-        no_more_keys,
-        0,
-        block.rows(),
-        aggregate_columns_data,
-        key_columns);
-}
-
-template <typename Method, typename Table>
-void NO_INLINE Aggregator::mergeStreamsImpl(
-    Arena * aggregates_pool,
-    Method & method,
-    Table & data,
-    AggregateDataPtr overflow_row,
-    bool no_more_keys,
-    size_t row_begin,
-    size_t row_end,
-    const AggregateColumnsConstData & aggregate_columns_data,
-    const ColumnRawPtrs & key_columns) const
-{
     if (!no_more_keys)
-        mergeStreamsImplCase<false>(aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns);
+        mergeStreamsImplCase<false>(block, aggregates_pool, method, data, overflow_row);
     else
-        mergeStreamsImplCase<true>(aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns);
+        mergeStreamsImplCase<true>(block, aggregates_pool, method, data, overflow_row);
 }
 
 
-void NO_INLINE Aggregator::mergeBlockWithoutKeyStreamsImpl(
-    Block block,
+void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
+    Block & block,
     AggregatedDataVariants & result) const
 {
-    AggregateColumnsConstData aggregate_columns = params.makeAggregateColumnsData(block);
-    mergeWithoutKeyStreamsImpl(result, 0, block.rows(), aggregate_columns);
-}
-void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
-    AggregatedDataVariants & result,
-    size_t row_begin,
-    size_t row_end,
-    const AggregateColumnsConstData & aggregate_columns_data) const
-{
+    AggregateColumnsConstData aggregate_columns(params.aggregates_size);
+
+    /// Remember the columns we will work with
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const auto & aggregate_column_name = params.aggregates[i].column_name;
+        aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.getByName(aggregate_column_name).column).getData();
+    }
+
     AggregatedDataWithoutKey & res = result.without_key;
     if (!res)
     {
@@ -2756,14 +2678,16 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         res = place;
     }
 
-    for (size_t row = row_begin; row < row_end; ++row)
+    for (size_t row = 0, rows = block.rows(); row < rows; ++row)
     {
         /// Adding Values
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
+            aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[row], result.aggregates_pool);
     }
-}
 
+    /// Early release memory.
+    block.clear();
+}
 
 bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys) const
 {
@@ -2780,10 +2704,11 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
     }
 
     if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
-        mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
+        mergeWithoutKeyStreamsImpl(block, result);
+
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+        mergeStreamsImpl(block, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -2899,7 +2824,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             {
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
+                    mergeStreamsImpl(block, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
 
                 if (false) {} // NOLINT
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2950,11 +2875,11 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 break;
 
             if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
-                mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
+                mergeWithoutKeyStreamsImpl(block, result);
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+                mergeStreamsImpl(block, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -3017,11 +2942,11 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
             bucket_num = -1;
 
         if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
-            mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
+            mergeWithoutKeyStreamsImpl(block, result);
 
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false);
+            mergeStreamsImpl(block, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false);
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M

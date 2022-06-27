@@ -99,7 +99,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
 }
 
 static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
         return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
@@ -110,7 +110,7 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
     if (method == CompressionMethod::Xz)
         return std::make_unique<LZMAInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
     if (method == CompressionMethod::Zstd)
-        return std::make_unique<ZstdInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment, zstd_window_log_max);
+        return std::make_unique<ZstdInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
     if (method == CompressionMethod::Lz4)
         return std::make_unique<Lz4InflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #if USE_BZIP2
@@ -126,12 +126,13 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
 }
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, size_t buf_size, char * existing_memory, size_t alignment)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max);
+    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment);
 }
+
 
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested, CompressionMethod method, int level, size_t buf_size, char * existing_memory, size_t alignment)

@@ -47,7 +47,6 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         header_,
         *buf_,
         params_,
-        false,
         with_names_,
         with_types_,
         format_settings_,
@@ -334,7 +333,6 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
             });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
-        markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);
     }
 }
 

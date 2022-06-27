@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
-#include <Formats/JSONUtils.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>
@@ -221,12 +221,12 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
 {
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerJSONAsStringSchemaReader(FormatFactory & factory)
@@ -251,12 +251,12 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory)
 {
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsObject", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONAsObject", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerJSONAsObjectSchemaReader(FormatFactory & factory)

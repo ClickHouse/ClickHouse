@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <filesystem>
 
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
-    extern const int LOGICAL_ERROR;
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
@@ -34,19 +32,7 @@ void DatabaseMemory::createTable(
 {
     std::unique_lock lock{mutex};
     attachTableUnlocked(table_name, table, lock);
-
-    /// Clean the query from temporary flags.
-    ASTPtr query_to_store = query;
-    if (query)
-    {
-        query_to_store = query->clone();
-        auto * create = query_to_store->as<ASTCreateQuery>();
-        if (!create)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
-        cleanupObjectDefinitionFromTemporaryFlags(*create);
-    }
-
-    create_queries.emplace(table_name, query_to_store);
+    create_queries.emplace(table_name, query);
 }
 
 void DatabaseMemory::dropTable(
