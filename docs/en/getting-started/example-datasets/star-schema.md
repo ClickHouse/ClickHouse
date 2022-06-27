@@ -26,7 +26,6 @@ $ ./dbgen -s 1000 -T c
 $ ./dbgen -s 1000 -T l
 $ ./dbgen -s 1000 -T p
 $ ./dbgen -s 1000 -T s
-$ ./dbgen -s 1000 -T d
 ```
 
 Creating tables in ClickHouse:
@@ -109,10 +108,8 @@ Converting “star schema” to denormalized “flat schema”:
 SET max_memory_usage = 20000000000;
 
 CREATE TABLE lineorder_flat
-ENGINE = MergeTree
-PARTITION BY toYear(LO_ORDERDATE)
-ORDER BY (LO_ORDERDATE, LO_ORDERKEY) AS
-SELECT
+ENGINE = MergeTree ORDER BY (LO_ORDERDATE, LO_ORDERKEY)
+AS SELECT
     l.LO_ORDERKEY AS LO_ORDERKEY,
     l.LO_LINENUMBER AS LO_LINENUMBER,
     l.LO_CUSTKEY AS LO_CUSTKEY,

@@ -11,10 +11,17 @@ namespace DB
 enum class VolumeType
 {
     JBOD,
-    RAID1,
     SINGLE_DISK,
     UNKNOWN
 };
+
+enum class VolumeLoadBalancing
+{
+    ROUND_ROBIN,
+    LEAST_USED,
+};
+
+VolumeLoadBalancing parseVolumeLoadBalancing(const String & config);
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -34,11 +41,19 @@ using Volumes = std::vector<VolumePtr>;
 class IVolume : public Space
 {
 public:
-    IVolume(String name_, Disks disks_, size_t max_data_part_size_ = 0, bool perform_ttl_move_on_insert_ = true)
+    /// This constructor is only for:
+    /// - SingleDiskVolume
+    /// From createVolumeFromReservation().
+    IVolume(String name_,
+            Disks disks_,
+            size_t max_data_part_size_ = 0,
+            bool perform_ttl_move_on_insert_ = true,
+            VolumeLoadBalancing load_balancing_ = VolumeLoadBalancing::ROUND_ROBIN)
         : disks(std::move(disks_))
         , name(name_)
         , max_data_part_size(max_data_part_size_)
         , perform_ttl_move_on_insert(perform_ttl_move_on_insert_)
+        , load_balancing(load_balancing_)
     {
     }
 
@@ -79,6 +94,10 @@ public:
     /// Should a new data part be synchronously moved to a volume according to ttl on insert
     /// or move this part in background task asynchronously after insert.
     bool perform_ttl_move_on_insert = true;
+    /// Load balancing, one of:
+    /// - ROUND_ROBIN
+    /// - LEAST_USED
+    const VolumeLoadBalancing load_balancing;
 };
 
 }

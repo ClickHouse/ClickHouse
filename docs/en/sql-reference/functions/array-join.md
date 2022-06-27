@@ -3,7 +3,7 @@ sidebar_position: 61
 sidebar_label: arrayJoin
 ---
 
-# arrayJoin function {#functions_arrayjoin}
+# arrayJoin function
 
 This is a very unusual function.
 

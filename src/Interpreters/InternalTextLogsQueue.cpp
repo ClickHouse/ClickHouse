@@ -38,6 +38,7 @@ MutableColumns InternalTextLogsQueue::getSampleColumns()
 
 void InternalTextLogsQueue::pushBlock(Block && log_block)
 {
+    OvercommitTrackerBlockerInThread blocker;
     static Block sample_block = getSampleBlock();
 
     if (blocksHaveEqualStructure(sample_block, log_block))

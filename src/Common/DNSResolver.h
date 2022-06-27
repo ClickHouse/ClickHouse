@@ -34,6 +34,8 @@ public:
 
     Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
 
+    std::vector<Poco::Net::SocketAddress> resolveAddressList(const std::string & host, UInt16 port);
+
     /// Accepts host IP and resolves its host name
     String reverseResolve(const Poco::Net::IPAddress & address);
 

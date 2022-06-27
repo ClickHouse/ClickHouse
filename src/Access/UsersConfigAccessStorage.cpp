@@ -4,6 +4,7 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
+#include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -14,9 +15,6 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <Common/logger_useful.h>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/adaptor/map.hpp>
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
@@ -525,8 +523,11 @@ namespace
     }
 }
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const AccessControl & access_control_)
-    : IAccessStorage(storage_name_), access_control(access_control_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_)
+    : IAccessStorage(storage_name_)
+    , access_control(access_control_)
+    , memory_storage(storage_name_, access_control.getChangesNotifier(), false)
+    , backup_allowed(allow_backup_)
 {
 }
 
@@ -605,9 +606,9 @@ void UsersConfigAccessStorage::load(
         std::make_shared<Poco::Event>(),
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {
-            parseFromConfig(*new_config);
-
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
+            parseFromConfig(*new_config);
+            access_control.getChangesNotifier().sendNotifications();
         },
         /* already_loaded = */ false);
 }
@@ -657,32 +658,9 @@ AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id, bool throw_i
 }
 
 
-std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<std::pair<String, AccessEntityType>> UsersConfigAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.readName(id, throw_if_not_exists);
+    return memory_storage.readNameWithType(id, throw_if_not_exists);
 }
 
-
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
-{
-    return memory_storage.subscribeForChanges(id, handler);
-}
-
-
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
-{
-    return memory_storage.subscribeForChanges(type, handler);
-}
-
-
-bool UsersConfigAccessStorage::hasSubscription(const UUID & id) const
-{
-    return memory_storage.hasSubscription(id);
-}
-
-
-bool UsersConfigAccessStorage::hasSubscription(AccessEntityType type) const
-{
-    return memory_storage.hasSubscription(type);
-}
 }

@@ -41,15 +41,24 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     UInt32 shard_num,
     UInt32 shard_count,
+    size_t replica_num,
+    size_t replica_count,
     std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
+    /// Do not apply AST optimizations, because query
+    /// is already optimized and some optimizations
+    /// can be applied only for non-distributed tables
+    /// and we can produce query, inconsistent with remote plans.
     auto interpreter = InterpreterSelectQuery(
-        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+        query_ast, context,
+        SelectQueryOptions(processed_stage)
+            .setShardInfo(shard_num, shard_count)
+            .ignoreASTOptimizations());
 
-    interpreter.setProperClientInfo();
+    interpreter.setProperClientInfo(replica_num, replica_count);
     if (coordinator)
     {
         interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
