@@ -18,6 +18,12 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
+if (CLICKHOUSE_SPLIT_BINARY)
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
+else ()
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
+endif ()
+
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
 
@@ -95,6 +101,12 @@ if (ENABLE_CLICKHOUSE_LOCAL)
     message(STATUS "Local mode: ON")
 else()
     message(STATUS "Local mode: OFF")
+endif()
+
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+    message(STATUS "Self-extracting executable: ON")
+else()
+    message(STATUS "Self-extracting executable: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
@@ -253,6 +265,10 @@ endif ()
 if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
     add_subdirectory (library-bridge)
 endif ()
+
+#if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+    add_subdirectory (self-extracting)
+#endif ()
 
 if (CLICKHOUSE_ONE_SHARED)
   add_library(clickhouse-lib SHARED
