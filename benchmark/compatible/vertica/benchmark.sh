@@ -21,3 +21,6 @@ sudo docker exec vertica_ce du -bcs /data/vertica/VMart
 # 25000000000
 
 # Note: the real numbers cannot be published.
+
+grep -F 'All rows formatted' logs.txt | sed -r -e 's/^.* ([0-9.]+) ms$/\1/' |
+    awk '{ if (i % 3 == 0) { printf "[" }; printf $1 / 1000; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
