@@ -1,2 +1,2 @@
-Load time:
-Data size:  bytes
+Load time: 41:09
+Data size: 121 588 958 061 bytes
