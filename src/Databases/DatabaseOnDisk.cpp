@@ -395,6 +395,18 @@ void DatabaseOnDisk::renameTable(
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
             target_db->checkMetadataFilenameAvailability(to_table_name);
 
+        /// This place is actually quite dangerous. Since data directory is moved to store/
+        /// DatabaseCatalog may try to clean it up as unused. We add UUID mapping to avoid this.
+        /// However, we may fail after data directory move, but before metadata file creation in the destination db.
+        /// In this case nothing will protect data directory (except 30-days timeout).
+        /// But this situation (when table in Ordinary database is partially renamed) require manual intervention anyway.
+        if (from_ordinary_to_atomic)
+        {
+            DatabaseCatalog::instance().addUUIDMapping(create.uuid);
+            if (table->storesDataOnDisk())
+                LOG_INFO(log, "Moving table from {} to {}", table_data_relative_path, to_database.getTableDataPath(create));
+        }
+
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
         table->rename(to_database.getTableDataPath(create), StorageID(create));
     }

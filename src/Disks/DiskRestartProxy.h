@@ -65,7 +65,7 @@ public:
     String getUniqueId(const String & path) const override;
     bool checkUniqueId(const String & id) const override;
     String getCacheBasePath() const override;
-    std::vector<String> getRemotePaths(const String & path) const override;
+    PathsWithSize getObjectStoragePaths(const String & path) const override;
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
     void restart(ContextPtr context);

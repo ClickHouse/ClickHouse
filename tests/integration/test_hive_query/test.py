@@ -19,12 +19,20 @@ def started_cluster():
         cluster.add_instance(
             "h0_0_0",
             main_configs=["configs/config.xml"],
-            extra_configs=["configs/hdfs-site.xml"],
+            extra_configs=["configs/hdfs-site.xml", "data/prepare_hive_data.sh"],
             with_hive=True,
         )
 
         logging.info("Starting cluster ...")
         cluster.start()
+        cluster.copy_file_to_container(
+            "roottesthivequery_hdfs1_1",
+            "/ClickHouse/tests/integration/test_hive_query/data/prepare_hive_data.sh",
+            "/prepare_hive_data.sh",
+        )
+        cluster.exec_in_container(
+            "roottesthivequery_hdfs1_1", ["bash", "-c", "bash /prepare_hive_data.sh"]
+        )
         yield cluster
     finally:
         cluster.shutdown()
