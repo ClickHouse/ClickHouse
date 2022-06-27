@@ -1,3 +1,5 @@
+// NOLINTBEGIN(*)
+
 /*
  * PCG Random Number Generation for C++
  *
@@ -553,3 +555,5 @@ std::ostream& operator<<(std::ostream& out, printable_typename<T>) {
 } // namespace pcg_extras
 
 #endif // PCG_EXTRAS_HPP_INCLUDED
+
+// NOLINTEND(*)
