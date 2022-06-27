@@ -124,7 +124,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     if (engine_name == "Ordinary")
     {
         if (!create.attach && !context->getSettingsRef().allow_deprecated_database_ordinary)
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Ordinary database engine is deprecated");
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                            "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     }
 
