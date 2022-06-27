@@ -1154,7 +1154,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
-        bool prewhere_is_input_column = !prewhere_info->actions; 
+        bool prewhere_is_input_column = !prewhere_info->actions;
 
         if (prewhere_info->actions)
         {
