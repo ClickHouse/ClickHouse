@@ -1179,6 +1179,12 @@ public:
                 if (!wrapLayer())
                     return false;
 
+            // Special case for (('a', 'b')) -> tuple(('a', 'b'))
+            if (!is_tuple && result.size() == 1)
+                if (auto * literal = result[0]->as<ASTLiteral>())
+                    if (literal->value.getType() == Field::Types::Tuple)
+                        is_tuple = true;
+
             state = -1;
         }
 
