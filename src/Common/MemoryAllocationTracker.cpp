@@ -244,93 +244,37 @@ struct Tree
         }
     }
 
-    static void writeWrappedString(std::string_view ref, size_t wrap_size, DB::WriteBuffer & out)
+    struct DumpTree
     {
-        size_t start = 0;
-        while (start + wrap_size < ref.size())
+        struct Node
         {
-            writeString(ref.substr(start, wrap_size), out);
-            writeString("\n", out);
-            start += wrap_size;
-        }
-
-        writeString(ref.substr(start, std::string_view::npos), out);
-    }
-
-    static void addressToLine(
-        DB::WriteBuffer & out,
-        const DB::SymbolIndex & symbol_index,
-        std::unordered_map<std::string, DB::Dwarf> & dwarfs,
-        const void * addr)
-    {
-        if (const auto * symbol = symbol_index.findSymbol(addr))
-        {
-            writeWrappedString(demangle(symbol->name), 100, out);
-            writeString("\n", out);
-        }
-        if (const auto * object = symbol_index.findObject(addr))
-        {
-            auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-            if (!std::filesystem::exists(object->name))
-                return;
-
-            DB::Dwarf::LocationInfo location;
-            std::vector<DB::Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-            if (dwarf_it->second.findAddress(uintptr_t(addr) - uintptr_t(object->address_begin), location, DB::Dwarf::LocationInfoMode::FAST, frames))
-            {
-                writeString(location.file.toString(), out);
-                writeChar(':', out);
-                writeIntText(location.line, out);
-            }
-            else
-                writeString(object->name, out);
-        }
-    }
-
-    static void dumpNode(
-        DB::WriteBuffer & out,
-        const TreeNode * node,
-        std::unordered_map<uintptr_t, size_t> & mapping,
-        const DB::SymbolIndex & symbol_index,
-        std::unordered_map<std::string, DB::Dwarf> & dwarfs)
-    {
-        auto addr = reinterpret_cast<intptr_t>(node->ptr);
-        size_t id = mapping.emplace(addr, mapping.size()).first->second;
-
-        out << "    n" << id << "[label=\"Allocated: "
-            << formatReadableSizeWithBinarySuffix(node->allocated) << " (" << node->allocated << ")\n";
-        addressToLine(out, symbol_index, dwarfs, node->ptr);
-        out << "\"];\n";
-    }
-
-    void dumpAllocationsTree(DB::WriteBuffer & out, size_t max_depth, size_t max_bytes) const
-    {
-        max_bytes = std::max<size_t>(max_bytes, 1);
+            const void * ptr{};
+            size_t allocated{};
+        };
 
         struct Edge
         {
-            uintptr_t from;
-            uintptr_t to;
+            const void * from{};
+            const void * to{};
         };
 
-        std::vector<Edge> edges;
-        std::unordered_map<uintptr_t, size_t> mapping;
-        std::unordered_map<std::string, DB::Dwarf> dwarfs;
+        using Nodes = std::vector<Node>;
+        using Edges = std::vector<Edge>;
 
-        auto symbol_index_ptr = DB::SymbolIndex::instance();
-        const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+        Nodes nodes;
+        Edges edges;
+    };
 
+    DumpTree dumpAllocationsTree(size_t max_depth, size_t max_bytes) const
+    {
+        max_bytes = std::max<size_t>(max_bytes, 1);
 
-        out << "digraph\n{\n";
-        out << "  rankdir=\"LR\";\n";
-        out << "  { node [shape = rect]\n";
-
-        /// Nodes
-
+        DumpTree tree;
         std::vector<ListNode *> nodes;
 
         nodes.push_back(root.children);
-        dumpNode(out, &root, mapping, symbol_index, dwarfs);
+        tree.nodes.emplace_back(DumpTree::Node{root.ptr, root.allocated});
+
         while (!nodes.empty())
         {
             if (nodes.back() == nullptr)
@@ -347,24 +291,15 @@ struct Tree
 
             if (enough_bytes)
             {
-                dumpNode(out, current, mapping, symbol_index, dwarfs);
-                edges.push_back({uintptr_t(current->parent->ptr), uintptr_t(current->ptr)});
+                tree.nodes.emplace_back(DumpTree::Node{current->ptr, current->allocated});
+                tree.edges.emplace_back(DumpTree::Edge{current->parent->ptr, current->ptr});
 
                 if (enough_depth)
                     nodes.push_back(current->children);
             }
         }
 
-        out << "  }\n";
-
-        /// Edges
-
-        for (const auto & edge : edges)
-        {
-            out << "  n" << mapping[edge.from] << " -> n" << mapping[edge.to] << ";\n";
-        }
-
-        out << "}\n";
+        return tree;
     }
 };
 
@@ -421,9 +356,9 @@ struct AllocationTracker
         tree.dump(values, offsets, bytes);
     }
 
-    void dumpAllocationsTree(DB::WriteBuffer & buf, size_t max_depth, size_t max_bytes) const
+    Tree::DumpTree dumpAllocationsTree(size_t max_depth, size_t max_bytes) const
     {
-        tree.dumpAllocationsTree(buf, max_depth, max_bytes);
+        return tree.dumpAllocationsTree(max_depth, max_bytes);
     }
 
     using value_type = std::pair<void * const, Tree::TreeNode *>;
@@ -584,24 +519,108 @@ static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UIn
         insertData(chars, offsets, str.data() + start, end - start);
 }
 
+static void writeWrappedString(std::string_view ref, size_t wrap_size, DB::WriteBuffer & out)
+{
+    size_t start = 0;
+    while (start + wrap_size < ref.size())
+    {
+        writeString(ref.substr(start, wrap_size), out);
+        writeString("\n", out);
+        start += wrap_size;
+    }
+
+    writeString(ref.substr(start, std::string_view::npos), out);
+}
+
+static void addressToLine(
+    DB::WriteBuffer & out,
+    const DB::SymbolIndex & symbol_index,
+    std::unordered_map<std::string, DB::Dwarf> & dwarfs,
+    const void * addr)
+{
+    if (const auto * symbol = symbol_index.findSymbol(addr))
+    {
+        writeWrappedString(demangle(symbol->name), 100, out);
+        writeString("\n", out);
+    }
+    if (const auto * object = symbol_index.findObject(addr))
+    {
+        auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+        if (!std::filesystem::exists(object->name))
+            return;
+
+        DB::Dwarf::LocationInfo location;
+        std::vector<DB::Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+        if (dwarf_it->second.findAddress(uintptr_t(addr) - uintptr_t(object->address_begin), location, DB::Dwarf::LocationInfoMode::FAST, frames))
+        {
+            writeString(location.file.toString(), out);
+            writeChar(':', out);
+            writeIntText(location.line, out);
+        }
+        else
+            writeString(object->name, out);
+    }
+}
+
+static void dumpNode(
+    DB::WriteBuffer & out,
+    const Tree::DumpTree::Node & node,
+    std::unordered_map<uintptr_t, size_t> & mapping,
+    const DB::SymbolIndex & symbol_index,
+    std::unordered_map<std::string, DB::Dwarf> & dwarfs)
+{
+    auto addr = reinterpret_cast<intptr_t>(node.ptr);
+    size_t id = mapping.emplace(addr, mapping.size()).first->second;
+
+    out << "    n" << id << "[label=\"Allocated: "
+        << formatReadableSizeWithBinarySuffix(node.allocated) << " (" << node.allocated << ")\n";
+    addressToLine(out, symbol_index, dwarfs, node.ptr);
+    out << "\"];\n";
+}
+
 void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, size_t max_depth, size_t max_bytes)
 {
-    if (recursive_call_flag)
-        return;
+    Tree::DumpTree tree;
 
-    RecursiveCallGuard guard(recursive_call_flag);
-
-    auto & data = getTrackerData();
-    if (data.is_enabled)
     {
-        std::lock_guard lock(data.mutex);
+        if (recursive_call_flag)
+            return;
+
+        RecursiveCallGuard guard(recursive_call_flag);
+
+        auto & data = getTrackerData();
         if (data.is_enabled)
         {
-            DB::WriteBufferFromOwnString buf;
-            data.tracker.dumpAllocationsTree(buf, max_depth, max_bytes);
-            fillColumn(chars, offsets, buf.str());
+            std::lock_guard lock(data.mutex);
+            if (data.is_enabled)
+                tree = data.tracker.dumpAllocationsTree(max_depth, max_bytes);
         }
     }
+
+    DB::WriteBufferFromOwnString out;
+
+    std::unordered_map<uintptr_t, size_t> mapping;
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
+
+    auto symbol_index_ptr = DB::SymbolIndex::instance();
+    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+
+    out << "digraph\n{\n";
+    out << "  rankdir=\"LR\";\n";
+    out << "  { node [shape = rect]\n";
+
+    for (const auto & node : tree.nodes)
+        dumpNode(out, node, mapping, symbol_index, dwarfs);
+
+    out << "  }\n";
+
+    for (const auto & edge : tree.edges)
+        out << "  n" << mapping[reinterpret_cast<uintptr_t>(edge.from)]
+            << " -> n" << mapping[reinterpret_cast<uintptr_t>(edge.to)] << ";\n";
+
+    out << "}\n";
+
+    fillColumn(chars, offsets, out.str());
 }
 
 }

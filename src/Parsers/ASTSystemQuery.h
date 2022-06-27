@@ -96,7 +96,7 @@ public:
     String disk;
     UInt64 seconds{};
     UInt64 max_alloc_stack_depth{};
-    UInt64 min_alloc_bytes{};
+    Int64 min_alloc_bytes= -1;
 
     String filesystem_cache_path;
     String backup_name;

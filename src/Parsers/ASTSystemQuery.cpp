@@ -201,6 +201,14 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         if (!filesystem_cache_path.empty())
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
     }
+    else if (type == Type::DUMP_ALLOCATIONS)
+    {
+        if (max_alloc_stack_depth)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " MAX DEPTH " << max_alloc_stack_depth;
+
+        if (min_alloc_bytes >= 0)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " MIN BYTES " << min_alloc_bytes;
+    }
 }
 
 

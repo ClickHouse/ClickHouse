@@ -202,8 +202,11 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 }
 
 
-static QueryPipeline buildDumpAllocationsPipeline(size_t max_depth, size_t max_bytes)
+static QueryPipeline buildDumpAllocationsPipeline(UInt64 max_depth, Int64 max_bytes)
 {
+    if (max_bytes < 0)
+        max_bytes = 1024 * 1024;
+
     auto column = ColumnString::create();
     auto & chars = column->getChars();
     auto & offsets = column->getOffsets();
