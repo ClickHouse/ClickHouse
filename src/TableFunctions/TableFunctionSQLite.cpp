@@ -74,7 +74,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     database_path = checkAndGetLiteralArgument<String>(args[0], "database_path");
-    remote_table_name = checkAndGetLiteralArgument<String>(args[0], "table_name");
+    remote_table_name = checkAndGetLiteralArgument<String>(args[1], "table_name");
 
     sqlite_db = openSQLiteDB(database_path, context);
 }
