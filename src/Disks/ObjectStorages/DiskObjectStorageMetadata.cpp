@@ -53,7 +53,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
             object_relative_path = object_relative_path.substr(object_storage_root_path.size());
         }
         assertChar('\n', buf);
-        storage_objects[i].relative_path = object_relative_path;
+        storage_objects[i].path = object_relative_path;
         storage_objects[i].bytes_size = object_size;
     }
 
