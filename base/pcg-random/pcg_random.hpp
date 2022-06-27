@@ -1,3 +1,5 @@
+// NOLINTBEGIN(*)
+
 /*
  * PCG Random Number Generation for C++
  *
@@ -1778,3 +1780,5 @@ typedef pcg_engines::ext_oneseq_xsh_rs_64_32<14,32,true>    pcg32_k16384_fast;
 #endif
 
 #endif // PCG_RAND_HPP_INCLUDED
+
+// NOLINTEND(*)
