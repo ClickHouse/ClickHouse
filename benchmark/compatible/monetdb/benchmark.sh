@@ -8,8 +8,27 @@ sudo wget --output-document=/etc/apt/trusted.gpg.d/monetdb.gpg https://www.monet
 sudo apt-get update
 sudo apt-get install -y monetdb5-sql monetdb-client
 
+sudo systemctl enable monetdbd
+sudo systemctl start monetdbd
+
 sudo monetdbd create /var/lib/monetdb
 sudo monetdbd start /var/lib/monetdb
+sudo usermod -a -G monetdb $USER
 
 sudo monetdb create test
 sudo monetdb release test
+
+sudo apt-get install -y expect
+
+./query.expect "$(cat create.sql)"
+
+wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+gzip -d hits.tsv.gz
+chmod 777 ~ hits.tsv
+
+./query.expect "COPY INTO hits FROM '$(pwd)/hits.tsv' USING DELIMITERS '\t'"
+
+# 99997497 affected rows
+# clk: 15:39 min
+
+./run.sh 2>&1 | tee log.txt
