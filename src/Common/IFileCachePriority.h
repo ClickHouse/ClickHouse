@@ -61,6 +61,7 @@ public:
 
         virtual size_t hits() const = 0;
 
+        /// Point the iterator to the next higher priority cache record.
         virtual void next() const = 0;
 
         virtual bool valid() const = 0;
@@ -72,6 +73,8 @@ public:
         /// Deletes an existing cached record.
         virtual void remove(std::lock_guard<std::mutex> &) = 0;
 
+        /// Get an iterator to handle write operations. Write iterators should only
+        /// be allowed to call remove, use and incrementSize methods.
         virtual WriteIterator getWriteIterator() const = 0;
 
         virtual void incrementSize(size_t, std::lock_guard<std::mutex> &) = 0;
