@@ -1484,7 +1484,7 @@ def test_wrong_format_usage(started_cluster):
 
 
 def get_profile_event_for_query(instance, query, profile_event):
-    instance.query('system flush logs')
+    instance.query("system flush logs")
     query = query.replace("'", "\\'")
     return int(
         instance.query(
@@ -1503,14 +1503,14 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
@@ -1520,7 +1520,7 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheInvalidations'
+        instance, desc_query, "SchemaInferenceCacheInvalidations"
     )
     assert cache_invalidations == 1
 
@@ -1530,7 +1530,7 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') settings cache_ttl_for_s3_schema_inference=1"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
@@ -1539,22 +1539,22 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') settings cache_ttl_for_s3_schema_inference=1000"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
     cache_ttl_expirations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheTTLExpirations'
+        instance, desc_query, "SchemaInferenceCacheTTLExpirations"
     )
     assert cache_ttl_expirations == 1
 
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
     cache_ttl_updates = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheTTLUpdates'
+        instance, desc_query, "SchemaInferenceCacheTTLUpdates"
     )
     assert cache_ttl_updates == 1
 
@@ -1564,7 +1564,7 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') settings cache_ttl_for_s3_schema_inference=1"
     instance.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheInvalidations'
+        instance, desc_query, "SchemaInferenceCacheInvalidations"
     )
     assert cache_invalidations == 1
 
@@ -1573,18 +1573,18 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
     cache_ttl_expirations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheTTLExpirations'
+        instance, desc_query, "SchemaInferenceCacheTTLExpirations"
     )
     assert cache_ttl_expirations == 1
 
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl')"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
@@ -1598,21 +1598,21 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache*.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache2.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
     desc_query = f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
@@ -1624,14 +1624,14 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
@@ -1641,7 +1641,7 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheInvalidations'
+        instance, desc_query, "SchemaInferenceCacheInvalidations"
     )
     assert cache_invalidations == 1
 
@@ -1651,7 +1651,7 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') settings cache_ttl_for_url_schema_inference=1"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
@@ -1660,22 +1660,22 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') settings cache_ttl_for_url_schema_inference=1000"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
     cache_ttl_expirations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheTTLExpirations'
+        instance, desc_query, "SchemaInferenceCacheTTLExpirations"
     )
     assert cache_ttl_expirations == 1
 
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
     cache_ttl_updates = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheTTLUpdates'
+        instance, desc_query, "SchemaInferenceCacheTTLUpdates"
     )
     assert cache_ttl_updates == 1
 
@@ -1685,7 +1685,7 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') settings cache_ttl_for_url_schema_inference=1"
     instance.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheInvalidations'
+        instance, desc_query, "SchemaInferenceCacheInvalidations"
     )
     assert cache_invalidations == 1
 
@@ -1694,18 +1694,18 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
     cache_ttl_expirations = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheTTLExpirations'
+        instance, desc_query, "SchemaInferenceCacheTTLExpirations"
     )
     assert cache_ttl_expirations == 1
 
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl')"
     instance.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheMisses'
+        instance, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
@@ -1720,20 +1720,20 @@ def test_schema_inference_cache(started_cluster):
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name}')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache2.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
     desc_query = f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
     instance.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        instance, desc_query, 'SchemaInferenceCacheHits'
+        instance, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1

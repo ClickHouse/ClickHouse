@@ -230,7 +230,7 @@ Strings getKeysForSchemaCache(const Strings & sources, const String & format, co
 {
     /// For some formats data schema depends on some settings, so it's possible that
     /// two queries to the same source will get two different schemas. To process this
-    /// case we add som additional information specific for the format to the cache key.
+    /// case we add some additional information specific for the format to the cache key.
     /// For example, for Protobuf format additional information is the path to the schema
     /// and message name.
     String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);

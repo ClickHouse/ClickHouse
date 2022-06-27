@@ -3,7 +3,9 @@ import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True, main_configs=["configs/config.d/query_log.xml"])
+node = cluster.add_instance(
+    "node", stay_alive=True, main_configs=["configs/config.d/query_log.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -16,7 +18,7 @@ def start_cluster():
 
 
 def get_profile_event_for_query(node, query, profile_event):
-    node.query('system flush logs')
+    node.query("system flush logs")
     query = query.replace("'", "\\'")
     return int(
         node.query(
@@ -30,14 +32,14 @@ def test(start_cluster):
     desc_query = "desc file('data.jsonl')"
     node.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheMisses'
+        node, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
     desc_query = "desc file('data.jsonl')"
     node.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheHits'
+        node, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
@@ -45,7 +47,7 @@ def test(start_cluster):
     desc_query = "desc file('data.jsonl')"
     node.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheInvalidations'
+        node, desc_query, "SchemaInferenceCacheInvalidations"
     )
     assert cache_invalidations == 1
 
@@ -55,7 +57,7 @@ def test(start_cluster):
     )
     node.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheMisses'
+        node, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
@@ -66,22 +68,22 @@ def test(start_cluster):
     )
     node.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheMisses'
+        node, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
     cache_ttl_expirations = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheTTLExpirations'
+        node, desc_query, "SchemaInferenceCacheTTLExpirations"
     )
     assert cache_ttl_expirations == 1
 
     desc_query = "desc file('data1.jsonl')"
     node.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheHits'
+        node, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
     cache_ttl_updates = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheTTLUpdates'
+        node, desc_query, "SchemaInferenceCacheTTLUpdates"
     )
     assert cache_ttl_updates == 1
 
@@ -91,7 +93,7 @@ def test(start_cluster):
     )
     node.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheInvalidations'
+        node, desc_query, "SchemaInferenceCacheInvalidations"
     )
     assert cache_invalidations == 1
 
@@ -100,18 +102,18 @@ def test(start_cluster):
     desc_query = "desc file('data.jsonl')"
     node.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheHits'
+        node, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
     cache_ttl_expirations = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheTTLExpirations'
+        node, desc_query, "SchemaInferenceCacheTTLExpirations"
     )
     assert cache_ttl_expirations == 1
 
     desc_query = "desc file('data1.jsonl')"
     node.query(desc_query)
     cache_misses = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheMisses'
+        node, desc_query, "SchemaInferenceCacheMisses"
     )
     assert cache_misses == 1
 
@@ -121,20 +123,20 @@ def test(start_cluster):
     desc_query = "desc file('data*.jsonl')"
     node.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheHits'
+        node, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
     desc_query = "desc file('data2.jsonl')"
     node.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheHits'
+        node, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
 
     desc_query = "desc file('data3.jsonl')"
     node.query(desc_query)
     cache_hits = get_profile_event_for_query(
-        node, desc_query, 'SchemaInferenceCacheHits'
+        node, desc_query, "SchemaInferenceCacheHits"
     )
     assert cache_hits == 1
