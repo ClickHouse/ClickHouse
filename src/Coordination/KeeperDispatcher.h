@@ -87,7 +87,7 @@ private:
         std::list<KeeperStorage::RequestForSession> request_queue;
     };
 
-    void finalizeRequest(const KeeperStorage::RequestForSession & request_for_session);
+    void finalizeRequests(const KeeperStorage::RequestsForSessions & requests_for_sessions);
 
     std::unordered_map<int64_t, UnprocessedRequests> unprocessed_requests_for_session;
     std::mutex unprocessed_request_mutex;
@@ -213,6 +213,8 @@ public:
     {
         keeper_stats.reset();
     }
+
+    ThreadPool bg_read_request{1};
 };
 
 }
