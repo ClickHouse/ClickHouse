@@ -167,9 +167,13 @@ FilterDAGInfoPtr generateFilterActions(
 
     for (const auto & column : required_columns_from_filter)
     {
+        std::cerr << "========= required : " << column.name << std::endl;
         if (prerequisite_columns.end() == std::find(prerequisite_columns.begin(), prerequisite_columns.end(), column.name))
             prerequisite_columns.push_back(column.name);
     }
+
+    for (auto & col : prerequisite_columns)
+        std::cerr << "====== col " << col << std::endl;
 
     return filter_info;
 }
@@ -818,7 +822,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, source_header);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
