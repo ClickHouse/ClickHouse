@@ -1263,3 +1263,4 @@ bn_sqr_comba4:
 	ret
 .size	bn_sqr_comba4,.-.L_bn_sqr_comba4_begin
 #endif
+.section	.note.GNU-stack,"",@progbits

@@ -92,6 +92,7 @@
     M(ZooKeeperSet, "") \
     M(ZooKeeperMulti, "") \
     M(ZooKeeperCheck, "") \
+    M(ZooKeeperSync, "") \
     M(ZooKeeperClose, "") \
     M(ZooKeeperWatchResponse, "") \
     M(ZooKeeperUserExceptions, "") \
