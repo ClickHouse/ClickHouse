@@ -468,6 +468,7 @@ uuid
 variadic
 varint
 vectorized
+vectorscan
 wchc
 wchs
 webpage
