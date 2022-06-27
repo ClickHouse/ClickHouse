@@ -36,7 +36,9 @@ def init_data(source):
 def test_disks_app_func_ld(started_cluster):
     source = cluster.instances["disks_app_test"]
 
-    out = source.exec_in_container(["/usr/bin/clickhouse", "disks", "list-disks"])
+    out = source.exec_in_container(
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "list-disks"]
+    )
 
     disks = out.split("\n")
 
@@ -49,18 +51,53 @@ def test_disks_app_func_ls(started_cluster):
     init_data(source)
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--disk", "test1", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test1", "list", "."]
     )
 
     files = out.split("\n")
 
     assert files[0] == "store"
 
+    out = source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--send-logs",
+            "--disk",
+            "test1",
+            "list",
+            ".",
+            "--recursive",
+        ]
+    )
+
+    assert ".:\nstore\n" in out
+    assert "\n./store:\n" in out
+
 
 def test_disks_app_func_cp(started_cluster):
     source = cluster.instances["disks_app_test"]
 
     init_data(source)
+
+    source.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'tester' |"
+            + " ".join(
+                [
+                    "/usr/bin/clickhouse",
+                    "disks",
+                    "--send-logs",
+                    "--disk",
+                    "test1",
+                    "write",
+                    "path1",
+                ]
+            ),
+        ]
+    )
 
     source.exec_in_container(
         [
@@ -77,12 +114,10 @@ def test_disks_app_func_cp(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--disk", "test2", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
     )
 
-    files = out.split("\n")
-
-    assert files[0] == "path1"
+    assert "path1" in out
 
 
 def test_disks_app_func_ln(started_cluster):
@@ -101,7 +136,7 @@ def test_disks_app_func_ln(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "list", "data/default/"]
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "list", "data/default/"]
     )
 
     files = out.split("\n")
@@ -116,35 +151,60 @@ def test_disks_app_func_rm(started_cluster):
 
     source.exec_in_container(
         [
-            "/usr/bin/clickhouse",
-            "disks",
-            "copy",
-            "--diskFrom",
-            "test1",
-            "--diskTo",
-            "test2",
-            ".",
-            ".",
+            "bash",
+            "-c",
+            "echo 'tester' |"
+            + " ".join(
+                [
+                    "/usr/bin/clickhouse",
+                    "disks",
+                    "--send-logs",
+                    "--disk",
+                    "test2",
+                    "write",
+                    "path3",
+                ]
+            ),
         ]
     )
 
+    out = source.exec_in_container(
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
+    )
+
+    assert "path3" in out
+
     source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--disk", "test2", "remove", "path1"]
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--send-logs",
+            "--disk",
+            "test2",
+            "remove",
+            "path3",
+        ]
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--disk", "test2", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
     )
 
-    files = out.split("\n")
-
-    assert files[0] == ""
+    assert "path3" not in out
 
 
 def test_disks_app_func_mv(started_cluster):
     source = cluster.instances["disks_app_test"]
 
     init_data(source)
+
+    out = source.exec_in_container(
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test1", "list", "."]
+    )
+
+    files = out.split("\n")
+    assert "old_store" not in files
+    assert "store" in files
 
     source.exec_in_container(
         [
@@ -159,12 +219,12 @@ def test_disks_app_func_mv(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--disk", "test1", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test1", "list", "."]
     )
 
     files = out.split("\n")
-
-    assert files[0] == "old_store"
+    assert "old_store" in files
+    assert "store" not in files
 
 
 def test_disks_app_func_read_write(started_cluster):
@@ -176,13 +236,29 @@ def test_disks_app_func_read_write(started_cluster):
             "-c",
             "echo 'tester' |"
             + " ".join(
-                ["/usr/bin/clickhouse", "disks", "--disk", "test1", "write", "5.txt"]
+                [
+                    "/usr/bin/clickhouse",
+                    "disks",
+                    "--send-logs",
+                    "--disk",
+                    "test1",
+                    "write",
+                    "5.txt",
+                ]
             ),
         ]
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--disk", "test1", "read", "5.txt"]
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--send-logs",
+            "--disk",
+            "test1",
+            "read",
+            "5.txt",
+        ]
     )
 
     files = out.split("\n")
