@@ -27,42 +27,70 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-**Distributed Parameters**
+### Distributed Parameters
 
--   `cluster` - the cluster name in the server’s config file
+#### cluster
 
--   `database` - the name of a remote database
+`cluster` - the cluster name in the server’s config file
 
--   `table` - the name of a remote table
+#### database
 
--   `sharding_key` - (optionally) sharding key
+`database` - the name of a remote database
 
--   `policy_name` - (optionally) policy name, it will be used to store temporary files for async send
+#### table
+
+`table` - the name of a remote table
+
+#### sharding_key
+
+`sharding_key` - (optionally) sharding key
+
+#### policy_name
+
+`policy_name` - (optionally) policy name, it will be used to store temporary files for async send
 
 **See Also**
 
  - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
-**Distributed Settings**
+### Distributed Settings
 
-- `fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
+#### fsync_after_insert
 
-- `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
+`fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
-- `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for async INSERT, an exception will be thrown. 0 - do not throw. Default 0.
+#### fsync_directories
 
-- `bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for async INSERT, the query will be delayed. 0 - do not delay. Default 0.
+`fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
 
-- `max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for async send. Default 60.
+#### bytes_to_throw_insert
 
-- `monitor_batch_inserts` - same as [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)
+`bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for async INSERT, an exception will be thrown. 0 - do not throw. Default 0.
 
-- `monitor_split_batch_on_failure` - same as [distributed_directory_monitor_split_batch_on_failure](../../../operations/settings/settings.md#distributed_directory_monitor_split_batch_on_failure)
+#### bytes_to_delay_insert
 
-- `monitor_sleep_time_ms` - same as [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)
+`bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for async INSERT, the query will be delayed. 0 - do not delay. Default 0.
 
-- `monitor_max_sleep_time_ms` - same as [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
+#### max_delay_to_insert
+
+`max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for async send. Default 60.
+
+#### monitor_batch_inserts
+
+`monitor_batch_inserts` - same as [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)
+
+#### monitor_split_batch_on_failure
+
+`monitor_split_batch_on_failure` - same as [distributed_directory_monitor_split_batch_on_failure](../../../operations/settings/settings.md#distributed_directory_monitor_split_batch_on_failure)
+
+#### monitor_sleep_time_ms
+
+`monitor_sleep_time_ms` - same as [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)
+
+#### monitor_max_sleep_time_ms
+
+`monitor_max_sleep_time_ms` - same as [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
 
 :::note
 **Durability settings** (`fsync_...`):
@@ -213,7 +241,9 @@ To learn more about how distibuted `in` and `global in` queries are processed, r
 
 ## Virtual Columns {#virtual-columns}
 
--   `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
+#### _shard_num
+
+`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
 :::note
 Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.

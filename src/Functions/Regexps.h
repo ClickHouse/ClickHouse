@@ -16,7 +16,7 @@
 
 #include "config_functions.h"
 
-#if USE_HYPERSCAN
+#if USE_VECTORSCAN
 #    include <hs.h>
 #endif
 
@@ -103,7 +103,7 @@ private:
 
 }
 
-#if USE_HYPERSCAN
+#if USE_VECTORSCAN
 
 namespace MultiRegexps
 {
@@ -312,6 +312,6 @@ inline Regexps * get(const std::vector<StringRef> & patterns, std::optional<UInt
 
 }
 
-#endif // USE_HYPERSCAN
+#endif // USE_VECTORSCAN
 
 }
