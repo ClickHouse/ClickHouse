@@ -120,7 +120,6 @@ private:
     HDFSFSPtr hdfs_fs;
 
     SettingsPtr settings;
-    String hdfs_root_path;
 };
 
 }

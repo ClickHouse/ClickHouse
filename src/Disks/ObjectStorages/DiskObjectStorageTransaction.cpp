@@ -233,8 +233,8 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             object_storage.removeObjects(remove_from_remote);
         }
 
-        for (const auto & path_to_remove : path_to_remove_from_cache)
-            object_storage.removeCacheIfExists(path_to_remove.path);
+        for (const auto & [path_to_remove, _] : path_to_remove_from_cache)
+            object_storage.removeCacheIfExists(path_to_remove);
     }
 };
 

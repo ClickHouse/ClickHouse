@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
+    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
@@ -37,23 +38,23 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 
     for (size_t i = 0; i < storage_objects_count; ++i)
     {
-        String object_storage_object_path;
-        size_t remote_fs_object_size;
-        readIntText(remote_fs_object_size, buf);
+        String object_relative_path;
+        size_t object_size;
+        readIntText(object_size, buf);
         assertChar('\t', buf);
-        readEscapedString(object_storage_object_path, buf);
+        readEscapedString(object_relative_path, buf);
         if (version == VERSION_ABSOLUTE_PATHS)
         {
-            if (!object_storage_object_path.starts_with(object_storage_root_path))
+            if (!object_relative_path.starts_with(object_storage_root_path))
                 throw Exception(ErrorCodes::UNKNOWN_FORMAT,
                     "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
-                    object_storage_object_path, object_storage_root_path, common_metadata_path);
+                    object_relative_path, object_storage_root_path, common_metadata_path);
 
-            object_storage_object_path = object_storage_object_path.substr(object_storage_root_path.size());
+            object_relative_path = object_relative_path.substr(object_storage_root_path.size());
         }
         assertChar('\n', buf);
-        storage_objects[i].path = object_storage_object_path;
-        storage_objects[i].size = remote_fs_object_size;
+        storage_objects[i].relative_path = object_relative_path;
+        storage_objects[i].bytes_size = object_size;
     }
 
     readIntText(ref_count, buf);
@@ -82,11 +83,11 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeIntText(total_size, buf);
     writeChar('\n', buf);
 
-    for (const auto & [object_storage_object_path, remote_fs_object_size] : storage_objects)
+    for (const auto & [object_relative_path, object_size] : storage_objects)
     {
-        writeIntText(remote_fs_object_size, buf);
+        writeIntText(object_size, buf);
         writeChar('\t', buf);
-        writeEscapedString(object_storage_object_path, buf);
+        writeEscapedString(object_relative_path, buf);
         writeChar('\n', buf);
     }
 
@@ -121,6 +122,9 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
+    if (!remote_fs_root_path.empty() && path.starts_with(remote_fs_root_path))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected relative path");
+
     total_size += size;
     storage_objects.emplace_back(path, size);
 }
