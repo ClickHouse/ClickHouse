@@ -286,7 +286,7 @@ void ZooKeeperListRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
     Coordination::write(has_watch, out);
-    Coordination::write(static_cast<int32_t>(list_request_type), out);
+    Coordination::write(static_cast<uint8_t>(list_request_type), out);
 }
 
 void ZooKeeperListRequest::readImpl(ReadBuffer & in)
@@ -296,7 +296,7 @@ void ZooKeeperListRequest::readImpl(ReadBuffer & in)
 
     if (!in.eof())
     {
-        int32_t read_request_type;
+        uint8_t read_request_type;
         Coordination::read(read_request_type, in);
         list_request_type = static_cast<ListRequestType>(read_request_type);
     }
