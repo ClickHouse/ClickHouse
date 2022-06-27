@@ -174,6 +174,9 @@ struct Tree
         /// src/Common/MemoryAllocationTracker.cpp
         const size_t offset = 2;
 
+        if (!root.ptr && stack_size > 1)
+            root.ptr = stack[1];
+
         TreeNode * node = &root;
         for (size_t i = offset; i < stack_size; ++i)
         {
@@ -241,6 +244,19 @@ struct Tree
         }
     }
 
+    static void writeWrappedString(std::string_view ref, size_t wrap_size, DB::WriteBuffer & out)
+    {
+        size_t start = 0;
+        while (start + wrap_size < ref.size())
+        {
+            writeString(ref.substr(start, wrap_size), out);
+            writeString("\n", out);
+            start += wrap_size;
+        }
+
+        writeString(ref.substr(start, std::string_view::npos), out);
+    }
+
     static void addressToLine(
         DB::WriteBuffer & out,
         const DB::SymbolIndex & symbol_index,
@@ -249,8 +265,8 @@ struct Tree
     {
         if (const auto * symbol = symbol_index.findSymbol(addr))
         {
-            writeString(symbol->name, out);
-            writeString("\\n", out);
+            writeWrappedString(demangle(symbol->name), 100, out);
+            writeString("\n", out);
         }
         if (const auto * object = symbol_index.findObject(addr))
         {
@@ -268,14 +284,12 @@ struct Tree
             }
             else
                 writeString(object->name, out);
-
-            writeString("\\n", out);
         }
     }
 
     static void dumpNode(
         DB::WriteBuffer & out,
-        TreeNode * node,
+        const TreeNode * node,
         std::unordered_map<uintptr_t, size_t> & mapping,
         const DB::SymbolIndex & symbol_index,
         std::unordered_map<std::string, DB::Dwarf> & dwarfs)
@@ -283,13 +297,16 @@ struct Tree
         auto addr = reinterpret_cast<intptr_t>(node->ptr);
         size_t id = mapping.emplace(addr, mapping.size()).first->second;
 
-        out << "    n" << id << "[label=\"bytes: " << node->allocated << "\\n";
+        out << "    n" << id << "[label=\"Allocated: "
+            << formatReadableSizeWithBinarySuffix(node->allocated) << " (" << node->allocated << ")\n";
         addressToLine(out, symbol_index, dwarfs, node->ptr);
         out << "\"];\n";
     }
 
     void dumpAllocationsTree(DB::WriteBuffer & out, size_t max_depth, size_t max_bytes) const
     {
+        max_bytes = std::max<size_t>(max_bytes, 1);
+
         struct Edge
         {
             uintptr_t from;
@@ -306,12 +323,14 @@ struct Tree
 
         out << "digraph\n{\n";
         out << "  rankdir=\"LR\";\n";
+        out << "  { node [shape = rect]\n";
 
         /// Nodes
 
         std::vector<ListNode *> nodes;
 
         nodes.push_back(root.children);
+        dumpNode(out, &root, mapping, symbol_index, dwarfs);
         while (!nodes.empty())
         {
             if (nodes.back() == nullptr)
@@ -323,20 +342,18 @@ struct Tree
             TreeNode * current = nodes.back()->child;
             nodes.back() = nodes.back()->next;
 
-            bool enough_bytes = max_bytes != 0 && current->allocated >= max_bytes;
-            bool enough_depth = max_depth != 0 && nodes.size() < max_depth;
+            bool enough_bytes = current->allocated >= max_bytes;
+            bool enough_depth = max_depth == 0 || nodes.size() < max_depth;
 
             if (enough_bytes)
-                dumpNode(out, current, mapping, symbol_index, dwarfs);
-
-            if (enough_depth && enough_bytes)
             {
+                dumpNode(out, current, mapping, symbol_index, dwarfs);
                 edges.push_back({uintptr_t(current->parent->ptr), uintptr_t(current->ptr)});
-                nodes.push_back(current->children);
+
+                if (enough_depth)
+                    nodes.push_back(current->children);
             }
         }
-
-        out << "  { node [shape = rect]\n";
 
         out << "  }\n";
 
@@ -344,7 +361,7 @@ struct Tree
 
         for (const auto & edge : edges)
         {
-            out << "  n" << edge.from << " -> n" << edge.to << ";\n";
+            out << "  n" << mapping[edge.from] << " -> n" << mapping[edge.to] << ";\n";
         }
 
         out << "}\n";

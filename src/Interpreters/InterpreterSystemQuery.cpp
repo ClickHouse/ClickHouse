@@ -510,11 +510,11 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
-        case Type::STOP_ALLOCATION_TRACKER:
+        case Type::START_ALLOCATION_TRACKER:
             getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
             MemoryAllocationTracker::enable_allocation_tracker();
             break;
-        case Type::START_ALLOCATION_TRACKER:
+        case Type::STOP_ALLOCATION_TRACKER:
             getContext()->checkAccess(AccessType::SYSTEM_ALLOCATION_TRACKER);
             MemoryAllocationTracker::disable_allocation_tracker();
             break;
