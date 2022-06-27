@@ -170,6 +170,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             }
         }
 
+        LOG_DEBUG(log, "initial_memory_usage: {}, current_memory_usage: {}", initial_memory_usage, getCurrentMemoryUsage());
+
         current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
 
         /// We finalize last key aggregation state if a new key found.

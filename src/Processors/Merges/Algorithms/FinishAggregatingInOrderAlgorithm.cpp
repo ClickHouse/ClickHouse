@@ -162,6 +162,10 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         chunks.back().setChunkInfo(std::make_shared<AggregatedChunkInfo>());
         states[i].current_row = states[i].to_row;
 
+        LOG_DEBUG(&Poco::Logger::get("FinishAggregatingInOrderAlgorithm"),
+            "total_bytes: {}, current_rows: {}, num_rows: {}",
+            states[i].total_bytes, current_rows, states[i].num_rows);
+
         /// We assume that sizes in bytes of rows are almost the same.
         accumulated_bytes += states[i].total_bytes * (static_cast<double>(current_rows) / states[i].num_rows);
         accumulated_rows += current_rows;
