@@ -38,7 +38,7 @@ private:
     size_t max_threads;
     size_t memory_efficient_merge_threads;
 
-    /// Used to determine, should we resize pipeline to 1 at the end.
+    /// It determines if we should resize pipeline to 1 at the end.
     /// Needed in case of distributed memory efficient aggregation over distributed table.
     const bool should_produce_results_in_order_of_bucket_number;
 };

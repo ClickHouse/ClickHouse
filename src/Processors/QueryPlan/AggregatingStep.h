@@ -66,7 +66,7 @@ private:
     InputOrderInfoPtr group_by_info;
     SortDescription group_by_sort_description;
 
-    /// Used to determine, should we resize pipeline to 1 at the end.
+    /// It determines if we should resize pipeline to 1 at the end.
     /// Needed in case of distributed memory efficient aggregation.
     const bool should_produce_results_in_order_of_bucket_number;
 

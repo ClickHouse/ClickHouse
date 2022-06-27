@@ -353,7 +353,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
 
-        /// No need to do this in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
+        /// We add the explicit resize here, but not in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : pipeline.getNumStreams(), true /* force */);
 
         aggregating = collector.detachProcessors(0);

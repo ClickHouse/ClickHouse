@@ -369,7 +369,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 else
                     group_by_info = nullptr;
 
-                // We don't have information about what it the `to_stage` of the query processing (only about `from_stage` which is passed through `processed_stage` argument).
+                // We don't have information regarding the `to_stage` of the query processing, only about `from_stage` (which is passed through `processed_stage` argument).
                 // Thus we cannot assign false here since it may be a query over distributed table.
                 const bool should_produce_results_in_order_of_bucket_number = true;
 
