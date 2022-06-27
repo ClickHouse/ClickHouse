@@ -438,7 +438,7 @@ def test_hive_struct_type(started_cluster):
 
     result = node.query(
         """
-    SELECT day, f_struct.a FROM default.test_hive_types WHERE day = '2022-02-20' SETTINGS input_format_parquet_import_nested=1
+    SELECT day, f_struct.a, f_struct.d.x FROM default.test_hive_types WHERE day = '2022-02-20' SETTINGS input_format_parquet_import_nested=1
         """
     )
     expected_result = """2022-02-20     aaa     10"""
