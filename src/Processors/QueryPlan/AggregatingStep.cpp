@@ -11,10 +11,13 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Interpreters/Aggregator.h>
+#include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include "Core/ColumnNumbers.h"
+#include "DataTypes/IDataType.h"
 
 namespace DB
 {
@@ -46,22 +49,44 @@ Block appendGroupingSetColumn(Block header)
     return res;
 }
 
+Block generateOutputHeader(const Block & input_header)
+{
+    auto header = appendGroupingSetColumn(input_header);
+    for (size_t i = 1; i < header.columns(); ++i)
+    {
+        auto & column = header.getByPosition(i);
+
+        if (!isAggregateFunction(column.type))
+        {
+            column.type = makeNullable(column.type);
+            column.column = makeNullable(column.column);
+        }
+    }
+    return header;
+}
+
+Block generateOutputHeader(const Block & input_header, const ColumnNumbers & keys)
+{
+    auto header = appendGroupingSetColumn(input_header);
+    for (auto key : keys)
+    {
+        auto & column = header.getByPosition(key + 1);
+
+        if (!isAggregateFunction(column.type))
+        {
+            column.type = makeNullable(column.type);
+            column.column = makeNullable(column.column);
+        }
+    }
+    return header;
+}
+
 static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & params)
 {
     if (params.empty())
         return block;
 
-    Block res;
-
-    size_t rows = block.rows();
-    auto column = ColumnUInt64::create(rows);
-
-    res.insert({ColumnPtr(std::move(column)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
-
-    for (auto & col : block)
-        res.insert(std::move(col));
-
-    return res;
+    return generateOutputHeader(block);
 }
 
 AggregatingStep::AggregatingStep(
@@ -249,7 +274,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         index.push_back(node);
                     }
                     else
-                        index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
+                    {
+                        const auto * column_node = dag->getIndex()[header.getPositionByName(col.name)];
+                        // index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
+
+                        const auto * node = &dag->addFunction(FunctionFactory::instance().get("toNullable", nullptr), { column_node }, col.name);
+                        index.push_back(node);
+                    }
                 }
 
                 dag->getIndex().swap(index);

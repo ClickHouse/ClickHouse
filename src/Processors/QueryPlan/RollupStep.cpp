@@ -23,7 +23,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 RollupStep::RollupStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_)
-    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_->getHeader()), getTraits())
+    : ITransformingStep(input_stream_, generateOutputHeader(params_->getHeader(), params_->params.keys), getTraits())
     , params(std::move(params_))
     , keys_size(params->params.keys_size)
 {

@@ -245,6 +245,7 @@ struct ExpressionAnalysisResult
     JoinPtr join;
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
+    ActionsDAGPtr before_aggregation_with_nullable;
     ActionsDAGPtr before_having;
     String having_column_name;
     bool remove_having_filter = false;
@@ -409,6 +410,8 @@ private:
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
+
+    void appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);

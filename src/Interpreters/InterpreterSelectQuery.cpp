@@ -582,6 +582,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
+        LOG_DEBUG(&Poco::Logger::get("InterpreterSelectQuery"), "Result header: {}", result_header.dumpStructure());
     };
 
     analyze(shouldMoveToPrewhere());
