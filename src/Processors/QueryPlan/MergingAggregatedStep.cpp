@@ -31,7 +31,8 @@ MergingAggregatedStep::MergingAggregatedStep(
     size_t max_threads_,
     size_t memory_efficient_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_)
-    : ITransformingStep(input_stream_, params_->getHeader(input_stream_.header, final_), getTraits(should_produce_results_in_order_of_bucket_number_))
+    : ITransformingStep(
+        input_stream_, params_.getHeader(input_stream_.header, final_), getTraits(should_produce_results_in_order_of_bucket_number_))
     , params(std::move(params_))
     , final(final_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)

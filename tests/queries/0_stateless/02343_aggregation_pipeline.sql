@@ -55,4 +55,4 @@ insert into dist_t select number from numbers_mt(10);
 
 -- { echoOn }
 
-explain pipeline select a from remote('127.0.0.{1,2}', currentDatabase(), dist_t) group by a settings distributed_aggregation_memory_efficient = 1;
+explain pipeline select a from remote('127.0.0.{1,2}', currentDatabase(), dist_t) group by a settings max_threads = 2, distributed_aggregation_memory_efficient = 1;
