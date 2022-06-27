@@ -28,8 +28,6 @@ CONFIG_DIR_IN_REPO = "programs/server"
 INTERGATION_DIR_IN_REPO = "tests/integration"
 SRC_DIR_IN_REPO = "src"
 
-DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
-
 
 def check_args_and_update_paths(args):
     if args.clickhouse_root:
@@ -227,6 +225,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--docker-image",
+        action="store",
+        default="clickhouse/integration-tests-runner",
+        help="Docker image of integration tests runner",
+    )
+
+    parser.add_argument(
         "--docker-image-version",
         default="latest",
         help="Version of docker image which runner will use to run tests",
@@ -387,7 +392,7 @@ if __name__ == "__main__":
         opts=" ".join(args.pytest_args).replace("'", "\\'"),
         tests_list=" ".join(args.tests_list),
         dockerd_internal_volume=dockerd_internal_volume,
-        img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
+        img=f"{args.docker_image}:{args.docker_image_version}",
         name=CONTAINER_NAME,
         command=args.command,
     )
