@@ -106,7 +106,8 @@
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
-    M(IOUringEnqueuedEvents, "Number of io_uring SQEs in flight.") \
+    M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
+    M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
 
 namespace CurrentMetrics
 {
