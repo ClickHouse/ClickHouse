@@ -1,0 +1,54 @@
+- [x] ClickHouse
+- [x] MySQL InnoDB
+- [ ] MySQL MyISAM
+- [ ] MariaDB
+- [x] MariaDB ColumnStore
+- [x] MemSQL/SingleStore
+- [x] PostgreSQL
+- [ ] Greenplum
+- [x] TimescaleDB
+- [x] Citus
+- [ ] Vertica (without publishing)
+- [x] QuestDB
+- [x] DuckDB
+- [x] MonetDB
+- [x] mapD/Omnisci/HeavyAI
+- [ ] Databend
+- [ ] Doris
+- [ ] Druid
+- [ ] Pinot
+- [ ] CrateDB
+- [ ] Spark SQL
+- [ ] Starrocks
+- [ ] ShitholeSQL
+- [ ] Hive
+- [ ] Impala
+- [ ] Hyper
+- [ ] Umbra
+- [ ] SQLite
+- [x] Redshift
+- [ ] Redshift Serverless
+- [ ] Presto/Trino
+- [ ] Athena
+- [ ] Bigquery (without publishing)
+- [ ] Snowflake
+- [ ] Rockset
+- [ ] CockroachDB
+- [ ] CockroachDB Serverless
+- [ ] Databricks
+- [ ] Planetscale (without publishing)
+- [ ] TiDB (TiFlash)
+- [ ] Amazon RDS
+- [ ] InfluxDB
+- [ ] TDEngine
+- [ ] MongoDB
+- [ ] Elasticsearch
+- [ ] Apache Ignite
+- [ ] Infobright
+- [ ] Actian Vector
+- [ ] Manticore Search
+- [ ] Vertica (without publishing)
+- [ ] Azure Synapse
+- [ ] Starbirst Galaxy
+- [ ] MS SQL Server with Column Store Index (without publishing)
+- [ ] Dremio (without publishing) 
