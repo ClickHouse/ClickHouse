@@ -1,5 +1,7 @@
 #include "MetadataStorageFromLocalDisk.h"
 #include <Disks/IDisk.h>
+#include <Common/filesystemHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -83,14 +85,10 @@ std::unordered_map<String, String> MetadataStorageFromLocalDisk::getSerializedMe
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getSerializedMetadata is not implemented for MetadataStorageFromLocalDisk");
 }
 
-BlobsPathToSize MetadataStorageFromLocalDisk::getBlobs(const std::string & path) const
+PathsWithSize MetadataStorageFromLocalDisk::getObjectStoragePaths(const std::string & path) const
 {
-    return {BlobPathWithSize(path, getFileSize(path))};
-}
-
-std::vector<std::string> MetadataStorageFromLocalDisk::getRemotePaths(const std::string & path) const
-{
-    return {fs::path(getPath()) / path};
+    auto full_path = fs::path(getPath()) / path;
+    return {PathWithSize{toString(getINodeNumberFromPath(full_path)), getFileSize(full_path)}};
 }
 
 uint32_t MetadataStorageFromLocalDisk::getHardlinkCount(const std::string & path) const
