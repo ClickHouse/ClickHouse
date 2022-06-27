@@ -167,13 +167,9 @@ FilterDAGInfoPtr generateFilterActions(
 
     for (const auto & column : required_columns_from_filter)
     {
-        std::cerr << "========= required : " << column.name << std::endl;
         if (prerequisite_columns.end() == std::find(prerequisite_columns.begin(), prerequisite_columns.end(), column.name))
             prerequisite_columns.push_back(column.name);
     }
-
-    for (auto & col : prerequisite_columns)
-        std::cerr << "====== col " << col << std::endl;
 
     return filter_info;
 }
