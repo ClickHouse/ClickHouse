@@ -24,18 +24,18 @@ class WriteBufferFromFileBase;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
-/// Path and its size.
+/// Path to a file and its size.
 /// Path can be either relative or absolute - according to the context of use.
 struct PathWithSize
 {
     std::string path;
-    uint64_t size; /// Size in bytes
+    uint64_t bytes_size;
 
     PathWithSize() = default;
 
-    PathWithSize(const std::string & path_, uint64_t size_)
+    PathWithSize(const std::string & path_, uint64_t bytes_size_)
         : path(path_)
-        , size(size_)
+        , bytes_size(bytes_size_)
     {}
 };
 

@@ -60,7 +60,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, hdfs_root_path, paths_to_read, read_settings);
+    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, paths_to_read, read_settings);
     auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }

@@ -97,7 +97,6 @@ namespace ProfileEvents
     extern const Event RejectedInserts;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
-    extern const Event DuplicatedInsertedBlocks;
     extern const Event InsertedWideParts;
     extern const Event InsertedCompactParts;
     extern const Event InsertedInMemoryParts;
@@ -2811,22 +2810,14 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 
 bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
-    MergeTreeTransaction * txn,
-    SimpleIncrement * increment,
-    Transaction * out_transaction,
-    MergeTreeDeduplicationLog * deduplication_log,
-    std::string_view deduplication_token)
+    Transaction & out_transaction,
+    DataPartsLock & lock)
 {
-    if (out_transaction && &out_transaction->data != this)
-        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
-
     DataPartsVector covered_parts;
-    {
-        auto lock = lockParts();
-        if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
-            return false;
-    }
+
+    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts))
+        return false;
+
     if (!covered_parts.empty())
         throw Exception("Added part " + part->name + " covers " + toString(covered_parts.size())
             + " existing part(s) (including " + covered_parts[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
@@ -2834,28 +2825,9 @@ bool MergeTreeData::renameTempPartAndAdd(
     return true;
 }
 
-
-bool MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part,
-    MergeTreeTransaction * txn,
-    SimpleIncrement * increment,
-    Transaction * out_transaction,
-    std::unique_lock<std::mutex> & lock,
-    DataPartsVector * out_covered_parts,
-    MergeTreeDeduplicationLog * deduplication_log,
-    std::string_view deduplication_token)
+void MergeTreeData::checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const
 {
-    if (out_transaction && &out_transaction->data != this)
-        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
-
-    if (txn)
-        transactions_enabled.store(true);
-
     part->assertState({DataPartState::Temporary});
-
-    MergeTreePartInfo part_info = part->info;
-    String part_name;
 
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
     {
@@ -2866,21 +2838,7 @@ bool MergeTreeData::renameTempPartAndReplace(
                 ErrorCodes::CORRUPTED_DATA);
     }
 
-    /** It is important that obtaining new block number and adding that block to parts set is done atomically.
-      * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
-      */
-    if (increment)
-    {
-        part_info.min_block = part_info.max_block = increment->get();
-        part_info.mutation = 0; /// it's equal to min_block by default
-        part_name = part->getNewName(part_info);
-    }
-    else /// Parts from ReplicatedMergeTree already have names
-        part_name = part->name;
-
-    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part_name);
-
-    if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
+    if (auto it_duplicate = data_parts_by_info.find(part->info); it_duplicate != data_parts_by_info.end())
     {
         String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
 
@@ -2889,93 +2847,51 @@ bool MergeTreeData::renameTempPartAndReplace(
 
         throw Exception(message, ErrorCodes::DUPLICATE_DATA_PART);
     }
+}
+
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename)
+{
+    part->is_temp = false;
+    part->setState(DataPartState::PreActive);
+
+    if (need_rename)
+        part->renameTo(part->name, true);
+
+    data_parts_indexes.insert(part);
+    out_transaction.precommitted_parts.insert(part);
+}
+
+bool MergeTreeData::renameTempPartAndReplaceImpl(
+    MutableDataPartPtr & part,
+    Transaction & out_transaction,
+    DataPartsLock & lock,
+    DataPartsVector * out_covered_parts)
+{
+    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part->name);
+
+    if (&out_transaction.data != this)
+        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
+
+    checkPartCanBeAddedToTable(part, lock);
 
     DataPartPtr covering_part;
-    DataPartsVector covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock);
+    DataPartsVector covered_parts = getActivePartsToReplace(part->info, part->name, covering_part, lock);
 
     if (covering_part)
     {
-        LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part_name, covering_part->getNameWithState());
+        LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
         return false;
-    }
-
-    /// Deduplication log used only from non-replicated MergeTree. Replicated
-    /// tables have their own mechanism. We try to deduplicate at such deep
-    /// level, because only here we know real part name which is required for
-    /// deduplication.
-    if (deduplication_log)
-    {
-        const String block_id = part->getZeroLevelPartBlockID(deduplication_token);
-        auto res = deduplication_log->addPart(block_id, part_info);
-        if (!res.second)
-        {
-            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-            LOG_INFO(log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
-            return false;
-        }
     }
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    ///
-    /// If out_transaction is null, we commit the part to the active set immediately, else add it to the transaction.
-
-    part->name = part_name;
-    part->info = part_info;
-    part->is_temp = false;
-    part->setState(DataPartState::PreActive);
-    part->renameTo(part_name, true);
-
-    auto part_it = data_parts_indexes.insert(part).first;
-
-    if (out_transaction)
-    {
-        chassert(out_transaction->txn == txn);
-        out_transaction->precommitted_parts.insert(part);
-    }
-    else
-    {
-        /// FIXME Transactions: it's not the best place for checking and setting removal_tid,
-        /// because it's too optimistic. We should lock removal_tid of covered parts at the beginning of operation.
-        MergeTreeTransaction::addNewPartAndRemoveCovered(shared_from_this(), part, covered_parts, txn);
-
-        size_t reduce_bytes = 0;
-        size_t reduce_rows = 0;
-        size_t reduce_parts = 0;
-        auto current_time = time(nullptr);
-        for (const DataPartPtr & covered_part : covered_parts)
-        {
-            covered_part->remove_time.store(current_time, std::memory_order_relaxed);
-            modifyPartState(covered_part, DataPartState::Outdated);
-            removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
-            reduce_bytes += covered_part->getBytesOnDisk();
-            reduce_rows += covered_part->rows_count;
-            ++reduce_parts;
-        }
-
-        modifyPartState(part_it, DataPartState::Active);
-        addPartContributionToColumnAndSecondaryIndexSizes(part);
-
-        if (covered_parts.empty())
-            updateObjectColumns(*part_it, lock);
-        else
-            resetObjectColumnsFromActiveParts(lock);
-
-        ssize_t diff_bytes = part->getBytesOnDisk() - reduce_bytes;
-        ssize_t diff_rows = part->rows_count - reduce_rows;
-        ssize_t diff_parts = 1 - reduce_parts;
-        increaseDataVolume(diff_bytes, diff_rows, diff_parts);
-    }
-
-    auto part_in_memory = asInMemoryPart(part);
-    if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
-    {
-        auto wal = getWriteAheadLog();
-        wal->addPart(part_in_memory);
-    }
+    preparePartForCommit(part, out_transaction, /* need_rename = */ true);
 
     if (out_covered_parts)
     {
+        out_covered_parts->reserve(covered_parts.size());
+
         for (DataPartPtr & covered_part : covered_parts)
             out_covered_parts->emplace_back(std::move(covered_part));
     }
@@ -2983,24 +2899,26 @@ bool MergeTreeData::renameTempPartAndReplace(
     return true;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment,
-    Transaction * out_transaction, MergeTreeDeduplicationLog * deduplication_log)
+MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplaceUnlocked(
+    MutableDataPartPtr & part,
+    Transaction & out_transaction,
+    DataPartsLock & lock)
 {
-    if (out_transaction && &out_transaction->data != this)
-        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
-
     DataPartsVector covered_parts;
-    {
-        auto lock = lockParts();
-        renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log);
-    }
+    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts);
+
     return covered_parts;
 }
 
-void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock)
+MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
+    MutableDataPartPtr & part,
+    Transaction & out_transaction)
+{
+    auto part_lock = lockParts();
+    return renameTempPartAndReplaceUnlocked(part, out_transaction, part_lock);
+}
 
+void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock)
 {
     if (txn)
         transactions_enabled.store(true);
@@ -4904,6 +4822,14 @@ MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
 }
 
 
+MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_)
+    : data(data_)
+    , txn(txn_)
+{
+    if (txn)
+        data.transactions_enabled.store(true);
+}
+
 void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
 {
     if (!isEmpty())
@@ -4947,8 +4873,11 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
     if (!isEmpty())
     {
+        auto settings = data.getSettings();
+        MergeTreeData::WriteAheadLogPtr wal;
         auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
+
 
         if (txn)
         {
@@ -4974,6 +4903,15 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
         for (const DataPartPtr & part : precommitted_parts)
         {
+            auto part_in_memory = asInMemoryPart(part);
+            if (part_in_memory && settings->in_memory_parts_enable_wal)
+            {
+                if (!wal)
+                    wal = data.getWriteAheadLog();
+
+                wal->addPart(part_in_memory);
+            }
+
             DataPartPtr covering_part;
             DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
             if (covering_part)

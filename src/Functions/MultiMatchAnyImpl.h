@@ -8,7 +8,7 @@
 #include "config_functions.h"
 #include <Common/config.h>
 
-#if USE_HYPERSCAN
+#if USE_VECTORSCAN
 #    include <hs.h>
 #else
 #    include "MatchImpl.h"
@@ -64,13 +64,13 @@ struct MultiMatchAnyImpl
         (void)FindAny;
         (void)FindAnyIndex;
         res.resize(haystack_offsets.size());
-#if USE_HYPERSCAN
+#if USE_VECTORSCAN
         const auto & hyperscan_regex = MultiRegexps::get<FindAnyIndex, MultiSearchDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
-            throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -92,7 +92,7 @@ struct MultiMatchAnyImpl
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
             UInt64 length = haystack_offsets[i] - offset - 1;
-            /// Hyperscan restriction.
+            /// Vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
             /// Zero the result, scan, check, update the offset.
@@ -106,14 +106,14 @@ struct MultiMatchAnyImpl
                 on_match,
                 &res[i]);
             if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
-                throw Exception("Failed to scan with hyperscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
+                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
             offset = haystack_offsets[i];
         }
 #else
-        /// Fallback if do not use hyperscan
+        /// Fallback if do not use vectorscan
         if constexpr (MultiSearchDistance)
             throw Exception(
-                "Edit distance multi-search is not implemented when hyperscan is off (is it x86 processor?)",
+                "Edit distance multi-search is not implemented when vectorscan is off",
                 ErrorCodes::NOT_IMPLEMENTED);
         PaddedPODArray<UInt8> accum(res.size());
         memset(res.data(), 0, res.size() * sizeof(res.front()));
@@ -129,7 +129,7 @@ struct MultiMatchAnyImpl
                     res[i] = j + 1;
             }
         }
-#endif // USE_HYPERSCAN
+#endif // USE_VECTORSCAN
     }
 };
 

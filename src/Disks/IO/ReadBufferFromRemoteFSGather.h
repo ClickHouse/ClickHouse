@@ -66,6 +66,8 @@ protected:
 
     String query_id;
 
+    Poco::Logger * log;
+
 private:
     SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
 
@@ -91,8 +93,6 @@ private:
      * file_offset_of_buffer_end:                 ^
      */
     size_t bytes_to_ignore = 0;
-
-    Poco::Logger * log;
 
     size_t total_bytes_read_from_current_file = 0;
 
@@ -188,7 +188,6 @@ class ReadBufferFromHDFSGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromHDFSGather(
             const Poco::Util::AbstractConfiguration & config_,
-            const String & hdfs_uri_,
             const PathsWithSize & blobs_to_read_,
             const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
@@ -201,8 +200,8 @@ public:
 
 private:
     const Poco::Util::AbstractConfiguration & config;
-    String hdfs_uri;
 };
+
 #endif
 
 }
