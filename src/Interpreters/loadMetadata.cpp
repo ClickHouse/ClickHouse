@@ -292,11 +292,23 @@ void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const Datab
         local_context->setSetting("check_table_dependencies", false);
         convertOrdinaryDatabaseToAtomic(local_context, database);
 
+        auto new_database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::SYSTEM_DATABASE);
+        UUID db_uuid = new_database->getUUID();
+        std::vector<UUID> tables_uuids;
+        for (auto iterator = new_database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            tables_uuids.push_back(iterator->uuid());
+
         /// Reload database just in case (and update logger name)
         String detach_query = fmt::format("DETACH DATABASE {}", backQuoteIfNeed(DatabaseCatalog::SYSTEM_DATABASE));
         auto res = executeQuery(detach_query, context, true);
         executeTrivialBlockIO(res, context);
         res = {};
+
+        /// Unlock UUID mapping, because it will be locked again on database reload.
+        /// It's safe to do during metadata loading, because cleanup task is not started yet.
+        DatabaseCatalog::instance().removeUUIDMappingFinally(db_uuid);
+        for (const auto & uuid : tables_uuids)
+            DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
 
         loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
         TablesLoader::Databases databases =
