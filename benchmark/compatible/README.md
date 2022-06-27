@@ -49,6 +49,6 @@
 - [ ] Manticore Search
 - [ ] Vertica (without publishing)
 - [ ] Azure Synapse
-- [ ] Starbirst Galaxy
+- [ ] Starburst Galaxy
 - [ ] MS SQL Server with Column Store Index (without publishing)
 - [ ] Dremio (without publishing) 
