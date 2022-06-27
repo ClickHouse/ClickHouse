@@ -201,10 +201,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
+        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name);
+            cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettingsRef());
     }
     else
     {
@@ -266,7 +267,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
     assert(cluster);
     StoragePtr res = remote_table_function_ptr
-        ? std::make_shared<StorageDistributed>(
+        ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
@@ -279,7 +280,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             DistributedSettings{},
             false,
             cluster)
-        : std::make_shared<StorageDistributed>(
+        : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},

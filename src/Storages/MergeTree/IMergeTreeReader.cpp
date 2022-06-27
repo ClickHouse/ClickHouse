@@ -73,7 +73,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + ")");
+        e.addMessage("(while reading from part " + data_part->getFullPath() + ")");
         throw;
     }
 }
@@ -119,7 +119,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + ")");
+        e.addMessage("(while reading from part " + data_part->getFullPath() + ")");
         throw;
     }
 }
@@ -198,7 +198,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + ")");
+        e.addMessage("(while reading from part " + data_part->getFullPath() + ")");
         throw;
     }
 }

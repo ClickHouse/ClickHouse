@@ -8,4 +8,4 @@ WITH toDate(today() + rand() % 4096) AS t SELECT count() FROM numbers(1000000) W
 
 -- Note: in some other timezones, daylight saving time change happens in midnight, so the first time of day is 01:00:00 instead of 00:00:00.
 -- Stick to Moscow timezone to avoid this issue.
-WITH toDate(today() + rand() % 4096) AS t SELECT count() FROM numbers(1000000) WHERE formatDateTime(t, '%F %T', 'Asia/Istanbul') != toString(toDateTime(t, 'Asia/Istanbul'));
+WITH toDate(today() + rand() % 4096) AS t SELECT count() FROM numbers(1000000) WHERE formatDateTime(t, '%F %T', 'Europe/Moscow') != toString(toDateTime(t, 'Europe/Moscow'));

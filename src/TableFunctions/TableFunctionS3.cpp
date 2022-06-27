@@ -156,7 +156,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     else if (!structure_hint.empty())
         columns = structure_hint;
 
-    StoragePtr storage = std::make_shared<StorageS3>(
+    StoragePtr storage = StorageS3::create(
         s3_uri,
         configuration.auth_settings.access_key_id,
         configuration.auth_settings.secret_access_key,

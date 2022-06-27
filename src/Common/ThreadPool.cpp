@@ -154,7 +154,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         new_job_or_shutdown.notify_one();
     }
 
-    return static_cast<ReturnType>(true);
+    return ReturnType(true);
 }
 
 template <typename Thread>

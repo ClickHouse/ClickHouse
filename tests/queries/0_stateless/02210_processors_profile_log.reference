@@ -2,8 +2,9 @@
 EXPLAIN PIPELINE SELECT sleep(1);
 (Expression)
 ExpressionTransform
-  (ReadFromStorage)
-  SourceFromSingleChunk 0 → 1
+  (SettingQuotaAndLimits)
+    (ReadFromStorage)
+    SourceFromSingleChunk 0 → 1
 SELECT sleep(1) SETTINGS log_processors_profiles=true, log_queries=1, log_queries_min_type='QUERY_FINISH';
 0
 SYSTEM FLUSH LOGS;

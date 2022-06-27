@@ -3,9 +3,10 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
+#include <Common/ProgressIndication.h>
 #include <Common/StatusFile.h>
 #include <Common/InterruptListener.h>
-#include <Loggers/Loggers.h>
+#include <loggers/Loggers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -44,8 +45,6 @@ protected:
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
 
     void processConfig() override;
-    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
-
 
     void updateLoggerLevel(const String & logs_level) override;
 

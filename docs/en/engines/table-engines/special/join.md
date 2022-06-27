@@ -3,7 +3,7 @@ sidebar_position: 70
 sidebar_label: Join
 ---
 
-# Join Table Engine
+# Join Table Engine {#join}
 
 Optional prepared data structure for usage in [JOIN](../../../sql-reference/statements/select/join.md#select-join) operations.
 

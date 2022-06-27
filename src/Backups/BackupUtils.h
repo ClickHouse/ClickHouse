@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/ASTBackupQuery.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -9,21 +8,25 @@ namespace DB
 class IBackup;
 using BackupMutablePtr = std::shared_ptr<IBackup>;
 class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
-using DataRestoreTasks = std::vector<std::function<void()>>;
-class AccessRightsElements;
-class DDLRenamingMap;
+using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
+using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct BackupSettings;
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
-/// Initializes a DDLRenamingMap from a BACKUP or RESTORE query.
-DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & elements);
+/// Prepares backup entries.
+BackupEntries makeBackupEntries(const ContextPtr & context, const ASTBackupQuery::Elements & elements, const BackupSettings & backup_settings);
 
 /// Write backup entries to an opened backup.
-void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool);
+void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, size_t num_threads);
 
-/// Run data restoring tasks which insert data to tables.
-void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool);
+/// Returns the path to metadata in backup.
+String getMetadataPathInBackup(const DatabaseAndTableName & table_name);
+String getMetadataPathInBackup(const String & database_name);
+String getMetadataPathInBackup(const IAST & create_query);
 
-/// Returns access required to execute BACKUP query.
-AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements);
+/// Returns the path to table's data in backup.
+String getDataPathInBackup(const DatabaseAndTableName & table_name);
+String getDataPathInBackup(const IAST & create_query);
 
 }

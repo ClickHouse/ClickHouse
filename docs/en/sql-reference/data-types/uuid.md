@@ -3,7 +3,7 @@ sidebar_position: 46
 sidebar_label: UUID
 ---
 
-# UUID
+# UUID {#uuid-data-type}
 
 A universally unique identifier (UUID) is a 16-byte number used to identify records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
@@ -19,11 +19,11 @@ If you do not specify the UUID column value when inserting a new record, the UUI
 00000000-0000-0000-0000-000000000000
 ```
 
-## How to Generate
+## How to Generate {#how-to-generate}
 
 To generate the UUID value, ClickHouse provides the [generateUUIDv4](../../sql-reference/functions/uuid-functions.md) function.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 **Example 1**
 
@@ -66,7 +66,7 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┴───────────┘
 ```
 
-## Restrictions
+## Restrictions {#restrictions}
 
 The UUID data type only supports functions which [String](../../sql-reference/data-types/string.md) data type also supports (for example, [min](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min), [max](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max), and [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count)).
 

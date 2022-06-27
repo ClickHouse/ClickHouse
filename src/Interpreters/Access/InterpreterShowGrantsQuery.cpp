@@ -6,7 +6,6 @@
 #include <Access/AccessControl.h>
 #include <Access/CachedAccessChecking.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRolesInfo.h>
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
@@ -148,22 +147,13 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
     CachedAccessChecking show_roles(access, AccessType::SHOW_ROLES);
     bool throw_if_access_denied = !show_query.for_roles->all;
 
-    auto current_user = access->getUser();
-    auto roles_info = access->getRolesInfo();
-
     std::vector<AccessEntityPtr> entities;
     for (const auto & id : ids)
     {
         auto entity = access_control.tryRead(id);
         if (!entity)
             continue;
-
-        bool is_current_user = (id == access->getUserID());
-        bool is_enabled_or_granted_role = entity->isTypeOf<Role>()
-            && (current_user->granted_roles.isGranted(id) || roles_info->enabled_roles.contains(id));
-
-        if ((is_current_user /* Any user can see his own grants */)
-            || (is_enabled_or_granted_role /* and grants from the granted roles */)
+        if ((id == access->getUserID() /* Any user can see his own grants */)
             || (entity->isTypeOf<User>() && show_users.checkAccess(throw_if_access_denied))
             || (entity->isTypeOf<Role>() && show_roles.checkAccess(throw_if_access_denied)))
             entities.push_back(entity);

@@ -26,7 +26,7 @@ void MergeTreeSink::onStart()
 {
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context);
+    storage.delayInsertOrThrowIfNeeded();
 }
 
 void MergeTreeSink::onFinish()
@@ -76,7 +76,7 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        if (!support_parallel_write && temp_part.part->data_part_storage->supportParallelWrite())
+        if (!support_parallel_write && temp_part.part->volume->getDisk()->supportParallelWrite())
             support_parallel_write = true;
 
         if (storage.getDeduplicationLog())
@@ -137,7 +137,6 @@ void MergeTreeSink::finishDelayedChunk()
         if (storage.renameTempPartAndAdd(part, context->getCurrentTransaction().get(), &storage.increment, nullptr, storage.getDeduplicationLog(), partition.block_dedup_token))
         {
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
-            storage.incrementInsertedPartsProfileEvent(part->getType());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.background_operations_assignee.trigger();

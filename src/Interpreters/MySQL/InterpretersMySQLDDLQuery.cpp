@@ -69,7 +69,7 @@ static inline String resolveDatabase(
     return current_database != replica_clickhouse_database ? "" : replica_clickhouse_database;
 }
 
-NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
+static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
 {
     NamesAndTypesList columns_name_and_type;
     for (const auto & declare_column_ast : columns_definition->children)
@@ -325,7 +325,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
             return std::make_shared<ASTIdentifier>(column_name);
 
         return makeASTFunction("intDiv", std::make_shared<ASTIdentifier>(column_name),
-           std::make_shared<ASTLiteral>(static_cast<UInt64>(type_max_size / 1000)));
+           std::make_shared<ASTLiteral>(UInt64(type_max_size / 1000)));
     };
 
     ASTPtr best_partition;
@@ -493,7 +493,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     String sign_column_name = getUniqueColumnName(columns_name_and_type, "_sign");
     String version_column_name = getUniqueColumnName(columns_name_and_type, "_version");
     columns->set(columns->columns, InterpreterCreateQuery::formatColumns(columns_description));
-    columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", static_cast<UInt64>(1)));
+    columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", UInt64(1)));
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
 
     /// Add minmax skipping index for _version column.

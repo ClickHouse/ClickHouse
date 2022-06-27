@@ -9,8 +9,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -180,7 +178,7 @@ T MaterializedPostgreSQLConsumer::unhexN(const char * message, size_t pos, size_
     for (size_t i = 0; i < n; ++i)
     {
         if (i) result <<= 8;
-        result |= static_cast<UInt32>(unhex2(message + pos + 2 * i));
+        result |= UInt32(unhex2(message + pos + 2 * i));
     }
     return result;
 }
@@ -278,14 +276,14 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     {
         case PostgreSQLQuery::INSERT:
         {
-            buffer.columns[num_columns]->insert(static_cast<Int8>(1));
+            buffer.columns[num_columns]->insert(Int8(1));
             buffer.columns[num_columns + 1]->insert(lsn_value);
 
             break;
         }
         case PostgreSQLQuery::DELETE:
         {
-            buffer.columns[num_columns]->insert(static_cast<Int8>(-1));
+            buffer.columns[num_columns]->insert(Int8(-1));
             buffer.columns[num_columns + 1]->insert(lsn_value);
 
             break;
@@ -294,9 +292,9 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         {
             /// Process old value in case changed value is a primary key.
             if (old_value)
-                buffer.columns[num_columns]->insert(static_cast<Int8>(-1));
+                buffer.columns[num_columns]->insert(Int8(-1));
             else
-                buffer.columns[num_columns]->insert(static_cast<Int8>(1));
+                buffer.columns[num_columns]->insert(Int8(1));
 
             buffer.columns[num_columns + 1]->insert(lsn_value);
 

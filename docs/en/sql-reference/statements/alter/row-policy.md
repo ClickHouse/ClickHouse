@@ -3,7 +3,7 @@ sidebar_position: 47
 sidebar_label: ROW POLICY
 ---
 
-# ALTER ROW POLICY
+# ALTER ROW POLICY {#alter-row-policy-statement}
 
 Changes row policy.
 

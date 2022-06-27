@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_inference"
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_json_inference (id UInt64, obj Object(Nullable('json')), s String) \
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_json_inference (id UInt64, obj JSON, s String) \
     ENGINE = MergeTree ORDER BY id" --allow_experimental_object_type 1
 
 user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')

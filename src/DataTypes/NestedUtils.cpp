@@ -1,4 +1,4 @@
-#include <cstring>
+#include <string.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>

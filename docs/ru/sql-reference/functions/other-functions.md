@@ -1927,7 +1927,7 @@ SELECT randomStringUTF8(13)
 
 ## getSetting {#getSetting}
 
-Возвращает текущее значение [пользовательской настройки](../../operations/settings/index.md#custom_settings).
+Возвращает текущее значение [пользовательской настройки](../../operations/settings/overview.md#custom_settings).
 
 **Синтаксис**
 
@@ -1958,7 +1958,7 @@ SELECT getSetting('custom_a');
 
 **См. также**
 
--   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+-   [Пользовательские настройки](../../operations/settings/overview.md#custom_settings)
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
@@ -2158,7 +2158,7 @@ currentRoles()
 
 **Возвращаемое значение**
 
--   Список текущих ролей для текущего пользователя.
+-   Список текущих ролей для текущего пользователя. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2174,13 +2174,13 @@ enabledRoles()
 
 **Возвращаемое значение**
 
--   Список доступных ролей для текущего пользователя.
+-   Список доступных ролей для текущего пользователя. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultRoles {#default-roles}
 
-Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement).
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). 
 
 **Синтаксис**
 
@@ -2190,7 +2190,7 @@ defaultRoles()
 
 **Возвращаемое значение**
 
--   Список ролей по умолчанию.
+-   Список ролей по умолчанию. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2337,7 +2337,7 @@ shardNum()
 Запрос:
 
 ``` sql
-CREATE TABLE shard_num_example (dummy UInt8)
+CREATE TABLE shard_num_example (dummy UInt8) 
     ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 ```

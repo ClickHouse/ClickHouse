@@ -25,30 +25,37 @@ Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
-        ReadFromMergeTree (default.test_table)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromMergeTree (default.test_table)
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting
       Expression (Before ORDER BY)
-        ReadFromMergeTree (default.test_table)
-Expression ((Projection + Before ORDER BY [lifted up part]))
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromMergeTree (default.test_table)
+Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting
-      Expression (Before ORDER BY)
-        ReadFromMergeTree (default.test_table)
+    Expression (Before ORDER BY [lifted up part])
+      Sorting
+        Expression (Before ORDER BY)
+          SettingQuotaAndLimits (Set limits and quota after reading from storage)
+            ReadFromMergeTree (default.test_table)
 optimize_aggregation_in_order
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression (Before GROUP BY)
-      ReadFromMergeTree (default.test_table)
+      SettingQuotaAndLimits (Set limits and quota after reading from storage)
+        ReadFromMergeTree (default.test_table)
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression (Before GROUP BY)
-      ReadFromMergeTree (default.test_table)
+      SettingQuotaAndLimits (Set limits and quota after reading from storage)
+        ReadFromMergeTree (default.test_table)
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression (Before GROUP BY)
-      ReadFromMergeTree (default.test_table)
+      SettingQuotaAndLimits (Set limits and quota after reading from storage)
+        ReadFromMergeTree (default.test_table)
 second-index
 1
 1

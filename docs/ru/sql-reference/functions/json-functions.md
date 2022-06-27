@@ -407,7 +407,7 @@ SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
 Результат:
 
 ``` text
-world
+"world"
 0
 2
 String

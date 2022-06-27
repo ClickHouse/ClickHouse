@@ -2,7 +2,7 @@
 sidebar_position: 131
 ---
 
-# groupBitmapXor
+# groupBitmapXor {#groupbitmapxor}
 
 Calculations the XOR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
 

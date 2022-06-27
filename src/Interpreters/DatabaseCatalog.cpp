@@ -14,7 +14,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
@@ -92,7 +92,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();
@@ -119,11 +119,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && r
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-    {
-        auto table = getTable();
-        table->flushAndShutdown();
         temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
-    }
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -203,12 +199,6 @@ void DatabaseCatalog::shutdownImpl()
     databases.clear();
     db_uuid_map.clear();
     view_dependencies.clear();
-}
-
-bool DatabaseCatalog::isPredefinedDatabaseName(const std::string_view & database_name)
-{
-    return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
-        || database_name == INFORMATION_SCHEMA_UPPERCASE;
 }
 
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
@@ -657,7 +647,7 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
     {
         std::unique_lock lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
-        assert(db_guard_iter->second.first.contains(""));
+        assert(db_guard_iter->second.first.count(""));
     }
     DatabaseGuard & db_guard = db_guard_iter->second;
     return std::unique_lock{db_guard.second};

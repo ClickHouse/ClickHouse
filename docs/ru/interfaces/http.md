@@ -242,7 +242,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
 Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-Подробнее смотрите в разделе [Настройки](../operations/settings/).
+Подробнее смотрите в разделе [Настройки](../operations/settings/overview.md).
 
 ``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -410,7 +410,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
     -   `status` — используется с типом `static`, возвращает код состояния ответа.
 
-    -   `content_type` — используется со всеми типами, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+    -   `content_type` — используется с типом `static`, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
     -   `response_content` — используется с типом`static`, содержимое ответа, отправленное клиенту, при использовании префикса ‘file://’ or ‘config://’, находит содержимое из файла или конфигурации, отправленного клиенту.
 
@@ -432,7 +432,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[regex:/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
         <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>

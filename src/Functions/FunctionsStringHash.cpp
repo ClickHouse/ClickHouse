@@ -373,8 +373,8 @@ struct MinHashImpl
         std::map<UInt64, BytesRef, Comp> values;
     };
 
-    using MaxHeap = Heap<std::less<>>;
-    using MinHeap = Heap<std::greater<>>;
+    using MaxHeap = Heap<std::less<size_t>>;
+    using MinHeap = Heap<std::greater<size_t>>;
 
     static ALWAYS_INLINE inline void ngramHashASCII(
         MinHeap & min_heap,

@@ -54,8 +54,6 @@ public:
 
     SortDescription getSortDescription() const { return result_description; }
 
-    void convertToFinishSorting(SortDescription prefix_description);
-
 private:
 
     enum class Type
