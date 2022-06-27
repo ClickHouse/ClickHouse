@@ -15,6 +15,13 @@
     #include <emmintrin.h>
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
+#endif
+
 namespace DB
 {
 
@@ -692,6 +699,24 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     if (bit_mask)
                     {
                         next_pos += __builtin_ctz(bit_mask);
+                        return;
+                    }
+                }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+                auto rc = vdupq_n_u8('\r');
+                auto nc = vdupq_n_u8('\n');
+                auto dc = vdupq_n_u8(delimiter);
+                /// Returns a 64 bit mask of nibbles (4 bits for each byte).
+                auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
+                { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
+                for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
+                {
+                    uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(next_pos));
+                    auto eq = vorrq_u8(vorrq_u8(vceqq_u8(bytes, rc), vceqq_u8(bytes, nc)), vceqq_u8(bytes, dc));
+                    uint64_t bit_mask = get_nibble_mask(eq);
+                    if (bit_mask)
+                    {
+                        next_pos += __builtin_ctzll(bit_mask) >> 2;
                         return;
                     }
                 }

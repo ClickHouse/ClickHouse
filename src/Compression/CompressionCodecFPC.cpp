@@ -41,7 +41,7 @@ protected:
     bool isGenericCompression() const override { return false; }
 
 private:
-    static constexpr UInt32 HEADER_SIZE = 3;
+    static constexpr UInt32 HEADER_SIZE = 2;
 
     // below members are used by compression, decompression ignores them:
     const UInt8 float_width; // size of uncompressed float in bytes

@@ -12,7 +12,6 @@
 
     <path>./</path>
 
-    <uncompressed_cache_size>8589934592</uncompressed_cache_size>
     <mlock_executable>true</mlock_executable>
 
     <users>

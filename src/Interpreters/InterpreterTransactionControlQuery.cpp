@@ -67,6 +67,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
         if (e.code() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION)
         {
             /// Detach transaction from current context if connection was lost and its status is unknown
+            /// (so it will be possible to start new one)
             session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
         }
         throw;
@@ -79,6 +80,16 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
         /// Try to wait for connection to be restored and its status to be loaded.
         /// It's useful for testing. It allows to enable fault injection (after commit) without breaking tests.
         txn->waitStateChange(Tx::CommittingCSN);
+
+        CSN csn_changed_state = txn->getCSN();
+        if (csn_changed_state == Tx::UnknownCSN)
+        {
+            /// CommittingCSN -> UnknownCSN -> RolledBackCSN
+            /// It's possible if connection was lost before commit
+            /// (maybe we should get rid of intermediate UnknownCSN in this transition)
+            txn->waitStateChange(Tx::UnknownCSN);
+            chassert(txn->getCSN() == Tx::RolledBackCSN);
+        }
 
         if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
             throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction {} was rolled back", txn->tid);
