@@ -124,21 +124,37 @@
     #endif
 #endif
 
-// Macros for Clang Thread Safety Analysis (TSA). They can be safely ignored by other compilers.
-// Feel free to extend, but please stay close to https://clang.llvm.org/docs/ThreadSafetyAnalysis.html#mutexheader
+/// Macros for Clang Thread Safety Analysis (TSA). They can be safely ignored by other compilers.
+/// Feel free to extend, but please stay close to https://clang.llvm.org/docs/ThreadSafetyAnalysis.html#mutexheader
 #if defined(__clang__)
-#    define TSA_GUARDED_BY(...) __attribute__((guarded_by(__VA_ARGS__)))                       // data is protected by given capability
-#    define TSA_PT_GUARDED_BY(...) __attribute__((pt_guarded_by(__VA_ARGS__)))                 // pointed-to data is protected by the given capability
-#    define TSA_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))                // thread needs exclusive possession of given capability
-#    define TSA_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))  // thread needs shared possession of given capability
-#    define TSA_ACQUIRED_AFTER(...) __attribute__((acquired_after(__VA_ARGS__)))               // annotated lock must be locked after given lock
-#    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           // disable TSA for a function
+#    define TSA_GUARDED_BY(...) __attribute__((guarded_by(__VA_ARGS__)))                       /// data is protected by given capability
+#    define TSA_PT_GUARDED_BY(...) __attribute__((pt_guarded_by(__VA_ARGS__)))                 /// pointed-to data is protected by the given capability
+#    define TSA_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))                /// thread needs exclusive possession of given capability
+#    define TSA_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))  /// thread needs shared possession of given capability
+#    define TSA_ACQUIRED_AFTER(...) __attribute__((acquired_after(__VA_ARGS__)))               /// annotated lock must be locked after given lock
+#    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           /// disable TSA for a function
+
+/// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
+/// Consider adding a comment before using these macros.
+#   define READ_NO_TSA(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }()
+#   define WRITE_NO_TSA(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }()
+
+/// This macro is useful when only one thread writes to a member
+/// and you want to read this member from the same thread without locking a mutex.
+/// It's safe (because no concurrent writes are possible), but TSA generates a waring.
+/// (Seems like there's no way to verify it, but it makes sense to distinguish it from READ_NO_TSA for readability)
+#   define READ_ONE_THREAD(x) READ_NO_TSA(x)
+
 #else
 #    define TSA_GUARDED_BY(...)
 #    define TSA_PT_GUARDED_BY(...)
 #    define TSA_REQUIRES(...)
 #    define TSA_REQUIRES_SHARED(...)
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS
+
+#    define READ_NO_TSA(x)
+#    define WRITE_NO_TSA(x)
+#    define TSA_READ_UNSAFE(x)
 #endif
 
 /// A template function for suppressing warnings about unused variables or function results.

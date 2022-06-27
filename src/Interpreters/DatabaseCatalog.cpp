@@ -205,7 +205,10 @@ void DatabaseCatalog::shutdownImpl()
     for (auto & database : current_databases)
         database.second->shutdown();
 
-    tables_marked_dropped.clear();
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        tables_marked_dropped.clear();
+    }
 
     std::lock_guard lock(databases_mutex);
     for (const auto & db : databases)
@@ -223,6 +226,7 @@ void DatabaseCatalog::shutdownImpl()
             auto & table = mapping.second.second;
             return db || table;
         };
+        std::lock_guard map_lock{elem.mutex};
         auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
         return it != elem.map.end();
     }) == uuid_map.end());
@@ -689,7 +693,8 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
     std::unique_lock lock(ddl_guards_mutex);
-    auto db_guard_iter = ddl_guards.try_emplace(database).first;
+    /// TSA does not support unique_lock
+    auto db_guard_iter = WRITE_NO_TSA(ddl_guards).try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
     return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
@@ -698,7 +703,7 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
 {
     DDLGuards::iterator db_guard_iter;
     {
-        std::unique_lock lock(ddl_guards_mutex);
+        std::lock_guard lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
         assert(db_guard_iter->second.first.contains(""));
     }
@@ -999,7 +1004,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
     std::unique_lock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock, [&]()
+    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid);
     });

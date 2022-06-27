@@ -102,8 +102,8 @@ private:
     const time_t expiration_time;
 
     /// TODO use DatabaseWithOwnTablesBase::tables
-    mutable TablesCache tables_cache;
-    mutable CacheExpirationQueue cache_expiration_queue;
+    mutable TablesCache tables_cache TSA_GUARDED_BY(mutex);
+    mutable CacheExpirationQueue cache_expiration_queue TSA_GUARDED_BY(mutex);
 
     StoragePtr loadTable(const String & table_name) const;
 

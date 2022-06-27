@@ -356,8 +356,8 @@ protected:
     }
 
     mutable std::mutex mutex;
-    String database_name;
-    String comment;
+    String database_name TSA_GUARDED_BY(mutex);
+    String comment TSA_GUARDED_BY(mutex);
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
