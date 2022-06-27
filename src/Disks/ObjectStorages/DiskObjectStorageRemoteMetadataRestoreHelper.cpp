@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -379,7 +380,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
         return true;
     };
 
-    PathsWithSize children;
+    RelativePathsWithSize children;
     source_object_storage->listPrefix(restore_information.source_path, children);
 
     restore_files(children);
@@ -523,7 +524,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         return true;
     };
 
-    PathsWithSize children;
+    RelativePathsWithSize children;
     source_object_storage->listPrefix(restore_information.source_path + "operations/", children);
     restore_file_operations(children);
 

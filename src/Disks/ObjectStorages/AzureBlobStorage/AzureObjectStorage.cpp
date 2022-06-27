@@ -113,7 +113,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), path);
 }
 
-void AzureObjectStorage::listPrefix(const std::string & path, PathsWithSize & children) const
+void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     auto client_ptr = client.get();
 
