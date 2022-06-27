@@ -10,6 +10,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 
 
 namespace DB
@@ -151,6 +153,26 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         create_table_query->set(create_table_query->columns_list, ast_columns_list);
     }
     return create_table_query;
+}
+
+
+void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
+{
+    query.as_database.clear();
+    query.as_table.clear();
+    query.if_not_exists = false;
+    query.is_populate = false;
+    query.is_create_empty = false;
+    query.replace_view = false;
+    query.replace_table = false;
+    query.create_or_replace = false;
+
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
+    if (!query.isView())
+        query.select = nullptr;
+
+    query.format = nullptr;
+    query.out_file = nullptr;
 }
 
 
@@ -298,6 +320,24 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
         return it->second;
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
+}
+
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const
+{
+    /// Backup all the tables in this database.
+    /// Here we skip inner tables of materialized views.
+    auto skip_internal_tables = [](const String & table_name) { return !table_name.starts_with(".inner_id."); };
+    return getTablesIterator(backup_entries_collector.getContext(), skip_internal_tables);
+}
+
+void DatabaseWithOwnTablesBase::checkCreateTableQueryForBackup(const ASTPtr &, const BackupEntriesCollector &) const
+{
+}
+
+void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer)
+{
+    /// Creates a table by executing a "CREATE TABLE" query.
+    restorer.executeCreateQuery(create_table_query);
 }
 
 }

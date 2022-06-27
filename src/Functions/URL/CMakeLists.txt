@@ -8,8 +8,8 @@ if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
 endif()
 
 # TODO: move Functions/Regexps.h to some lib and use here
-if (TARGET ch_contrib::hyperscan)
-    target_link_libraries(clickhouse_functions_url PRIVATE ch_contrib::hyperscan)
+if (TARGET ch_contrib::vectorscan)
+    target_link_libraries(clickhouse_functions_url PRIVATE ch_contrib::vectorscan)
 endif()
 
 if (USE_GPERF)
