@@ -69,7 +69,7 @@ public:
             if (!last_mod_time)
                 return std::nullopt;
 
-            if (*last_mod_time > schema_info.registration_time)
+            if (*last_mod_time >= schema_info.registration_time)
             {
                 /// Object was modified after it was added in cache.
                 /// So, stored value is no more valid and we should remove it.

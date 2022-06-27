@@ -260,8 +260,23 @@ private:
     bool supportsSubsetOfColumns() const override;
 
     static SchemaCache & getSchemaCache();
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings::const_iterator & begin, const Strings::const_iterator & end, const S3Configuration & s3_configuration, std::unordered_map<String, S3::ObjectInfo> * object_infos);
-    static void addColumnsToCache(const Strings & keys, const S3Configuration & s3_configuration, const ColumnsDescription & columns, const ContextPtr & context);
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings::const_iterator & begin,
+        const Strings::const_iterator & end,
+        const S3Configuration & s3_configuration,
+        std::unordered_map<String, S3::ObjectInfo> * object_infos,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
+
+    static void addColumnsToCache(
+        const Strings & keys,
+        const S3Configuration & s3_configuration,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
 };
 
 }

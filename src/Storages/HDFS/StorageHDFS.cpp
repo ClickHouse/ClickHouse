@@ -197,7 +197,7 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().use_cache_for_hdfs_schema_inference)
-        columns_from_cache = tryGetColumnsFromCache(paths, last_mod_time);
+        columns_from_cache = tryGetColumnsFromCache(paths, last_mod_time, format, ctx);
 
     ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -216,7 +216,7 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 
     if (ctx->getSettingsRef().use_cache_for_hdfs_schema_inference)
-        addColumnsToCache(paths, columns, ctx);
+        addColumnsToCache(paths, columns, format, ctx);
 
     return columns;
 }
@@ -725,7 +725,11 @@ SchemaCache & StorageHDFS::getSchemaCache()
     return schema_cache;
 }
 
-std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(const Strings & paths, std::unordered_map<String, time_t> & last_mod_time)
+std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
+    const Strings & paths,
+    std::unordered_map<String, time_t> & last_mod_time,
+    const String & format_name,
+    const ContextPtr & ctx)
 {
     auto & schema_cache = getSchemaCache();
     for (const auto & path : paths)
@@ -738,7 +742,8 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(const Stri
             return it->second;
         };
 
-        auto columns = schema_cache.tryGet(path, get_last_mod_time);
+        String cache_key = getKeyForSchemaCache(path, format_name, {}, ctx);
+        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
     }
@@ -746,10 +751,15 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(const Stri
     return std::nullopt;
 }
 
-void StorageHDFS::addColumnsToCache(const Strings & paths, const ColumnsDescription & columns, const ContextPtr & ctx)
+void StorageHDFS::addColumnsToCache(
+    const Strings & paths,
+    const ColumnsDescription & columns,
+    const String & format_name,
+    const ContextPtr & ctx)
 {
     auto & schema_cache = getSchemaCache();
-    schema_cache.addMany(paths, columns, ctx->getSettingsRef().cache_ttl_for_hdfs_schema_inference.totalSeconds());
+    Strings cache_keys = getKeysForSchemaCache(paths, format_name, {}, ctx);
+    schema_cache.addMany(cache_keys, columns, ctx->getSettingsRef().cache_ttl_for_hdfs_schema_inference.totalSeconds());
 }
 
 }

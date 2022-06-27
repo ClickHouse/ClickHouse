@@ -227,7 +227,7 @@ private:
 
         /// It returns false when all objects were returned
         is_finished = !outcome.GetResult().GetIsTruncated();
-        
+
         if (read_keys)
             read_keys->insert(read_keys->end(), buffer.begin(), buffer.end());
     }
@@ -1186,7 +1186,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     std::optional<ColumnsDescription> columns_from_cache;
     size_t prev_read_keys_size = read_keys.size();
     if (ctx->getSettingsRef().use_cache_for_s3_schema_inference)
-        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), s3_configuration, object_infos);
+        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), s3_configuration, object_infos, format, format_settings, ctx);
 
     ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -1207,7 +1207,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         /// S3 file iterator could get new keys after new iteration, check them in schema cache.
         if (ctx->getSettingsRef().use_cache_for_s3_schema_inference && read_keys.size() > prev_read_keys_size)
         {
-            columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), s3_configuration, object_infos);
+            columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), s3_configuration, object_infos, format, format_settings, ctx);
             prev_read_keys_size = read_keys.size();
             if (columns_from_cache)
             {
@@ -1232,7 +1232,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, is_key_with_globs, ctx);
 
     if (ctx->getSettingsRef().use_cache_for_s3_schema_inference)
-        addColumnsToCache(read_keys, s3_configuration, columns, ctx);
+        addColumnsToCache(read_keys, s3_configuration, columns, format, format_settings, ctx);
 
     if (distributed_processing && read_keys_in_distributed_processing)
         *read_keys_in_distributed_processing = std::move(read_keys);
@@ -1332,13 +1332,19 @@ SchemaCache & StorageS3::getSchemaCache()
     return schema_cache;
 }
 
-std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(const Strings::const_iterator & begin, const Strings::const_iterator & end, const S3Configuration & s3_configuration, std::unordered_map<String, S3::ObjectInfo> * object_infos)
+std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
+    const Strings::const_iterator & begin,
+    const Strings::const_iterator & end,
+    const S3Configuration & s3_configuration,
+    std::unordered_map<String, S3::ObjectInfo> * object_infos,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & ctx)
 {
     auto & schema_cache = getSchemaCache();
     for (auto it = begin; it < end; ++it)
     {
         String path = fs::path(s3_configuration.uri.bucket) / *it;
-        String cache_key = fs::path(s3_configuration.uri.uri.getHost() + std::to_string(s3_configuration.uri.uri.getPort())) / path;
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
             S3::ObjectInfo info;
@@ -1361,6 +1367,8 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(const String
             return std::nullopt;
         };
 
+        String source = fs::path(s3_configuration.uri.uri.getHost() + std::to_string(s3_configuration.uri.uri.getPort())) / path;
+        String cache_key = getKeyForSchemaCache(source, format_name, format_settings, ctx);
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
@@ -1369,13 +1377,20 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(const String
     return std::nullopt;
 }
 
-void StorageS3::addColumnsToCache(const Strings & keys, const S3Configuration & s3_configuration, const ColumnsDescription & columns, const ContextPtr & ctx)
+void StorageS3::addColumnsToCache(
+    const Strings & keys,
+    const S3Configuration & s3_configuration,
+    const ColumnsDescription & columns,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & ctx)
 {
     auto host_and_bucket = fs::path(s3_configuration.uri.uri.getHost() + std::to_string(s3_configuration.uri.uri.getPort())) / s3_configuration.uri.bucket;
-    Strings objects;
-    std::transform(keys.begin(), keys.end(), std::back_inserter(objects), [&](const String & key){ return host_and_bucket / key; });
+    Strings sources;
+    std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const String & key){ return host_and_bucket / key; });
+    Strings cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
     auto & schema_cache = getSchemaCache();
-    schema_cache.addMany(objects, columns, ctx->getSettingsRef().cache_ttl_for_s3_schema_inference.totalSeconds());
+    schema_cache.addMany(cache_keys, columns, ctx->getSettingsRef().cache_ttl_for_s3_schema_inference.totalSeconds());
 }
 
 }
