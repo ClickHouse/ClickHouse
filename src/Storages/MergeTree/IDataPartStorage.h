@@ -53,6 +53,9 @@ struct WriteSettings;
 
 class TemporaryFileOnDisk;
 
+class IDataPartStorageBuilder;
+using DataPartStorageBuilderPtr = std::shared_ptr<IDataPartStorageBuilder>;
+
 /// This is an abstraction of storage for data part files.
 /// Ideally, it is assumed to contains read-only methods from IDisk.
 /// It is not fulfilled now, but let's try our best.
@@ -122,6 +125,7 @@ public:
     /// Reset part directory, used for im-memory parts.
     /// TODO: remove it.
     virtual void setRelativePath(const std::string & path) = 0;
+    virtual void onRename(const std::string & new_root_path, const std::string & new_part_dir) = 0;
 
     /// Some methods from IDisk. Needed to avoid getting internal IDisk interface.
     virtual std::string getDiskName() const = 0;
@@ -191,20 +195,11 @@ public:
         const DiskPtr & disk,
         Poco::Logger * log) const = 0;
 
-    /// Rename part.
-    /// Ideally, new_root_path should be the same as current root (but it is not true).
-    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
-    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
-    virtual void rename(
-        const std::string & new_root_path,
-        const std::string & new_part_dir,
-        Poco::Logger * log,
-        bool remove_new_dir_if_exists,
-        bool fsync_part_dir) = 0;
-
     /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
     virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
+
+    virtual DataPartStorageBuilderPtr getBuilder() const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
@@ -244,9 +239,18 @@ public:
 
     virtual DataPartStoragePtr getStorage() const = 0;
 
+    /// Rename part.
+    /// Ideally, new_root_path should be the same as current root (but it is not true).
+    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
+    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    virtual void rename(
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
+        Poco::Logger * log,
+        bool remove_new_dir_if_exists,
+        bool fsync_part_dir) = 0;
+
     virtual void commit() = 0;
 };
-
-using DataPartStorageBuilderPtr = std::shared_ptr<IDataPartStorageBuilder>;
 
 }

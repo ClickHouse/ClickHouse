@@ -199,6 +199,11 @@ void DataPartStorageOnDisk::checkConsistency(const MergeTreeDataPartChecksums & 
     checksums.checkSizes(volume->getDisk(), getRelativePath());
 }
 
+DataPartStorageBuilderPtr DataPartStorageOnDisk::getBuilder() const
+{
+    return std::make_shared<DataPartStorageBuilderOnDisk>(volume, root_path, part_dir);
+}
+
 void DataPartStorageOnDisk::remove(
     bool can_remove_shared_data,
     const NameSet & names_not_to_remove,
@@ -691,7 +696,18 @@ DataPartStoragePtr DataPartStorageOnDisk::clone(
     return std::make_shared<DataPartStorageOnDisk>(single_disk_volume, to, dir_path);
 }
 
-void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir)
+void DataPartStorageOnDisk::onRename(const std::string & new_root_path, const std::string & new_part_dir)
+{
+    part_dir = new_part_dir;
+    root_path = new_root_path;
+}
+
+void DataPartStorageBuilderOnDisk::rename(
+    const std::string & new_root_path,
+    const std::string & new_part_dir,
+    Poco::Logger * log,
+    bool remove_new_dir_if_exists,
+    bool fsync_part_dir)
 {
     if (!exists())
         throw Exception(
@@ -714,7 +730,7 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
                     "Part directory {} already exists and contains {} files. Removing it.",
                     fullPath(volume->getDisk(), to), files.size());
 
-            volume->getDisk()->removeRecursive(to);
+            transaction->removeRecursive(to);
         }
         else
         {
@@ -725,17 +741,13 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
         }
     }
 
-    // metadata_manager->deleteAll(true);
-    // metadata_manager->assertAllDeleted(true);
-
     String from = getRelativePath();
 
     /// Why?
-    volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
-    volume->getDisk()->moveDirectory(from, to);
+    transaction->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
+    transaction->moveDirectory(from, to);
     part_dir = new_part_dir;
     root_path = new_root_path;
-    // metadata_manager->updateAll(true);
 
     SyncGuardPtr sync_guard;
     if (fsync_part_dir)

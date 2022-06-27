@@ -54,6 +54,7 @@ public:
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
 
     void setRelativePath(const std::string & path) override;
+    void onRename(const std::string & new_root_path, const std::string & new_part_dir) override;
 
     std::string getDiskName() const override;
     std::string getDiskType() const override;
@@ -104,10 +105,9 @@ public:
         const DiskPtr & disk,
         Poco::Logger * log) const override;
 
-    void rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) override;
-
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 
+    DataPartStorageBuilderPtr getBuilder() const override;
 private:
     VolumePtr volume;
     std::string root_path;
@@ -158,6 +158,13 @@ public:
     DataPartStorageBuilderPtr getProjection(const std::string & name) const override;
 
     DataPartStoragePtr getStorage() const override;
+
+    void rename(
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
+        Poco::Logger * log,
+        bool remove_new_dir_if_exists,
+        bool fsync_part_dir) override;
 
     void commit() override;
 
