@@ -6,7 +6,7 @@ echo "deb https://dev.monetdb.org/downloads/deb/ $(lsb_release -cs) monetdb" | s
 
 sudo wget --output-document=/etc/apt/trusted.gpg.d/monetdb.gpg https://www.monetdb.org/downloads/MonetDB-GPG-KEY.gpg
 sudo apt-get update
-sudo apt-get install -y monetdb5-sql monetdb-client
+sudo apt-get install -y monetdb5-sql monetdb-client dos2unix
 
 sudo systemctl enable monetdbd
 sudo systemctl start monetdbd
@@ -32,3 +32,9 @@ chmod 777 ~ hits.tsv
 # clk: 15:39 min
 
 ./run.sh 2>&1 | tee log.txt
+
+sudo du -bcs /var/monetdb5/
+
+cat log.txt | dos2unix -f | grep -P 'clk|tuple' |
+    awk '/tuple/ { ok = 1 } /clk/ { if (ok) { if ($3 == "ms") { print $2 / 1000 } else { print $2 } } else { print "null" }; ok = 0 }' |
+    awk '{ if (i % 3 == 0) { printf "[" }; printf $1; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
