@@ -226,10 +226,60 @@ void insertSetMapped(MappedType & dest, const ValueType & src) { dest = src.seco
 
 
 /** Determines the size of the hash table, and when and how much it should be resized.
-  * This structure is aligned to cache line boundary and also occupies it all.
+  * Has very small state (one UInt8) and useful for Set-s allocated in automatic memory (see uniqExact as an example).
   */
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrower
+struct HashTableGrower
+{
+    /// The state of this structure is enough to get the buffer size of the hash table.
+
+    UInt8 size_degree = initial_size_degree;
+    static constexpr auto initial_count = 1ULL << initial_size_degree;
+
+    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
+    static constexpr auto performs_linear_probing_with_single_step = true;
+
+    /// The size of the hash table in the cells.
+    size_t bufSize() const { return 1ULL << size_degree; }
+
+    size_t maxFill() const { return 1ULL << (size_degree - 1); }
+    size_t mask() const { return bufSize() - 1; }
+
+    /// From the hash value, get the cell number in the hash table.
+    size_t place(size_t x) const { return x & mask(); }
+
+    /// The next cell in the collision resolution chain.
+    size_t next(size_t pos) const
+    {
+        ++pos;
+        return pos & mask();
+    }
+
+    /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
+    bool overflow(size_t elems) const { return elems > maxFill(); }
+
+    /// Increase the size of the hash table.
+    void increaseSize() { size_degree += size_degree >= 23 ? 1 : 2; }
+
+    /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
+    void set(size_t num_elems)
+    {
+        size_degree = num_elems <= 1
+            ? initial_size_degree
+            : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2) ? initial_size_degree
+                                                                                    : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+    }
+
+    void setBufSize(size_t buf_size_) { size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1); }
+};
+
+
+/** Determines the size of the hash table, and when and how much it should be resized.
+  * This structure is aligned to cache line boundary and also occupies it all.
+  * Precalculates some values to speed up lookups and insertion into the HashTable (and thus has bigger memory footprint than HashTableGrower).
+  */
+template <size_t initial_size_degree = 8>
+class alignas(64) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
@@ -285,7 +335,7 @@ public:
     }
 };
 
-static_assert(sizeof(HashTableGrower<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
