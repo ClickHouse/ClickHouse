@@ -22,3 +22,5 @@ head -n 90000000 hits.tsv > hits90m.tsv
 time sudo docker run -it --rm --volume $(pwd):/workdir --network host mysql:5 mysql --host 127.0.0.1 --port 5029 --user=root --password=mypass --database=test -e "
     LOAD DATA LOCAL INFILE '/workdir/hits90m.tsv' INTO TABLE test.hits
     FIELDS TERMINATED BY '\\t' ENCLOSED BY '' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' STARTING BY ''"
+
+# 38m37.466s
