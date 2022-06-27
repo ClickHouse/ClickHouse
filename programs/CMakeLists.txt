@@ -266,9 +266,9 @@ if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
     add_subdirectory (library-bridge)
 endif ()
 
-#if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     add_subdirectory (self-extracting)
-#endif ()
+endif ()
 
 if (CLICKHOUSE_ONE_SHARED)
   add_library(clickhouse-lib SHARED
