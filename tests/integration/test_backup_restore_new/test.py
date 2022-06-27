@@ -777,3 +777,25 @@ def test_projection():
         )
         == "2\n"
     )
+
+
+def test_system_functions():
+    instance.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;")
+
+    instance.query("CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.functions TO {backup_name}")
+
+    instance.query("DROP FUNCTION linear_equation")
+    instance.query("DROP FUNCTION parity_str")
+
+    instance.query(f"RESTORE TABLE system.functions FROM {backup_name}")
+
+    assert instance.query(
+        "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
+    ) == TSV([[0, 1], [1, 3], [2, 5]])
+    
+    assert instance.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
+        [[0, "even"], [1, "odd"], [2, "even"]]
+    )

@@ -86,7 +86,13 @@ namespace
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
             || (table_name.table == "row_policies") || (table_name.table == "quotas");
     }
-}
+
+    /// Whether a specified name corresponds one of the tables backuping ACL.
+    bool isSystemFunctionsTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
+    }
+ }
 
 
 RestorerFromBackup::RestorerFromBackup(
@@ -374,7 +380,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
         insertAtEnd(*res_table_info.partitions, *partitions);
     }
 
-    if (isSystemAccessTableName(table_name))
+    if (!restore_settings.structure_only && isSystemAccessTableName(table_name))
     {
         if (!access_restore_task)
             access_restore_task = std::make_shared<AccessRestoreTask>(backup, restore_settings, restore_coordination);
@@ -499,9 +505,18 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 
     for (const auto & [table_name, table_info] : table_infos)
     {
-        /// Access required to restore ACL system tables is checked separately.
         if (table_info.is_predefined_table)
+        {
+            if (isSystemFunctionsTableName(table_name))
+            {
+                /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
+                if (!restore_settings.structure_only && backup->hasFiles(table_info.data_path_in_backup))
+                    required_access.emplace_back(AccessType::CREATE_FUNCTION);
+            }
+            /// Privileges required to restore ACL system tables are checked separately
+            /// (see access_restore_task->getRequiredAccess() below).
             continue;
+        }
 
         if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
         {

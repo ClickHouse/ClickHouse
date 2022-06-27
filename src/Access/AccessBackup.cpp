@@ -139,7 +139,7 @@ namespace
             }
             catch (Exception & e)
             {
-                e.addMessage("While parsing " + file_path);
+                e.addMessage("While parsing " + file_path + " from backup");
                 throw;
             }
         }
