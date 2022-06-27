@@ -98,8 +98,8 @@ rm -rf /home/ubuntu/awscliv2.zip /home/ubuntu/aws
 mkdir -p /home/ubuntu/.ssh
 
 # ~/.ssh/authorized_keys is cleaned out, so we use deprecated but working  ~/.ssh/authorized_keys2
-aws lambda invoke --region us-east-1 --function-name team-keys-lambda /tmp/core.keys
-jq < /tmp/core.keys -r '.body' > /home/ubuntu/.ssh/authorized_keys2
+TEAM_KEYS_URL=$(aws ssm get-parameter --region us-east-1 --name team-keys-url --query 'Parameter.Value' --output=text)
+curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
 chown ubuntu: /home/ubuntu/.ssh -R
 chmod 0700 /home/ubuntu/.ssh
 

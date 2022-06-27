@@ -26,6 +26,11 @@ export LABELS
 aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 systemctl restart amazon-cloudwatch-agent.service
 
+# Refresh teams ssh keys
+TEAM_KEYS_URL=$(aws ssm get-parameter --region us-east-1 --name team-keys-url --query 'Parameter.Value' --output=text)
+curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
+chown ubuntu: /home/ubuntu/.ssh -R
+
 
 # Create a pre-run script that will restart docker daemon before the job started
 mkdir -p /tmp/actions-hooks
