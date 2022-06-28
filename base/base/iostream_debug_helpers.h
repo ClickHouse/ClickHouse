@@ -120,7 +120,7 @@ Out & dumpDispatchPriorities(Out & out, T && x, std::decay_t<decltype(dumpImpl<p
     return dumpImpl<priority>(out, x);
 }
 
-struct LowPriority { explicit LowPriority(void *) {} };
+struct LowPriority { LowPriority(void *) {} };
 
 template <int priority, typename Out, typename T>
 Out & dumpDispatchPriorities(Out & out, T && x, LowPriority)
