@@ -51,6 +51,7 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
+        yasm \
         --yes --no-install-recommends \
     && apt-get clean
 
