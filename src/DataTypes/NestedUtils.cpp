@@ -106,7 +106,7 @@ Block flatten(const Block & block)
                     res.insert(ColumnWithTypeAndName(
                         is_const
                             ? ColumnConst::create(std::move(column_array_of_element), block.rows())
-                            : std::move(column_array_of_element),
+                            : column_array_of_element,
                         std::make_shared<DataTypeArray>(element_types[i]),
                         nested_name));
                 }
@@ -331,6 +331,5 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
     Block sub_block(columns);
     nested_tables[new_column_name_prefix] = std::make_shared<Block>(Nested::flatten(sub_block));
     return extractColumn(original_column_name, new_column_name_prefix, nested_names.second);
-
 }
 }
