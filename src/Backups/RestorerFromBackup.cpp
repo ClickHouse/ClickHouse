@@ -77,26 +77,14 @@ namespace
         return str;
     }
 
-    String tryGetTableEngine(const IAST & ast)
+    /// Whether a specified name corresponds one of the tables backuping ACL.
+    bool isSystemAccessTableName(const QualifiedTableName & table_name)
     {
-        const ASTCreateQuery * create = ast.as<ASTCreateQuery>();
-        if (!create)
-            return {};
-        if (!create->storage || !create->storage->engine)
-            return {};
-        return create->storage->engine->name;
-    }
+        if (table_name.database != DatabaseCatalog::SYSTEM_DATABASE)
+            return false;
 
-    bool hasSystemTableEngine(const IAST & ast)
-    {
-        return tryGetTableEngine(ast).starts_with("System");
-    }
-
-    bool hasSystemAccessTableEngine(const IAST & ast)
-    {
-        String engine_name = tryGetTableEngine(ast);
-        return (engine_name == "SystemUsers") || (engine_name == "SystemRoles") || (engine_name == "SystemSettingsProfiles")
-            || (engine_name == "SystemRowPolicies") || (engine_name == "SystemQuotas");
+        return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
+            || (table_name.table == "row_policies") || (table_name.table == "quotas");
     }
 }
 
@@ -375,6 +363,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
 
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
+    res_table_info.is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
     res_table_info.data_path_in_backup = data_path_in_backup;
     res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
 
@@ -385,7 +374,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
         insertAtEnd(*res_table_info.partitions, *partitions);
     }
 
-    if (hasSystemAccessTableEngine(*create_table_query))
+    if (isSystemAccessTableName(table_name))
     {
         if (!access_restore_task)
             access_restore_task = std::make_shared<AccessRestoreTask>(backup, restore_settings, restore_coordination);
@@ -450,6 +439,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
         }
 
         database_info.create_database_query = create_database_query;
+        database_info.is_predefined_database = DatabaseCatalog::isPredefinedDatabase(database_name);
     }
 
     for (const String & table_name_in_backup : table_names_in_backup)
@@ -491,9 +481,9 @@ void RestorerFromBackup::findEverythingInBackup(const std::set<String> & except_
 void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 {
     AccessRightsElements required_access;
-    for (const auto & database_name : database_infos | boost::adaptors::map_keys)
+    for (const auto & [database_name, database_info] : database_infos)
     {
-        if (DatabaseCatalog::isPredefinedDatabaseName(database_name))
+        if (database_info.is_predefined_database)
             continue;
 
         AccessFlags flags;
@@ -509,7 +499,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 
     for (const auto & [table_name, table_info] : table_infos)
     {
-        if (hasSystemTableEngine(*table_info.create_table_query))
+        /// Access required to restore ACL system tables is checked separately.
+        if (table_info.is_predefined_table)
             continue;
 
         if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -565,7 +556,7 @@ void RestorerFromBackup::createDatabases()
     for (const auto & [database_name, database_info] : database_infos)
     {
         bool need_create_database = (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist);
-        if (need_create_database && DatabaseCatalog::isPredefinedDatabaseName(database_name))
+        if (database_info.is_predefined_database)
             need_create_database = false; /// Predefined databases always exist.
 
         if (need_create_database)
@@ -585,7 +576,7 @@ void RestorerFromBackup::createDatabases()
 
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
-        if (!restore_settings.allow_different_database_def)
+        if (!restore_settings.allow_different_database_def && !database_info.is_predefined_database)
         {
             /// Check that the database's definition is the same as expected.
             ASTPtr create_database_query = database->getCreateDatabaseQuery();
@@ -621,13 +612,11 @@ void RestorerFromBackup::createTables()
             DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
 
             bool need_create_table = (restore_settings.create_table != RestoreTableCreationMode::kMustExist);
-            if (need_create_table && hasSystemTableEngine(*table_info.create_table_query))
-                need_create_table = false; /// Tables with System* table engine already exist or can't be created by SQL anyway.
+            if (table_info.is_predefined_table)
+                need_create_table = false; /// Predefined tables always exist.
 
             if (need_create_table)
             {
-                /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
-                /// database-specific things).
                 auto create_table_query = table_info.create_table_query;
                 if (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists)
                 {
@@ -641,6 +630,8 @@ void RestorerFromBackup::createTables()
                     tableNameWithTypeToString(table_name.database, table_name.table, false),
                     serializeAST(*create_table_query));
 
+                /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
+                /// database-specific things).
                 database->createTableRestoredFromBackup(
                     create_table_query,
                     context,
@@ -658,7 +649,7 @@ void RestorerFromBackup::createTables()
             table_info.storage = storage;
             table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
 
-            if (!restore_settings.allow_different_table_def)
+            if (!restore_settings.allow_different_table_def && !table_info.is_predefined_table)
             {
                 ASTPtr create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
                 adjustCreateQueryForBackup(create_table_query, context->getGlobalContext(), nullptr);

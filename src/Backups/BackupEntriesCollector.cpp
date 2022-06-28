@@ -385,7 +385,7 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
     DatabaseInfo & database_info = it->second;
 
-    if (backup_create_database_query && !database_info.create_database_query && !DatabaseCatalog::isPredefinedDatabaseName(database_name))
+    if (backup_create_database_query && !database_info.create_database_query && (database_name != DatabaseCatalog::TEMPORARY_DATABASE))
     {
         ASTPtr create_database_query;
         try
@@ -629,7 +629,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
     for (const auto & [database_name, database_info] : database_infos)
     {
         if (!database_info.create_database_query)
-            continue; /// We don't store CREATE queries for predefined databases (see DatabaseCatalog::isPredefinedDatabaseName()).
+            continue; /// We store CREATE DATABASE queries only if there was BACKUP DATABASE specified.
         
         LOG_TRACE(log, "Adding definition of database {}", backQuoteIfNeed(database_name));
 

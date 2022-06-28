@@ -101,9 +101,8 @@ void DDLAdjustingForBackupVisitor::visit(ASTPtr ast, const Data & data)
         visitCreateQuery(*create, data);
 }
 
-void adjustCreateQueryForBackup(ASTPtr & ast, const ContextPtr & global_context, std::optional<String> * replicated_table_shared_id)
+void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context, std::optional<String> * replicated_table_shared_id)
 {
-    ast = ast->clone();
     if (replicated_table_shared_id)
         *replicated_table_shared_id = {};
     

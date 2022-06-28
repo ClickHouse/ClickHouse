@@ -361,9 +361,8 @@ QualifiedTableName DDLRenamingMap::getNewTableName(const QualifiedTableName & ol
 }
 
 
-void renameDatabaseAndTableNameInCreateQuery(ASTPtr & ast, const DDLRenamingMap & renaming_map, const ContextPtr & global_context)
+void renameDatabaseAndTableNameInCreateQuery(ASTPtr ast, const DDLRenamingMap & renaming_map, const ContextPtr & global_context)
 {
-    ast = ast->clone();
     DDLRenamingVisitor::Data data{ast, renaming_map, global_context};
     DDLRenamingVisitor::Visitor{data}.visit(ast);
 }

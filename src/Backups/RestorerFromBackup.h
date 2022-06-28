@@ -97,11 +97,13 @@ private:
     struct DatabaseInfo
     {
         ASTPtr create_database_query;
+        bool is_predefined_database = false;
     };
 
     struct TableInfo
     {
         ASTPtr create_table_query;
+        bool is_predefined_table = false;
         std::optional<ASTs> partitions;
         std::filesystem::path data_path_in_backup;
         std::unordered_set<QualifiedTableName> dependencies;
