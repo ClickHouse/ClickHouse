@@ -21,7 +21,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_read_write_storage(started_cluster):
+def _test_read_write_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     node1.query("drop table if exists SimpleHDFSStorage SYNC")
     node1.query(
@@ -32,7 +32,7 @@ def test_read_write_storage(started_cluster):
     assert node1.query("select * from SimpleHDFSStorage") == "1\tMark\t72.53\n"
 
 
-def test_read_write_storage_with_globs(started_cluster):
+def _test_read_write_storage_with_globs(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     node1.query(
@@ -79,7 +79,7 @@ def test_read_write_storage_with_globs(started_cluster):
         assert "in readonly mode" in str(ex)
 
 
-def test_read_write_table(started_cluster):
+def _test_read_write_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
@@ -95,7 +95,7 @@ def test_read_write_table(started_cluster):
     )
 
 
-def test_write_table(started_cluster):
+def _test_write_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     node1.query(
@@ -110,7 +110,7 @@ def test_write_table(started_cluster):
     assert node1.query("select * from OtherHDFSStorage order by id") == result
 
 
-def test_bad_hdfs_uri(started_cluster):
+def _test_bad_hdfs_uri(started_cluster):
     try:
         node1.query(
             "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')"
@@ -136,7 +136,7 @@ def test_bad_hdfs_uri(started_cluster):
 
 
 @pytest.mark.timeout(800)
-def test_globs_in_read_table(started_cluster):
+def _test_globs_in_read_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     some_data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
@@ -191,7 +191,7 @@ def test_globs_in_read_table(started_cluster):
         ).rstrip() == str(files_amount)
 
 
-def test_read_write_gzip_table(started_cluster):
+def _test_read_write_gzip_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
@@ -207,7 +207,7 @@ def test_read_write_gzip_table(started_cluster):
     )
 
 
-def test_read_write_gzip_table_with_parameter_gzip(started_cluster):
+def _test_read_write_gzip_table_with_parameter_gzip(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
@@ -223,7 +223,7 @@ def test_read_write_gzip_table_with_parameter_gzip(started_cluster):
     )
 
 
-def test_read_write_table_with_parameter_none(started_cluster):
+def _test_read_write_table_with_parameter_none(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
@@ -239,7 +239,7 @@ def test_read_write_table_with_parameter_none(started_cluster):
     )
 
 
-def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
+def _test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
@@ -255,7 +255,7 @@ def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
     )
 
 
-def test_write_gz_storage(started_cluster):
+def _test_write_gz_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     node1.query(
@@ -266,7 +266,7 @@ def test_write_gz_storage(started_cluster):
     assert node1.query("select * from GZHDFSStorage") == "1\tMark\t72.53\n"
 
 
-def test_write_gzip_storage(started_cluster):
+def _test_write_gzip_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     node1.query(
@@ -277,7 +277,7 @@ def test_write_gzip_storage(started_cluster):
     assert node1.query("select * from GZIPHDFSStorage") == "1\tMark\t72.53\n"
 
 
-def test_virtual_columns(started_cluster):
+def _test_virtual_columns(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     node1.query(
@@ -295,7 +295,7 @@ def test_virtual_columns(started_cluster):
     )
 
 
-def test_read_files_with_spaces(started_cluster):
+def _test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     fs = HdfsClient(hosts=started_cluster.hdfs_ip)
@@ -316,7 +316,7 @@ def test_read_files_with_spaces(started_cluster):
     fs.delete(dir, recursive=True)
 
 
-def test_truncate_table(started_cluster):
+def _test_truncate_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     node1.query(
         "create table test_truncate (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/tr', 'TSV')"
@@ -329,7 +329,7 @@ def test_truncate_table(started_cluster):
     node1.query("drop table test_truncate")
 
 
-def test_partition_by(started_cluster):
+def _test_partition_by(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -373,7 +373,7 @@ def test_partition_by(started_cluster):
     assert result.strip() == "1\t2\t3"
 
 
-def test_seekable_formats(started_cluster):
+def _test_seekable_formats(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_function = (
@@ -394,7 +394,7 @@ def test_seekable_formats(started_cluster):
     assert int(result) == 5000000
 
 
-def test_read_table_with_default(started_cluster):
+def _test_read_table_with_default(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     data = "n\n100\n"
@@ -410,7 +410,7 @@ def test_read_table_with_default(started_cluster):
     )
 
 
-def test_schema_inference(started_cluster):
+def _test_schema_inference(started_cluster):
     node1.query(
         f"insert into table function hdfs('hdfs://hdfs1:9000/native', 'Native', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000)"
     )
@@ -433,7 +433,7 @@ def test_schema_inference(started_cluster):
     assert int(result) == 5000000
 
 
-def test_hdfsCluster(started_cluster):
+def _test_hdfsCluster(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     fs = HdfsClient(hosts=started_cluster.hdfs_ip)
     dir = "/test_hdfsCluster"
@@ -459,13 +459,13 @@ def test_hdfsCluster(started_cluster):
     fs.delete(dir, recursive=True)
 
 
-def test_hdfs_directory_not_exist(started_cluster):
+def _test_hdfs_directory_not_exist(started_cluster):
     ddl = "create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/data/not_eixst', 'TSV')"
     node1.query(ddl)
     assert "" == node1.query("select * from HDFSStorageWithNotExistDir")
 
 
-def test_overwrite(started_cluster):
+def _test_overwrite(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_function = f"hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
@@ -484,7 +484,7 @@ def test_overwrite(started_cluster):
     assert int(result) == 10
 
 
-def test_multiple_inserts(started_cluster):
+def _test_multiple_inserts(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_function = f"hdfs('hdfs://hdfs1:9000/data_multiple_inserts', 'Parquet', 'a Int32, b String')"
@@ -520,7 +520,7 @@ def test_multiple_inserts(started_cluster):
     assert int(result) == 60
 
 
-def test_format_detection(started_cluster):
+def _test_format_detection(started_cluster):
     node1.query(
         f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"
     )
@@ -529,7 +529,7 @@ def test_format_detection(started_cluster):
     assert int(result) == 1
 
 
-def test_schema_inference_with_globs(started_cluster):
+def _test_schema_inference_with_globs(started_cluster):
     node1.query(
         f"insert into table function hdfs('hdfs://hdfs1:9000/data1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
     )
@@ -551,15 +551,13 @@ def test_schema_inference_with_globs(started_cluster):
 
     filename = "data{1,3}.jsoncompacteachrow"
 
-    result = node1.query_and_get_error(f"desc hdfs('hdfs://hdfs1:9000/{filename}')")
+    result = node1.query_and_get_error(f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings use_cache_for_hdfs_schema_inference=0")
 
     assert "All attempts to extract table structure from files failed" in result
 
     node1.query(
         f"insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
     )
-
-    url_filename = "data{0,1,2,3}.jsoncompacteachrow"
 
     result = node1.query_and_get_error(
         f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings use_cache_for_hdfs_schema_inference=0"
@@ -570,7 +568,7 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
 
-def test_insert_select_schema_inference(started_cluster):
+def _test_insert_select_schema_inference(started_cluster):
     node1.query(
         f"insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst') select toUInt64(1) as x"
     )
@@ -582,7 +580,7 @@ def test_insert_select_schema_inference(started_cluster):
     assert int(result) == 1
 
 
-def test_cluster_join(started_cluster):
+def _test_cluster_join(started_cluster):
     result = node1.query(
         """
         SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as l
@@ -593,7 +591,7 @@ def test_cluster_join(started_cluster):
     assert "AMBIGUOUS_COLUMN_NAME" not in result
 
 
-def test_cluster_macro(started_cluster):
+def _test_cluster_macro(started_cluster):
     with_macro = node1.query(
         """
         SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
@@ -609,7 +607,7 @@ def test_cluster_macro(started_cluster):
     assert TSV(with_macro) == TSV(no_macro)
 
 
-def test_virtual_columns_2(started_cluster):
+def _test_virtual_columns_2(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_function = (
@@ -643,6 +641,7 @@ def test_schema_inference_cache(started_cluster):
     node1.query(
         f"insert into function hdfs('hdfs://hdfs1:9000/test_cache.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
+    time.sleep(1)
     desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache.jsonl')"
     node1.query(desc_query)
     cache_misses = get_profile_event_for_query(
@@ -660,6 +659,7 @@ def test_schema_inference_cache(started_cluster):
     node1.query(
         f"insert into function hdfs('hdfs://hdfs1:9000/test_cache.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
+    time.sleep(1)
     desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache.jsonl')"
     node1.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
@@ -715,7 +715,9 @@ def test_schema_inference_cache(started_cluster):
 
     desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache.jsonl')"
     node1.query(desc_query)
-    cache_hits = get_profile_event_for_query(node1, desc_query, "SchemaInferenceCacheHits")
+    cache_hits = get_profile_event_for_query(
+        node1, desc_query, "SchemaInferenceCacheHits"
+    )
     assert cache_hits == 1
     cache_ttl_expirations = get_profile_event_for_query(
         node1, desc_query, "SchemaInferenceCacheTTLExpirations"
@@ -724,7 +726,9 @@ def test_schema_inference_cache(started_cluster):
 
     desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache1.jsonl')"
     node1.query(desc_query)
-    cache_misses = get_profile_event_for_query(node1, desc_query, "SchemaInferenceCacheMisses")
+    cache_misses = get_profile_event_for_query(
+        node1, desc_query, "SchemaInferenceCacheMisses"
+    )
     assert cache_misses == 1
 
     node1.query(
@@ -733,6 +737,8 @@ def test_schema_inference_cache(started_cluster):
     node1.query(
         f"insert into function hdfs('hdfs://hdfs1:9000/test_cache3.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
+
+    time.sleep(1)
 
     desc_query = f"desc hdfs('hdfs://hdfs1:9000/test_cache*.jsonl')"
     node1.query(desc_query)

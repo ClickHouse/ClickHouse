@@ -29,6 +29,7 @@ def get_profile_event_for_query(node, query, profile_event):
 
 def test(start_cluster):
     node.query("insert into function file('data.jsonl') select * from numbers(100)")
+    time.sleep(1)
     desc_query = "desc file('data.jsonl')"
     node.query(desc_query)
     cache_misses = get_profile_event_for_query(
@@ -44,6 +45,9 @@ def test(start_cluster):
     assert cache_hits == 1
 
     node.query("insert into function file('data.jsonl') select * from numbers(100)")
+
+    time.sleep(1)
+
     desc_query = "desc file('data.jsonl')"
     node.query(desc_query)
     cache_invalidations = get_profile_event_for_query(
@@ -119,6 +123,8 @@ def test(start_cluster):
 
     node.query("insert into function file('data2.jsonl') select * from numbers(100)")
     node.query("insert into function file('data3.jsonl') select * from numbers(100)")
+
+    time.sleep(1)
 
     desc_query = "desc file('data*.jsonl')"
     node.query(desc_query)
