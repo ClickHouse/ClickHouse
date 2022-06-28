@@ -19,6 +19,10 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void updateOutputStream() override
+    {
+    }
+
 private:
     QueryCachePtr cache;
     CacheKey cache_key;
