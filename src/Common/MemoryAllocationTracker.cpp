@@ -657,10 +657,11 @@ void dump_allocations_flamegraph(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPO
     DB::WriteBufferFromOwnString out;
 
     std::unordered_map<uintptr_t, size_t> mapping;
-    std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+#endif
 
     for (const auto & trace : traces)
     {
