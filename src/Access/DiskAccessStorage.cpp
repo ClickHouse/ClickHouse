@@ -153,15 +153,7 @@ namespace
 
     bool tryParseUUID(const String & str, UUID & id)
     {
-        try
-        {
-            id = parseFromString<UUID>(str);
-            return true;
-        }
-        catch (...)
-        {
-            return false;
-        }
+        return tryParse(id, str);
     }
 }
 

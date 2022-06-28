@@ -291,3 +291,4 @@ gcm_ghash_ssse3:
 .Llow4_mask:
 .long	252645135,252645135,252645135,252645135
 #endif
+.section	.note.GNU-stack,"",@progbits
