@@ -1424,10 +1424,6 @@ private:
             String destination;
             destination = it->name();
 
-            /// Skip to create hardlink for deleted_row_mask.bin
-            if (ctx->source_part->hasLightweightDelete() && destination == "deleted_row_mask.bin")
-                continue;
-
             if (it->isFile())
             {
                 ctx->data_part_storage_builder->createHardLinkFrom(
@@ -1695,12 +1691,22 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
-        ctx->source_part, ctx->updated_header, ctx->storage_columns,
-        ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
+    if (ctx->is_lightweight_mutation)
+    {
+        /// The metadata alter will update the metadata snapshot, we should use same as source part.
+        ctx->new_data_part->setColumns(ctx->source_part->getColumns());
+        ctx->new_data_part->setSerializationInfos(ctx->source_part->getSerializationInfos());
+    }
+    else
+    {
+        auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
+            ctx->source_part, ctx->updated_header, ctx->storage_columns,
+            ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
-    ctx->new_data_part->setColumns(new_columns);
-    ctx->new_data_part->setSerializationInfos(new_infos);
+        ctx->new_data_part->setColumns(new_columns);
+        ctx->new_data_part->setSerializationInfos(new_infos);
+    }
+
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     /// Don't change granularity type while mutating subset of columns
@@ -1722,6 +1728,11 @@ bool MutateTask::prepare()
     }
     else if (ctx->is_lightweight_mutation)
     {
+        ctx->files_to_skip = ctx->source_part->getFileNamesWithoutChecksums();
+        /// Skip to create hardlink for deleted_row_mask.bin
+        if (ctx->source_part->hasLightweightDelete())
+            ctx->files_to_skip.insert("deleted_row_mask.bin");
+
         /// We will modify or create only deleted_row_mask for lightweight delete. Other columns and key values are copied as-is.
         task = std::make_unique<LightweightDeleteTask>(ctx);
     }
