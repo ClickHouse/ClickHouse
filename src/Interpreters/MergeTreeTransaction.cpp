@@ -225,7 +225,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     DataPartsVector removed_parts;
     RunningMutationsList committed_mutations;
     {
-        /// We don't really need mutex here, because no concurrent modifications of transaction object may happen after comit.
+        /// We don't really need mutex here, because no concurrent modifications of transaction object may happen after commit.
         std::lock_guard lock{mutex};
         created_parts = creating_parts;
         removed_parts = removing_parts;

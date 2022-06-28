@@ -73,7 +73,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
-    assert(READ_NO_TSA(tables).empty());
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
         fs::remove(path_to_metadata_symlink);
