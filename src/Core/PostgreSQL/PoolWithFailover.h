@@ -25,13 +25,13 @@ public:
     static constexpr inline auto POSTGRESQL_POOL_WAIT_TIMEOUT = 5000;
     static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 5;
 
-    PoolWithFailover(
+    explicit PoolWithFailover(
         const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         size_t pool_wait_timeout = POSTGRESQL_POOL_WAIT_TIMEOUT,
         size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
-    PoolWithFailover(
+    explicit PoolWithFailover(
         const DB::StoragePostgreSQLConfiguration & configuration,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         size_t pool_wait_timeout = POSTGRESQL_POOL_WAIT_TIMEOUT,

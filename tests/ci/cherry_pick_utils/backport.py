@@ -1,24 +1,22 @@
 # -*- coding: utf-8 -*-
 
-try:
-    from clickhouse.utils.github.cherrypick import CherryPick
-    from clickhouse.utils.github.query import Query as RemoteRepo
-    from clickhouse.utils.github.local import Repository as LocalRepo
-except:
-    from .cherrypick import CherryPick
-    from .query import Query as RemoteRepo
-    from .local import Repository as LocalRepo
-
 import argparse
 import logging
+import os
 import re
 import sys
+
+sys.path.append(os.path.dirname(__file__))
+
+from cherrypick import CherryPick
+from query import Query as RemoteRepo
+from local import Repository as LocalRepo
 
 
 class Backport:
     def __init__(self, token, owner, name, team):
         self._gh = RemoteRepo(
-            token, owner=owner, name=name, team=team, max_page_size=30, min_page_size=7
+            token, owner=owner, name=name, team=team, max_page_size=60, min_page_size=7
         )
         self._token = token
         self.default_branch_name = self._gh.default_branch
@@ -49,14 +47,16 @@ class Backport:
             logging.info("No release branches found!")
             return
 
-        for branch in branches:
-            logging.info("Found release branch: %s", branch[0])
+        logging.info(
+            "Found release branches: %s", ", ".join([br[0] for br in branches])
+        )
 
         if not until_commit:
             until_commit = branches[0][1]
         pull_requests = self.getPullRequests(until_commit)
 
         backport_map = {}
+        pr_map = {pr["number"]: pr for pr in pull_requests}
 
         RE_MUST_BACKPORT = re.compile(r"^v(\d+\.\d+)-must-backport$")
         RE_NO_BACKPORT = re.compile(r"^v(\d+\.\d+)-no-backport$")
@@ -68,17 +68,17 @@ class Backport:
                 pr["mergeCommit"]["oid"]
             ):
                 logging.info(
-                    "PR #{} is already inside {}. Dropping this branch for further PRs".format(
-                        pr["number"], branches[-1][0]
-                    )
+                    "PR #%s is already inside %s. Dropping this branch for further PRs",
+                    pr["number"],
+                    branches[-1][0],
                 )
                 branches.pop()
 
-            logging.info("Processing PR #{}".format(pr["number"]))
+            logging.info("Processing PR #%s", pr["number"])
 
-            assert len(branches)
+            assert len(branches) != 0
 
-            branch_set = set([branch[0] for branch in branches])
+            branch_set = {branch[0] for branch in branches}
 
             # First pass. Find all must-backports
             for label in pr["labels"]["nodes"]:
@@ -120,16 +120,16 @@ class Backport:
                     )
 
         for pr, branches in list(backport_map.items()):
-            logging.info("PR #%s needs to be backported to:", pr)
+            statuses = []
             for branch in branches:
-                logging.info(
-                    "\t%s, and the status is: %s",
-                    branch,
-                    run_cherrypick(self._token, pr, branch),
-                )
+                branch_status = run_cherrypick(pr_map[pr], branch)
+                statuses.append(f"{branch}, and the status is: {branch_status}")
+            logging.info(
+                "PR #%s needs to be backported to:\n\t%s", pr, "\n\t".join(statuses)
+            )
 
         # print API costs
-        logging.info("\nGitHub API total costs per query:")
+        logging.info("\nGitHub API total costs for backporting per query:")
         for name, value in list(self._gh.api_costs.items()):
             logging.info("%s : %s", name, value)
 
@@ -178,8 +178,13 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
 
-    cherrypick_run = lambda token, pr, branch: CherryPick(
-        token, "ClickHouse", "ClickHouse", "core", pr, branch
-    ).execute(args.repo, args.dry_run)
+    cherry_pick = CherryPick(
+        args.token, "ClickHouse", "ClickHouse", "core", 1, "master"
+    )
+
+    def cherrypick_run(pr_data, branch):
+        cherry_pick.update_pr_branch(pr_data, branch)
+        return cherry_pick.execute(args.repo, args.dry_run)
+
     bp = Backport(args.token, "ClickHouse", "ClickHouse", "core")
     bp.execute(args.repo, args.upstream, args.til, cherrypick_run)

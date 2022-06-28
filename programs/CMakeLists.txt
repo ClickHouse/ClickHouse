@@ -64,6 +64,8 @@ option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper log
 
 option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
+option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
+
 if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
     # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
@@ -175,6 +177,12 @@ if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED ON)
 endif()
 
+if (ENABLE_CLICKHOUSE_DISKS)
+    message(STATUS "Clickhouse disks mode: ON")
+else()
+    message(STATUS "ClickHouse disks mode: OFF")
+endif()
+
 configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
@@ -240,6 +248,7 @@ add_subdirectory (git-import)
 add_subdirectory (bash-completion)
 add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
+add_subdirectory (disks)
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     add_subdirectory (keeper)
@@ -323,7 +332,8 @@ if (CLICKHOUSE_SPLIT_BINARY)
         clickhouse-obfuscator
         clickhouse-git-import
         clickhouse-copier
-        clickhouse-static-files-disk-uploader)
+        clickhouse-static-files-disk-uploader
+        clickhouse-disks)
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
@@ -402,6 +412,9 @@ else ()
     endif()
     if (ENABLE_CLICKHOUSE_INSTALL)
         clickhouse_target_link_split_lib(clickhouse install)
+    endif ()
+    if (ENABLE_CLICKHOUSE_DISKS)
+        clickhouse_target_link_split_lib(clickhouse disks)
     endif ()
 
     set (CLICKHOUSE_BUNDLE)
@@ -482,6 +495,11 @@ else ()
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-converter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
     endif ()
+    if (ENABLE_CLICKHOUSE_DISKS)
+        add_custom_target (clickhouse-disks ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-disks DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-disks" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-disks)
+    endif ()
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
@@ -490,7 +508,7 @@ else ()
     endif()
 
     if (USE_BINARY_HASH)
-        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
     endif()
 
     if (INSTALL_STRIPPED_BINARIES)

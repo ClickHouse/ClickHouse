@@ -362,12 +362,12 @@ def test_progress():
     # print(results)
     assert (
         str(results)
-        == """[progress {
+        == """[output_format: "TabSeparated"
+progress {
   read_rows: 2
   read_bytes: 16
   total_rows_to_read: 8
 }
-output_format: "TabSeparated"
 , output: "0\\t0\\n1\\t0\\n"
 , progress {
   read_rows: 2

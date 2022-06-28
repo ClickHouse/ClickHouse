@@ -49,14 +49,11 @@ private:
 
     SortCursorImpls cursors;
 
-    SortingHeap<SimpleSortCursor> queue_simple;
-    SortingHeap<SortCursor> queue_without_collation;
-    SortingHeap<SortCursorWithCollation> queue_with_collation;
+    SortQueueVariants queue_variants;
 
-    Status insertFromChunk(size_t source_num);
+    template <typename TSortingQueue>
+    Status mergeBatchImpl(TSortingQueue & queue);
 
-    template <typename TSortingHeap>
-    Status mergeImpl(TSortingHeap & queue);
 };
 
 }
