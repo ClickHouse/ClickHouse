@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
-// For more readable instantiations of MultiMatchAnyImpl<>
+/// For more readable instantiations of MultiMatchAnyImpl<>
 struct MultiMatchTraits
 {
 enum class Find
@@ -120,10 +120,10 @@ struct MultiMatchAnyImpl
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
             UInt64 length = haystack_offsets[i] - offset - 1;
-            // vectorscan restriction.
+            /// vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
-            // zero the result, scan, check, update the offset.
+            /// zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
                 hyperscan_regex->getDB(),
@@ -138,7 +138,7 @@ struct MultiMatchAnyImpl
             offset = haystack_offsets[i];
         }
 #else
-        // fallback if vectorscan is not compiled
+        /// fallback if vectorscan is not compiled
         if constexpr (WithEditDistance)
             throw Exception(
                 "Edit distance multi-search is not implemented when vectorscan is off",
@@ -228,11 +228,11 @@ struct MultiMatchAnyImpl
 
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
 
-            // vectorscan restriction.
+            /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
 
-            // zero the result, scan, check, update the offset.
+            /// zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
                 hyperscan_regex->getDB(),
@@ -248,7 +248,7 @@ struct MultiMatchAnyImpl
             prev_haystack_offset = haystack_offsets[i];
         }
 #else
-        // fallback if vectorscan is not compiled
+        /// fallback if vectorscan is not compiled
         if constexpr (WithEditDistance)
             throw Exception(
                 "Edit distance multi-search is not implemented when vectorscan is off",
