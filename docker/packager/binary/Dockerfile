@@ -97,7 +97,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
-ARG NFPM_VERSION=2.15.1
+ARG NFPM_VERSION=2.16.0
 
 RUN arch=${TARGETARCH:-amd64} \
   && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
