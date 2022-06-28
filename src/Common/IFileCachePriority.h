@@ -11,13 +11,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class FileCache;
-
 class IFileCachePriority;
 using FileCachePriorityPtr = std::shared_ptr<IFileCachePriority>;
 
@@ -66,7 +60,7 @@ public:
 
         virtual bool valid() const = 0;
 
-        ///  Mark a cache record as recently used, it will update the priority
+        /// Mark a cache record as recently used, it will update the priority
         /// of the cache record according to different cache algorithms.
         virtual void use(std::lock_guard<std::mutex> &) = 0;
 
@@ -79,6 +73,7 @@ public:
 
         virtual void incrementSize(size_t, std::lock_guard<std::mutex> &) = 0;
 
+        /// Repoint the iterator to the record with the lowest priority.
         virtual void seekToLowestPriority() const = 0;
     };
 
