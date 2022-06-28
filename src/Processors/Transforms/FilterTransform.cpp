@@ -61,6 +61,7 @@ FilterTransform::FilterTransform(
     transformed_header = getInputPort().getHeader();
     expression->execute(transformed_header);
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
+    filter_is_input_column = expression->isRequiredInputColumn(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
@@ -175,7 +176,7 @@ void FilterTransform::transform(Chunk & chunk)
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
     {
-        if (!remove_filter_column)
+        if (!remove_filter_column && !filter_is_input_column)
         {
             /// Replace the column with the filter by a constant.
             auto & type = transformed_header.getByPosition(filter_column_position).type;
@@ -189,7 +190,6 @@ void FilterTransform::transform(Chunk & chunk)
     }
 
     /// Filter the rest of the columns.
-    bool filter_is_input_column = expression->isRequiredInputColumn(filter_column_name);
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & current_type = transformed_header.safeGetByPosition(i).type;
@@ -198,10 +198,6 @@ void FilterTransform::transform(Chunk & chunk)
         if (i == filter_column_position && !filter_is_input_column)
         {
             /// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
-            /// NOTE User could pass column with something different than 0 and 1 for filter.
-            /// Example:
-            ///  SELECT materialize(100) AS x WHERE x
-            /// will work incorrectly.
             current_column = current_type->createColumnConst(num_filtered_rows, 1u);
             continue;
         }
@@ -218,6 +214,5 @@ void FilterTransform::transform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
     removeFilterIfNeed(chunk);
 }
-
 
 }

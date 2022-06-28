@@ -48,6 +48,8 @@ private:
 
     bool are_prepared_sets_initialized = false;
 
+    bool filter_is_input_column;
+
     void removeFilterIfNeed(Chunk & chunk) const;
 };
 

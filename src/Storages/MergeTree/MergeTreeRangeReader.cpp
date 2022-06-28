@@ -672,12 +672,16 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (column_name == "_part_offset")
             sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
     }
+    prewhere_is_input_column = !prewhere_info || !prewhere_info->actions;
 
     if (prewhere_info)
     {
         const auto & step = *prewhere_info;
         if (step.actions)
+        {
             step.actions->execute(sample_block, true);
+            prewhere_is_input_column = step.actions->isRequiredInputColumn(step.column_name); 
+        }
 
         if (step.remove_column)
             sample_block.erase(step.column_name);
@@ -1154,11 +1158,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
-        bool prewhere_is_input_column = !prewhere_info->actions;
 
         if (prewhere_info->actions)
         {
-            prewhere_is_input_column = prewhere_info->actions->isRequiredInputColumn(prewhere_info->column_name);
             prewhere_info->actions->execute(block);
         }
 

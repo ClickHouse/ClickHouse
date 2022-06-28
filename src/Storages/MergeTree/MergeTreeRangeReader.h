@@ -264,6 +264,7 @@ private:
     bool last_reader_in_chain = false;
     bool is_initialized = false;
     Names non_const_virtual_column_names;
+    bool prewhere_is_input_column;
 };
 
 }
