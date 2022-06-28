@@ -1,4 +1,4 @@
--- Tags: no-debug, use-hyperscan
+-- Tags: no-debug, use-vectorscan
 
 -- Check that server does not get segfault due to bad stack unwinding from Hyperscan
 

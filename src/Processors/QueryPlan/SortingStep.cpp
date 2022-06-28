@@ -89,18 +89,11 @@ SortingStep::SortingStep(
     output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
-void SortingStep::updateInputStream(DataStream input_stream)
+void SortingStep::updateOutputStream()
 {
-    input_streams.clear();
-    input_streams.emplace_back(std::move(input_stream));
-}
-
-void SortingStep::updateOutputStream(Block result_header)
-{
-    output_stream = createOutputStream(input_streams.at(0), std::move(result_header), getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
     output_stream->sort_description = result_description;
     output_stream->sort_mode = DataStream::SortMode::Stream;
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void SortingStep::updateLimit(size_t limit_)

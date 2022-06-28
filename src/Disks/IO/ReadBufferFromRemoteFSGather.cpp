@@ -40,7 +40,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
         appendFilesystemCacheLog();
     }
 
-    current_file_path = fs::path(common_path_prefix) / path;
+    current_file_path = path;
     current_file_size = file_size;
     total_bytes_read_from_current_file = 0;
 
@@ -50,18 +50,30 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 #if USE_AWS_S3
 SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(const String & path, size_t file_size)
 {
-    auto remote_path = fs::path(common_path_prefix) / path;
     auto remote_file_reader_creator = [=, this]()
     {
         return std::make_unique<ReadBufferFromS3>(
-            client_ptr, bucket, remote_path, version_id, max_single_read_retries,
-            settings, /* use_external_buffer */true, /* offset */ 0, read_until_position, /* restricted_seek */true);
+            client_ptr,
+            bucket,
+            path,
+            version_id,
+            max_single_read_retries,
+            settings,
+            /* use_external_buffer */true,
+            /* offset */0,
+            read_until_position,
+            /* restricted_seek */true);
     };
 
     if (with_cache)
     {
         return std::make_shared<CachedReadBufferFromRemoteFS>(
-            remote_path, settings.remote_fs_cache, remote_file_reader_creator, settings, query_id, read_until_position ? read_until_position : file_size);
+            path,
+            settings.remote_fs_cache,
+            remote_file_reader_creator,
+            settings,
+            query_id,
+            read_until_position ? read_until_position : file_size);
     }
 
     return remote_file_reader_creator();
@@ -72,34 +84,46 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
 #if USE_AZURE_BLOB_STORAGE
 SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    current_file_path = path;
-    return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, /* use_external_buffer */true, read_until_position);
+    return std::make_unique<ReadBufferFromAzureBlobStorage>(
+        blob_container_client,
+        path,
+        max_single_read_retries,
+        max_single_download_retries,
+        settings.remote_fs_buffer_size,
+        /* use_external_buffer */true,
+        read_until_position);
 }
 #endif
 
 
 SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    current_file_path = path;
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, /* use_external_buffer */true, read_until_position);
+    return std::make_unique<ReadBufferFromWebServer>(
+        fs::path(uri) / path,
+        context,
+        settings,
+        /* use_external_buffer */true,
+        read_until_position);
 }
 
 
 #if USE_HDFS
 SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, settings.remote_fs_buffer_size);
+    size_t begin_of_path = path.find('/', path.find("//") + 2);
+    auto hdfs_path = path.substr(begin_of_path);
+    auto hdfs_uri = path.substr(0, begin_of_path);
+    LOG_TEST(log, "HDFS uri: {}, path: {}", hdfs_path, hdfs_uri);
+
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config);
 }
 #endif
 
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
-    const std::string & common_path_prefix_,
-    const BlobsPathToSize & blobs_to_read_,
+    const PathsWithSize & blobs_to_read_,
     const ReadSettings & settings_)
     : ReadBuffer(nullptr, 0)
-    , common_path_prefix(common_path_prefix_)
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
