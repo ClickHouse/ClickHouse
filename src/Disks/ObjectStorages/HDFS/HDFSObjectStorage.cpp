@@ -81,7 +81,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 }
 
 
-void HDFSObjectStorage::listPrefix(const std::string & path, PathsWithSize & children) const
+void HDFSObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     const size_t begin_of_path = path.find('/', path.find("//") + 2);
     int32_t num_entries;
