@@ -256,6 +256,8 @@ public:
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
+        void addPart(MutableDataPartPtr & part, DataPartStorageBuilderPtr builder);
+
         void rollback();
 
         /// Immediately remove parts from table's data_parts set and change part
@@ -283,6 +285,7 @@ public:
         MergeTreeData & data;
         MergeTreeTransaction * txn;
         DataParts precommitted_parts;
+        std::vector<DataPartStorageBuilderPtr> part_builders;
         DataParts locked_parts;
 
         void clear() { precommitted_parts.clear(); }

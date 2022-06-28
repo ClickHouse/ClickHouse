@@ -46,6 +46,7 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
     return true;
 }
 
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -735,7 +736,7 @@ public:
             if (next_level_parts.empty())
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-                selected_parts[0]->renameTo(projection.name + ".proj", true);
+                selected_parts[0]->renameTo(projection.name + ".proj", true, ctx->data_part_storage_builder);
                 selected_parts[0]->name = projection.name;
                 selected_parts[0]->is_temp = false;
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
@@ -1551,5 +1552,9 @@ const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
     return ctx->hardlinked_files;
 }
 
+DataPartStorageBuilderPtr MutateTask::getBuilder() const
+{
+    return ctx->data_part_storage_builder;
+}
 
 }
