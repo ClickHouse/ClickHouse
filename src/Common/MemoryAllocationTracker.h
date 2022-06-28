@@ -10,12 +10,18 @@ struct Trace
     using Frames = std::vector<uintptr_t>;
 
     Frames frames;
-    size_t allocated = 0;
+
+    /// The total number of bytes allocated for traces with the same prefix.
+    size_t allocated_total = 0;
+    /// This counter is relevant in case we want to filter some traces with small amount of bytes.
+    /// It shows the total number of bytes for *filtered* traces with the same prefix.
+    /// This is the value whis is used in flamegraph.
+    size_t allocated_self = 0;
 };
 
 using Traces = std::vector<Trace>;
 
-Traces dump_allocations(size_t max_depth, size_t max_bytes, bool only_leafs);
+Traces dump_allocations(size_t max_depth, size_t max_bytes);
 
 struct DumpTree
 {

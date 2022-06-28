@@ -29,7 +29,7 @@ void StorageSystemAllocations::fillData(MutableColumns & res_columns, ContextPtr
     auto & trace_offsets = typeid_cast<ColumnUInt64 &>(trace_array->getOffsetsColumn()).getData();
     auto & bytes = typeid_cast<ColumnUInt64 *>(res_columns[1].get())->getData();
 
-    auto traces = MemoryAllocationTracker::dump_allocations(0, 0, false);
+    auto traces = MemoryAllocationTracker::dump_allocations(0, 0);
 
     UInt64 offset = 0;
     for (const auto & trace : traces)
@@ -39,7 +39,7 @@ void StorageSystemAllocations::fillData(MutableColumns & res_columns, ContextPtr
 
         offset += trace.frames.size();
         trace_offsets.push_back(offset);
-        bytes.push_back(trace.allocated);
+        bytes.push_back(trace.allocated_total);
     }
 }
 

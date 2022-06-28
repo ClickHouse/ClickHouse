@@ -3,12 +3,12 @@
 #include <mutex>
 #include <base/defines.h>
 #include <sys/mman.h>
-#include "Common/Dwarf.h"
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/MemoryAllocationTracker.h>
 #include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
+#include <Common/Dwarf.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -216,29 +216,32 @@ struct Tree
             values.push_back(val);
     }
 
-    Traces dump(size_t max_depth, size_t max_bytes, bool only_leafs) const
+    Traces dump(size_t max_depth, size_t max_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
-        std::vector<size_t> allocated;
+        std::vector<size_t> allocated_total;
+        std::vector<size_t> allocated_self;
         std::vector<ListNode *> nodes;
 
         nodes.push_back(root.children);
-
-        if (!only_leafs)
-            traces.push_back({frames, root.allocated});
+        allocated_total.push_back(root.allocated);
+        allocated_self.push_back(root.allocated);
 
         while (!nodes.empty())
         {
             if (nodes.back() == nullptr)
             {
+                traces.push_back({frames, allocated_total.back(), allocated_self.back()});
+
                 nodes.pop_back();
+                allocated_total.pop_back();
+                allocated_self.pop_back();
+
+                /// We don't have root's frame so framers are empty in the end.
                 if (!frames.empty())
-                {
-                    traces.push_back({frames, allocated.back()});
                     frames.pop_back();
-                    allocated.pop_back();
-                }
+
                 continue;
             }
 
@@ -251,18 +254,17 @@ struct Tree
             if (enough_bytes)
             {
                 frames.push_back(reinterpret_cast<intptr_t>(current->ptr));
-
-                if (only_leafs && !allocated.empty())
-                    allocated.back() -= current->allocated;
+                allocated_self.back() -= current->allocated;
 
                 if (enough_depth)
                 {
-                    allocated.push_back(current->allocated);
+                    allocated_total.push_back(current->allocated);
+                    allocated_self.push_back(current->allocated);
                     nodes.push_back(current->children);
                 }
                 else
                 {
-                    traces.push_back({frames, current->allocated});
+                    traces.push_back({frames, current->allocated, current->allocated});
                     frames.pop_back();
                 }
             }
@@ -357,9 +359,9 @@ struct AllocationTracker
         allocations.clear();
     }
 
-    Traces dump(size_t max_depth, size_t max_bytes, bool only_leafs) const
+    Traces dump(size_t max_depth, size_t max_bytes) const
     {
-        return tree.dump(max_depth, max_bytes, only_leafs);
+        return tree.dump(max_depth, max_bytes);
     }
 
     DumpTree dumpAllocationsTree(size_t max_depth, size_t max_bytes) const
@@ -473,7 +475,7 @@ void track_free(void * ptr, std::size_t size)
     }
 }
 
-Traces dump_allocations(size_t max_depth, size_t max_bytes, bool only_leafs)
+Traces dump_allocations(size_t max_depth, size_t max_bytes)
 {
     if (recursive_call_flag)
         return {};
@@ -485,7 +487,7 @@ Traces dump_allocations(size_t max_depth, size_t max_bytes, bool only_leafs)
     {
         std::lock_guard lock(data.mutex);
         if (data.is_enabled)
-            return data.tracker.dump(max_depth, max_bytes, only_leafs);
+            return data.tracker.dump(max_depth, max_bytes);
     }
 
     return {};
@@ -557,6 +559,8 @@ static void writeWrappedString(std::string_view ref, size_t wrap_size, DB::Write
     writeString(ref.substr(start, std::string_view::npos), out);
 }
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+
 static void addressToLine(
     DB::WriteBuffer & out,
     const DB::SymbolIndex & symbol_index,
@@ -587,18 +591,28 @@ static void addressToLine(
     }
 }
 
+#endif
+
 static void dumpNode(
-    DB::WriteBuffer & out,
     const DumpTree::Node & node,
     std::unordered_map<uintptr_t, size_t> & mapping,
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    std::unordered_map<std::string, DB::Dwarf> & dwarfs,
     const DB::SymbolIndex & symbol_index,
-    std::unordered_map<std::string, DB::Dwarf> & dwarfs)
+#endif
+    DB::WriteBuffer & out)
 {
     size_t id = mapping.emplace(node.id, mapping.size()).first->second;
 
     out << "    n" << id << "[label=\"Allocated: "
         << formatReadableSizeWithBinarySuffix(node.allocated) << " (" << node.allocated << ")\n";
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     addressToLine(out, symbol_index, dwarfs, node.ptr);
+#elif
+    DB::writePointerHex(node.ptr, out);
+#endif
+
     out << "\"];\n";
 }
 
@@ -607,20 +621,24 @@ void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray
     auto tree = dump_allocations_tree(max_depth, max_bytes);
 
     DB::WriteBufferFromOwnString out;
-
     std::unordered_map<uintptr_t, size_t> mapping;
-    std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+#endif
 
     out << "digraph\n{\n";
     out << "  rankdir=\"LR\";\n";
     out << "  { node [shape = rect]\n";
 
     for (const auto & node : tree.nodes)
-        dumpNode(out, node, mapping, symbol_index, dwarfs);
-
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        dumpNode(node, mapping, dwarfs, symbol_index, out);
+#elif
+        dumpNode(node, mapping, out);
+#endif
     out << "  }\n";
 
     for (const auto & edge : tree.edges)
@@ -634,7 +652,7 @@ void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray
 
 void dump_allocations_flamegraph(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, size_t max_depth, size_t max_bytes)
 {
-    auto traces = dump_allocations(max_depth, max_bytes, true);
+    auto traces = dump_allocations(max_depth, max_bytes);
 
     DB::WriteBufferFromOwnString out;
 
@@ -646,19 +664,27 @@ void dump_allocations_flamegraph(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPO
 
     for (const auto & trace : traces)
     {
+        if (trace.allocated_self == 0)
+            continue;
+
         for (size_t i = 0; i < trace.frames.size(); ++i)
         {
             if (i)
                 out << ";";
 
             const void * ptr = reinterpret_cast<const void *>(trace.frames[i]);
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
             if (const auto * symbol = symbol_index.findSymbol(ptr))
                 writeString(demangle(symbol->name), out);
             else
                 DB::writePointerHex(ptr, out);
+#elif
+            DB::writePointerHex(ptr, out);
+#endif
         }
 
-        out << ' ' << trace.allocated << "\n";
+        out << ' ' << trace.allocated_self << "\n";
     }
 
     fillColumn(chars, offsets, out.str());
