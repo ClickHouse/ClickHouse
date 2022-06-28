@@ -149,8 +149,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -193,8 +193,8 @@ jobs:
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -241,8 +241,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -289,8 +289,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -337,8 +337,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -385,8 +385,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -433,8 +433,8 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |

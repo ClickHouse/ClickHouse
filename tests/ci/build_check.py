@@ -136,7 +136,7 @@ def create_json_artifact(
     success: bool,
 ):
     subprocess.check_call(
-        f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
+        f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
 
     result = {
