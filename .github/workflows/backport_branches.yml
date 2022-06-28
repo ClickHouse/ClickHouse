@@ -145,10 +145,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
+          fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -185,19 +186,24 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
+          fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -235,10 +241,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -282,10 +289,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -329,10 +337,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"

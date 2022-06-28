@@ -136,10 +136,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -180,10 +181,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -226,10 +228,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -273,10 +276,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -320,10 +324,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -367,10 +372,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -414,10 +420,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
