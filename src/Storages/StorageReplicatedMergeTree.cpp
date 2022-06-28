@@ -4130,6 +4130,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
             part->renameTo(fs::path("detached") / part_name, true, builder);
+            builder->commit();
         }
     }
     catch (const Exception & e)
