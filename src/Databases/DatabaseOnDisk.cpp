@@ -503,7 +503,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
-    assert(READ_NO_TSA(tables).empty());
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
         fs::remove_all(local_context->getPath() + getDataPath());
@@ -757,7 +757,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    String database_name_escaped = escapeForFileName(READ_NO_TSA(database_name));   /// FIXME
+    String database_name_escaped = escapeForFileName(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
     fs::path metadata_root_path = fs::canonical(query_context->getGlobalContext()->getPath());
     fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");

@@ -213,7 +213,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         /*priority=*/1,
-        READ_NO_TSA(database_name),     /// FIXME
+        TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret);
 }
 

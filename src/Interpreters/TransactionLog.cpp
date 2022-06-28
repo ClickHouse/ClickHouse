@@ -125,7 +125,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path_log, *beg, last_entry);
     futures.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        futures.emplace_back(READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
+        futures.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
 
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;
     loaded.reserve(entries_count);
@@ -210,7 +210,7 @@ void TransactionLog::runUpdatingThread()
         try
         {
             /// Do not wait if we have some transactions to finalize
-            if (READ_ONE_THREAD(unknown_state_list_loaded).empty())
+            if (TSA_READ_ONE_THREAD(unknown_state_list_loaded).empty())
                 log_updated_event->wait();
 
             if (stop_flag.load())
@@ -227,7 +227,7 @@ void TransactionLog::runUpdatingThread()
 
                 /// It's possible that we connected to different [Zoo]Keeper instance
                 /// so we may read a bit stale state.
-                READ_ONE_THREAD(zookeeper)->sync(zookeeper_path_log);
+                TSA_READ_ONE_THREAD(zookeeper)->sync(zookeeper_path_log);
             }
 
             loadNewEntries();
@@ -252,13 +252,13 @@ void TransactionLog::runUpdatingThread()
 
 void TransactionLog::loadNewEntries()
 {
-    Strings entries_list = READ_ONE_THREAD(zookeeper)->getChildren(zookeeper_path_log, nullptr, log_updated_event);
+    Strings entries_list = TSA_READ_ONE_THREAD(zookeeper)->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
     ::sort(entries_list.begin(), entries_list.end());
-    auto it = std::upper_bound(entries_list.begin(), entries_list.end(), READ_ONE_THREAD(last_loaded_entry));
+    auto it = std::upper_bound(entries_list.begin(), entries_list.end(), TSA_READ_ONE_THREAD(last_loaded_entry));
     loadEntries(it, entries_list.end());
-    chassert(READ_ONE_THREAD(last_loaded_entry) == entries_list.back());
-    chassert(latest_snapshot == deserializeCSN(READ_ONE_THREAD(last_loaded_entry)));
+    chassert(TSA_READ_ONE_THREAD(last_loaded_entry) == entries_list.back());
+    chassert(latest_snapshot == deserializeCSN(TSA_READ_ONE_THREAD(last_loaded_entry)));
     latest_snapshot.notify_all();
 }
 
@@ -278,7 +278,7 @@ void TransactionLog::removeOldEntries()
 
     /// TODO we will need a bit more complex logic for multiple hosts
     Coordination::Stat stat;
-    CSN old_tail_ptr = deserializeCSN(READ_ONE_THREAD(zookeeper)->get(zookeeper_path + "/tail_ptr", &stat));
+    CSN old_tail_ptr = deserializeCSN(TSA_READ_ONE_THREAD(zookeeper)->get(zookeeper_path + "/tail_ptr", &stat));
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
@@ -287,7 +287,7 @@ void TransactionLog::removeOldEntries()
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
     LOG_TRACE(log, "Updating tail_ptr from {} to {}", old_tail_ptr, new_tail_ptr);
-    READ_ONE_THREAD(zookeeper)->set(zookeeper_path + "/tail_ptr", serializeCSN(new_tail_ptr), stat.version);
+    TSA_READ_ONE_THREAD(zookeeper)->set(zookeeper_path + "/tail_ptr", serializeCSN(new_tail_ptr), stat.version);
     tail_ptr.store(new_tail_ptr);
 
     /// Now we can find and remove old entries
@@ -311,7 +311,7 @@ void TransactionLog::removeOldEntries()
             continue;
 
         LOG_TEST(log, "Removing entry {} -> {}", elem.second.tid, elem.second.csn);
-        auto code = READ_ONE_THREAD(zookeeper)->tryRemove(zookeeper_path_log + "/" + serializeCSN(elem.second.csn));
+        auto code = TSA_READ_ONE_THREAD(zookeeper)->tryRemove(zookeeper_path_log + "/" + serializeCSN(elem.second.csn));
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
             removed_entries.push_back(elem.first);
     }

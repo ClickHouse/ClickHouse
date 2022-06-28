@@ -175,7 +175,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
                 /// NOTE No concurrent writes are possible during database loading
-                create_query->setDatabase(READ_NO_TSA(database_name));
+                create_query->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
 
                 /// Even if we don't load the table we can still mark the uuid of it as taken.
                 if (create_query->uuid != UUIDHelpers::Nil)
@@ -202,7 +202,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     return;
                 }
 
-                QualifiedTableName qualified_name{READ_NO_TSA(database_name), create_query->getTable()};
+                QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
                 TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
 
                 std::lock_guard lock{metadata.mutex};
@@ -235,12 +235,12 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t tables_in_database = objects_in_database - dictionaries_in_database;
 
     LOG_INFO(log, "Metadata processed, database {} has {} tables and {} dictionaries in total.",
-             READ_NO_TSA(database_name), tables_in_database, dictionaries_in_database);
+             TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database);
 }
 
 void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
 {
-    assert(name.database == READ_NO_TSA(database_name));
+    assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & create_query = ast->as<const ASTCreateQuery &>();
 
     tryAttachTable(
@@ -257,7 +257,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_rest
     LOG_INFO(log, "Starting up tables.");
 
     /// NOTE No concurrent writes are possible during database loading
-    const size_t total_tables = READ_NO_TSA(tables).size();
+    const size_t total_tables = TSA_SUPPRESS_WARNING_FOR_READ(tables).size();
     if (!total_tables)
         return;
 
@@ -273,7 +273,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_rest
 
     try
     {
-        for (const auto & table : READ_NO_TSA(tables))
+        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
             thread_pool.scheduleOrThrowOnError([&]() { startup_one_table(table.second); });
     }
     catch (...)

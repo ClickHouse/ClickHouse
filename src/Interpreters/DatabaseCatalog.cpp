@@ -694,7 +694,7 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
 {
     std::unique_lock lock(ddl_guards_mutex);
     /// TSA does not support unique_lock
-    auto db_guard_iter = WRITE_NO_TSA(ddl_guards).try_emplace(database).first;
+    auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
     return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
