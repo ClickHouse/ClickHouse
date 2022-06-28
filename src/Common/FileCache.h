@@ -243,7 +243,7 @@ private:
         bool is_persistent,
         std::lock_guard<std::mutex> & cache_lock);
 
-    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
+    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const;
 
     bool tryReserveForMainList(
         const Key & key, size_t offset, size_t size, QueryContextPtr query_context, std::lock_guard<std::mutex> & cache_lock);

@@ -234,7 +234,7 @@ void FileCache::initialize()
 }
 
 void FileCache::useCell(
-    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock)
+    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const
 {
     auto file_segment = cell.file_segment;
 
@@ -945,8 +945,6 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
                     || remove_persistent_files
                     || allow_to_remove_persistent_segments_from_cache_by_default))
             {
-                std::lock_guard segment_lock(file_segment->mutex);
-                file_segment->detach(cache_lock, segment_lock);
                 to_remove.emplace_back(file_segment);
             }
         }
