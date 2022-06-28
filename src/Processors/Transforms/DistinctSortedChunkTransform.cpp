@@ -140,7 +140,7 @@ size_t DistinctSortedChunkTransform::getRangeEnd(size_t range_begin, size_t rang
     return range_end;
 }
 
-std::tuple<size_t,size_t> DistinctSortedChunkTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
+std::pair<size_t, size_t> DistinctSortedChunkTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
 {
     /// current_key is empty on very first transform() call
     /// or first row doesn't match a key from previous transform()
