@@ -173,7 +173,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             else if (min_bit_width_of_integer <= 256)
                 return std::make_shared<DataTypeInt256>();
             else
-                throwOrReturn<on_error>(types,
+                return throwOrReturn<on_error>(types,
                     " because some of them are signed integers and some are unsigned integers,"
                     " but there is no signed integer type, that can exactly represent all required unsigned integer values", ErrorCodes::NO_COMMON_TYPE);
         }
@@ -193,7 +193,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             else if (min_bit_width_of_integer <= 256)
                 return std::make_shared<DataTypeUInt256>();
             else
-                throwOrReturn<on_error>(types,
+                return throwOrReturn<on_error>(types,
                     " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
         }
     }
@@ -588,7 +588,7 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types)
 
     #define DISPATCH(TYPE) \
         if (which.idx == TypeIndex::TYPE) \
-            return std::make_shared<DataTypeNumber<TYPE>>();
+            return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT
 
         FOR_NUMERIC_TYPES(DISPATCH)
     #undef DISPATCH
@@ -596,7 +596,7 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types)
         if (which.isString())
             return std::make_shared<DataTypeString>();
 
-        throwOrReturn<on_error>(types, "because cannot get common type by type indexes with non-simple types", ErrorCodes::NO_COMMON_TYPE);
+        return throwOrReturn<on_error>(types, "because cannot get common type by type indexes with non-simple types", ErrorCodes::NO_COMMON_TYPE);
     }
 
     if (types.contains(TypeIndex::String))
