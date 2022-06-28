@@ -1405,7 +1405,7 @@ private:
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
-        ctx->disk->createDirectories(ctx->new_part_tmp_path);
+        ctx->data_part_storage_builder->createDirectories();
 
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
@@ -1416,29 +1416,36 @@ private:
 
         NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
-        for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
+        for (auto it = ctx->source_part->data_part_storage->iterate(); it->isValid(); it->next())
         {
             if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
-            String destination = ctx->new_part_tmp_path;
-            String file_name = it->name();
+            String destination;
+            destination = it->name();
 
-            destination += file_name;
+            /// Skip to create hardlink for deleted_row_mask.bin
+            if (ctx->source_part->hasLightweightDelete() && destination == "deleted_row_mask.bin")
+                continue;
 
-            if (!ctx->disk->isDirectory(it->path()))
+            if (it->isFile())
             {
-                ctx->disk->createHardLink(it->path(), destination);
-                hardlinked_files.insert(file_name);
+                ctx->data_part_storage_builder->createHardLinkFrom(
+                    *ctx->source_part->data_part_storage, it->name(), destination);
+                hardlinked_files.insert(it->name());
             }
-            else if (!endsWith(".tmp_proj", file_name)) // ignore projection tmp merge dir
+            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
-                ctx->disk->createDirectories(destination);
-                for (auto p_it = ctx->disk->iterateDirectory(it->path()); p_it->isValid(); p_it->next())
+                ctx->data_part_storage_builder->createProjection(destination);
+
+                auto projection_data_part_storage = ctx->source_part->data_part_storage->getProjection(destination);
+                auto projection_data_part_storage_builder = ctx->data_part_storage_builder->getProjection(destination);
+
+                for (auto p_it = projection_data_part_storage->iterate(); p_it->isValid(); p_it->next())
                 {
-                    String p_destination = fs::path(destination) / p_it->name();
-                    ctx->disk->createHardLink(p_it->path(), p_destination);
+                    projection_data_part_storage_builder->createHardLinkFrom(
+                        *projection_data_part_storage, p_it->name(), p_it->name());
                     hardlinked_files.insert(p_it->name());
                 }
             }
@@ -1509,7 +1516,7 @@ private:
 
         if (has_deleted_rows)
         {
-            ctx->new_data_part->writeLightWeightDeletedMask(new_bitmap);
+            ctx->new_data_part->writeLightweightDeletedMask(new_bitmap);
         }
     }
 
@@ -1521,7 +1528,7 @@ private:
             ctx->mutating_pipeline.reset();
         }
 
-         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->data_part_storage_builder, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
     }
 
     enum class State

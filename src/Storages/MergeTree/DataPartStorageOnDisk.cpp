@@ -368,7 +368,10 @@ void DataPartStorageOnDisk::clearDirectory(
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
 
         if (!is_projection)
+        {
             request.emplace_back(fs::path(dir) / "txn_version.txt", true);
+            request.emplace_back(fs::path(dir) / "deleted_row_mask.bin", true);
+        }
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
@@ -647,6 +650,29 @@ bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & stor
     auto volume_ptr = storage_policy.getVolume(storage_policy.getVolumeIndexByDisk(volume->getDisk()));
 
     return !volume_ptr->areMergesAvoided();
+}
+
+void DataPartStorageOnDisk::loadDeletedRowMask(String & bitmap) const
+{
+    String deleted_mask_path = fs::path(getRelativePath()) / "deleted_row_mask.bin";
+    auto disk = volume->getDisk();
+    auto in = openForReading(disk, deleted_mask_path);
+    readString(bitmap, *in);
+}
+
+void DataPartStorageOnDisk::writeLightweightDeletedMask(String & bitmap, Poco::Logger * log) const
+{
+    String deleted_mask_path = fs::path(getRelativePath()) / "deleted_row_mask.bin";
+    auto disk = volume->getDisk();
+    try
+    {
+        auto out = volume->getDisk()->writeFile(deleted_mask_path);
+        DB::writeText(bitmap, *out);
+    }
+    catch (Poco::Exception & e)
+    {
+        LOG_ERROR(log, "{} (while writing deleted rows mask file for lightweight delete: {})", e.what(), backQuote(fullPath(disk, deleted_mask_path)));
+    }
 }
 
 void DataPartStorageOnDisk::backup(
