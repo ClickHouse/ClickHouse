@@ -54,6 +54,7 @@ public:
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
 
     void setRelativePath(const std::string & path) override;
+    void onRename(const std::string & new_root_path, const std::string & new_part_dir) override;
 
     std::string getDiskName() const override;
     std::string getDiskType() const override;
@@ -106,6 +107,7 @@ public:
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 
+    DataPartStorageBuilderPtr getBuilder() const override;
 private:
     VolumePtr volume;
     std::string root_path;
@@ -157,10 +159,6 @@ public:
 
     DataPartStoragePtr getStorage() const override;
 
-    /// Rename part.
-    /// Ideally, new_root_path should be the same as current root (but it is not true).
-    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
-    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
     void rename(
         const std::string & new_root_path,
         const std::string & new_part_dir,

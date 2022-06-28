@@ -35,9 +35,6 @@ struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
-
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
@@ -341,7 +338,7 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix) const;
+    void renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const;
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly

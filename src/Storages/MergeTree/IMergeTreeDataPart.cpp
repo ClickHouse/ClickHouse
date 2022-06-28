@@ -1377,7 +1377,8 @@ try
 
     metadata_manager->deleteAll(true);
     metadata_manager->assertAllDeleted(true);
-    data_part_storage->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
+    builder->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
+    data_part_storage->onRename(to.parent_path(), to.filename());
     metadata_manager->updateAll(true);
 
     for (const auto & [p_name, part] : projection_parts)
@@ -1473,9 +1474,9 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
     return "detached/" + getRelativePathForPrefix(prefix, /* detached */ true);
 }
 
-void IMergeTreeDataPart::renameToDetached(const String & prefix) const
+void IMergeTreeDataPart::renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const
 {
-    renameTo(getRelativePathForDetachedPart(prefix), true);
+    renameTo(getRelativePathForDetachedPart(prefix), true, builder);
     part_is_probably_removed_from_disk = true;
 }
 

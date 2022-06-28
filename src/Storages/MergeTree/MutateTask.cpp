@@ -690,8 +690,7 @@ public:
         MergeTreeData::MutableDataPartsVector && parts_,
         const ProjectionDescription & projection_,
         size_t & block_num_,
-        MutationContextPtr ctx_
-        )
+        MutationContextPtr ctx_)
         : name(std::move(name_))
         , parts(std::move(parts_))
         , projection(projection_)
