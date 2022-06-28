@@ -15,6 +15,8 @@
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/cluster_config.hxx>
+#include <libnuraft/log_val_type.hxx>
+#include <libnuraft/ptr.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -108,7 +110,8 @@ KeeperServer::KeeperServer(
           snapshots_queue_,
           configuration_and_settings_->snapshot_storage_path,
           coordination_settings,
-          checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
+          checkAndGetSuperdigest(configuration_and_settings_->super_digest),
+          config.getBool("keeper_server.digest_enabled", true)))
     , state_manager(nuraft::cs_new<KeeperStateManager>(
           server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
@@ -315,6 +318,23 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
+    auto log_store = state_manager->load_log_store();
+    auto next_log_idx = log_store->next_slot();
+    if (next_log_idx > 0 && next_log_idx > state_machine->last_commit_index())
+    {
+        auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
+
+        LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
+        auto idx = state_machine->last_commit_index() + 1;
+        for (const auto & entry : *log_entries)
+        {
+            if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
+                state_machine->pre_commit(idx, entry->get_buf());
+
+            ++idx;
+        }
+    }
+
     loadLatestConfig();
 
     last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
@@ -367,17 +387,34 @@ void KeeperServer::shutdown()
 namespace
 {
 
-nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, int64_t time, const Coordination::ZooKeeperRequestPtr & request)
+// Serialize the request with all the necessary information for the leader
+// we don't know ZXID and digest yet so we don't serialize it
+nuraft::ptr<nuraft::buffer> getZooKeeperRequestMessage(const KeeperStorage::RequestForSession & request_for_session)
 {
-    DB::WriteBufferFromNuraftBuffer buf;
-    DB::writeIntBinary(session_id, buf);
-    request->write(buf);
-    DB::writeIntBinary(time, buf);
-    return buf.getBuffer();
+    DB::WriteBufferFromNuraftBuffer write_buf;
+    DB::writeIntBinary(request_for_session.session_id, write_buf);
+    request_for_session.request->write(write_buf);
+    DB::writeIntBinary(request_for_session.time, write_buf);
+    return write_buf.getBuffer();
+}
+
+// Serialize the request for the log entry
+nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestForSession & request_for_session)
+{
+    DB::WriteBufferFromNuraftBuffer write_buf;
+    DB::writeIntBinary(request_for_session.session_id, write_buf);
+    request_for_session.request->write(write_buf);
+    DB::writeIntBinary(request_for_session.time, write_buf);
+    DB::writeIntBinary(request_for_session.zxid, write_buf);
+    assert(request_for_session.digest);
+    DB::writeIntBinary(request_for_session.digest->version, write_buf);
+    if (request_for_session.digest->version != KeeperStorage::DigestVersion::NO_DIGEST)
+        DB::writeIntBinary(request_for_session.digest->value, write_buf);
+
+    return write_buf.getBuffer();
 }
 
 }
-
 
 void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
@@ -390,8 +427,10 @@ void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    for (const auto & [session_id, time, request] : requests_for_sessions)
-        entries.push_back(getZooKeeperLogEntry(session_id, time, request));
+    for (const auto & request_for_session : requests_for_sessions)
+    {
+        entries.push_back(getZooKeeperRequestMessage(request_for_session));
+    }
 
     std::lock_guard lock{server_write_mutex};
     if (is_recovering)
@@ -501,7 +540,33 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     }
 
     if (initialized_flag)
+    {
+        switch (type)
+        {
+            // This event is called before a single log is appended to the entry on the leader node
+            case nuraft::cb_func::PreAppendLog:
+            {
+                // we are relying on the fact that request are being processed under a mutex
+                // and not a RW lock
+                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+
+                assert(entry->get_val_type() == nuraft::app_log);
+                auto next_zxid = state_machine->getNextZxid();
+
+                auto & entry_buf = entry->get_buf();
+                auto request_for_session = state_machine->parseRequest(entry_buf);
+                request_for_session.zxid = next_zxid;
+                state_machine->preprocess(request_for_session);
+                request_for_session.digest = state_machine->getNodesDigest();
+                entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
+                break;
+            }
+            default:
+                break;
+        }
+
         return nuraft::cb_func::ReturnCode::Ok;
+    }
 
     size_t last_commited = state_machine->last_commit_index();
     size_t next_index = state_manager->getLogStore()->next_slot();
