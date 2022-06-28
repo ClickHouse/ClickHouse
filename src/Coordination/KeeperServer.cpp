@@ -169,10 +169,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
                            ( 0ull, nuraft::msg_type::leader_status_request, 0, 0,
                              0ull, 0ull, 0ull ) ;
         auto result = send_msg_to_leader(req);
-
-        if (!result->has_result())
-            result->get();
-
         return result;
     }
 
