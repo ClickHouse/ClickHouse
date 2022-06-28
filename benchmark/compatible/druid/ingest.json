@@ -1,0 +1,573 @@
+{
+  "type": "index_parallel",
+  "spec": {
+    "ioConfig": {
+      "type": "index_parallel",
+      "inputSource": {
+        "type": "local",
+        "baseDir": "../",
+        "filter": "inputa?.tsv"
+      },
+      "inputFormat": {
+        "type": "tsv",
+        "findColumnsFromHeader": false,
+        "columns": [
+          "WatchID",
+          "JavaEnable",
+          "Title",
+          "GoodEvent",
+          "EventTime",
+          "EventDate",
+          "CounterID",
+          "ClientIP",
+          "RegionID",
+          "UserID",
+          "CounterClass",
+          "OS",
+          "UserAgent",
+          "URL",
+          "Referer",
+          "IsRefresh",
+          "RefererCategoryID",
+          "RefererRegionID",
+          "URLCategoryID",
+          "URLRegionID",
+          "ResolutionWidth",
+          "ResolutionHeight",
+          "ResolutionDepth",
+          "FlashMajor",
+          "FlashMinor",
+          "FlashMinor2",
+          "NetMajor",
+          "NetMinor",
+          "UserAgentMajor",
+          "UserAgentMinor",
+          "CookieEnable",
+          "JavascriptEnable",
+          "IsMobile",
+          "MobilePhone",
+          "MobilePhoneModel",
+          "Params",
+          "IPNetworkID",
+          "TraficSourceID",
+          "SearchEngineID",
+          "SearchPhrase",
+          "AdvEngineID",
+          "IsArtifical",
+          "WindowClientWidth",
+          "WindowClientHeight",
+          "ClientTimeZone",
+          "ClientEventTime",
+          "SilverlightVersion1",
+          "SilverlightVersion2",
+          "SilverlightVersion3",
+          "SilverlightVersion4",
+          "PageCharset",
+          "CodeVersion",
+          "IsLink",
+          "IsDownload",
+          "IsNotBounce",
+          "FUniqID",
+          "OriginalURL",
+          "HID",
+          "IsOldCounter",
+          "IsEvent",
+          "IsParameter",
+          "DontCountHits",
+          "WithHash",
+          "HitColor",
+          "LocalEventTime",
+          "Age",
+          "Sex",
+          "Income",
+          "Interests",
+          "Robotness",
+          "RemoteIP",
+          "WindowName",
+          "OpenerName",
+          "HistoryLength",
+          "BrowserLanguage",
+          "BrowserCountry",
+          "SocialNetwork",
+          "SocialAction",
+          "HTTPError",
+          "SendTiming",
+          "DNSTiming",
+          "ConnectTiming",
+          "ResponseStartTiming",
+          "ResponseEndTiming",
+          "FetchTiming",
+          "SocialSourceNetworkID",
+          "SocialSourcePage",
+          "ParamPrice",
+          "ParamOrderID",
+          "ParamCurrency",
+          "ParamCurrencyID",
+          "OpenstatServiceName",
+          "OpenstatCampaignID",
+          "OpenstatAdID",
+          "OpenstatSourceID",
+          "UTMSource",
+          "UTMMedium",
+          "UTMCampaign",
+          "UTMContent",
+          "UTMTerm",
+          "FromTag",
+          "HasGCLID",
+          "RefererHash",
+          "URLHash",
+          "CLID"
+        ]
+      }
+    },
+    "tuningConfig": {
+      "type": "index_parallel",
+      "partitionsSpec": {
+        "type": "hashed",
+        "partitionDimensions": [
+          "CounterID",
+          "EventDate",
+          "UserID",
+          "EventTime",
+          "WatchID"
+        ]
+      },
+      "forceGuaranteedRollup": true,
+      "logParseExceptions": true,
+      "maxParseExceptions": 1,
+      "maxNumConcurrentSubTasks": 10
+    },
+    "dataSchema": {
+      "dataSource": "hits",
+      "timestampSpec": {
+        "column": "EventTime",
+        "format": "yyyy-MM-dd HH:mm:ss"
+      },
+      "dimensionsSpec": {
+        "dimensions": [
+          {
+            "name": "WatchID",
+            "type": "long"
+          },
+          {
+            "name": "JavaEnable",
+            "type": "long"
+          },
+          {
+            "name": "Title",
+            "type": "string"
+          },
+          {
+            "name": "GoodEvent",
+            "type": "long"
+          },
+          {
+            "name": "EventDate",
+            "type": "string"
+          },
+          {
+            "name": "CounterID",
+            "type": "long"
+          },
+          {
+            "name": "ClientIP",
+            "type": "long"
+          },
+          {
+            "name": "RegionID",
+            "type": "long"
+          },
+          {
+            "name": "UserID",
+            "type": "long"
+          },
+          {
+            "name": "CounterClass",
+            "type": "long"
+          },
+          {
+            "name": "OS",
+            "type": "long"
+          },
+          {
+            "name": "UserAgent",
+            "type": "long"
+          },
+          {
+            "name": "URL",
+            "type": "string"
+          },
+          {
+            "name": "Referer",
+            "type": "string"
+          },
+          {
+            "name": "IsRefresh",
+            "type": "long"
+          },
+          {
+            "name": "RefererCategoryID",
+            "type": "long"
+          },
+          {
+            "name": "RefererRegionID",
+            "type": "long"
+          },
+          {
+            "name": "URLCategoryID",
+            "type": "long"
+          },
+          {
+            "name": "URLRegionID",
+            "type": "long"
+          },
+          {
+            "name": "ResolutionWidth",
+            "type": "long"
+          },
+          {
+            "name": "ResolutionHeight",
+            "type": "long"
+          },
+          {
+            "name": "ResolutionDepth",
+            "type": "long"
+          },
+          {
+            "name": "FlashMajor",
+            "type": "long"
+          },
+          {
+            "name": "FlashMinor",
+            "type": "long"
+          },
+          {
+            "name": "FlashMinor2",
+            "type": "string"
+          },
+          {
+            "name": "NetMajor",
+            "type": "long"
+          },
+          {
+            "name": "NetMinor",
+            "type": "long"
+          },
+          {
+            "name": "UserAgentMajor",
+            "type": "long"
+          },
+          {
+            "name": "UserAgentMinor",
+            "type": "string"
+          },
+          {
+            "name": "CookieEnable",
+            "type": "long"
+          },
+          {
+            "name": "JavascriptEnable",
+            "type": "long"
+          },
+          {
+            "name": "IsMobile",
+            "type": "long"
+          },
+          {
+            "name": "MobilePhone",
+            "type": "long"
+          },
+          {
+            "name": "MobilePhoneModel",
+            "type": "string"
+          },
+          {
+            "name": "Params",
+            "type": "string"
+          },
+          {
+            "name": "IPNetworkID",
+            "type": "long"
+          },
+          {
+            "name": "TraficSourceID",
+            "type": "long"
+          },
+          {
+            "name": "SearchEngineID",
+            "type": "long"
+          },
+          {
+            "name": "SearchPhrase",
+            "type": "string"
+          },
+          {
+            "name": "AdvEngineID",
+            "type": "long"
+          },
+          {
+            "name": "IsArtifical",
+            "type": "long"
+          },
+          {
+            "name": "WindowClientWidth",
+            "type": "long"
+          },
+          {
+            "name": "WindowClientHeight",
+            "type": "long"
+          },
+          {
+            "name": "ClientTimeZone",
+            "type": "long"
+          },
+          {
+            "name": "ClientEventTime",
+            "type": "string"
+          },
+          {
+            "name": "SilverlightVersion1",
+            "type": "long"
+          },
+          {
+            "name": "SilverlightVersion2",
+            "type": "long"
+          },
+          {
+            "name": "SilverlightVersion3",
+            "type": "long"
+          },
+          {
+            "name": "SilverlightVersion4",
+            "type": "long"
+          },
+          {
+            "name": "PageCharset",
+            "type": "string"
+          },
+          {
+            "name": "CodeVersion",
+            "type": "long"
+          },
+          {
+            "name": "IsLink",
+            "type": "long"
+          },
+          {
+            "name": "IsDownload",
+            "type": "long"
+          },
+          {
+            "name": "IsNotBounce",
+            "type": "long"
+          },
+          {
+            "name": "FUniqID",
+            "type": "long"
+          },
+          {
+            "name": "OriginalURL",
+            "type": "string"
+          },
+          {
+            "name": "HID",
+            "type": "long"
+          },
+          {
+            "name": "IsOldCounter",
+            "type": "long"
+          },
+          {
+            "name": "IsEvent",
+            "type": "long"
+          },
+          {
+            "name": "IsParameter",
+            "type": "long"
+          },
+          {
+            "name": "DontCountHits",
+            "type": "long"
+          },
+          {
+            "name": "WithHash",
+            "type": "long"
+          },
+          {
+            "name": "HitColor",
+            "type": "string"
+          },
+          {
+            "name": "LocalEventTime",
+            "type": "string"
+          },
+          {
+            "name": "Age",
+            "type": "long"
+          },
+          {
+            "name": "Sex",
+            "type": "long"
+          },
+          {
+            "name": "Income",
+            "type": "long"
+          },
+          {
+            "name": "Interests",
+            "type": "long"
+          },
+          {
+            "name": "Robotness",
+            "type": "long"
+          },
+          {
+            "name": "RemoteIP",
+            "type": "long"
+          },
+          {
+            "name": "WindowName",
+            "type": "long"
+          },
+          {
+            "name": "OpenerName",
+            "type": "long"
+          },
+          {
+            "name": "HistoryLength",
+            "type": "long"
+          },
+          {
+            "name": "BrowserLanguage",
+            "type": "string"
+          },
+          {
+            "name": "BrowserCountry",
+            "type": "string"
+          },
+          {
+            "name": "SocialNetwork",
+            "type": "string"
+          },
+          {
+            "name": "SocialAction",
+            "type": "string"
+          },
+          {
+            "name": "HTTPError",
+            "type": "long"
+          },
+          {
+            "name": "SendTiming",
+            "type": "long"
+          },
+          {
+            "name": "DNSTiming",
+            "type": "long"
+          },
+          {
+            "name": "ConnectTiming",
+            "type": "long"
+          },
+          {
+            "name": "ResponseStartTiming",
+            "type": "long"
+          },
+          {
+            "name": "ResponseEndTiming",
+            "type": "long"
+          },
+          {
+            "name": "FetchTiming",
+            "type": "long"
+          },
+          {
+            "name": "SocialSourceNetworkID",
+            "type": "long"
+          },
+          {
+            "name": "SocialSourcePage",
+            "type": "string"
+          },
+          {
+            "name": "ParamPrice",
+            "type": "long"
+          },
+          {
+            "name": "ParamOrderID",
+            "type": "string"
+          },
+          {
+            "name": "ParamCurrency",
+            "type": "string"
+          },
+          {
+            "name": "ParamCurrencyID",
+            "type": "long"
+          },
+          {
+            "name": "OpenstatServiceName",
+            "type": "string"
+          },
+          {
+            "name": "OpenstatCampaignID",
+            "type": "string"
+          },
+          {
+            "name": "OpenstatAdID",
+            "type": "string"
+          },
+          {
+            "name": "OpenstatSourceID",
+            "type": "string"
+          },
+          {
+            "name": "UTMSource",
+            "type": "string"
+          },
+          {
+            "name": "UTMMedium",
+            "type": "string"
+          },
+          {
+            "name": "UTMCampaign",
+            "type": "string"
+          },
+          {
+            "name": "UTMContent",
+            "type": "string"
+          },
+          {
+            "name": "UTMTerm",
+            "type": "string"
+          },
+          {
+            "name": "FromTag",
+            "type": "string"
+          },
+          {
+            "name": "HasGCLID",
+            "type": "long"
+          },
+          {
+            "name": "RefererHash",
+            "type": "long"
+          },
+          {
+            "name": "URLHash",
+            "type": "long"
+          },
+          {
+            "name": "CLID",
+            "type": "long"
+          }
+        ]
+      },
+      "granularitySpec": {
+        "queryGranularity": "none",
+        "rollup": false,
+        "segmentGranularity": "day"
+      }
+    }
+  }
+}
