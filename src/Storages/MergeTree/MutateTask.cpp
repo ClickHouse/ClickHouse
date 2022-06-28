@@ -1660,7 +1660,7 @@ bool MutateTask::prepare()
 
         /// Skip to apply deleted mask when reading for MutateSomePartColumns.
         need_mutate_all_columns = need_mutate_all_columns || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter->isAffectingAllColumns());
-        if(!need_mutate_all_columns && ctx->source_part->hasLightweightDelete() && !ctx->is_lightweight_mutation)
+        if (!need_mutate_all_columns && ctx->source_part->hasLightweightDelete() && !ctx->is_lightweight_mutation)
             ctx->interpreter->SetSkipDeletedMask(true);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
