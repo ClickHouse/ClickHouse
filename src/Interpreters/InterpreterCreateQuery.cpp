@@ -698,13 +698,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-        Block as_select_sample;
+        SelectQueryOptions options;
         if (create.is_window_view)
-            as_select_sample = InterpreterSelectWithUnionQuery(
-                                   create.select->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze())
-                                   .getSampleBlock();
-        else
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
+            options.to_stage = QueryProcessingStage::FetchColumns;
+        auto as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext(), false, options);
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
