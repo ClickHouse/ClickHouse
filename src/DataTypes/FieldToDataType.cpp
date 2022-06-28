@@ -161,7 +161,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 
     return std::make_shared<DataTypeMap>(
         getLeastSupertype<on_error>(key_types),
-        getLeastSupertype(value_types));
+        getLeastSupertype<on_error>(value_types));
 }
 
 template <LeastSupertypeOnError on_error>
