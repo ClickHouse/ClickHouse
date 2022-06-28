@@ -546,6 +546,8 @@ static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UIn
         insertData(chars, offsets, str.data() + start, end - start);
 }
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+
 static void writeWrappedString(std::string_view ref, size_t wrap_size, DB::WriteBuffer & out)
 {
     size_t start = 0;
@@ -558,8 +560,6 @@ static void writeWrappedString(std::string_view ref, size_t wrap_size, DB::Write
 
     writeString(ref.substr(start, std::string_view::npos), out);
 }
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 static void addressToLine(
     DB::WriteBuffer & out,
