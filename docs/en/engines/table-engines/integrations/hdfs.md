@@ -186,7 +186,6 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | -                                                     | -                       |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
-|hadoop\_kerberos\_kinit\_command                       | kinit                   |
 |libhdfs3\_conf                                         | ""                      |
 
 ### Limitations {#limitations}
@@ -200,8 +199,7 @@ Note that due to libhdfs3 limitations only old-fashioned approach is supported,
 datanode communications are not secured by SASL (`HADOOP_SECURE_DN_USER` is a reliable indicator of such
 security approach). Use `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` for reference.
 
-If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_kerberos_kinit_command` is specified, `kinit` will be invoked. `hadoop_kerberos_keytab` and `hadoop_kerberos_principal` are mandatory in this case. `kinit` tool and krb5 configuration files are required.
-
+If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_security_kerberos_ticket_cache_path` are specified, Kerberos authentication will be used. `hadoop_kerberos_keytab` and `hadoop_kerberos_principal` are mandatory in this case.
 ## HDFS Namenode HA support {#namenode-ha}
 
 libhdfs3 support HDFS namenode HA.

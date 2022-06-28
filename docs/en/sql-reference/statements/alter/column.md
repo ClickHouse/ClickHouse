@@ -24,7 +24,7 @@ The following actions are supported:
 -   [CLEAR COLUMN](#clear-column) — Resets column values.
 -   [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
--   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
+-   [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 -   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.

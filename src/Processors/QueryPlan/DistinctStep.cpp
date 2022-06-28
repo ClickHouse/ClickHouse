@@ -112,4 +112,21 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
+void DistinctStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(),
+        input_streams.front().header,
+        getTraits(pre_distinct, checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns)).data_stream_traits);
+
+    if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
+        && (!pre_distinct /// Main distinct
+            || input_streams.front().has_single_port)) /// pre_distinct for single port works as usual one
+    {
+        /// Build distinct set.
+        for (const auto & name : columns)
+            output_stream->distinct_columns.insert(name);
+    }
+}
+
 }
