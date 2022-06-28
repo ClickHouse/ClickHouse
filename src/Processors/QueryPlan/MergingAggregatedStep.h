@@ -1,5 +1,4 @@
 #pragma once
-#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 
@@ -15,8 +14,7 @@ class MergingAggregatedStep : public ITransformingStep
 public:
     MergingAggregatedStep(
         const DataStream & input_stream_,
-        Aggregator::Params params_,
-        bool final_,
+        AggregatingTransformParamsPtr params_,
         bool memory_efficient_aggregation_,
         size_t max_threads_,
         size_t memory_efficient_merge_threads_);
@@ -29,10 +27,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override;
-
-    Aggregator::Params params;
-    bool final;
+    AggregatingTransformParamsPtr params;
     bool memory_efficient_aggregation;
     size_t max_threads;
     size_t memory_efficient_merge_threads;

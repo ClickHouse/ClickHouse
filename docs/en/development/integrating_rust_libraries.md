@@ -2,7 +2,7 @@
 
 Rust library integration will be described based on BLAKE3 hash-function integration.
 
-The first step is forking a library and making necessary changes for Rust and C/C++ compatibility.
+The first step is forking a library and making neccessary changes for Rust and C/C++ compatibility.
 
 After forking library repository you need to change target settings in Cargo.toml file. Firstly, you need to switch build to static library. Secondly, you need to add cbindgen crate to the crate list. We will use it later to generate C-header automatically.
 
@@ -51,9 +51,9 @@ pub unsafe extern "C" fn blake3_apply_shim(
 }
 ```
 
-This method gets C-compatible string, its size and output string pointer as input. Then, it converts C-compatible inputs into types that are used by actual library methods and calls them. After that, it should convert library methods' outputs back into C-compatible type. In that particular case library supported direct writing into pointer by method fill(), so the conversion was not needed. The main advice here is to create less methods, so you will need to do less conversions on each method call and won't create much overhead.
+This method gets C-compatible string, its size and output string pointer as input. Then, it converts C-compatible inputs into types that are used by actual library methods and calls them. After that, it should convert library methods' outputs back into C-compatible type. In that particular case library supported direct writing into pointer by method fill(), so the convertion was not needed. The main advice here is to create less methods, so you will need to do less convertions on each method call and won't create much overhead.
 
-Also, you should use attribute #[no_mangle] and `extern "C"` for every C-compatible attribute. Without it library can compile incorrectly and cbindgen won't launch header autogeneration.
+Also, you should use attribute #[no_mangle] and extern "C" for every C-compatible attribute. Without it library can compile incorrectly and cbindgen won't launch header autogeneration.
 
 After all these steps you can test your library in a small project to find all problems with compatibility or header generation. If any problems occur during header generation, you can try to configure it with cbindgen.toml file (you can find an example of it in BLAKE3 directory or a template here: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)). If everything works correctly, you can finally integrate its methods into ClickHouse.
 

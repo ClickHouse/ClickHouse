@@ -250,14 +250,12 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
     `set allow_experimental_window_view = 1`。
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ... GROUP BY time_window_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY time_window_function
 ```
 
 Window view可以通过时间窗口聚合数据，并在满足窗口触发条件时自动触发对应窗口计算。其通过将计算状态保存降低处理延迟，支持将处理结果输出至目标表或通过`WATCH`语句输出至终端。
 
-创建window view的方式和创建物化视图类似。Window view通过`INNER ENGINE`指定内部存储引擎以存储窗口计算中间状态，默认使用`AggregatingMergeTree`作为内部中间状态存储引擎。
-
-创建不带`TO [db].[table]`的window view时，必须指定`ENGINE` – 用于存储数据的表引擎。
+创建window view的方式和创建物化视图类似。Window view使用默认为`AggregatingMergeTree`的内部存储引擎存储计算中间状态。
 
 ### 时间窗口函数 {#window-view-shi-jian-chuang-kou-han-shu}
 
@@ -297,10 +295,6 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 需要注意的是，迟到消息需要更新之前的处理结果。与在窗口结束时触发不同，迟到消息到达时window view会立即触发计算。因此，会导致同一个窗口输出多次计算结果。用户需要注意这种情况，并消除重复结果。
 
-### 查询语句修改 {#window-view-cha-xun-yu-ju-xiu-gai}
-
-用户可以通过`ALTER TABLE ... MODIFY QUERY`语句修改window view的`SELECT`查询语句。无论是否使用`TO [db.]name`语句，新`SELECT`语句的数据结构均需和旧语句相同。需要注意的是，由于窗口计算中间状态无法复用，修改查询语句时会丢失当前窗口数据。
-
 ### 新窗口监控 {#window-view-xin-chuang-kou-jian-kong}
 
 Window view可以通过`WATCH`语句将处理结果推送至终端，或通过`TO`语句将结果推送至数据表。
@@ -315,7 +309,6 @@ WATCH [db.]name [LIMIT n]
 
 - `window_view_clean_interval`: window view清除过期数据间隔(单位为秒)。系统会定期清除过期数据，尚未触发的窗口数据不会被清除。
 - `window_view_heartbeat_interval`: 用于判断watch查询活跃的心跳时间间隔。
-- `wait_for_window_view_fire_signal_timeout`: Event time 处理模式下，窗口触发信号等待超时时间。
 
 ### 示例 {#window-view-shi-li}
 

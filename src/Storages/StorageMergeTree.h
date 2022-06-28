@@ -58,6 +58,15 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -105,6 +114,8 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
+
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
@@ -128,8 +139,6 @@ private:
     AtomicStopwatch time_after_previous_cleanup_parts;
     /// For clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup_temporary_directories;
-    /// For clearOldBrokenDetachedParts
-    AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
@@ -251,12 +260,7 @@ private:
     /// return any ids.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr) const;
 
-    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
-
     void startBackgroundMovesIfNeeded() override;
-
-    /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

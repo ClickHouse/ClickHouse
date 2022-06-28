@@ -1,7 +1,7 @@
 drop table IF EXISTS joinbug;
 
 CREATE TABLE joinbug (
-  event_date Date MATERIALIZED toDate(created, 'Asia/Istanbul'),
+  event_date Date MATERIALIZED toDate(created, 'Europe/Moscow'),
   id UInt64,
   id2 UInt64,
   val UInt64,

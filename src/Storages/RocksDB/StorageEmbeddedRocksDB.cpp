@@ -18,7 +18,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
@@ -177,7 +177,7 @@ static std::pair<FieldVectorPtr, bool> getFilterKeys(
 }
 
 
-class EmbeddedRocksDBSource : public ISource
+class EmbeddedRocksDBSource : public SourceWithProgress
 {
 public:
     EmbeddedRocksDBSource(
@@ -187,7 +187,7 @@ public:
         FieldVector::const_iterator begin_,
         FieldVector::const_iterator end_,
         const size_t max_block_size_)
-        : ISource(header)
+        : SourceWithProgress(header)
         , storage(storage_)
         , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()))
         , keys(keys_)
@@ -203,7 +203,7 @@ public:
         const Block & header,
         std::unique_ptr<rocksdb::Iterator> iterator_,
         const size_t max_block_size_)
-        : ISource(header)
+        : SourceWithProgress(header)
         , storage(storage_)
         , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()))
         , iterator(std::move(iterator_))

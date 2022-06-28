@@ -360,21 +360,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
-            parseQueryWithOnCluster(res, pos, expected);
-            break;
-        }
-
-        case Type::UNFREEZE:
-        {
-            ASTPtr ast;
-            if (ParserKeyword{"WITH NAME"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
-            {
-                res->backup_name = ast->as<ASTLiteral &>().value.get<const String &>();
-            }
-            else
-            {
-                return false;
-            }
             break;
         }
 

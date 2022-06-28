@@ -5,7 +5,7 @@
 #include <IO/Operators.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
-#include <Formats/JSONUtils.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -28,7 +28,6 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
         header_,
         in_,
         params_,
-        false,
         with_names_,
         with_types_,
         format_settings_,
@@ -110,7 +109,7 @@ std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
 bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & column_name)
 {
     skipWhitespaceIfAny(*in);
-    return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
+    return readFieldImpl(*in, column, type, serialization, column_name, format_settings, yield_strings);
 }
 
 bool JSONCompactEachRowFormatReader::parseRowStartWithDiagnosticInfo(WriteBuffer & out)
@@ -190,7 +189,7 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(
     bool allow_bools_as_numbers = format_settings_.json.read_bools_as_numbers;
     setCommonTypeChecker([allow_bools_as_numbers](const DataTypePtr & first, const DataTypePtr & second)
     {
-        return JSONUtils::getCommonTypeForJSONFormats(first, second, allow_bools_as_numbers);
+        return getCommonTypeForJSONFormats(first, second, allow_bools_as_numbers);
     });
 }
 
@@ -210,7 +209,7 @@ DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
     if (in.eof())
         return {};
 
-    return JSONUtils::readRowAndGetDataTypesForJSONCompactEachRow(in, reader.yieldStrings());
+    return readRowAndGetDataTypesForJSONCompactEachRow(in, reader.yieldStrings());
 }
 
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
@@ -230,7 +229,6 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
         };
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
-        markFormatWithNamesAndTypesSupportsSamplingColumns(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", factory);
     }
 }
 
@@ -260,7 +258,7 @@ void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
         size_t min_rows = 1 + int(with_names) + int(with_types);
         factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
         {
-            return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_chunk_size, min_rows);
+            return fileSegmentationEngineJSONCompactEachRow(in, memory, min_chunk_size, min_rows);
         });
     };
 

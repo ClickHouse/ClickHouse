@@ -99,16 +99,11 @@ private:
     const Names column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
-
-    struct PerPartParams
-    {
-        MergeTreeReadTaskColumns task_columns;
-        NameSet column_name_set;
-        MergeTreeBlockSizePredictorPtr size_predictor;
-    };
-
-    std::vector<PerPartParams> per_part_params;
-
+    std::vector<NameSet> per_part_column_name_set;
+    std::vector<NamesAndTypesList> per_part_columns;
+    std::vector<NamesAndTypesList> per_part_pre_columns;
+    std::vector<char> per_part_should_reorder;
+    std::vector<MergeTreeBlockSizePredictorPtr> per_part_size_predictor;
     PrewhereInfoPtr prewhere_info;
 
     struct Part

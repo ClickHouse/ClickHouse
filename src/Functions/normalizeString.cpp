@@ -95,8 +95,6 @@ struct NormalizeUTF8Impl
         size_t size = offsets.size();
         res_offsets.resize(size);
 
-        res_data.reserve(data.size() * 2);
-
         ColumnString::Offset current_from_offset = 0;
         ColumnString::Offset current_to_offset = 0;
 

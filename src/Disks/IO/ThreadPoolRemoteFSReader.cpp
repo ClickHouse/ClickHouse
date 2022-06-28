@@ -7,10 +7,11 @@
 #include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentThread.h>
-#include <Common/config.h>
+
 #include <IO/SeekableReadBuffer.h>
 
 #include <future>
+#include <iostream>
 
 
 namespace ProfileEvents
@@ -26,7 +27,8 @@ namespace CurrentMetrics
 
 namespace DB
 {
-IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
+
+ReadBufferFromRemoteFSGather::ReadResult ThreadPoolRemoteFSReader::RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     return reader->readInto(data, size, offset, ignore);
 }
@@ -67,7 +69,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
-        Result result;
+        ReadBufferFromRemoteFSGather::ReadResult result;
         try
         {
             result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
@@ -96,5 +98,4 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
     return future;
 }
-
 }

@@ -250,12 +250,9 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
                         "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsWithTypeAndName columns = captured_columns;
-    IFunction::ShortCircuitSettings settings;
-    /// Arguments of lazy executed function can also be lazy executed.
-    /// But we shouldn't execute arguments if this function is short circuit,
-    /// because it will handle lazy executed arguments by itself.
-    if (is_short_circuit_argument && !function->isShortCircuit(settings, args))
+    if (is_short_circuit_argument)
     {
+        /// Arguments of lazy executed function can also be lazy executed.
         for (auto & col : columns)
         {
             if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))

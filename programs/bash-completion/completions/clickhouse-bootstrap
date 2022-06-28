@@ -34,12 +34,6 @@ CLICKHOUSE_QueryProcessingStage=(
     with_mergeable_state_after_aggregation_and_limit
 )
 
-CLICKHOUSE_QueryKind=(
-    initial_query
-    secondary_query
-    no_query
-)
-
 CLICKHOUSE_Format=(
     CapnProto
     PostgreSQLWire
@@ -128,10 +122,6 @@ function _complete_for_clickhouse_generic_bin_impl()
             ;;
         --stage)
             COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryProcessingStage[*]}" -- "$cur") )
-            return 1
-            ;;
-        --query_kind)
-            COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryKind[*]}" -- "$cur") )
             return 1
             ;;
         --send_logs_level)

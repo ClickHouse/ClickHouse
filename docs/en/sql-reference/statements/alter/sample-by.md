@@ -3,7 +3,7 @@ sidebar_position: 41
 sidebar_label: SAMPLE BY
 ---
 
-# Manipulating Sampling-Key Expressions
+# Manipulating Sampling-Key Expressions {#manipulations-with-sampling-key-expressions}
 
 Syntax:
 

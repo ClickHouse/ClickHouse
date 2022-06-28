@@ -36,13 +36,12 @@
 #include <re2/re2.h>
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -208,8 +207,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         in.setProgressCallback(context);
     }
 
-    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
 }
 
 }
@@ -318,9 +316,9 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
-bool StorageFile::supportsSubsetOfColumns() const
+bool StorageFile::isColumnOriented() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
 }
 
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
@@ -384,8 +382,6 @@ StorageFile::StorageFile(CommonArguments args)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
 {
-    if (format_name != "Distributed")
-        FormatFactory::instance().checkFormatName(format_name);
 }
 
 void StorageFile::setStorageMetadata(CommonArguments args)
@@ -426,7 +422,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 
-class StorageFileSource : public ISource
+class StorageFileSource : public SourceWithProgress
 {
 public:
     struct FilesInfo
@@ -469,7 +465,7 @@ public:
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
-        if (storage->supportsSubsetOfColumns())
+        if (storage->isColumnOriented())
             return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         else
             return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
@@ -483,7 +479,7 @@ public:
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : ISource(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
+        : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
@@ -534,7 +530,7 @@ public:
 
                 auto get_block_for_format = [&]() -> Block
                 {
-                    if (storage->supportsSubsetOfColumns())
+                    if (storage->isColumnOriented())
                         return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
                     return storage_snapshot->metadata->getSampleBlock();
                 };
@@ -694,8 +690,9 @@ Pipe StorageFile::read(
     {
         const auto get_columns_for_format = [&]() -> ColumnsDescription
         {
-            if (supportsSubsetOfColumns())
-                return storage_snapshot->getDescriptionForColumns(column_names);
+            if (isColumnOriented())
+                return ColumnsDescription{
+                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
             else
                 return storage_snapshot->metadata->getColumns();
         };
@@ -814,9 +811,7 @@ public:
 
     void onException() override
     {
-        if (!writer)
-            return;
-        onFinish();
+        write_buf->finalize();
     }
 
     void onFinish() override

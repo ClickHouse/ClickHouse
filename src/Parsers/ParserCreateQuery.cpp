@@ -466,6 +466,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserCompoundIdentifier table_name_p(true, true);
     ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
+    ParserKeyword s_as("AS");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -491,7 +492,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool or_replace = false;
     bool if_not_exists = false;
     bool is_temporary = false;
-    bool is_create_empty = false;
 
     if (s_create.ignore(pos, expected))
     {
@@ -557,17 +557,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return true;
     }
 
-    auto need_parse_as_select = [&is_create_empty, &pos, &expected]()
-    {
-        if (ParserKeyword{"EMPTY AS"}.ignore(pos, expected))
-        {
-            is_create_empty = true;
-            return true;
-        }
-
-        return ParserKeyword{"AS"}.ignore(pos, expected);
-    };
-
     /// List of columns.
     if (s_lparen.ignore(pos, expected))
     {
@@ -579,7 +568,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         auto storage_parse_result = storage_p.parse(pos, storage, expected);
 
-        if (storage_parse_result && need_parse_as_select())
+        if (storage_parse_result && s_as.ignore(pos, expected))
         {
             if (!select_p.parse(pos, select, expected))
                 return false;
@@ -587,7 +576,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!storage_parse_result && !is_temporary)
         {
-            if (need_parse_as_select() && !table_function_p.parse(pos, as_table_function, expected))
+            if (s_as.ignore(pos, expected) && !table_function_p.parse(pos, as_table_function, expected))
                 return false;
         }
 
@@ -602,7 +591,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         storage_p.parse(pos, storage, expected);
 
         /// CREATE|ATTACH TABLE ... AS ...
-        if (need_parse_as_select())
+        if (s_as.ignore(pos, expected))
         {
             if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
@@ -671,7 +660,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
-    query->is_create_empty = is_create_empty;
 
     if (from_path)
         query->attach_from_path = from_path->as<ASTLiteral &>().value.get<String>();
@@ -842,13 +830,11 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_window("WINDOW");
-    ParserKeyword s_populate("POPULATE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_eq(TokenType::Equals);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
-    ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserIntervalOperatorExpression watermark_p;
     ParserIntervalOperatorExpression lateness_p;
@@ -858,7 +844,6 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ASTPtr to_table;
     ASTPtr columns_list;
     ASTPtr storage;
-    ASTPtr inner_storage;
     ASTPtr watermark;
     ASTPtr lateness;
     ASTPtr as_database;
@@ -872,8 +857,6 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     bool is_watermark_bounded = false;
     bool allowed_lateness = false;
     bool if_not_exists = false;
-    bool is_populate = false;
-    bool is_create_empty = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -918,17 +901,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    if (ParserKeyword{"INNER"}.ignore(pos, expected))
-    {
-        /// Inner table ENGINE for WINDOW VIEW
-        storage_inner.parse(pos, inner_storage, expected);
-    }
-
-    if (!to_table)
-    {
-        /// Target table ENGINE for WINDOW VIEW
-        storage_p.parse(pos, storage, expected);
-    }
+    /// Inner table ENGINE for WINDOW VIEW
+    storage_p.parse(pos, storage, expected);
 
     // WATERMARK
     if (ParserKeyword{"WATERMARK"}.ignore(pos, expected))
@@ -954,11 +928,6 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         if (!lateness_p.parse(pos, lateness, expected))
             return false;
     }
-
-    if (s_populate.ignore(pos, expected))
-        is_populate = true;
-    else if (ParserKeyword{"EMPTY"}.ignore(pos, expected))
-        is_create_empty = true;
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -986,15 +955,12 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
-    query->set(query->inner_storage, inner_storage);
     query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
     query->is_watermark_ascending = is_watermark_ascending;
     query->is_watermark_bounded = is_watermark_bounded;
     query->watermark_function = watermark;
     query->allowed_lateness = allowed_lateness;
     query->lateness_function = lateness;
-    query->is_populate = is_populate;
-    query->is_create_empty = is_create_empty;
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
@@ -1255,7 +1221,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool is_ordinary_view = false;
     bool is_materialized_view = false;
     bool is_populate = false;
-    bool is_create_empty = false;
     bool replace_view = false;
 
     if (!s_create.ignore(pos, expected))
@@ -1326,8 +1291,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;
-        else if (ParserKeyword{"EMPTY"}.ignore(pos, expected))
-            is_create_empty = true;
     }
 
     /// AS SELECT ...
@@ -1347,7 +1310,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_ordinary_view = is_ordinary_view;
     query->is_materialized_view = is_materialized_view;
     query->is_populate = is_populate;
-    query->is_create_empty = is_create_empty;
     query->replace_view = replace_view;
 
     auto * table_id = table->as<ASTTableIdentifier>();

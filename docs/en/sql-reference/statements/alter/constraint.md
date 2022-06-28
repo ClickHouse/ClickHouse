@@ -3,7 +3,7 @@ sidebar_position: 43
 sidebar_label: CONSTRAINT
 ---
 
-# Manipulating Constraints
+# Manipulating Constraints {#manipulations-with-constraints}
 
 Constraints could be added or deleted using following syntax:
 

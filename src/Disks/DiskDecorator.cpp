@@ -83,7 +83,7 @@ void DiskDecorator::moveDirectory(const String & from_path, const String & to_pa
     delegate->moveDirectory(from_path, to_path);
 }
 
-DirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path) const
+DiskDirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path)
 {
     return delegate->iterateDirectory(path);
 }
@@ -113,7 +113,7 @@ void DiskDecorator::copyDirectoryContent(const String & from_dir, const std::sha
     delegate->copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
-void DiskDecorator::listFiles(const String & path, std::vector<String> & file_names) const
+void DiskDecorator::listFiles(const String & path, std::vector<String> & file_names)
 {
     delegate->listFiles(path, file_names);
 }
@@ -171,14 +171,9 @@ void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp &
     delegate->setLastModified(path, timestamp);
 }
 
-Poco::Timestamp DiskDecorator::getLastModified(const String & path) const
+Poco::Timestamp DiskDecorator::getLastModified(const String & path)
 {
     return delegate->getLastModified(path);
-}
-
-time_t DiskDecorator::getLastChanged(const String & path) const
-{
-    return delegate->getLastChanged(path);
 }
 
 void DiskDecorator::setReadOnly(const String & path)
@@ -216,9 +211,9 @@ void DiskDecorator::shutdown()
     delegate->shutdown();
 }
 
-void DiskDecorator::startup(ContextPtr context)
+void DiskDecorator::startup()
 {
-    delegate->startup(context);
+    delegate->startup();
 }
 
 void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)

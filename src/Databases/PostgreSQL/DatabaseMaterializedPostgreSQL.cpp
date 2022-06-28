@@ -259,7 +259,6 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
     auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
     create_query->attach = false;
     create_query->attach_short_syntax = false;
-    DatabaseCatalog::instance().addUUIDMapping(create->uuid);
     DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
 
     /// Attach MaterializedPostgreSQL table.
