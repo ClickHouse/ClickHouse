@@ -104,6 +104,7 @@ private:
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings & urls,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
@@ -115,7 +116,11 @@ private:
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
-    static std::optional<time_t> getLastModificationTime(const String & url, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context);
+    static std::optional<time_t> getLastModificationTime(
+        const String & url,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
+        const ContextPtr & context);
 };
 
 class StorageURLSink : public SinkToStorage

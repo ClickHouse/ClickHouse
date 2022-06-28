@@ -1224,7 +1224,7 @@ std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(
             if (0 != stat(path.c_str(), &file_stat))
                 return std::nullopt;
 
-            return file_stat.st_mtim.tv_sec;
+            return file_stat.st_mtime;
         };
 
         String cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);

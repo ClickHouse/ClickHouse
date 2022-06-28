@@ -574,7 +574,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (context->getSettingsRef().use_cache_for_url_schema_inference)
-        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, format, format_settings, context);
+        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, credentials, format, format_settings, context);
 
     ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -798,6 +798,7 @@ SchemaCache & IStorageURLBase::getSchemaCache()
 std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
     const Strings & urls,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+    const Poco::Net::HTTPBasicCredentials & credentials,
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
@@ -807,7 +808,7 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
     {
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
-            auto last_mod_time = getLastModificationTime(url, headers, context);
+            auto last_mod_time = getLastModificationTime(url, headers, credentials, context);
             /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
             /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
             /// special setting for this case is enabled.
@@ -837,7 +838,11 @@ void IStorageURLBase::addColumnsToCache(
     schema_cache.addMany(cache_keys, columns, context->getSettingsRef().cache_ttl_for_url_schema_inference.totalSeconds());
 }
 
-std::optional<time_t> IStorageURLBase::getLastModificationTime(const String & url, const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers, const ContextPtr & context)
+std::optional<time_t> IStorageURLBase::getLastModificationTime(
+    const String & url,
+    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+    const Poco::Net::HTTPBasicCredentials & credentials,
+    const ContextPtr & context)
 {
     try
     {
@@ -846,7 +851,7 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(const String & ur
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
             ConnectionTimeouts::getHTTPTimeouts(context),
-            {},
+            credentials,
             context->getSettingsRef().max_http_get_redirects,
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getReadSettings(),
