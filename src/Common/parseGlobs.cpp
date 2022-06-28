@@ -51,8 +51,16 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             ReadBufferFromString buf_range(buffer);
             buf_range >> range_begin >> point >> point >> range_end;
             bool leading_zeros = buffer[0] == '0';
-            //Append '0' for values starting with {00..99} and not {0..10}
-            size_t num_len = buffer.size() - 2 - std::to_string(range_end).size();
+
+            size_t range_begin_width = buffer.find('.');
+            size_t range_end_width = buffer.size() - buffer.find_last_of('.') - 1;
+            //Scenarios {0..10} {0..999}  
+            size_t num_len = 0;
+            if (range_begin_width == 1 && leading_zeros)
+                num_len = 1;
+            //Scenarios {00..99} {00..099} 
+            else
+                num_len = range_begin_width < range_end_width ? range_end_width : range_begin_width;
             if (leading_zeros)
                 oss_for_replacing << std::setfill('0') << std::setw(num_len);
             oss_for_replacing << range_begin;
