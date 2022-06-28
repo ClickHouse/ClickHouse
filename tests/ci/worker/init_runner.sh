@@ -50,7 +50,9 @@ ROOT_STAT=($(df / | awk '/\// {print $4 " " int($4/$2 * 100)}'))
 if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
   echo "Going to terminate the runner, it has ${ROOT_STAT[0]}KiB and ${ROOT_STAT[1]}% of free space on /"
   INSTANCE_ID=$(ec2metadata --instance-id)
-  ( sleep 10 && aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" ) &
+  # We execute it with at to not have it as an orphan process
+  # GH Runners kill all remain processes
+  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now
   exit 0
 fi
 
