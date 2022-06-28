@@ -970,16 +970,12 @@ jobs:
     steps:
       - name: Set envs
         run: |
-          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
-          ${{ toJSON(needs) }}
-          EOF
-          )
-          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           CHECK_NAME=ClickHouse build check (actions)
           REPORTS_PATH=${{runner.temp}}/reports_dir
           REPORTS_PATH=${{runner.temp}}/reports_dir
           TEMP_PATH=${{runner.temp}}/report_check
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -994,8 +990,11 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
+          python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -1018,15 +1017,11 @@ jobs:
     steps:
       - name: Set envs
         run: |
-          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
-          ${{ toJSON(needs) }}
-          EOF
-          )
-          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/report_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse special build check (actions)
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1041,8 +1036,11 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
+          python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -2913,7 +2911,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=4
@@ -2951,7 +2949,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=4
@@ -2989,7 +2987,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=4
@@ -3027,7 +3025,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=3
           RUN_BY_HASH_TOTAL=4

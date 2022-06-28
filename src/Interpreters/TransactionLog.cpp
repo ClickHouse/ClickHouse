@@ -9,11 +9,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
 
-
-/// It's used in critical places to exit on unexpected exceptions.
-/// SIGABRT is usually better that broken state in memory with unpredictable consequences.
-#define NOEXCEPT_SCOPE SCOPE_EXIT({ if (std::uncaught_exceptions()) { tryLogCurrentException("NOEXCEPT_SCOPE"); abort(); } })
 
 namespace DB
 {
@@ -146,8 +143,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     }
     futures.clear();
 
-    NOEXCEPT_SCOPE;
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    NOEXCEPT_SCOPE_STRICT;
     {
         std::lock_guard lock{mutex};
         for (const auto & entry : loaded)
@@ -201,7 +197,7 @@ void TransactionLog::loadLogFromZooKeeper()
     /// 3. support 64-bit CSNs on top of Apache ZooKeeper (it uses Int32 for sequential numbers)
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
-    std::sort(entries_list.begin(), entries_list.end());
+    ::sort(entries_list.begin(), entries_list.end());
     loadEntries(entries_list.begin(), entries_list.end());
     chassert(!last_loaded_entry.empty());
     chassert(latest_snapshot == deserializeCSN(last_loaded_entry));
@@ -217,7 +213,7 @@ void TransactionLog::runUpdatingThread()
         try
         {
             /// Do not wait if we have some transactions to finalize
-            if (!unknown_state_list_loaded.empty())
+            if (unknown_state_list_loaded.empty())
                 log_updated_event->wait();
 
             if (stop_flag.load())
@@ -233,9 +229,8 @@ void TransactionLog::runUpdatingThread()
                 }
 
                 /// It's possible that we connected to different [Zoo]Keeper instance
-                /// so we may read a bit stale state. Run some writing request before loading log entries
-                /// to make that instance up-to-date.
-                zookeeper->set(zookeeper_path_log, "");
+                /// so we may read a bit stale state.
+                zookeeper->sync(zookeeper_path_log);
             }
 
             loadNewEntries();
@@ -262,7 +257,7 @@ void TransactionLog::loadNewEntries()
 {
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
-    std::sort(entries_list.begin(), entries_list.end());
+    ::sort(entries_list.begin(), entries_list.end());
     auto it = std::upper_bound(entries_list.begin(), entries_list.end(), last_loaded_entry);
     loadEntries(it, entries_list.end());
     chassert(last_loaded_entry == entries_list.back());
@@ -453,7 +448,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
         /// Do not allow exceptions between commit point and the and of transaction finalization
         /// (otherwise it may stuck in COMMITTING state holding snapshot).
-        NOEXCEPT_SCOPE;
+        NOEXCEPT_SCOPE_STRICT;
         /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
         /// (overflow is possible in a several weeks/months of active usage)
         allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
@@ -602,7 +597,7 @@ void TransactionLog::sync() const
 {
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log);
     chassert(!entries_list.empty());
-    std::sort(entries_list.begin(), entries_list.end());
+    ::sort(entries_list.begin(), entries_list.end());
     CSN newest_csn = deserializeCSN(entries_list.back());
     waitForCSNLoaded(newest_csn);
 }

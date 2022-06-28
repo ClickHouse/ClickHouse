@@ -9,7 +9,7 @@ void write(size_t x, WriteBuffer & out)
     writeBinary(x, out);
 }
 
-#ifdef __APPLE__
+#ifdef OS_DARWIN
 void write(uint64_t x, WriteBuffer & out)
 {
     x = __builtin_bswap64(x);
@@ -71,7 +71,7 @@ void write(const Error & x, WriteBuffer & out)
     write(static_cast<int32_t>(x), out);
 }
 
-#ifdef __APPLE__
+#ifdef OS_DARWIN
 void read(uint64_t & x, ReadBuffer & in)
 {
     readBinary(x, in);

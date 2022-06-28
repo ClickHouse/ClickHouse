@@ -3,7 +3,7 @@ sidebar_position: 66
 sidebar_label: ClickHouse Keeper
 ---
 
-# ClickHouse Keeper {#clickHouse-keeper}
+# ClickHouse Keeper
 
 ClickHouse Keeper provides the coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is compatible with ZooKeeper.
 
@@ -53,7 +53,7 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 -    `auto_forwarding` — Allow to forward write requests from followers to the leader (default: true).
 -    `shutdown_timeout` — Wait to finish internal connections and shutdown (ms) (default: 5000).
 -    `startup_timeout` — If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000).
--    `four_letter_word_white_list` — White list of 4lw commands (default: "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro").
+-    `four_letter_word_white_list` — White list of 4lw commands (default: `conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro`).
 
 Quorum configuration is located in the `<keeper_server>.<raft_configuration>` section and contain servers description.
 
@@ -122,7 +122,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.
 
-The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
+The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro`.
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 
@@ -132,7 +132,7 @@ echo mntr | nc localhost 9181
 
 Bellow is the detailed 4lw commands:
 
-- `ruok`: Tests if server is running in a non-error state. The server will respond with imok if it is running. Otherwise it will not respond at all. A response of "imok" does not necessarily indicate that the server has joined the quorum, just that the server process is active and bound to the specified client port. Use "stat" for details on state wrt quorum and client connection information.
+- `ruok`: Tests if server is running in a non-error state. The server will respond with `imok` if it is running. Otherwise it will not respond at all. A response of `imok` does not necessarily indicate that the server has joined the quorum, just that the server process is active and bound to the specified client port. Use "stat" for details on state wrt quorum and client connection information.
 
 ```
 imok
@@ -325,14 +325,14 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 
 ## Recovering after losing quorum
 
-Because Clickhouse Keeper uses Raft it can tolerate certain amount of node crashes depending on the cluster size. \
+Because ClickHouse Keeper uses Raft it can tolerate certain amount of node crashes depending on the cluster size. \
 E.g. for a 3-node cluster, it will continue working correctly if only 1 node crashes.
 
 Cluster configuration can be dynamically configured but there are some limitations. Reconfiguration relies on Raft also
 so to add/remove a node from the cluster you need to have a quorum. If you lose too many nodes in your cluster at the same time without any chance
-of starting them again, Raft will stop working and not allow you to reconfigure your cluster using the convenvtional way.
+of starting them again, Raft will stop working and not allow you to reconfigure your cluster using the conventional way.
 
-Nevertheless, Clickhouse Keeper has a recovery mode which allows you to forcfully reconfigure your cluster with only 1 node.
+Nevertheless, ClickHouse Keeper has a recovery mode which allows you to forcefully reconfigure your cluster with only 1 node.
 This should be done only as your last resort if you cannot start your nodes again, or start a new instance on the same endpoint.
 
 Important things to note before continuing:

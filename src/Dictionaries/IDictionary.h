@@ -63,7 +63,7 @@ public:
     std::string getFullName() const
     {
         std::lock_guard lock{name_mutex};
-        return dictionary_id.getInternalDictionaryName();
+        return dictionary_id.getNameForLogs();
     }
 
     StorageID getDictionaryID() const
@@ -79,7 +79,7 @@ public:
         dictionary_id = new_name;
     }
 
-    std::string getLoadableName() const override final
+    std::string getLoadableName() const final
     {
         std::lock_guard lock{name_mutex};
         return dictionary_id.getInternalDictionaryName();

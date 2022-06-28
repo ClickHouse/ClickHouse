@@ -90,9 +90,9 @@
     <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT cosineDistance(a, t) AS dist FROM tuples_{element_type})</query>
 
     <!-- Arrays -->
-    <query>SELECT sum(dist) FROM (SELECT array{norm}Norm(v) AS dist FROM vecs_{element_type})</query>
-    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT array{norm}Distance(a, v) AS dist FROM vecs_{element_type})</query>
-    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayCosineDistance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>SELECT sum(dist) FROM (SELECT {norm}Norm(v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT {norm}Distance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT cosineDistance(a, v) AS dist FROM vecs_{element_type})</query>
 
     <drop_query>DROP TABLE vecs_{element_type}</drop_query>
     <drop_query>DROP TABLE tuples_{element_type}</drop_query>

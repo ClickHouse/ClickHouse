@@ -5,6 +5,7 @@
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/AsynchronousReader.h>
 #include <string>
 #include <memory>
 #include <hdfs/hdfs.h>
@@ -37,9 +38,11 @@ public:
 
     off_t getPosition() override;
 
-    std::optional<size_t> getFileSize() override;
+    size_t getFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override;
+
+    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
 
     String getFileName() const override;
 

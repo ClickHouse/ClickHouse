@@ -13,6 +13,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -64,6 +65,12 @@ namespace
 {
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
+
+void optimizeGroupingSets(ASTPtr & query)
+{
+    GroupingSetsRewriterVisitor::Data data;
+    GroupingSetsRewriterVisitor(data).visit(query);
+}
 
 /// Select implementation of a function based on settings.
 /// Important that it is done as query rewrite. It means rewritten query
@@ -462,7 +469,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             for (const auto & name : required_result_columns)
                 name_pos[name] = pos++;
         }
-        std::sort(elements.begin(), elements.end(), [&](const auto & lhs, const auto & rhs)
+        ::sort(elements.begin(), elements.end(), [&](const auto & lhs, const auto & rhs)
         {
             String lhs_name = lhs->getAliasOrColumnName();
             String rhs_name = rhs->getAliasOrColumnName();
@@ -504,7 +511,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
                 new_elements.push_back(elem);
 
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
-            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
+            if (func && AggregateUtils::isAggregateFunction(*func) && !select_query->groupBy())
                 new_elements.push_back(elem);
         }
     }
@@ -827,17 +834,43 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
 class MarkTupleLiteralsAsLegacyData
 {
 public:
-    using TypeToVisit = ASTLiteral;
+    struct Data
+    {
+    };
 
-    static void visit(ASTLiteral & literal, ASTPtr &)
+    static void visitLiteral(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple)
             literal.use_legacy_column_name_of_tuple = true;
     }
+    static void visitFunction(ASTFunction & func, ASTPtr &ast)
+    {
+        if (func.name == "tuple" && func.arguments && !func.arguments->children.empty())
+        {
+            // re-write tuple() function as literal
+            if (auto literal = func.toLiteral())
+            {
+                ast = literal;
+                visitLiteral(*typeid_cast<ASTLiteral *>(ast.get()), ast);
+            }
+        }
+    }
+
+    static void visit(ASTPtr & ast, Data &)
+    {
+        if (auto * identifier = typeid_cast<ASTFunction *>(ast.get()))
+            visitFunction(*identifier, ast);
+        if (auto * identifier = typeid_cast<ASTLiteral *>(ast.get()))
+            visitLiteral(*identifier, ast);
+    }
+
+    static bool needChildVisit(const ASTPtr & /*parent*/, const ASTPtr & /*child*/)
+    {
+        return true;
+    }
 };
 
-using MarkTupleLiteralsAsLegacyMatcher = OneTypeMatcher<MarkTupleLiteralsAsLegacyData>;
-using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyMatcher, true>;
+using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyData, true>;
 
 void markTupleLiteralsAsLegacy(ASTPtr & query)
 {
@@ -1177,7 +1210,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
 
-    /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some login inside JOINs
+    /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
     if (settings.optimize_normalize_count_variants)
         TreeOptimizer::optimizeCountConstantAndSumOne(query);
 
@@ -1206,7 +1239,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true);
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -1241,6 +1274,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
+    result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
     result.collectUsedColumns(query, true);
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
@@ -1264,6 +1298,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         {
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
+            result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
             result.collectUsedColumns(query, true);
         }
     }
@@ -1302,7 +1337,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
 
-    normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
+    normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext());
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries);
@@ -1331,7 +1366,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 }
 
 void TreeRewriter::normalize(
-    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
+    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
 {
     UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
     UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
@@ -1393,12 +1428,17 @@ void TreeRewriter::normalize(
     MarkTableIdentifiersVisitor(identifiers_data).visit(query);
 
     /// Rewrite function names to their canonical ones.
-    if (settings.normalize_function_names)
+    /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
+    /// already normalized on initiator node, or not normalized and should remain unnormalized for
+    /// compatibility.
+    if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
         FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases);
     QueryNormalizer(normalizer_data).visit(query);
+
+    optimizeGroupingSets(query);
 }
 
 }

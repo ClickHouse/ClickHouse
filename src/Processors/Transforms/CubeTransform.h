@@ -21,7 +21,7 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    const ColumnNumbers keys;
+    ColumnNumbers keys;
     const ColumnsMask aggregates_mask;
 
     Chunks consumed_chunks;
@@ -30,6 +30,7 @@ private:
     Columns current_zero_columns;
 
     UInt64 mask = 0;
+    UInt64 grouping_set = 0;
 
     Chunk merge(Chunks && chunks, bool final);
 };
