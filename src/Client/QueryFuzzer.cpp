@@ -5,6 +5,7 @@
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/IAST_fwd.h"
 #include <Core/Types.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
@@ -215,6 +216,21 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
     ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()]->clone();
     new_ast->setAlias("");
 
+    return new_ast;
+}
+
+ASTPtr QueryFuzzer::getRandomExpressionList()
+{
+    if (column_like.empty())
+    {
+        return nullptr;
+    }
+
+    ASTPtr new_ast = std::make_shared<ASTExpressionList>();
+    for (size_t i = 0; i < fuzz_rand() % 5 + 1; ++i)
+    {
+        new_ast->children.push_back(getRandomColumnLike());
+    }
     return new_ast;
 }
 
@@ -525,7 +541,40 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
         fuzzColumnLikeExpressionList(select->select().get());
-        fuzzColumnLikeExpressionList(select->groupBy().get());
+
+        if(select->groupBy().get())
+        {
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->groupBy()->children.clear();
+                select->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+            }
+            else
+            {
+                fuzz(select->groupBy()->children);
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList());
+        }
+
+        if(select->where().get())
+        {
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->where()->children.clear();
+                select->setExpression(ASTSelectQuery::Expression::WHERE, {});
+            }
+            else
+            {
+                fuzz(select->where()->children);
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::WHERE, getRandomColumnLike());
+        }
         fuzzOrderByList(select->orderBy().get());
 
         fuzz(select->children);
