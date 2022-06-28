@@ -385,6 +385,7 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
+    STRESS = "stress"
     BUILD = "not running for current build"
     BACKWARD_INCOMPATIBLE = "test is backward incompatible"
 
@@ -683,6 +684,9 @@ class TestCase:
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
 
+        elif tags and ("no-stress" in tags) and args.stress:
+            return FailureReason.STRESS
+
         elif tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
@@ -883,7 +887,7 @@ class TestCase:
             "test": self.case_file,
             "stdout": self.stdout_file,
             "stderr": self.stderr_file,
-            "secure": "--secure" if args.secure else ""
+            "secure": "--secure" if args.secure else "",
         }
 
         # >> append to stderr (but not stdout since it is not used there),
@@ -1218,7 +1222,9 @@ class TestSuite:
             try:
                 return int(clickhouse_execute(args, "EXISTS TABLE test.hits"))
             except Exception as e:
-                print("Cannot check if dataset is available, assuming it's not: ", str(e))
+                print(
+                    "Cannot check if dataset is available, assuming it's not: ", str(e)
+                )
                 return False
 
         base_dir = os.path.abspath(args.queries)
@@ -1960,6 +1966,12 @@ if __name__ == "__main__":
         help="Run tests over s3 storage",
     )
     parser.add_argument(
+        "--stress",
+        action="store_true",
+        default=False,
+        help="Run stress tests",
+    )
+    parser.add_argument(
         "--no-random-settings",
         action="store_true",
         default=False,
@@ -2159,5 +2171,8 @@ if __name__ == "__main__":
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
+
+    if args.db_engine and args.db_engine == "Ordinary":
+        MESSAGES_TO_RETRY.append(" locking attempt on ")
 
     main(args)

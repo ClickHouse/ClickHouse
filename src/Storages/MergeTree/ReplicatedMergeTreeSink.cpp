@@ -306,7 +306,7 @@ void ReplicatedMergeTreeSink::commitPart(
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->relative_path;
+    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -476,7 +476,8 @@ void ReplicatedMergeTreeSink::commitPart(
 
         try
         {
-            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction);
+            auto lock = storage.lockParts();
+            renamed = storage.renameTempPartAndAdd(part, transaction, lock);
         }
         catch (const Exception & e)
         {

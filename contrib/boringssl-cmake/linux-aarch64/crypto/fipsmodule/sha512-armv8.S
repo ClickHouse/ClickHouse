@@ -64,6 +64,7 @@
 .type	sha512_block_data_order,%function
 .align	6
 sha512_block_data_order:
+	AARCH64_SIGN_LINK_REGISTER
 	stp	x29,x30,[sp,#-128]!
 	add	x29,sp,#0
 
@@ -1024,6 +1025,7 @@ sha512_block_data_order:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldp	x29,x30,[sp],#128
+	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 .size	sha512_block_data_order,.-sha512_block_data_order
 
@@ -1082,3 +1084,4 @@ sha512_block_data_order:
 #endif
 #endif
 #endif  // !OPENSSL_NO_ASM
+.section	.note.GNU-stack,"",%progbits

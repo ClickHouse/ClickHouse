@@ -63,7 +63,7 @@ private:
     std::unordered_map<UUID, Info> infos;
     std::condition_variable status_changed;
     mutable std::mutex infos_mutex;
-    const Poco::Logger * log;
+    Poco::Logger * log;
 };
 
 }
