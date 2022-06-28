@@ -93,7 +93,7 @@ void TablesLoader::loadTables()
     for (auto & database_name : databases_to_load)
     {
         databases[database_name]->beforeLoadingMetadata(global_context, force_restore, force_attach);
-        databases[database_name]->loadTablesMetadata(global_context, metadata);
+        databases[database_name]->loadTablesMetadata(global_context, metadata, force_attach);
     }
 
     LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",

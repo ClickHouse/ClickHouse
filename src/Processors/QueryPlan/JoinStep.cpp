@@ -40,6 +40,14 @@ void JoinStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
+void JoinStep::updateLeftStream(const DataStream & left_stream_)
+{
+    input_streams = {left_stream_, input_streams.at(1)};
+    output_stream = DataStream{
+        .header = JoiningTransform::transformHeader(left_stream_.header, join),
+    };
+}
+
 static ITransformingStep::Traits getStorageJoinTraits()
 {
     return ITransformingStep::Traits
@@ -86,5 +94,12 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         return std::make_shared<JoiningTransform>(header, join, max_block_size, on_totals, default_totals, counter);
     });
 }
+
+void FilledJoinStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
+}
+
 
 }
