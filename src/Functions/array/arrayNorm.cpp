@@ -57,6 +57,25 @@ struct L2Norm
     }
 };
 
+struct L2SquaredNorm
+{
+    static inline String name = "L2Squared";
+
+    struct ConstParams {};
+
+    template <typename ResultType>
+    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    {
+        return result + value * value;
+    }
+
+    template <typename ResultType>
+    inline static ResultType finalize(ResultType result, const ConstParams &)
+    {
+        return result;
+    }
+};
+
 
 struct LpNorm
 {
@@ -265,6 +284,7 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
 /// These functions are used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL1Norm(ContextPtr context_) { return FunctionArrayNorm<L1Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2Norm(ContextPtr context_) { return FunctionArrayNorm<L2Norm>::create(context_); }
+FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_) { return FunctionArrayNorm<L2SquaredNorm>::create(context_); }
 FunctionPtr createFunctionArrayLpNorm(ContextPtr context_) { return FunctionArrayNorm<LpNorm>::create(context_); }
 FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_) { return FunctionArrayNorm<LinfNorm>::create(context_); }
 
