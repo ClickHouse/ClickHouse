@@ -124,8 +124,10 @@ class TestDockerImageCheck(unittest.TestCase):
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version "
-            "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version --cache-from "
-            "type=registry,ref=name:version --push --progress plain path",
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+            "--tag name:version --cache-from type=registry,ref=name:version "
+            "--cache-from type=registry,ref=name:latest "
+            "--cache-to type=inline,mode=max --push --progress plain path",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -141,8 +143,10 @@ class TestDockerImageCheck(unittest.TestCase):
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version2 "
-            "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
-            "type=registry,ref=name:version2 --progress plain path",
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+            "--tag name:version2 --cache-from type=registry,ref=name:version2 "
+            "--cache-from type=registry,ref=name:latest "
+            "--cache-to type=inline,mode=max --progress plain path",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -157,8 +161,10 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_machine.assert_not_called()
         self.assertIn(
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
-            "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
-            "type=registry,ref=name:version2 --progress plain path",
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+            "--tag name:version2 --cache-from type=registry,ref=name:version2 "
+            "--cache-from type=registry,ref=name:latest "
+            "--cache-to type=inline,mode=max --progress plain path",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)
