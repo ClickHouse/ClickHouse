@@ -1176,7 +1176,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     query_plan.getCurrentDataStream(),
                     expressions.prewhere_info->row_level_filter,
                     expressions.prewhere_info->row_level_column_name,
-                    false);
+                    true);
 
                 row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
                 query_plan.addStep(std::move(row_level_filter_step));
@@ -1617,7 +1617,10 @@ static void executeMergeAggregatedImpl(
 
     Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row, settings.max_threads);
 
-    auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(
+        params,
+        final,
+        /* only_merge_= */ false);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2289,6 +2292,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         std::move(aggregator_params),
         std::move(grouping_sets_params),
         final,
+        /* only_merge_= */ false,
         settings.max_block_size,
         settings.aggregation_in_order_max_block_bytes,
         merge_threads,
@@ -2362,7 +2366,10 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
         keys.push_back(header_before_transform.getPositionByName(key.name));
 
     auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0);
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(
+        std::move(params),
+        /* final_= */ true,
+        /* only_merge_= */ false);
 
     QueryPlanStepPtr step;
     if (modificator == Modificator::ROLLUP)
