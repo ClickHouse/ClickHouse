@@ -96,7 +96,7 @@ public:
 
         auto & vec_res = col_res->getData();
         auto & offsets_res = col_offsets->getData();
-        // the implementations are responsible for resizing the output column
+        /// the implementations are responsible for resizing the output column
 
         if (col_needles_const)
         {
