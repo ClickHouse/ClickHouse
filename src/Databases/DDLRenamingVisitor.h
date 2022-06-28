@@ -17,7 +17,7 @@ class DDLRenamingMap;
 
 /// Changes names of databases or tables in a create query according to a specified renaming map.
 /// Does not validate AST, works a best-effort way.
-void renameDatabaseAndTableNameInCreateQuery(ASTPtr & ast, const DDLRenamingMap & renaming_map, const ContextPtr & global_context);
+void renameDatabaseAndTableNameInCreateQuery(ASTPtr ast, const DDLRenamingMap & renaming_map, const ContextPtr & global_context);
 
 /// Renaming map keeps information about new names of databases or tables.
 class DDLRenamingMap
