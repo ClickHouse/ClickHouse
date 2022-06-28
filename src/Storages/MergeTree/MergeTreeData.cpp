@@ -2837,7 +2837,7 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
     part->renameTo(part->name, true, builder);
 
     data_parts_indexes.insert(part);
-    out_transaction.precommitted_parts.insert(part);
+    out_transaction.addPart(part, builder);
 }
 
 bool MergeTreeData::renameTempPartAndReplaceImpl(
@@ -4831,6 +4831,12 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
     clear();
 }
 
+void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part, DataPartStorageBuilderPtr builder)
+{
+    precommitted_parts.insert(part);
+    part_builders.push_back(builder);
+}
+
 void MergeTreeData::Transaction::rollback()
 {
     if (!isEmpty())
@@ -4861,6 +4867,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
         auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
+        for (auto & builder : part_builders)
+            builder->commit();
 
         if (txn)
         {

@@ -156,7 +156,7 @@ void MergeTreeSink::finishDelayedChunk()
                 else
                 {
                     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                    added = storage.renameTempPartAndAdd(part, transaction, lock);
+                    added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
                     transaction.commit(&lock);
 
                 }
@@ -164,7 +164,7 @@ void MergeTreeSink::finishDelayedChunk()
             else
             {
                 MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                added = storage.renameTempPartAndAdd(part, transaction, lock);
+                added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
                 transaction.commit(&lock);
             }
 
