@@ -2840,7 +2840,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     DataPartsLock & lock,
     DataPartsVector * out_covered_parts)
 {
-    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part->name);
+    LOG_TRACE(log, "Renaming temporary part {} to {}.", part->relative_path, part->name);
 
     if (&out_transaction.data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
