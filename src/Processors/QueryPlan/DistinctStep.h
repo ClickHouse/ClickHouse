@@ -24,6 +24,8 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
+    void updateOutputStream() override;
+
     SizeLimits set_size_limits;
     UInt64 limit_hint;
     Names columns;
