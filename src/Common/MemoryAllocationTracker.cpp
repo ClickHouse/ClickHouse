@@ -609,7 +609,7 @@ static void dumpNode(
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     addressToLine(out, symbol_index, dwarfs, node.ptr);
-#elif
+#else
     DB::writePointerHex(node.ptr, out);
 #endif
 
@@ -636,7 +636,7 @@ void dump_allocations_tree(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray
     for (const auto & node : tree.nodes)
 #if defined(__ELF__) && !defined(OS_FREEBSD)
         dumpNode(node, mapping, dwarfs, symbol_index, out);
-#elif
+#else
         dumpNode(node, mapping, out);
 #endif
     out << "  }\n";
@@ -679,7 +679,7 @@ void dump_allocations_flamegraph(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPO
                 writeString(demangle(symbol->name), out);
             else
                 DB::writePointerHex(ptr, out);
-#elif
+#else
             DB::writePointerHex(ptr, out);
 #endif
         }
