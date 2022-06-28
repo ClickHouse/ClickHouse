@@ -411,14 +411,16 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         if (new_data_part->data_part_storage->exists())
         {
             LOG_WARNING(log, "Removing old temporary directory {}", new_data_part->data_part_storage->getFullPath());
-            data_part_volume->getDisk()->removeRecursive(full_path);
+            data_part_storage_builder->removeRecursive();
         }
 
-        const auto disk = data_part_volume->getDisk();
-        disk->createDirectories(full_path);
+        data_part_storage_builder->createDirectories();
 
         if (data.getSettings()->fsync_part_directory)
+        {
+            const auto disk = data_part_volume->getDisk();
             sync_guard = disk->getDirectorySyncGuard(full_path);
+        }
     }
 
     if (metadata_snapshot->hasRowsTTL())
