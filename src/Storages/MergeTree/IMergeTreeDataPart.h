@@ -470,7 +470,7 @@ public:
     void loadDeletedRowMask();
 
     /// Write lightweight deleted mask to a file.
-    void writeLightWeightDeletedMask(String bitmap) const;
+    void writeLightweightDeletedMask(String bitmap) const;
 
 protected:
 

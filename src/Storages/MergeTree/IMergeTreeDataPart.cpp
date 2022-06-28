@@ -1214,27 +1214,20 @@ void IMergeTreeDataPart::loadDeletedRowMask()
     if (part_type == Type::Compact)
         return;
 
-    auto path = fs::path(getFullRelativePath()) / DELETED_ROW_MARK_FILE_NAME;
-    if (volume->getDisk()->exists(path))
+    if (data_part_storage->exists(DELETED_ROW_MARK_FILE_NAME))
     {
         has_lightweight_delete = true;
 
-        auto in = openForReading(volume->getDisk(), path);
-        readString(deleted_rows_mask, *in);
+        data_part_storage->loadDeletedRowMask(deleted_rows_mask);
     }
 }
 
-void IMergeTreeDataPart::writeLightWeightDeletedMask(String bitmap) const
+void IMergeTreeDataPart::writeLightweightDeletedMask(String bitmap) const
 {
     if (bitmap.empty())
         return;
 
-    auto disk = volume->getDisk();
-    String file_name = fs::path(getFullRelativePath()) / DELETED_ROW_MARK_FILE_NAME;
-
-    /// write Non-Empty merged bitmap
-    auto out = disk->writeFile(file_name);
-    DB::writeText(bitmap, *out);
+    data_part_storage->writeLightweightDeletedMask(bitmap, storage.log);
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const

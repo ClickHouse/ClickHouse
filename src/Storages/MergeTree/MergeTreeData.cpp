@@ -2872,7 +2872,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
 
-    if (part.hasLightweightDelete())
+    if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
 
     checkPartCanBeAddedToTable(part, lock);

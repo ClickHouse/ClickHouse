@@ -169,6 +169,9 @@ public:
     /// A leak of abstraction
     virtual bool shallParticipateInMerges(const IStoragePolicy &) const { return true; }
 
+    virtual void loadDeletedRowMask(String & bitmap) const = 0;
+    virtual void writeLightweightDeletedMask(String & bitmap, Poco::Logger * log) const = 0;
+
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.
     /// Also creates a new tmp_dir for internal disk (if disk is mentioned the first time).

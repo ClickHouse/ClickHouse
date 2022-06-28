@@ -1146,7 +1146,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
 
 /// Implicitly apply deleted mask filter to columns.
 /// If there is no prewhere_info, apply directly the deleted mask filter.
-/// If prewhere_info exists, works like row_level_filter and prewhere filter.
+/// If prewhere_info exists, only apply to the first prewhere filter.
 void MergeTreeRangeReader::executeDeletedRowMaskFilterColumns(ReadResult & result)
 {
     if (prewhere_info || !need_read_deleted_mask || !result.deleted_mask_filter_holder)
@@ -1232,6 +1232,19 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
+
+        /// Apply deleted mask filter for the first prewhere step
+        if (!result.getFilter() && result.deleted_mask_filter_holder)
+        {
+            auto columns = block.getColumns();
+            filterColumns(columns, result.deleted_mask_filter_holder);
+            if (columns.empty())
+                block = block.cloneEmpty();
+            else
+                block.setColumns(columns);
+
+            result.setFilter(result.deleted_mask_filter_holder);
+        }
 
         if (prewhere_info->actions)
            prewhere_info->actions->execute(block);
