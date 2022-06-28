@@ -294,7 +294,6 @@ void MaterializeMetadata::startReplication(
     try
     {
         connection->query("FLUSH TABLES;").execute();
-        connection->query("USE " + database + ";").execute();
 
         if (materialized_tables_list.empty())
         {
