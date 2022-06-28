@@ -459,6 +459,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         {
             auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, data_part_storage_builder, new_data_part.get());
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
+            proj_temp_part.builder->commit();
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
         }
@@ -471,6 +472,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         context->getWriteSettings());
 
     temp_part.part = new_data_part;
+    temp_part.builder = data_part_storage_builder;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
@@ -587,7 +589,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);
     temp_part.part = new_data_part;
-    temp_part.builder = data_part_storage_builder;
+    temp_part.builder = projection_part_storage_builder;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, block.rows());

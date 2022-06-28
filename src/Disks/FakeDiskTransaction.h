@@ -15,7 +15,10 @@ public:
         : disk(disk_)
     {}
 
-    void commit() override {}
+    void commit() override
+    {
+        commit_called = true;
+    }
 
     void createDirectory(const std::string & path) override
     {
@@ -122,8 +125,14 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
+    bool isCommitedOrTriedToCommit() const override
+    {
+        return commit_called;
+    }
+
 private:
     IDisk & disk;
+    bool commit_called{false};
 };
 
 }

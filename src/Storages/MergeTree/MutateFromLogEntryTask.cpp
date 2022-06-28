@@ -172,6 +172,9 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     new_part = mutate_task->getFuture().get();
     auto builder = mutate_task->getBuilder();
 
+    if (!builder)
+        builder = new_part->data_part_storage->getBuilder();
+
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, builder);
 
     try
