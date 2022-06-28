@@ -58,6 +58,7 @@ private:
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
 
     DiskObjectStorageOperations operations_to_execute;
+    bool commit_called{false};
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
@@ -107,6 +108,12 @@ public:
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
+
+    bool isCommitedOrTriedToCommit() const override
+    {
+        return commit_called;
+    }
+
 };
 
 using DiskObjectStorageTransactionPtr = std::shared_ptr<DiskObjectStorageTransaction>;
