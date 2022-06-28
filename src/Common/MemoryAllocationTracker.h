@@ -15,7 +15,7 @@ struct Trace
     size_t allocated_total = 0;
     /// This counter is relevant in case we want to filter some traces with small amount of bytes.
     /// It shows the total number of bytes for *filtered* traces with the same prefix.
-    /// This is the value whis is used in flamegraph.
+    /// This is the value which is used in flamegraph.
     size_t allocated_self = 0;
 };
 
