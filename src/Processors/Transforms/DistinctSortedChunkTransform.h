@@ -32,7 +32,7 @@ protected:
 
 private:
     void initChunkProcessing(const Columns & input_columns);
-    std::tuple<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumn::Filter & filter);
+    std::pair<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumn::Filter & filter);
     size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
     inline void setCurrentKey(size_t row_pos);
     inline bool isCurrentKey(size_t row_pos) const;

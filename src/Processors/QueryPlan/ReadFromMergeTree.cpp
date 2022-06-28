@@ -140,7 +140,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     { /// build sort description for output stream
         SortDescription sort_description;
         const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
-        Block const & header = output_stream->header;
+        const Block & header = output_stream->header;
         const int sort_direction = getSortDirection(query_info);
         for (const auto & column_name : sorting_key_columns)
         {
@@ -150,6 +150,7 @@ ReadFromMergeTree::ReadFromMergeTree(
             sort_description.emplace_back(column_name, sort_direction);
         }
         output_stream->sort_description = std::move(sort_description);
+        output_stream->sort_mode = DataStream::SortMode::Chunk;
     }
 }
 
