@@ -17,13 +17,13 @@ DistinctSortedTransform::DistinctSortedTransform(
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
 {
-    /// pre-calculate column positions to process during chunk transformation
-    const size_t num_columns = column_names.empty() ? header_.columns() : column_names.size();
+    /// pre-calculate column positions to use during chunk transformation
+    const size_t num_columns = column_names.empty() ? header.columns() : column_names.size();
     column_positions.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto pos = column_names.empty() ? i : header_.getPositionByName(column_names[i]);
-        const auto & col = header_.getByPosition(pos).column;
+        auto pos = column_names.empty() ? i : header.getPositionByName(column_names[i]);
+        const auto & col = header.getByPosition(pos).column;
         if (col && !isColumnConst(*col))
             column_positions.emplace_back(pos);
     }
