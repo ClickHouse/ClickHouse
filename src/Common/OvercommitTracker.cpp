@@ -137,7 +137,7 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
-    std::unique_lock<std::mutex> lk(overcommit_m);
+    std::lock_guard lk(overcommit_m);
     if (picked_tracker == tracker)
     {
         LOG_DEBUG_SAFE(getLogger(), "Picked query stopped");
