@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 select number as x, number % 3 as y, 'Hello' as z from numbers(5) format SQLInsert;
 select number as x, number % 3 as y, 'Hello' as z from numbers(5) format SQLInsert settings output_format_sql_insert_max_batch_size=1;
 select number as x, number % 3 as y, 'Hello' as z from numbers(5) format SQLInsert settings output_format_sql_insert_max_batch_size=2;
