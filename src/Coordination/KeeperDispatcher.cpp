@@ -51,9 +51,15 @@ void KeeperDispatcher::requestThread()
         server->getLeaderInfo()->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> &) mutable
         {
             if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+            {
                 addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+                return;
+            }
             else if (result.get_result_code() != nuraft::cmd_result_code::OK)
+            {
                 addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                return;
+            }
 
             auto & leader_info_ctx = result.get();
 
