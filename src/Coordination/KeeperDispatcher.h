@@ -35,6 +35,7 @@ private:
     std::unique_ptr<RequestsQueue> requests_queue;
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
+    ConcurrentBoundedQueue<KeeperStorage::RequestsForSessions> read_requests_queue;
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -64,6 +65,7 @@ private:
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
+    ThreadFromGlobalPool read_request_thread;
 
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
@@ -103,6 +105,8 @@ private:
     /// Thread apply or wait configuration changes from leader
     void updateConfigurationThread();
 
+    void readRequestThread();
+
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
     /// Add error responses for requests to responses queue.
@@ -111,7 +115,7 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
+    static void forceWaitAndProcessResult(RaftAppendResult & result);
 
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`
@@ -213,8 +217,6 @@ public:
     {
         keeper_stats.reset();
     }
-
-    ThreadPool bg_read_request{1};
 };
 
 }

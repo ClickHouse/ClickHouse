@@ -6,6 +6,7 @@
 #include <Poco/Path.h>
 #include <Common/hex.h>
 #include <filesystem>
+#include <limits>
 #include <Common/checkStackSize.h>
 
 namespace fs = std::filesystem;
@@ -23,6 +24,7 @@ namespace ErrorCodes
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
+    , read_requests_queue(std::numeric_limits<size_t>::max())
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
@@ -35,7 +37,6 @@ void KeeperDispatcher::requestThread()
 
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
-    KeeperStorage::RequestsForSessions prev_batch;
 
     const auto needs_quorum = [](const auto & coordination_settings, const auto & request)
     {
@@ -53,12 +54,6 @@ void KeeperDispatcher::requestThread()
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
 
-        /// The code below do a very simple thing: batch all write (quorum) requests into vector until
-        /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
-        /// the ability to process read requests without quorum (from local state). So when we are collecting
-        /// requests into a batch we must check that the new request is not read request. Otherwise we have to
-        /// process all already accumulated write requests, wait them synchronously and only after that process
-        /// read request. So reads are some kind of "separator" for writes.
         try
         {
             KeeperStorage::RequestsForSessions * current_batch{nullptr};
@@ -116,7 +111,7 @@ void KeeperDispatcher::requestThread()
                         else
                             read_requests.emplace_back(request);
                     }
-                    else if (!prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK)
+                    else if (is_current_read || !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK)
                         break;
 
                     if (shutdown_called)
@@ -127,16 +122,23 @@ void KeeperDispatcher::requestThread()
                     break;
 
                 /// Forcefully process all previous pending requests
-                if (prev_result)
-                    forceWaitAndProcessResult(prev_result, prev_batch);
+                if (!is_current_read && prev_result)
+                    forceWaitAndProcessResult(prev_result);
 
-                if (current_batch && !current_batch->empty())
+                if (current_batch)
                 {
                     LOG_INFO(&Poco::Logger::get("BATCHING"), "Processing {} batch of {}", is_current_read, current_batch->size());
                     if (!is_current_read)
                     {
                         prev_result = server->putRequestBatch(*current_batch);
-                        prev_batch = std::move(*current_batch);
+                        prev_result->when_ready([&, requests_for_sessions = std::move(*current_batch)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> &) mutable
+                        {
+                            if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+                                addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+                            else if (result.get_result_code() != nuraft::cmd_result_code::OK)
+                                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                        });
+
                         current_batch->clear();
 
                         if (!read_requests.empty())
@@ -149,9 +151,13 @@ void KeeperDispatcher::requestThread()
                     }
                     else
                     {
-                        prev_result = server->getLeaderInfo();
-                        server->getLeaderInfo()->when_ready([&, requests_for_sessions = *current_batch](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> &) mutable
+                        server->getLeaderInfo()->when_ready([&, requests_for_sessions = std::move(*current_batch)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> &) mutable
                         {
+                            if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+                                addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+                            else if (result.get_result_code() != nuraft::cmd_result_code::OK)
+                                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+
                             auto & leader_info_ctx = result.get();
 
                             KeeperServer::NodeInfo leader_info;
@@ -163,28 +169,14 @@ void KeeperDispatcher::requestThread()
 
                             if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
                             {
-                                auto & leader_waiter = leader_waiters[node_info];
+                                auto & leader_waiter = leader_waiters[leader_info];
                                 leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
                                 LOG_INFO(log, "waiting for {}, idx {}", leader_info.term, leader_info.last_committed_index);
                             }
-                            else
-                            {
-                                bg_read_request.scheduleOrThrow([&, requests = std::move(requests_for_sessions)]
-                                {
-                                    for (const auto & request_info : requests)
-                                    {
-                                        if (server->isLeaderAlive())
-                                            server->putLocalReadRequest(request_info);
-                                        else
-                                            addErrorResponses({request_info}, Coordination::Error::ZCONNECTIONLOSS);
-                                    }
-
-                                    finalizeRequests(requests);
-                                });
-                            }
+                            else if (!read_requests_queue.push(std::move(requests_for_sessions)))
+                                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
                         });
 
-                        prev_batch = std::move(*current_batch);
                         current_batch->clear();
 
                         if (!write_requests.empty())
@@ -254,6 +246,37 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
+void KeeperDispatcher::readRequestThread()
+{
+    setThreadName("KeeperReadT");
+    while (!shutdown_called)
+    {
+        KeeperStorage::RequestsForSessions requests;
+        if (!read_requests_queue.pop(requests))
+            break;
+
+        if (shutdown_called)
+            break;
+
+        try
+        {
+            for (const auto & request_info : requests)
+            {
+                if (server->isLeaderAlive())
+                    server->putLocalReadRequest(request_info);
+                else
+                    addErrorResponses({request_info}, Coordination::Error::ZCONNECTIONLOSS);
+            }
+
+            finalizeRequests(requests);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
 void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
@@ -301,6 +324,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
             return false;
     }
 
+    LOG_INFO(&Poco::Logger::get("BATCHING"), "Got request {}", request->getOpNum());
     KeeperStorage::RequestForSession request_info;
     request_info.request = request;
     using namespace std::chrono;
@@ -325,8 +349,10 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
                 unprocessed_requests.request_queue.push_back(std::move(request_info));
                 return true;
             }
-
-            ++unprocessed_requests.unprocessed_num;
+            else
+            {
+                ++unprocessed_requests.unprocessed_num;
+            }
         }
     }
 
@@ -358,6 +384,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
+    read_request_thread = ThreadFromGlobalPool([this] { readRequestThread(); });
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, [this](const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx) { onRequestCommit(request_for_session, log_term, log_idx); });
 
@@ -422,6 +449,10 @@ void KeeperDispatcher::shutdown()
             snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
+
+            read_requests_queue.finish();
+            if (read_request_thread.joinable())
+                read_request_thread.join();
 
             update_configuration_queue.finish();
             if (update_configuration_thread.joinable())
@@ -544,17 +575,13 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
     }
 }
 
-void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
+void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result)
 {
+    LOG_INFO(&Poco::Logger::get("TESTER"), "Waiting for result");
     if (!result->has_result())
         result->get();
 
-    if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
-    else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-
-    requests_for_sessions.clear();
+    LOG_INFO(&Poco::Logger::get("TESTER"), "Got result");
     result = nullptr;
 }
 
@@ -731,22 +758,6 @@ void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & 
 {
     finalizeRequests({request_for_session});
 
-    const auto process_requests = [this](auto & request_queue)
-    {
-        bg_read_request.scheduleOrThrow([&, requests = std::move(request_queue)]
-        {
-            for (const auto & request_info : requests)
-            {
-                if (server->isLeaderAlive())
-                    server->putLocalReadRequest(request_info);
-                else
-                    addErrorResponses({request_info}, Coordination::Error::ZCONNECTIONLOSS);
-
-            }
-            finalizeRequests(requests);
-        });
-    };
-
     KeeperStorage::RequestsForSessions requests;
     {
         std::lock_guard lock(leader_waiter_mutex);
@@ -757,7 +768,8 @@ void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & 
             leader_waiters.erase(request_queue_it);
         }
     }
-    process_requests(requests);
+    if (!read_requests_queue.push(std::move(requests)))
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
 }
 
 bool KeeperDispatcher::isServerActive() const
