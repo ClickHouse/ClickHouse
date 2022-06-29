@@ -37,3 +37,14 @@ SELECT mapUpdate(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapUpdate(map(1, 3, 3, 2), map(1, 0, 2, 0),  map(1, 0, 2, 0)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 DROP TABLE table_map;
+
+DROP TABLE IF EXISTS map_test;
+CREATE TABLE map_test(`tags` Map(String, String)) ENGINE = MergeTree PRIMARY KEY tags ORDER BY tags SETTINGS index_granularity = 8192;
+INSERT INTO map_test (tags) VALUES (map('fruit','apple','color','red'));
+INSERT INTO map_test (tags) VALUES (map('fruit','apple','color','red'));
+INSERT INTO map_test (tags) VALUES (map('fruit','apple','color','red'));
+INSERT INTO map_test (tags) VALUES (map('fruit','apple','color','red'));
+INSERT INTO map_test (tags) VALUES (map('fruit','apple','color','red'));
+SELECT mapUpdate(mapFilter((k, v) -> (k in ('fruit')), tags), map('season', 'autumn')) FROM map_test;
+SELECT mapUpdate(map('season','autumn'), mapFilter((k, v) -> (k in ('fruit')), tags)) FROM map_test;
+DROP TABLE map_test;
