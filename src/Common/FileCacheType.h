@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Types.h>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -7,9 +8,11 @@ namespace DB
 struct FileCacheKey
 {
     UInt128 key;
-    String toString() const;
+
+    String toString() const { return getHexUIntLowercase(key); }
 
     FileCacheKey() = default;
+
     explicit FileCacheKey(const UInt128 & key_) : key(key_) { }
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
