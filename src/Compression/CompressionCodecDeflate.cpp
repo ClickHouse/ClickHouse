@@ -57,14 +57,6 @@ HardwareCodecDeflate::~HardwareCodecDeflate()
         }
         jobDecompAsyncMap.clear();
     }
-    if (!jobCompAsyncList.empty())
-    {
-        for (auto id : jobCompAsyncList)
-        {
-            DeflateJobHWPool::instance().releaseJob(id);
-        }
-        jobCompAsyncList.clear();
-    }
 }
 uint32_t HardwareCodecDeflate::doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const
 {
@@ -94,54 +86,6 @@ uint32_t HardwareCodecDeflate::doCompressData(const char * source, uint32_t sour
         LOG_WARNING(log, "HardwareCodecDeflate::doCompressData fail ->status: '{}' ", static_cast<size_t>(status));
 
     DeflateJobHWPool::instance().releaseJob(job_id);
-    return compressed_size;
-}
-
-uint32_t HardwareCodecDeflate::doCompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t dest_size)
-{
-    uint32_t job_id = 0;
-    qpl_job * job_ptr = DeflateJobHWPool::instance().acquireJob(&job_id);
-    if (job_ptr == nullptr)
-    {
-        LOG_WARNING(log, "HardwareCodecDeflate::doCompressDataReq acquireJob fail!");
-        return 0;
-    }
-    qpl_status status;
-
-    job_ptr->op = qpl_op_compress;
-    job_ptr->next_in_ptr = reinterpret_cast<uint8_t *>(const_cast<char *>(source));
-    job_ptr->next_out_ptr = reinterpret_cast<uint8_t *>(dest);
-    job_ptr->available_in = source_size;
-    job_ptr->level = qpl_default_level;
-    job_ptr->available_out = dest_size;
-    job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_DYNAMIC_HUFFMAN | QPL_FLAG_LAST | QPL_FLAG_OMIT_VERIFY;
-    status = qpl_submit_job(job_ptr);
-    if (QPL_STS_OK == status)
-    {
-        jobCompAsyncList.push_back(job_id);
-        return job_id;
-    }
-    else
-    {
-        LOG_WARNING(log, "HardwareCodecDeflate::doCompressDataReq fail ->status: '{}' ", static_cast<size_t>(status));
-        DeflateJobHWPool::instance().releaseJob(job_id);
-        return 0;
-    }
-}
-
-uint32_t HardwareCodecDeflate::doCompressDataFlush(uint32_t req_id)
-{
-    uint32_t compressed_size = 0;
-    qpl_job * job_ptr = DeflateJobHWPool::instance().getJobPtr(req_id);
-    if (nullptr != job_ptr)
-    {
-        while (QPL_STS_BEING_PROCESSED == qpl_check_job(job_ptr))
-        {
-            _tpause(1, __rdtsc() + 1000);
-        }
-        compressed_size = job_ptr->total_out;
-        DeflateJobHWPool::instance().releaseJob(req_id);
-    }
     return compressed_size;
 }
 
@@ -375,27 +319,6 @@ uint32_t CompressionCodecDeflate::doCompressData(const char * source, uint32_t s
     if (0 == res)
         res = swCodec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
     return res;
-}
-
-uint32_t CompressionCodecDeflate::doCompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t & req_id)
-{
-    if (hwCodec->hwEnabled)
-        req_id = hwCodec->doCompressDataReq(source, source_size, dest, getMaxCompressedDataSize(source_size));
-    else
-        req_id = 0;
-
-    if (0 == req_id)
-        return swCodec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
-    else
-        return 0;
-}
-
-uint32_t CompressionCodecDeflate::doCompressDataFlush(uint32_t req_id)
-{
-    if (hwCodec->hwEnabled)
-        return hwCodec->doCompressDataFlush(req_id);
-    else
-        return 0;
 }
 
 void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const

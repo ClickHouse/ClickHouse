@@ -114,7 +114,6 @@ if (BUILD_STANDALONE_KEEPER)
             ch_contrib::nuraft
             ch_contrib::lz4
             ch_contrib::zstd
-            ch_contrib::qpl
             ch_contrib::cityhash
             common ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
