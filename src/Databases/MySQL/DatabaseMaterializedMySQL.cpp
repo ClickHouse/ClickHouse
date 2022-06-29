@@ -39,7 +39,7 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
 
 void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (!settings->allows_query_when_mysql_lost && exception)
     {
@@ -59,7 +59,7 @@ void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 
 void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exception_)
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     exception = exception_;
 }
 

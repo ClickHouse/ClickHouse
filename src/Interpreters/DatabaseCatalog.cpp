@@ -698,7 +698,7 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
 {
     DDLGuards::iterator db_guard_iter;
     {
-        std::unique_lock lock(ddl_guards_mutex);
+        std::lock_guard lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
         assert(db_guard_iter->second.first.contains(""));
     }
