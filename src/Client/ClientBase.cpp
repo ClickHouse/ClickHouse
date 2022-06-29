@@ -338,12 +338,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     else
     {
         res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-<<<<<<< HEAD
-=======
 
         if (!res && sql_dialect != "kusto")
             res = parseQueryAndMovePosition(kql_parser, begin, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
->>>>>>> Kusto-phase2
     }
 
     if (is_interactive)
