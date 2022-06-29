@@ -1,5 +1,6 @@
 #pragma once
 
+#include <list>
 #include <Common/IFileCachePriority.h>
 
 namespace DB
@@ -10,9 +11,9 @@ namespace DB
 class LRUFileCachePriority : public IFileCachePriority
 {
 private:
+    class LRUFileCacheIterator;
     using LRUQueue = std::list<FileCacheRecord>;
     using LRUQueueIterator = typename LRUQueue::iterator;
-    class LRUFileCacheIterator;
 
 public:
     LRUFileCachePriority() = default;
