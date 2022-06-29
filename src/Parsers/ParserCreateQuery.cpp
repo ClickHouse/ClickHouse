@@ -19,7 +19,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
-
+#include <Parsers/Kusto/ParserKQLStatement.h>
 
 namespace DB
 {
@@ -609,17 +609,25 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 /// ENGINE can not be specified for table functions.
                 if (storage || !table_function_p.parse(pos, as_table_function, expected))
                 {
-                    /// AS [db.]table
-                    if (!name_p.parse(pos, as_table, expected))
-                        return false;
-
-                    if (s_dot.ignore(pos, expected))
+                    ParserKeyword s_kql("KQL");
+                    if (s_kql.ignore(pos, expected))
                     {
-                        as_database = as_table;
-                        if (!name_p.parse(pos, as_table, expected))
+                        if (!ParserKQLTaleFunction().parse(pos, select, expected))
                             return false;
                     }
+                    else
+                    {
+                        /// AS [db.]table
+                        if (!name_p.parse(pos, as_table, expected))
+                            return false;
 
+                        if (s_dot.ignore(pos, expected))
+                        {
+                            as_database = as_table;
+                            if (!name_p.parse(pos, as_table, expected))
+                                return false;
+                        }
+                    }
                     /// Optional - ENGINE can be specified.
                     if (!storage)
                         storage_p.parse(pos, storage, expected);

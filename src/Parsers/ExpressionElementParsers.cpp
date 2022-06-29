@@ -40,7 +40,7 @@
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
-
+#include <Parsers/Kusto/ParserKQLStatement.h>
 
 namespace DB
 {
@@ -140,18 +140,26 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr select_node;
     ParserSelectWithUnionQuery select;
+    ParserKeyword s_kql("KQL");
 
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ++pos;
+    if (s_kql.ignore(pos, expected))
+    {
+        if (!ParserKQLTaleFunction().parse(pos, select_node, expected))
+            return false;
+    }
+    else 
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
 
-    if (!select.parse(pos, select_node, expected))
-        return false;
+        if (!select.parse(pos, select_node, expected))
+            return false;
 
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+    }
     node = std::make_shared<ASTSubquery>();
     node->children.push_back(select_node);
     return true;
