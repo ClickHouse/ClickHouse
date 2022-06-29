@@ -27,7 +27,7 @@ DistinctSortedChunkTransform::DistinctSortedChunkTransform(
         sorted_columns_pos.emplace_back(pos);
     }
 
-    /// calculate not-sorted columns positions
+    /// calculate non-sorted columns positions
     other_columns_pos.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {

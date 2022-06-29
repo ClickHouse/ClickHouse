@@ -8,12 +8,21 @@
 
 namespace DB
 {
-
 ///
 /// DISTINCT optimization for sorted chunks
-/// It also checks if current chunks is continuation of previous one,
+///
+/// (1) distinct columns are split into two groups - sorted i.e. belong to sorting prefix,
+/// and non-sorted (other columns w/o sorting guarantees).
+///
+/// (2) Rows are split into ranges. Range is a set of rows where the sorting prefix value is the same.
+/// If there are no non-sorted columns, then we just skip all rows in range except one.
+/// If there are non-sorted columns, then for each range, we use a hash table to find unique rows in a range.
+///
+/// (3) The implementation also checks if current chunks is continuation of previous one,
 /// i.e. sorting prefix value of last row in previous chunk is the same as of first row in current one,
-/// so it can correctly process sorted stream as well
+/// so it can correctly process sorted stream as well.
+/// For this, we don't clear sorting prefix value and hash table after a range is processed,
+/// only right before a new range processing
 ///
 class DistinctSortedChunkTransform : public ISimpleTransform
 {
