@@ -28,6 +28,11 @@ using namespace std::literals;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
 const char * ParserMultiplicativeExpression::operators[] =
 {
     "*",     "multiply",
@@ -653,12 +658,28 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     return f_combined_expression;
 }
 
-namespace ErrorCodes
+enum Action
 {
-    extern const int SYNTAX_ERROR;
-}
+    OPERAND,
+    OPERATOR
+};
 
-////////////////////////////////////////////////////////////////////////////////////////
+enum OperatorType
+{
+    None,
+    Comparison,
+    Mergeable,
+    ArrayElement,
+    TupleElement,
+    IsNull,
+    StartBetween,
+    StartNotBetween,
+    FinishBetween,
+    StartIf,
+    FinishIf,
+    Cast
+};
+
 // class Operator:
 //   - defines structure of certain operator
 class Operator
@@ -666,23 +687,17 @@ class Operator
 public:
     Operator() = default;
 
-    Operator(String func_name_,
+    Operator(String function_name_,
              Int32 priority_,
              Int32 arity_ = 2,
-             bool any_all_ = false) : func_name(func_name_), priority(priority_), arity(arity_), any_all(any_all_)
+             OperatorType type_ = OperatorType::None) : function_name(function_name_), priority(priority_), arity(arity_), type(type_)
     {
     }
 
-    String func_name;
+    String function_name;
     Int32 priority;
     Int32 arity;
-    bool any_all;
-};
-
-enum Action
-{
-    OPERAND,
-    OPERATOR
+    OperatorType type;
 };
 
 class Layer
@@ -705,7 +720,7 @@ public:
     {
         if (count)
         {
-            if (op.func_name != "and" && op.func_name != "or" && op.func_name != "concat")
+            if (op.type != OperatorType::Mergeable)
             {
                 ++depth_diff;
                 ++depth_total;
@@ -770,6 +785,14 @@ public:
         return operators.back().priority;
     }
 
+    OperatorType previousType() const
+    {
+        if (operators.empty())
+            return OperatorType::None;
+
+        return operators.back().type;
+    }
+
     int empty() const
     {
         return operators.empty() && operands.empty();
@@ -795,27 +818,30 @@ public:
             ASTPtr func;
 
             // Special case of ternary operator
-            if (cur_op.func_name == "if_1")
+            if (cur_op.type == OperatorType::StartIf)
                 return false;
 
-            if (cur_op.func_name == "if")
+            if (cur_op.type == OperatorType::FinishIf)
             {
                 Operator tmp;
-                if (!popOperator(tmp) || tmp.func_name != "if_1")
+                if (!popOperator(tmp) || tmp.type != OperatorType::StartIf)
                     return false;
             }
 
             // Special case of a BETWEEN b AND c operator
-            if (cur_op.func_name == "between_1" || cur_op.func_name == "not_between_1")
+            if (cur_op.type == OperatorType::StartBetween || cur_op.type == OperatorType::StartNotBetween)
                 return false;
 
-            if (cur_op.func_name == "between_2")
+            if (cur_op.type == OperatorType::FinishBetween)
             {
-                Operator tmp;
-                if (!popOperator(tmp) || !(tmp.func_name == "between_1" || tmp.func_name == "not_between_1"))
+                Operator tmp_op;
+                if (!popOperator(tmp_op))
                     return false;
 
-                bool negative = tmp.func_name == "not_between_1";
+                if (tmp_op.type != OperatorType::StartBetween && tmp_op.type != OperatorType::StartNotBetween)
+                    return false;
+
+                bool negative = tmp_op.type == OperatorType::StartNotBetween;
 
                 ASTs arguments;
                 if (!lastNOperands(arguments, 3))
@@ -825,7 +851,7 @@ public:
             }
             else
             {
-                func = makeASTFunction(cur_op.func_name);
+                func = makeASTFunction(cur_op.function_name);
 
                 if (!lastNOperands(func->children[0]->children, cur_op.arity))
                     return false;
@@ -956,7 +982,7 @@ protected:
 class FunctionLayer : public Layer
 {
 public:
-    explicit FunctionLayer(String func_name_) : func_name(func_name_)
+    explicit FunctionLayer(String function_name_) : function_name(function_name_)
     {
     }
 
@@ -1022,7 +1048,7 @@ public:
                  * If you do not report that the first option is an error, then the argument will be interpreted as 2014 - 01 - 01 - some number,
                  *  and the query silently returns an unexpected result.
                  */
-                if (func_name == "toDate"
+                if (function_name == "toDate"
                     && contents_end - contents_begin == strlen("2014-01-01")
                     && contents_begin[0] >= '2' && contents_begin[0] <= '3'
                     && contents_begin[1] >= '0' && contents_begin[1] <= '9'
@@ -1089,9 +1115,9 @@ public:
         if (state == 2)
         {
             if (has_distinct)
-                func_name += "Distinct";
+                function_name += "Distinct";
 
-            auto function_node = makeASTFunction(func_name, std::move(result));
+            auto function_node = makeASTFunction(function_name, std::move(result));
 
             if (parameters)
             {
@@ -1142,7 +1168,7 @@ private:
     const char * contents_begin;
     const char * contents_end;
 
-    String func_name;
+    String function_name;
     ASTPtr parameters;
 };
 
@@ -1496,7 +1522,7 @@ public:
     {
         ASTPtr node;
 
-        // Recursion :'(
+        // Recursion
         if (!ParserSelectWithUnionQuery().parse(pos, node, expected))
             return false;
 
@@ -1522,7 +1548,7 @@ public:
 
     bool getResult(ASTPtr & op) override
     {
-        op = makeASTFunction(func_name, std::move(result));
+        op = makeASTFunction(function_name, std::move(result));
         return true;
     }
 
@@ -1604,7 +1630,7 @@ public:
                             to_remove,
                             std::make_shared<ASTLiteral>("]+$")
                         };
-                        func_name = "replaceRegexpAll";
+                        function_name = "replaceRegexpAll";
                     }
                     else
                     {
@@ -1625,7 +1651,7 @@ public:
                                 std::make_shared<ASTLiteral>("]+$")
                             };
                         }
-                        func_name = "replaceRegexpOne";
+                        function_name = "replaceRegexpOne";
                     }
 
                     pattern_func_node->name = "concat";
@@ -1638,18 +1664,18 @@ public:
                 {
                     if (trim_left && trim_right)
                     {
-                        func_name = "trimBoth";
+                        function_name = "trimBoth";
                     }
                     else
                     {
                         if (trim_left)
                         {
-                            func_name = "trimLeft";
+                            function_name = "trimLeft";
                         }
                         else
                         {
                             /// trim_right == false not possible
-                            func_name = "trimRight";
+                            function_name = "trimRight";
                         }
                     }
                 }
@@ -1672,7 +1698,7 @@ private:
     bool char_override = false;
 
     ASTPtr to_remove;
-    String func_name;
+    String function_name;
 };
 
 
@@ -2019,47 +2045,50 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     static std::vector<std::pair<const char *, Operator>> op_table({
-        {"+",             Operator("plus",      20)},            // Base arithmetic
-        {"-",             Operator("minus",     20)},
-        {"*",             Operator("multiply",  30)},
-        {"/",             Operator("divide",    30)},
-        {"%",             Operator("modulo",    30)},
-        {"MOD",           Operator("modulo",    30)},
-        {"DIV",           Operator("intDiv",    30)},
-        {"==",            Operator("equals",    10, 2, true)},          // Base logic
-        {"!=",            Operator("notEquals", 10, 2, true)},
-        {"<>",            Operator("notEquals", 10, 2, true)},
-        {"<=",            Operator("lessOrEquals", 10, 2, true)},
-        {">=",            Operator("greaterOrEquals", 10, 2, true)},
-        {"<",             Operator("less",      10, 2, true)},
-        {">",             Operator("greater",   10, 2, true)},
-        {"=",             Operator("equals",    10, 2, true)},
-        {"AND",           Operator("and",       5)},              // AND OR
-        {"OR",            Operator("or",        4)},
-        {"||",            Operator("concat",    11)},          // concat() func
-        {".",             Operator("tupleElement", 40)},    // tupleElement() func
-        {"IS NULL",       Operator("isNull",    9, 1)},           // IS (NOT) NULL
-        {"IS NOT NULL",   Operator("isNotNull", 9, 1)},
-        {"LIKE",          Operator("like",      10)},            // LIKE funcs
-        {"ILIKE",         Operator("ilike",     10)},
-        {"NOT LIKE",      Operator("notLike",   10)},
-        {"NOT ILIKE",     Operator("notILike",  10)},
-        {"IN",            Operator("in",        10)},              // IN funcs
-        {"NOT IN",        Operator("notIn",     10)},
-        {"GLOBAL IN",     Operator("globalIn",  10)},
-        {"GLOBAL NOT IN", Operator("globalNotIn", 10)},
-        {"?",             Operator("if_1",      3, 0)},
-        {":",             Operator("if",        4, 3)},
-        {"BETWEEN",       Operator("between_1", 7, 0)},
-        {"NOT BETWEEN",   Operator("not_between_1", 7, 0)},
-        {"[",             Operator("arrayElement", 40)},     // Layer is added in the process
-        {"::",            Operator("CAST",      40)}
+        {"+",             Operator("plus",            20)},
+        {"-",             Operator("minus",           20)},
+        {"*",             Operator("multiply",        30)},
+        {"/",             Operator("divide",          30)},
+        {"%",             Operator("modulo",          30)},
+        {"MOD",           Operator("modulo",          30)},
+        {"DIV",           Operator("intDiv",          30)},
+        {"==",            Operator("equals",          10, 2, OperatorType::Comparison)},
+        {"!=",            Operator("notEquals",       10, 2, OperatorType::Comparison)},
+        {"<>",            Operator("notEquals",       10, 2, OperatorType::Comparison)},
+        {"<=",            Operator("lessOrEquals",    10, 2, OperatorType::Comparison)},
+        {">=",            Operator("greaterOrEquals", 10, 2, OperatorType::Comparison)},
+        {"<",             Operator("less",            10, 2, OperatorType::Comparison)},
+        {">",             Operator("greater",         10, 2, OperatorType::Comparison)},
+        {"=",             Operator("equals",          10, 2, OperatorType::Comparison)},
+        {"AND",           Operator("and",             5,  2, OperatorType::Mergeable)},
+        {"OR",            Operator("or",              4,  2, OperatorType::Mergeable)},
+        {"||",            Operator("concat",          11, 2, OperatorType::Mergeable)},
+        {".",             Operator("tupleElement",    40, 2, OperatorType::TupleElement)},
+        {"IS NULL",       Operator("isNull",          9,  1, OperatorType::IsNull)},
+        {"IS NOT NULL",   Operator("isNotNull",       9,  1, OperatorType::IsNull)},
+        {"LIKE",          Operator("like",            10)},
+        {"ILIKE",         Operator("ilike",           10)},
+        {"NOT LIKE",      Operator("notLike",         10)},
+        {"NOT ILIKE",     Operator("notILike",        10)},
+        {"IN",            Operator("in",              10)},
+        {"NOT IN",        Operator("notIn",           10)},
+        {"GLOBAL IN",     Operator("globalIn",        10)},
+        {"GLOBAL NOT IN", Operator("globalNotIn",     10)},
+        {"?",             Operator("",                3, 0,  OperatorType::StartIf)},
+        {":",             Operator("if",              4, 3,  OperatorType::FinishIf)},
+        {"BETWEEN",       Operator("",                7, 0,  OperatorType::StartBetween)},
+        {"NOT BETWEEN",   Operator("",                7, 0,  OperatorType::StartNotBetween)},
+        {"[",             Operator("arrayElement",    40, 2, OperatorType::ArrayElement)},
+        {"::",            Operator("CAST",            40, 2, OperatorType::Cast)}
     });
 
     static std::vector<std::pair<const char *, Operator>> op_table_unary({
         {"-",             Operator("negate",    39, 1)},
         {"NOT",           Operator("not",       6, 1)}
     });
+
+    auto finish_between_operator = Operator("", 8, 0, OperatorType::FinishBetween);
+    auto lambda_operator = Operator("lambda", 2, 2);
 
     ParserCompoundIdentifier identifier_parser(false, true);
     ParserNumber number_parser;
@@ -2070,12 +2099,13 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSubstitution substitution_parser;
     ParserMySQLGlobalVariable mysql_global_variable_parser;
 
-    ParserKeyword filter("FILTER");
-    ParserKeyword over("OVER");
+    ParserKeyword any_parser("ANY");
+    ParserKeyword all_parser("ALL");
 
     // Recursion
     ParserQualifiedAsterisk qualified_asterisk_parser;
     ParserColumnsMatcher columns_matcher_parser;
+    ParserSubquery subquery_parser;
 
     Action next = Action::OPERAND;
 
@@ -2108,34 +2138,26 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ASTPtr tmp;
 
             /// Special case for cast expression
-            Operator prev_op;
-            bool parse_cast = true;
-            bool any_all = true;
-            if (storage.back()->popOperator(prev_op))
-            {
-                storage.back()->pushOperator(prev_op, false);
-                if (prev_op.func_name == "tupleElement")
-                    parse_cast = false;
-                any_all = prev_op.any_all;
-            }
-            if (parse_cast && ParseCastExpression(pos, tmp, expected))
+            if (storage.back()->previousType() != OperatorType::TupleElement &&
+                ParseCastExpression(pos, tmp, expected))
             {
                 storage.back()->pushOperand(std::move(tmp));
                 continue;
             }
 
-            if (any_all)
+            if (storage.back()->previousType() == OperatorType::Comparison)
             {
                 auto old_pos = pos;
                 SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
-                if (ParserKeyword("ANY").ignore(pos, expected) && ParserSubquery().parse(pos, tmp, expected))
+                if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
                     subquery_function_type = SubqueryFunctionType::ANY;
-                else if (ParserKeyword("ALL").ignore(pos, expected) && ParserSubquery().parse(pos, tmp, expected))
+                else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
                     subquery_function_type = SubqueryFunctionType::ALL;
 
                 if (subquery_function_type != SubqueryFunctionType::NONE)
                 {
+                    Operator prev_op;
                     ASTPtr function, argument;
 
                     if (!storage.back()->popOperator(prev_op))
@@ -2143,7 +2165,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!storage.back()->popOperand(argument))
                         return false;
 
-                    function = makeASTFunction(prev_op.func_name, argument, tmp);
+                    function = makeASTFunction(prev_op.function_name, argument, tmp);
 
                     if (!modifyAST(function, subquery_function_type))
                         return false;
@@ -2177,7 +2199,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else if (parseOperator(pos, "CASE", expected))
             {
-                next = Action::OPERAND; // ???
+                next = Action::OPERAND;
                 storage.push_back(std::make_unique<CaseLayer>());
             }
             else if (ParseDateOperatorExpression(pos, tmp, expected) ||
@@ -2244,7 +2266,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else if (pos->type == TokenType::OpeningRoundBracket)
             {
-                if (ParserSubquery().parse(pos, tmp, expected))
+                if (subquery_parser.parse(pos, tmp, expected))
                 {
                     storage.back()->pushOperand(std::move(tmp));
                     continue;
@@ -2291,10 +2313,10 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 auto op = cur_op->second;
 
                 // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
-                if (op.func_name == "and" && storage.back()->hasBetween())
+                if (op.function_name == "and" && storage.back()->hasBetween())
                 {
                     storage.back()->subBetween();
-                    op = Operator("between_2", 8, 0);
+                    op = finish_between_operator;
                 }
 
                 while (storage.back()->previousPriority() >= op.priority)
@@ -2303,21 +2325,22 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     Operator prev_op;
                     storage.back()->popOperator(prev_op);
 
-                    if ((op.func_name == "and" && prev_op.func_name == "and") ||
-                        (op.func_name == "or" && prev_op.func_name == "or") ||
-                        (op.func_name == "concat" && prev_op.func_name == "concat"))
+                    if (op.type == OperatorType::Mergeable && op.function_name == prev_op.function_name)
                     {
                         op.arity += prev_op.arity - 1;
                         break;
                     }
 
-                    if (prev_op.func_name == "between_2")
+                    if (op.type == OperatorType::FinishBetween)
                     {
-                        Operator prev_prev_op;
-                        if (!storage.back()->popOperator(prev_prev_op) || !(prev_prev_op.func_name == "between_1" || prev_prev_op.func_name == "not_between_1"))
+                        Operator tmp_op;
+                        if (!storage.back()->popOperator(tmp_op))
                             return false;
 
-                        bool negative = prev_prev_op.func_name == "not_between_1";
+                        if (tmp_op.type != OperatorType::StartBetween && tmp_op.type != OperatorType::StartNotBetween)
+                            return false;
+
+                        bool negative = tmp_op.type == OperatorType::StartNotBetween;
 
                         ASTs arguments;
                         if (!storage.back()->lastNOperands(arguments, 3))
@@ -2327,7 +2350,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     }
                     else
                     {
-                        func = makeASTFunction(prev_op.func_name);
+                        func = makeASTFunction(prev_op.function_name);
 
                         if (!storage.back()->lastNOperands(func->children[0]->children, prev_op.arity))
                             return false;
@@ -2337,17 +2360,17 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
                 storage.back()->pushOperator(op);
 
-                if (op.func_name == "arrayElement")
+                if (op.type == OperatorType::ArrayElement)
                     storage.push_back(std::make_unique<ArrayElementLayer>());
 
                 // isNull & isNotNull is postfix unary operator
-                if (op.func_name == "isNull" || op.func_name == "isNotNull")
+                if (op.type == OperatorType::IsNull)
                     next = Action::OPERATOR;
 
-                if (op.func_name == "between_1" || op.func_name == "not_between_1")
+                if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
                     storage.back()->addBetween();
 
-                if (op.func_name == "CAST")
+                if (op.type == OperatorType::Cast)
                 {
                     next = Action::OPERATOR;
 
@@ -2363,7 +2386,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (!storage.back()->parseLambda())
                     return false;
 
-                storage.back()->pushOperator(Operator("lambda", 2, 2));
+                storage.back()->pushOperator(lambda_operator);
             }
             else if (storage.size() > 1 && ParserAlias(true).parse(pos, tmp, expected))
             {
@@ -2396,8 +2419,6 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
