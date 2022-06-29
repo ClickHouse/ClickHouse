@@ -7,8 +7,8 @@
 #include <Core/Defines.h>
 #include <base/range.h>
 #include <Poco/Unicode.h>
-#include <stdint.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
 
 #ifdef __SSE2__
     #include <emmintrin.h>

@@ -135,14 +135,14 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 
             /// Notify thread about finished updating the bunch of ids
             /// where their own ids were included.
-            std::unique_lock<std::mutex> lock(update_mutex);
+            std::lock_guard lock(update_mutex);
 
             unit_to_update->is_done = true;
             is_update_finished.notify_all();
         }
         catch (...)
         {
-            std::unique_lock<std::mutex> lock(update_mutex);
+            std::lock_guard lock(update_mutex);
 
             unit_to_update->current_exception = std::current_exception(); // NOLINT(bugprone-throw-keyword-missing)
             is_update_finished.notify_all();

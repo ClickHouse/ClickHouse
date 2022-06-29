@@ -22,7 +22,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     Key key{
         max_connections, host, port, default_database, user, password, cluster, cluster_secret, client_name, compression, secure, priority};
 
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});
     if (!inserted)
         if (auto res = it->second.lock())
