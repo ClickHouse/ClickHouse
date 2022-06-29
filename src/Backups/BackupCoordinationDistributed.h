@@ -29,6 +29,12 @@ public:
     void addReplicatedDataPath(const String & table_shared_id, const String & data_path) override;
     Strings getReplicatedDataPaths(const String & table_shared_id) const override;
 
+    void addReplicatedAccessPath(const String & access_zk_path, const String & file_path) override;
+    Strings getReplicatedAccessPaths(const String & access_zk_path) const override;
+
+    void setReplicatedAccessHost(const String & access_zk_path, const String & host_id) override;
+    String getReplicatedAccessHost(const String & access_zk_path) const override;
+
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
 

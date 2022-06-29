@@ -9,6 +9,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
+#include <Access/Common/AccessEntityType.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/sleep.h>
@@ -706,6 +707,11 @@ void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntr
     backup_entries.emplace_back(file_name, backup_entry);
 }
 
+void BackupEntriesCollector::addBackupEntry(const std::pair<String, BackupEntryPtr> & backup_entry)
+{
+    addBackupEntry(backup_entry.first, backup_entry.second);
+}
+
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
     if (current_status == kWritingBackupStatus)
@@ -737,6 +743,12 @@ void BackupEntriesCollector::runPostTasks()
         post_tasks.pop();
         std::move(task)();
     }
+}
+
+size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
+{
+    access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
+    return access_counters[static_cast<size_t>(type)]++;
 }
 
 }

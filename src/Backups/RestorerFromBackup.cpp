@@ -383,9 +383,9 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
 
     if (!restore_settings.structure_only && isSystemAccessTableName(table_name))
     {
-        if (!access_restore_task)
-            access_restore_task = std::make_shared<AccessRestoreTask>(backup, restore_settings, restore_coordination);
-        access_restore_task->addDataPath(data_path_in_backup, table_name);
+        if (!access_restorer)
+            access_restorer = std::make_unique<AccessRestorerFromBackup>(backup, restore_settings);
+        access_restorer->addDataPath(data_path_in_backup, table_name);
     }
 }
 
@@ -555,8 +555,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
         required_access.emplace_back(flags, table_name.database, table_name.table);
     }
 
-    if (access_restore_task)
-        insertAtEnd(required_access, access_restore_task->getRequiredAccess());
+    if (access_restorer)
+        insertAtEnd(required_access, access_restorer->getRequiredAccess());
 
     /// We convert to AccessRights and back to check access rights in a predictable way
     /// (some elements could be duplicated or not sorted).
@@ -770,15 +770,9 @@ void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
     insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }
 
-void RestorerFromBackup::checkPathInBackupIsRegisteredToRestoreAccess(const String & path)
-{
-    if (!access_restore_task || !access_restore_task->hasDataPath(path))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path to restore access was not added");
-}
-
 RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
 {
-    if (data_restore_tasks.empty() && !access_restore_task)
+    if (data_restore_tasks.empty())
         return {};
 
     LOG_TRACE(log, "Will insert data to tables");
@@ -798,10 +792,18 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
     for (const auto & task : data_restore_tasks)
         res_tasks.push_back([task, storages, table_locks] { task(); });
 
-    if (access_restore_task)
-        res_tasks.push_back([task = access_restore_task, access_control = &context->getAccessControl()] { task->restore(*access_control); });
-
     return res_tasks;
+}
+
+std::vector<std::pair<UUID, AccessEntityPtr>> RestorerFromBackup::getAccessEntitiesToRestore()
+{
+    if (!access_restorer || access_restored)
+        return {};
+
+    /// getAccessEntitiesToRestore() will return entities only when called first time (we don't want to restore the same entities again).
+    access_restored = true;
+
+    return access_restorer->getAccessEntities(context->getAccessControl());
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)

@@ -56,6 +56,37 @@ Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_sha
 }
 
 
+void BackupCoordinationLocal::addReplicatedAccessPath(const String & access_zk_path, const String & file_path)
+{
+    std::lock_guard lock{mutex};
+    replicated_access_paths[access_zk_path].push_back(file_path);
+}
+
+Strings BackupCoordinationLocal::getReplicatedAccessPaths(const String & access_zk_path) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_access_paths.find(access_zk_path);
+    if (it == replicated_access_paths.end())
+        return {};
+    return it->second;
+}
+
+void BackupCoordinationLocal::setReplicatedAccessHost(const String & access_zk_path, const String & host_id)
+{
+    std::lock_guard lock{mutex};
+    replicated_access_hosts[access_zk_path] = host_id;   
+}
+
+String BackupCoordinationLocal::getReplicatedAccessHost(const String & access_zk_path) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_access_hosts.find(access_zk_path);
+    if (it == replicated_access_hosts.end())
+        return {};
+    return it->second;
+}
+
+
 void BackupCoordinationLocal::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
     std::lock_guard lock{mutex};

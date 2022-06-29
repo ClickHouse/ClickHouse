@@ -145,6 +145,8 @@ void BackupCoordinationDistributed::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path, "");
     zookeeper->createIfNotExists(zookeeper_path + "/repl_part_names", "");
     zookeeper->createIfNotExists(zookeeper_path + "/repl_data_paths", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_access_host", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_access_paths", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_names", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_infos", "");
     zookeeper->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
@@ -242,6 +244,47 @@ void BackupCoordinationDistributed::prepareReplicatedPartNames() const
             replicated_part_names->addPartNames(table_zk_path, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums);
         }
     }
+}
+
+
+void BackupCoordinationDistributed::addReplicatedAccessPath(const String & access_zk_path, const String & file_path)
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_paths/" + escapeForFileName(access_zk_path);
+    zookeeper->createIfNotExists(path, "");
+    path += "/" + escapeForFileName(file_path);
+    zookeeper->createIfNotExists(path, "");
+}
+
+Strings BackupCoordinationDistributed::getReplicatedAccessPaths(const String & access_zk_path) const
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_paths/" + escapeForFileName(access_zk_path);
+    Strings children = zookeeper->getChildren(path);
+    Strings file_paths;
+    file_paths.reserve(children.size());
+    for (const String & child : children)
+        file_paths.push_back(unescapeForFileName(child));
+    return file_paths;
+}
+
+void BackupCoordinationDistributed::setReplicatedAccessHost(const String & access_zk_path, const String & host_id)
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_host/" + escapeForFileName(access_zk_path);
+    auto code = zookeeper->tryCreate(path, host_id, zkutil::CreateMode::Persistent);
+    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+        throw zkutil::KeeperException(code, path);
+
+    if (code == Coordination::Error::ZNODEEXISTS)
+        zookeeper->set(path, host_id);
+}
+
+String BackupCoordinationDistributed::getReplicatedAccessHost(const String & access_zk_path) const
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_host/" + escapeForFileName(access_zk_path);
+    return zookeeper->get(path);
 }
 
 

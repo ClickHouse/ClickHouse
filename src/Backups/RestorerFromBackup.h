@@ -15,7 +15,9 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IRestoreCoordination;
 struct StorageID;
-class AccessRestoreTask;
+class AccessRestorerFromBackup;
+struct IAccessEntity;
+using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 
 /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
 class RestorerFromBackup : private boost::noncopyable
@@ -56,8 +58,8 @@ public:
     void addDataRestoreTask(DataRestoreTask && new_task);
     void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
-    /// Checks that a specified path is already registered to be used for restoring access control.
-    void checkPathInBackupIsRegisteredToRestoreAccess(const String & path);
+    /// Returns the list of access entities to restore.
+    std::vector<std::pair<UUID, AccessEntityPtr>> getAccessEntitiesToRestore();
 
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
@@ -116,7 +118,8 @@ private:
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::map<QualifiedTableName, TableInfo> table_infos;
     std::vector<DataRestoreTask> data_restore_tasks;
-    std::shared_ptr<AccessRestoreTask> access_restore_task;
+    std::unique_ptr<AccessRestorerFromBackup> access_restorer;
+    bool access_restored = false;
 };
 
 }
