@@ -67,6 +67,7 @@ NamesAndTypesList QueryThreadLogElement::getNamesAndTypes()
         {"http_method", std::make_shared<DataTypeUInt8>()},
         {"http_user_agent", std::make_shared<DataTypeString>()},
         {"http_referer", std::make_shared<DataTypeString>()},
+        {"http_host", std::make_shared<DataTypeString>()},
         {"forwarded_for", std::make_shared<DataTypeString>()},
         {"quota_key", std::make_shared<DataTypeString>()},
         {"distributed_depth", std::make_shared<DataTypeUInt64>()},
