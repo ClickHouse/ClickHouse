@@ -4242,6 +4242,7 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
         auto replaced_path = fs::path(replaced_part_path);
         auto builder = part->data_part_storage->getBuilder();
         builder->rename(replaced_path.parent_path(), replaced_path.filename(), nullptr, true, false);
+        part->data_part_storage->onRename(replaced_path.parent_path(), replaced_path.filename());
         builder->commit();
     }
     catch (const Exception & e)
