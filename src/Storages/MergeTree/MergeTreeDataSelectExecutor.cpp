@@ -1692,7 +1692,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
     {
-        cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->volume->getDisk(), part->getFullRelativePath());
+        cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->data_part_storage);
     }
 
     for (size_t i = 0; i < ranges.size(); ++i)
