@@ -59,7 +59,8 @@ DistinctStep::DistinctStep(
     UInt64 limit_hint_,
     const Names & columns_,
     bool pre_distinct_,
-    bool optimize_distinct_in_order_)
+    bool optimize_distinct_in_order_,
+    UInt64 distinct_in_order_range_search_step_)
     : ITransformingStep(
             input_stream_,
             input_stream_.header,
@@ -67,6 +68,7 @@ DistinctStep::DistinctStep(
     , set_size_limits(set_size_limits_)
     , limit_hint(limit_hint_)
     , columns(columns_)
+    , distinct_in_order_range_search_step(distinct_in_order_range_search_step_)
     , pre_distinct(pre_distinct_)
     , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
@@ -105,7 +107,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                             return nullptr;
 
                         return std::make_shared<DistinctSortedChunkTransform>(
-                            header, set_size_limits, limit_hint, distinct_sort_desc, columns);
+                            header, set_size_limits, limit_hint, distinct_sort_desc, columns, distinct_in_order_range_search_step);
                     });
                 return;
             }

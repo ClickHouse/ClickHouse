@@ -13,11 +13,13 @@ DistinctSortedChunkTransform::DistinctSortedChunkTransform(
     const SizeLimits & output_size_limits_,
     UInt64 limit_hint_,
     const SortDescription & sorted_columns_descr_,
-    const Names & source_columns)
+    const Names & source_columns,
+    size_t range_search_step_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , output_size_limits(output_size_limits_)
     , sorted_columns_descr(sorted_columns_descr_)
+    , range_search_step(range_search_step_)
 {
     /// calculate sorted columns positions
     sorted_columns_pos.reserve(sorted_columns_descr.size());
@@ -124,20 +126,55 @@ bool DistinctSortedChunkTransform::isCurrentKey(const size_t row_pos) const
 
 size_t DistinctSortedChunkTransform::getRangeEnd(size_t range_begin, size_t range_end) const
 {
-    size_t low = range_begin;
-    size_t high = range_end - 1;
-    while (low <= high)
-    {
-        size_t mid = low + (high - low) / 2;
-        if (isCurrentKey(mid))
-            low = mid + 1;
-        else
-        {
-            high = mid - 1;
-            range_end = mid;
-        }
+    assert(range_begin < range_end);
+
+    // probe latest row
+    if (isCurrentKey(range_end-1)) {
+        return range_end;
     }
-    return range_end;
+
+    auto find_range_end = [this](size_t begin, size_t end) -> size_t
+    {
+        const size_t linear_probe_threadhold = 32;
+        size_t linear_probe_end  = begin + linear_probe_threadhold;
+        if (linear_probe_end > end)
+            linear_probe_end = end;
+
+        for(size_t pos=begin; pos < linear_probe_end; ++pos)
+        {
+            if (!isCurrentKey(pos))
+                return pos;
+        }
+
+        size_t low = linear_probe_end;
+        size_t high = end - 1;
+        while (low <= high)
+        {
+            size_t mid = low + (high - low) / 2;
+            if (isCurrentKey(mid))
+                low = mid + 1;
+            else
+            {
+                high = mid - 1;
+                end = mid;
+            }
+        }
+        return end;
+    };
+
+    const size_t step = range_search_step;
+    if (!step)
+        return find_range_end(range_begin, range_end);
+
+    size_t begin = range_begin;
+    while (begin + step <= range_end)
+    {
+        const size_t pos = find_range_end(begin, begin + step);
+        if (pos < begin + step)
+            return pos;
+        begin += step;
+    }
+    return find_range_end(begin, range_end);
 }
 
 std::pair<size_t, size_t> DistinctSortedChunkTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
