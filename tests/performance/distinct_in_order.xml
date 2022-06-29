@@ -1,0 +1,15 @@
+<test>
+    <create_query>CREATE TABLE distinct_cardinality (high UInt64, middle UInt64, low UInt64) ENGINE MergeTree() ORDER BY (high, middle, low)</create_query>
+    <fill_query>INSERT INTO distinct_cardinality SELECT number, number % 1000, number % 10 from numbers(1000000)</fill_query>
+
+    <query>select distinct high from distinct_cardinality</query>
+    <query>select distinct high, low from distinct_cardinality</query>
+    <query>select distinct high, middle from distinct_cardinality</query>
+    <query>select distinct high, middle, low from distinct_cardinality</query>
+
+    <query>select distinct high, middle from distinct_cardinality order by middle</query>
+    <query>select distinct high, low from distinct_cardinality order by low</query>
+    <query>select distinct high, middle, low from distinct_cardinality order by high</query>
+
+    <drop_query>DROP TABLE IF EXISTS distinct_cardinality</drop_query>
+</test>
