@@ -489,10 +489,10 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const T * data_pos = data.data();
 
     /** A slightly more optimized version.
-    * Based on the assumption that often pieces of consecutive values
-    *  completely pass or do not pass the filter.
-    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
-    */
+      * Based on the assumption that often pieces of consecutive values
+      *  completely pass or do not pass the filter.
+      * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+      */
     static constexpr size_t SIMD_BYTES = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
@@ -587,6 +587,11 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     if (0 == size)
         return this->create();
 
+#ifdef __SSE2__
+    if constexpr (std::is_same_v<T, UInt32>)
+        return replicateSSE2(offsets);
+#endif
+
     auto res = this->create(offsets.back());
 
     auto it = res->getData().begin(); // NOLINT
@@ -599,6 +604,110 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     return res;
 }
+
+
+#ifdef __SSE2__
+
+template <typename T>
+ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
+{
+    auto res = this->create(offsets.back());
+
+    auto it = res->getData().begin(); // NOLINT
+
+    /// Column is using PaddedPODArray, so we don't have to worry about the 4 out of range elements.
+
+    IColumn::Offset prev_offset = 0;
+    std::optional<size_t> copy_begin;
+    size_t size = offsets.size();
+    for (size_t i = 0; i < size; ++i)
+    {
+        size_t span = offsets[i] - prev_offset;
+        prev_offset = offsets[i];
+        if (span == 1)
+        {
+            if (!copy_begin)
+                copy_begin = i;
+            continue;
+        }
+
+        /// data :   11 22 33 44 55
+        /// offsets: 0  1  2  3  3
+        /// res:     22 33 44
+        if (copy_begin)
+        {
+            size_t copy_size = i - (*copy_begin);
+            bool remain = (copy_size & 3);
+            size_t sse_copy_counter = (copy_size >> 2);
+            sse_copy_counter = remain * (sse_copy_counter + 1) + (!remain) * (sse_copy_counter);
+            auto it_tmp = it; // NOLINT
+            size_t data_start = *copy_begin;
+            copy_begin.reset();
+            constexpr const int copy_mask = _MM_SHUFFLE(3, 2, 1, 0);
+            while (sse_copy_counter)
+            {
+                __m128i data_to_copy = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
+                auto copy_result = _mm_shuffle_epi32(data_to_copy, copy_mask);
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), copy_result);
+                it_tmp += 4;
+                data_start += 4;
+                --sse_copy_counter;
+            }
+
+            it += copy_size;
+        }
+
+        if (span == 0)
+            continue;
+
+        /// data :   11 22 33
+        /// offsets: 0  0  4
+        /// res:     33 33 33 33
+        size_t shuffle_size = span;
+        bool shuffle_remain = (shuffle_size & 3);
+        size_t sse_shuffle_counter = (shuffle_size >> 2);
+        sse_shuffle_counter = shuffle_remain * (sse_shuffle_counter + 1) + (!shuffle_remain) * (sse_shuffle_counter);
+        auto it_tmp = it; // NOLINT
+        constexpr const int shuffle_mask = (_MM_SHUFFLE(0, 0, 0, 0));
+        __m128i data_to_shuffle = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
+        auto shuffle_result = _mm_shuffle_epi32(data_to_shuffle, shuffle_mask);
+        while (sse_shuffle_counter)
+        {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), shuffle_result);
+            it_tmp += 4;
+            --sse_shuffle_counter;
+        }
+        it += shuffle_size;
+    }
+
+    /// data :   11 22 33 44 55
+    /// offsets: 1  2  3  4  5
+    /// res:     11 22 33 44 55
+    if (copy_begin)
+    {
+        size_t copy_size = (size - (*copy_begin));
+        bool remain = (copy_size & 3);
+        size_t sse_copy_counter = (copy_size >> 2);
+        sse_copy_counter = remain * (sse_copy_counter + 1) + (!remain) * (sse_copy_counter);
+        auto it_tmp = it; // NOLINT
+        size_t data_start = *copy_begin;
+        constexpr const int copy_mask = (_MM_SHUFFLE(3, 2, 1, 0));
+        while (sse_copy_counter)
+        {
+            __m128i data_to_copy = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
+            auto copy_result = _mm_shuffle_epi32(data_to_copy, copy_mask);
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), copy_result);
+            it_tmp += 4;
+            data_start += 4;
+            --sse_copy_counter;
+        }
+        it += copy_size;
+    }
+
+    return res;
+}
+#endif
+
 
 template <typename T>
 void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
