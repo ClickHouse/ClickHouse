@@ -12,7 +12,7 @@
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 #include "Parsers/IAST_fwd.h"
-
+#include <Parsers/Kusto/ParserKQLStatement.h>
 
 namespace DB
 {
@@ -47,6 +47,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
     ParserExpressionWithOptionalAlias exp_elem_p(false);
+    ParserKeyword s_kql("KQL");
 
     /// create ASTPtr variables (result of parsing will be put in them).
     /// They will be used to initialize ASTInsertQuery's fields.
@@ -182,6 +183,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = before_values;
         ParserWatchQuery watch_p;
         watch_p.parse(pos, watch, expected);
+    }
+    else if (!infile && s_kql.ignore(pos, expected))
+    {
+        if (!ParserKQLTaleFunction().parse(pos, select, expected))
+            return false;
     }
     else if (!infile)
     {
