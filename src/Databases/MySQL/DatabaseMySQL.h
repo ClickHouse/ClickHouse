@@ -82,7 +82,7 @@ public:
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
-    void dropTable(ContextPtr context, const String & table_name, bool no_delay) override;
+    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 

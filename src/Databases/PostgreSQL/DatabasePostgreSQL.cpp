@@ -264,7 +264,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 }
 
 
-void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* no_delay */)
+void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
