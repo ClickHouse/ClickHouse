@@ -8,3 +8,5 @@ INSERT INTO simple VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a
 SELECT name, type FROM system.data_skipping_indices where (table =='simple') limit 1;
 -- search gin index
 SELECT * FROM simple WHERE s LIKE '%01%';
+-- check the query only read 2 granules (4 rows total; each granule has 2 rows)
+SELECT read_rows, result_rows from system.query_log where query_kind ='Select' and startsWith(query, 'SELECT * FROM simple WHERE s LIKE \'%01%\'') and result_rows==2 limit 1;
