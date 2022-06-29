@@ -307,7 +307,7 @@ void MaterializeMetadata::startReplication(
             while (mysqlxx::Row row = result_list.fetch())
                 base_tables_list.insert(row[0].getString());
 
-            connection->query("FLUSH TABLES " + boost::algorithm::join(base_tables_list, ",") + " WITH READ LOCK;").execute();
+            connection->query("FLUSH TABLES `" + boost::algorithm::join(base_tables_list, "`,`") + "` WITH READ LOCK;").execute();
         }
         else
         {
@@ -323,7 +323,7 @@ void MaterializeMetadata::startReplication(
                     materialized_tables_list_exists.insert(row[0].getString());
             }
 
-            connection->query("FLUSH TABLES " + boost::algorithm::join(materialized_tables_list_exists, ",") + " WITH READ LOCK;").execute();
+            connection->query("FLUSH TABLES `" + boost::algorithm::join(materialized_tables_list_exists, "`,`") + "` WITH READ LOCK;").execute();
         }
         locked_tables = true;
 
