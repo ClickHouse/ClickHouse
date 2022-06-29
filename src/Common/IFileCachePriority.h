@@ -24,7 +24,6 @@ public:
     friend class FileCache;
 
     using Key = FileCacheKey;
-
     using ReadIterator = std::shared_ptr<const IIterator>;
     using WriteIterator = std::shared_ptr<IIterator>;
 
