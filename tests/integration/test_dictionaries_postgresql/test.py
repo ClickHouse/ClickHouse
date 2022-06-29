@@ -20,6 +20,7 @@ node1 = cluster.add_instance(
     with_postgres_cluster=True,
 )
 
+
 def create_postgres_db(conn, name):
     cursor = conn.cursor()
     cursor.execute(f"CREATE DATABASE {name}")
@@ -27,7 +28,7 @@ def create_postgres_db(conn, name):
 
 def create_postgres_table(cursor, table_name):
     cursor.execute(
-    f"""
+        f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
     id Integer NOT NULL, key Integer NOT NULL, value Integer NOT NULL, PRIMARY KEY (id))
     """
@@ -47,12 +48,13 @@ def create_and_fill_postgres_table(cursor, table_name, port, host):
 
 def create_dict(table_name, index=0):
     node1.query(
-    f"""
+        f"""
     CREATE TABLE IF NOT EXISTS `test`.`dict_table_{table_name}` (
         `key` UInt32, `value` UInt32
     ) ENGINE = Dictionary(dict{str(index)})
     """
     )
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -97,19 +99,14 @@ def test_load_dictionaries(started_cluster):
 
     node1.query(f"SYSTEM RELOAD DICTIONARY {dict_name}")
     assert (
-        node1.query(
-            f"SELECT count() FROM `test`.`dict_table_{table_name}`"
-        ).rstrip()
+        node1.query(f"SELECT count() FROM `test`.`dict_table_{table_name}`").rstrip()
         == "10000"
     )
     assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'key', toUInt64(0))")
-        == "0\n"
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'key', toUInt64(0))") == "0\n"
     )
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(9999))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(9999))")
         == "9999\n"
     )
 
@@ -288,15 +285,11 @@ def test_invalidate_query(started_cluster):
     create_dict(table_name)
     node1.query(f"SYSTEM RELOAD DICTIONARY {dict_name}")
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
         == "0\n"
     )
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
         == "1\n"
     )
 
@@ -309,9 +302,7 @@ def test_invalidate_query(started_cluster):
         if result != "0\n":
             break
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
         == "1\n"
     )
 
@@ -319,15 +310,11 @@ def test_invalidate_query(started_cluster):
     cursor.execute(f"UPDATE {table_name} SET value=value*2 WHERE id != 0")
     time.sleep(5)
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
         == "1\n"
     )
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
         == "1\n"
     )
 
@@ -335,15 +322,11 @@ def test_invalidate_query(started_cluster):
     cursor.execute(f"UPDATE {table_name} SET value=value+1 WHERE id = 0")
     time.sleep(5)
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
         == "2\n"
     )
     assert (
-        node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))"
-        )
+        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
         == "2\n"
     )
 
@@ -432,7 +415,6 @@ def test_postgres_schema(started_cluster):
     node1.query("DROP DICTIONARY IF EXISTS postgres_dict")
     cursor.execute("DROP TABLE test_schema.test_table")
     cursor.execute("DROP SCHEMA test_schema")
-
 
 
 def test_predefined_connection_configuration(started_cluster):
