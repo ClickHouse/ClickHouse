@@ -299,48 +299,55 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    std::shared_ptr<IParserBase> parser;
+    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ParserKQLStatement kql_parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
     size_t max_length = 0;
 
-    auto begin = pos;
-
     if (!allow_multi_statements)
         max_length = settings.max_query_size;
 
     const String & sql_dialect = settings.sql_dialect;
-
-    if (sql_dialect == "kusto")
-        parser = std::make_shared<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-    else
-        parser = std::make_shared<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
+    assert(sql_dialect == "clickhouse" || sql_dialect == "kusto" || sql_dialect == "kusto_auto");
+    auto begin = pos;
 
     if (is_interactive || ignore_error)
     {
         String message;
-        res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        if (sql_dialect == "kusto")
+             res = tryParseQuery(kql_parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        else if (sql_dialect == "kusto_auto")
+        {
+            
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+
+            if (!res)
+                res = tryParseQuery(kql_parser, begin, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        }
+        else
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (!res)
         {
-            if (sql_dialect != "kusto")
-                res = tryParseQuery(kql_parser, begin, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-
-            if (!res)
-            {
-                std::cerr << std::endl << message << std::endl << std::endl;
-                return nullptr;
-            }
+            std::cerr << std::endl << message << std::endl << std::endl;
+            return nullptr;
         }
     }
     else
     {
-        res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        if (sql_dialect == "kusto")
+            res = parseQueryAndMovePosition(kql_parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        else if (sql_dialect == "kusto_auto")
+        {
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
-        if (!res && sql_dialect != "kusto")
-            res = parseQueryAndMovePosition(kql_parser, begin, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+             if (!res)
+                res = parseQueryAndMovePosition(kql_parser, begin, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        }
+        else
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
     if (is_interactive)

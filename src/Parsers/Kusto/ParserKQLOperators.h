@@ -83,7 +83,7 @@ protected:
         {"hasprefix" , KQLOperatorValue::hasprefix},
         {"!hasprefix" , KQLOperatorValue::not_hasprefix},
         {"hasprefix_cs" , KQLOperatorValue::hasprefix_cs},
-        {"!hasprefix" , KQLOperatorValue::not_hasprefix_cs},
+        {"!hasprefix_cs" , KQLOperatorValue::not_hasprefix_cs},
         {"hassuffix" , KQLOperatorValue::hassuffix},
         {"!hassuffix" , KQLOperatorValue::not_hassuffix},
         {"hassuffix_cs" , KQLOperatorValue::hassuffix_cs},
@@ -98,7 +98,7 @@ protected:
         {"startswith_cs" , KQLOperatorValue::startswith_cs},
         {"!startswith_cs" , KQLOperatorValue::not_startswith_cs},
     };
-    static String genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos &token_pos,String kql_op, String ch_op, WildcardsPos wildcards_pos);
+    static String genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos &token_pos,String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos = WildcardsPos::none);
 };
 
 }
