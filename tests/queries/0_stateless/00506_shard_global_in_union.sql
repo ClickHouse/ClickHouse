@@ -22,7 +22,7 @@ DROP TABLE IF EXISTS union_bug;
 
 CREATE TABLE union_bug (
     Event String,
-    Datetime DateTime('Europe/Moscow')
+    Datetime DateTime('Asia/Istanbul')
 ) Engine = Memory;
 
 INSERT INTO union_bug VALUES ('A', 1), ('B', 2);

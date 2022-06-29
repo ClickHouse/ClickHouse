@@ -3,7 +3,7 @@ sidebar_position: 50
 sidebar_label:  'Null'
 ---
 
-# Null Table Engine {#null}
+# Null Table Engine
 
 When writing to a `Null` table, data is ignored. When reading from a `Null` table, the response is empty.
 

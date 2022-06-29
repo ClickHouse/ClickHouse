@@ -180,7 +180,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 writer = std::make_shared<BackupWriterFile>(path);
             else
                 writer = std::make_shared<BackupWriterDisk>(disk, path);
-            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, params.context, params.backup_uuid, params.is_internal_backup, params.coordination_zk_path);
+            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, params.context, params.backup_uuid, params.is_internal_backup, params.backup_coordination);
         }
     };
 

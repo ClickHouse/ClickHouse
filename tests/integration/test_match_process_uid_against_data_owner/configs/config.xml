@@ -12,6 +12,5 @@
 
     <path>/var/lib/clickhouse/</path>
 
-    <mark_cache_size>5368709120</mark_cache_size>
     <users_config>users.xml</users_config>
 </clickhouse>

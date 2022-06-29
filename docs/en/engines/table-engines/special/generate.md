@@ -3,7 +3,7 @@ sidebar_position: 140
 sidebar_label:  GenerateRandom
 ---
 
-# GenerateRandom Table Engine {#table_engines-generate}
+# GenerateRandom Table Engine
 
 The GenerateRandom table engine produces random data for given table schema.
 

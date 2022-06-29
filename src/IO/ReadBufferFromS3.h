@@ -29,7 +29,7 @@ namespace DB
 class ReadBufferFromS3 : public SeekableReadBuffer, public WithFileName, public WithFileSize
 {
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
     String version_id;
@@ -48,7 +48,7 @@ private:
 
 public:
     ReadBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
@@ -65,7 +65,7 @@ public:
 
     off_t getPosition() override;
 
-    std::optional<size_t> getFileSize() override;
+    size_t getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
 
@@ -94,7 +94,7 @@ class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public
 {
 public:
     explicit ReadBufferS3Factory(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
@@ -120,12 +120,12 @@ public:
 
     off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
-    std::optional<size_t> getFileSize() override;
+    size_t getFileSize() override;
 
     String getFileName() const override { return bucket + "/" + key; }
 
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const String bucket;
     const String key;
     const String version_id;

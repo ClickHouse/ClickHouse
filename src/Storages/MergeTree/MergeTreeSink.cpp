@@ -3,6 +3,10 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
 
+namespace ProfileEvents
+{
+    extern const Event DuplicatedInsertedBlocks;
+}
 
 namespace DB
 {
@@ -76,7 +80,7 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        if (!support_parallel_write && temp_part.part->volume->getDisk()->supportParallelWrite())
+        if (!support_parallel_write && temp_part.part->data_part_storage->supportParallelWrite())
             support_parallel_write = true;
 
         if (storage.getDeduplicationLog())
@@ -133,10 +137,44 @@ void MergeTreeSink::finishDelayedChunk()
 
         auto & part = partition.temp_part.part;
 
+        bool added = false;
+
+        {
+            auto lock = storage.lockParts();
+            storage.fillNewPartName(part, lock);
+
+            auto * deduplication_log = storage.getDeduplicationLog();
+            if (deduplication_log)
+            {
+                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
+                auto res = deduplication_log->addPart(block_id, part->info);
+                if (!res.second)
+                {
+                    ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
+                }
+                else
+                {
+                    MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+                    added = storage.renameTempPartAndAdd(part, transaction, lock);
+                    transaction.commit(&lock);
+
+                }
+            }
+            else
+            {
+                MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+                added = storage.renameTempPartAndAdd(part, transaction, lock);
+                transaction.commit(&lock);
+            }
+
+        }
+
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
-        if (storage.renameTempPartAndAdd(part, context->getCurrentTransaction().get(), &storage.increment, nullptr, storage.getDeduplicationLog(), partition.block_dedup_token))
+        if (added)
         {
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
+            storage.incrementInsertedPartsProfileEvent(part->getType());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.background_operations_assignee.trigger();

@@ -3,7 +3,7 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -21,7 +21,7 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
-    extern const Event RemoteFSCacheDownloadBytes;
+    extern const Event CachedReadBufferCacheWriteBytes;
 }
 
 namespace DB
@@ -54,7 +54,7 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::ReadWriteSettings & s3_settings_,
@@ -65,10 +65,10 @@ WriteBufferFromS3::WriteBufferFromS3(
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
-    , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
     , upload_part_size(s3_settings_.min_upload_part_size)
     , s3_settings(s3_settings_)
+    , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
     , cache(cache_)
 {
@@ -95,7 +95,7 @@ void WriteBufferFromS3::nextImpl()
     {
         auto cache_key = cache->hash(key);
 
-        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
+        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, /* is_persistent */false));
         current_download_offset += size;
 
         size_t remaining_size = size;
@@ -151,6 +151,13 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
+#ifndef NDEBUG
+    if (!finalized)
+    {
+        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
+        std::terminate();
+    }
+#else
     try
     {
         finalize();
@@ -159,6 +166,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+#endif
 }
 
 bool WriteBufferFromS3::cacheEnabled() const
@@ -286,7 +294,7 @@ void WriteBufferFromS3::writePart()
                 ++num_finished_bg_tasks;
 
                 /// Notification under mutex is important here.
-                /// Othervies, WriteBuffer could be destroyed in between
+                /// Otherwise, WriteBuffer could be destroyed in between
                 /// Releasing lock and condvar notification.
                 bg_tasks_condvar.notify_one();
             }
@@ -378,12 +386,6 @@ void WriteBufferFromS3::makeSinglepartUpload()
     if (size < 0)
     {
         LOG_WARNING(log, "Skipping single part upload. Buffer is in bad state, it mean that we have tried to upload something, but got an exception.");
-        return;
-    }
-
-    if (size == 0)
-    {
-        LOG_TRACE(log, "Skipping single part upload. Buffer is empty.");
         return;
     }
 
@@ -480,7 +482,7 @@ void WriteBufferFromS3::finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> 
             size_t size = (*file_segment_it)->finalizeWrite();
             file_segment_it = file_segments.erase(file_segment_it);
 
-            ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
         }
         catch (...)
         {

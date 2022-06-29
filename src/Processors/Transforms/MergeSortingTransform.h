@@ -23,6 +23,7 @@ public:
         const SortDescription & description_,
         size_t max_merged_block_size_,
         UInt64 limit_,
+        bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,

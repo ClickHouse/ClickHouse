@@ -207,6 +207,13 @@ function run_tests
         test_files=($(ls "$test_prefix"/*.xml))
     fi
 
+    # We can filter out certain tests
+    if [ -v CHPC_TEST_GREP_EXCLUDE ]; then
+        # filter tests array in bash https://stackoverflow.com/a/40375567
+        filtered_test_files=( $( for i in ${test_files[@]} ; do echo $i ; done | grep -v ${CHPC_TEST_GREP_EXCLUDE} ) )
+        test_files=("${filtered_test_files[@]}")
+    fi
+
     # We split perf tests into multiple checks to make them faster
     if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
         # filter tests array in bash https://stackoverflow.com/a/40375567

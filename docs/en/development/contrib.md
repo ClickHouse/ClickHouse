@@ -1,10 +1,10 @@
 ---
 sidebar_position: 71
 sidebar_label: Third-Party Libraries
-description: A list of third-party libraries used 
+description: A list of third-party libraries used
 ---
 
-# Third-Party Libraries Used 
+# Third-Party Libraries Used
 
 The list of third-party libraries:
 
@@ -18,6 +18,7 @@ The list of third-party libraries:
 | aws-c-common | [Apache](https://github.com/ClickHouse-Extras/aws-c-common/blob/736a82d1697c108b04a277e66438a7f4e19b6857/LICENSE) |
 | aws-c-event-stream | [Apache](https://github.com/ClickHouse-Extras/aws-c-event-stream/blob/3bc33662f9ccff4f4cbcf9509cc78c26e022fde0/LICENSE) |
 | aws-checksums | [Apache](https://github.com/ClickHouse-Extras/aws-checksums/blob/519d6d9093819b6cf89ffff589a27ef8f83d0f65/LICENSE) |
+| base58 | [MIT](https://github.com/ClickHouse/base-x/blob/3e58874643c087f57e82b0ff03825c933fab945a/LICENSE) |
 | base64 | [BSD 2-clause](https://github.com/ClickHouse-Extras/Turbo-Base64/blob/af9b331f2b4f30b41c70f3a571ff904a8251c1d3/LICENSE) |
 | boost | [Boost](https://github.com/ClickHouse-Extras/boost/blob/9cf09dbfd55a5c6202dedbdf40781a51b02c2675/LICENSE_1_0.txt) |
 | boringssl | [BSD](https://github.com/ClickHouse-Extras/boringssl/blob/a6a2e2ab3e44d97ce98e51c558e989f211de7eb3/LICENSE) |
@@ -40,7 +41,7 @@ The list of third-party libraries:
 | googletest | [BSD 3-clause](https://github.com/google/googletest/blob/e7e591764baba0a0c3c9ad0014430e7a27331d16/LICENSE) |
 | grpc | [Apache](https://github.com/ClickHouse-Extras/grpc/blob/60c986e15cae70aade721d26badabab1f822fdd6/LICENSE) |
 | h3 | [Apache](https://github.com/ClickHouse-Extras/h3/blob/c7f46cfd71fb60e2fefc90e28abe81657deff735/LICENSE) |
-| hyperscan | [Boost](https://github.com/ClickHouse-Extras/hyperscan/blob/e9f08df0213fc637aac0a5bbde9beeaeba2fe9fa/LICENSE) |
+| vectorscan | [Boost](https://github.com/ClickHouse-Extras/hyperscan/blob/73695e419c27af7fe2a099c7aa57931cc02aea5d/LICENSE) |
 | icu | [Public Domain](https://github.com/unicode-org/icu/blob/a56dde820dc35665a66f2e9ee8ba58e75049b668/icu4c/LICENSE) |
 | icudata | [Public Domain](https://github.com/ClickHouse-Extras/icudata/blob/72d9a4a7febc904e2b0a534ccb25ae40fac5f1e5/LICENSE) |
 | jemalloc | [BSD 2-clause](https://github.com/ClickHouse-Extras/jemalloc/blob/e6891d9746143bf2cf617493d880ba5a0b9a3efd/COPYING) |
@@ -92,16 +93,13 @@ The list of third-party libraries can be obtained by the following query:
 SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en';
 ```
 
-[Example](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUIGxpYnJhcnlfbmFtZSwgbGljZW5zZV90eXBlLCBsaWNlbnNlX3BhdGggRlJPTSBzeXN0ZW0ubGljZW5zZXMgT1JERVIgQlkgbGlicmFyeV9uYW1lIENPTExBVEUgJ2VuJw==)
+[Example](https://play.clickhouse.com/play?user=play#U0VMRUNUIGxpYnJhcnlfbmFtZSwgbGljZW5zZV90eXBlLCBsaWNlbnNlX3BhdGggRlJPTSBzeXN0ZW0ubGljZW5zZXMgT1JERVIgQlkgbGlicmFyeV9uYW1lIENPTExBVEUgJ2VuJw==)
 
-## Guidelines for adding new third-party libraries and maintaining custom changes in them {#adding-third-party-libraries}
+## Adding new third-party libraries and maintaining patches in third-party libraries {#adding-third-party-libraries}
 
-1. All external third-party code should reside in the dedicated directories under `contrib` directory of ClickHouse repo. Prefer Git submodules, when available.
-2. Fork/mirror the official repo in [Clickhouse-extras](https://github.com/ClickHouse-Extras). Prefer official GitHub repos, when available.
-3. Branch from the branch you want to integrate, e.g., `master` -> `clickhouse/master`, or `release/vX.Y.Z` -> `clickhouse/release/vX.Y.Z`.
-4. All forks in [Clickhouse-extras](https://github.com/ClickHouse-Extras) can be automatically synchronized with upstreams. `clickhouse/...` branches will remain unaffected, since virtually nobody is going to use that naming pattern in their upstream repos.
-5. Add submodules under `contrib` of ClickHouse repo that refer the above forks/mirrors. Set the submodules to track the corresponding `clickhouse/...` branches.
-6. Every time the custom changes have to be made in the library code, a dedicated branch should be created, like `clickhouse/my-fix`. Then this branch should be merged into the branch, that is tracked by the submodule, e.g., `clickhouse/master` or `clickhouse/release/vX.Y.Z`.
-7. No code should be pushed in any branch of the forks in [Clickhouse-extras](https://github.com/ClickHouse-Extras), whose names do not follow `clickhouse/...` pattern.
-8. Always write the custom changes with the official repo in mind. Once the PR is merged from (a feature/fix branch in) your personal fork into the fork in [Clickhouse-extras](https://github.com/ClickHouse-Extras), and the submodule is bumped in ClickHouse repo, consider opening another PR from (a feature/fix branch in) the fork in [Clickhouse-extras](https://github.com/ClickHouse-Extras) to the official repo of the library. This will make sure, that 1) the contribution has more than a single use case and importance, 2) others will also benefit from it, 3) the change will not remain a maintenance burden solely on ClickHouse developers.
-9. When a submodule needs to start using a newer code from the original branch (e.g., `master`), and since the custom changes might be merged in the branch it is tracking (e.g., `clickhouse/master`) and so it may diverge from its original counterpart (i.e., `master`), a careful merge should be carried out first, i.e., `master` -> `clickhouse/master`, and only then the submodule can be bumped in ClickHouse.
+1. Each third-party library must reside in a dedicated directory under the `contrib/` directory of the ClickHouse repository. Avoid dumps/copies of external code, instead use Git submodule feature to pull third-party code from an external upstream repository.
+2. Submodules are listed in `.gitmodule`. If the external library can be used as-is, you may reference the upstream repository directly. Otherwise, i.e. the external library requires patching/customization, create a fork of the official repository in the [ClickHouse organization in GitHub](https://github.com/ClickHouse).
+3. In the latter case, create a branch with `clickhouse/` prefix from the branch you want to integrate, e.g. `clickhouse/master` (for `master`) or `clickhouse/release/vX.Y.Z` (for a `release/vX.Y.Z` tag). The purpose of this branch is to isolate customization of the library from upstream work. For example, pulls from the upstream repository into the fork will leave all `clickhouse/` branches unaffected. Submodules in `contrib/` must only track `clickhouse/` branches of forked third-party repositories.
+4. To patch a fork of a third-party library, create a dedicated branch with `clickhouse/` prefix in the fork, e.g. `clickhouse/fix-some-desaster`. Finally, merge the patch branch into the custom tracking branch (e.g. `clickhouse/master` or `clickhouse/release/vX.Y.Z`) using a PR.
+5. Always create patches of third-party libraries with the official repository in mind. Once a PR of a patch branch to the `clickhouse/` branch in the fork repository is done and the submodule version in ClickHouse official repository is bumped, consider opening another PR from the patch branch to the upstream library repository. This ensures, that 1) the contribution has more than a single use case and importance, 2) others will also benefit from it, 3) the change will not remain a maintenance burden solely on ClickHouse developers.
+9. To update a submodule with changes in the upstream repository, first merge upstream `master` (or a new `versionX.Y.Z` tag) into the `clickhouse`-tracking branch in the fork repository. Conflicts with patches/customization will need to be resolved in this merge (see Step 4.). Once the merge is done, bump the submodule in ClickHouse to point to the new hash in the fork.

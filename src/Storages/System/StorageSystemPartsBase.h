@@ -22,9 +22,10 @@ struct StoragesInfo
     bool need_inactive_parts = false;
     MergeTreeData * data = nullptr;
 
-    operator bool() const { return storage != nullptr; } /// NOLINT
-    MergeTreeData::DataPartsVector
-    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
+    explicit operator bool() const { return storage != nullptr; }
+
+    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */

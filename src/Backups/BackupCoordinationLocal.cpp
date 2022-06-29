@@ -1,14 +1,54 @@
 #include <Backups/BackupCoordinationLocal.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 
 
 namespace DB
 {
+
 using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
 using FileInfo = IBackupCoordination::FileInfo;
 
 BackupCoordinationLocal::BackupCoordinationLocal() = default;
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
+
+void BackupCoordinationLocal::syncStage(const String &, int, const Strings &, std::chrono::seconds)
+{
+}
+
+void BackupCoordinationLocal::syncStageError(const String &, const String &)
+{
+}
+
+void BackupCoordinationLocal::addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+{
+    std::lock_guard lock{mutex};
+    replicated_part_names.addPartNames(table_zk_path, table_name_for_logs, replica_name, part_names_and_checksums);
+}
+
+Strings BackupCoordinationLocal::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
+{
+    std::lock_guard lock{mutex};
+    return replicated_part_names.getPartNames(table_zk_path, replica_name);
+}
+
+
+void BackupCoordinationLocal::addReplicatedDataPath(const String & table_zk_path, const String & data_path)
+{
+    std::lock_guard lock{mutex};
+    replicated_data_paths[table_zk_path].push_back(data_path);
+}
+
+Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_zk_path) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_data_paths.find(table_zk_path);
+    if (it == replicated_data_paths.end())
+        return {};
+    return it->second;
+}
+
 
 void BackupCoordinationLocal::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
@@ -49,9 +89,14 @@ std::vector<FileInfo> BackupCoordinationLocal::getAllFileInfos() const
     return res;
 }
 
-Strings BackupCoordinationLocal::listFiles(const String & prefix, const String & terminator) const
+Strings BackupCoordinationLocal::listFiles(const String & directory, bool recursive) const
 {
     std::lock_guard lock{mutex};
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+    String terminator = recursive ? "" : "/";
+
     Strings elements;
     for (auto it = file_names.lower_bound(prefix); it != file_names.end(); ++it)
     {
@@ -67,7 +112,23 @@ Strings BackupCoordinationLocal::listFiles(const String & prefix, const String &
             continue;
         elements.push_back(String{new_element});
     }
+
     return elements;
+}
+
+bool BackupCoordinationLocal::hasFiles(const String & directory) const
+{
+    std::lock_guard lock{mutex};
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+
+    auto it = file_names.lower_bound(prefix);
+    if (it == file_names.end())
+        return false;
+
+    const String & name = it->first;
+    return name.starts_with(prefix);
 }
 
 std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const String & file_name) const
