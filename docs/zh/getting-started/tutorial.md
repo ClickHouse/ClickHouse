@@ -24,9 +24,6 @@ echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
 sudo apt-get update
 
 sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you've set up a password.
 ```
 
 在我们安装的软件中包含这些包:
