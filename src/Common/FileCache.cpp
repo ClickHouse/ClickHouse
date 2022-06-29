@@ -773,7 +773,7 @@ bool FileCache::tryReserveForMainList(
 
     for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
     {
-        auto entry_key = it->key();
+        const auto & entry_key = it->key();
         auto entry_offset = it->offset();
 
         if (!is_overflow())
