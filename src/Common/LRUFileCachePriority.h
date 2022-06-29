@@ -5,11 +5,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// Based on the LRU algorithm implementation, the record with the lowest priority is stored at
 /// the head of the queue, and the record with the highest priority is stored at the tail.
 class LRUFileCachePriority : public IFileCachePriority
 {
-public:
+private:
     using LRUQueue = std::list<FileCacheRecord>;
     using LRUQueueIterator = typename LRUQueue::iterator;
 
@@ -23,9 +28,9 @@ public:
 
         void next() const override { queue_iter++; }
 
-        bool valid() const override { return (file_cache->queue.size() && (queue_iter != file_cache->queue.end())); }
+        bool valid() const override { return queue_iter != file_cache->queue.end(); }
 
-        Key key() const override { return queue_iter->key; }
+        const Key & key() const override { return queue_iter->key; }
 
         size_t offset() const override { return queue_iter->offset; }
 
@@ -33,14 +38,12 @@ public:
 
         size_t hits() const override { return queue_iter->hits; }
 
-        WriteIterator getWriteIterator() const override { return std::make_shared<LRUFileCacheIterator>(file_cache, queue_iter); }
-
-        void seekToLowestPriority() const override { queue_iter = file_cache->queue.begin(); }
-
         void remove(std::lock_guard<std::mutex> &) override
         {
-            file_cache->cache_size -= queue_iter->size;
-            file_cache->queue.erase(queue_iter);
+            auto remove_iter = queue_iter;
+            queue_iter++;
+            file_cache->cache_size -= remove_iter->size;
+            file_cache->queue.erase(remove_iter);
         }
 
         void incrementSize(size_t size_increment, std::lock_guard<std::mutex> &) override
@@ -65,6 +68,18 @@ public:
 
     WriteIterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> &) override
     {
+#ifndef NDEBUG
+        for (const auto & entry : queue)
+        {
+            if (entry.key() == key && entry.offset() == offset)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
+                    entry.key().toString(),
+                    entry.offset(),
+                    entry.size());
+        }
+#endif
         auto iter = queue.insert(queue.end(), FileCacheRecord(key, offset, size));
         cache_size += size;
         return std::make_shared<LRUFileCacheIterator>(this, iter);
@@ -86,14 +101,20 @@ public:
         cache_size = 0;
     }
 
-    ReadIterator getNewIterator(std::lock_guard<std::mutex> &) override
+    ReadIterator getLowestPriorityReadIterator(std::lock_guard<std::mutex> &) override
     {
         return std::make_shared<const LRUFileCacheIterator>(this, queue.begin());
     }
 
-    size_t getElementsNum(std::lock_guard<std::mutex> &) const override { return queue.size(); }
+    WriteIterator getLowestPriorityWriteIterator(std::lock_guard<std::mutex> &) override
+    {
+        return std::make_shared<LRUFileCacheIterator>(this, queue.begin());
+    }
 
-    std::string toString(std::lock_guard<std::mutex> &) const override { return {}; }
+    size_t getElementsNum(std::lock_guard<std::mutex> &) const override
+    {
+        return queue.size();
+    }
 
 private:
     LRUQueue queue;

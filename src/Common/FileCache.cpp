@@ -2,7 +2,6 @@
 
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <Common/hex.h>
 #include <Common/FileCacheSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -38,11 +37,6 @@ FileCache::FileCache(
     , log(&Poco::Logger::get("FileCache"))
     , allow_to_remove_persistent_segments_from_cache_by_default(cache_settings_.allow_to_remove_persistent_segments_from_cache_by_default)
 {
-}
-
-String FileCache::Key::toString() const
-{
-    return getHexUIntLowercase(key);
 }
 
 FileCache::Key FileCache::hash(const String & path)
@@ -323,8 +317,11 @@ FileSegments FileCache::getImpl(
 
             if (range.left <= prev_cell_range.right)
             {
+                ///   segment{k-1}  segment{k}
                 ///   [________]   [_____
                 ///       [___________
+                ///       ^
+                ///       range.left
                 useCell(prev_cell, result, cache_lock);
             }
         }
@@ -562,7 +559,7 @@ FileCache::FileSegmentCell * FileCache::addCell(
 
                 if (stash_priority->getElementsNum(cache_lock) > max_stash_element_size)
                 {
-                    auto remove_priority_iter = stash_priority->getNewIterator(cache_lock)->getWriteIterator();
+                    auto remove_priority_iter = stash_priority->getLowestPriorityWriteIterator(cache_lock);
                     stash_records.erase({remove_priority_iter->key(), remove_priority_iter->offset()});
                     remove_priority_iter->remove(cache_lock);
                 }
@@ -648,7 +645,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
 
         auto * cell_for_reserve = getCell(key, offset, cache_lock);
 
-        std::vector<IFileCachePriority::WriteIterator> ghost;
+        std::vector<std::tuple<Key, size_t, size_t>> ghost;
         std::vector<FileSegmentCell *> trash;
         std::vector<FileSegmentCell *> to_evict;
 
@@ -660,7 +657,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         };
 
         /// Select the cache from the LRU queue held by query for expulsion.
-        for (auto iter = query_context->getPriority()->getNewIterator(cache_lock); iter->valid(); iter->next())
+        for (auto iter = query_context->getPriority()->getLowestPriorityWriteIterator(cache_lock); iter->valid();)
         {
             if (!is_overflow())
                 break;
@@ -671,8 +668,10 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
             {
                 /// The cache corresponding to this record may be swapped out by
                 /// other queries, so it has become invalid.
-                ghost.push_back(iter->getWriteIterator());
                 removed_size += iter->size();
+                ghost.push_back({iter->key(), iter->offset(), iter->size()});
+                /// next()
+                iter->remove(cache_lock);
             }
             else
             {
@@ -700,6 +699,8 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
                     removed_size += cell_size;
                     --queue_size;
                 }
+
+                iter->next();
             }
         }
 
@@ -718,8 +719,8 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
                 remove_file_segment(file_segment, cell->size());
         }
 
-        for (auto & iter : ghost)
-            query_context->remove(iter->key(), iter->offset(), iter->size(), cache_lock);
+        for (auto & entry : ghost)
+            query_context->remove(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry), cache_lock);
 
         if (is_overflow())
             return false;
@@ -770,7 +771,7 @@ bool FileCache::tryReserveForMainList(
     std::vector<FileSegmentCell *> to_evict;
     std::vector<FileSegmentCell *> trash;
 
-    for (auto it = main_priority->getNewIterator(cache_lock); it->valid(); it->next())
+    for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
     {
         auto entry_key = it->key();
         auto entry_offset = it->offset();
@@ -926,9 +927,9 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
     std::lock_guard cache_lock(mutex);
 
     std::vector<FileSegmentPtr> to_remove;
-    for (auto it = main_priority->getNewIterator(cache_lock); it->valid(); it->next())
+    for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
     {
-        auto key = it->key();
+        const auto & key = it->key();
         auto offset = it->offset();
 
         auto * cell = getCell(key, offset, cache_lock);
@@ -1247,7 +1248,7 @@ String FileCache::dumpStructure(const Key & key)
     return dumpStructureUnlocked(key, cache_lock);
 }
 
-String FileCache::dumpStructureUnlocked(const Key & key, std::lock_guard<std::mutex> & cache_lock)
+String FileCache::dumpStructureUnlocked(const Key & key, std::lock_guard<std::mutex> &)
 {
     WriteBufferFromOwnString result;
     const auto & cells_by_offset = files[key];
@@ -1255,7 +1256,6 @@ String FileCache::dumpStructureUnlocked(const Key & key, std::lock_guard<std::mu
     for (const auto & [offset, cell] : cells_by_offset)
         result << cell.file_segment->getInfoForLog() << "\n";
 
-    result << "\n\nPriority: " << main_priority->toString(cache_lock);
     return result.str();
 }
 
@@ -1291,9 +1291,9 @@ void FileCache::assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock)
 void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lock)
 {
     [[maybe_unused]] size_t total_size = 0;
-    for (auto it = main_priority->getNewIterator(cache_lock); it->valid(); it->next())
+    for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
     {
-        auto key = it->key();
+        const auto & key = it->key();
         auto offset = it->offset();
         auto size = it->size();
 
