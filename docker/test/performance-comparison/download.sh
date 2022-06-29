@@ -73,6 +73,7 @@ function download
     ) &
 
     wait
+    cd db0 && echo "ATTACH DATABASE default ENGINE=Ordinary" > metadata/default.sql
 }
 
 download
