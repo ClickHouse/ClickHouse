@@ -30,7 +30,7 @@ struct MultiSearchFirstIndexImpl
         const ColumnString::Offsets & haystack_offsets,
         const Array & needles_arr,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
+        PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/)
@@ -47,13 +47,15 @@ struct MultiSearchFirstIndexImpl
             needles.emplace_back(needle.get<String>());
 
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
-        const size_t haystack_string_size = haystack_offsets.size();
-        res.resize(haystack_string_size);
+
+        const size_t haystack_size = haystack_offsets.size();
+        res.resize(haystack_size);
+
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
             size_t prev_offset = 0;
-            for (size_t j = 0; j < haystack_string_size; ++j)
+            for (size_t j = 0; j < haystack_size; ++j)
             {
                 const auto * haystack = &haystack_data[prev_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
@@ -68,10 +70,51 @@ struct MultiSearchFirstIndexImpl
             std::fill(res.begin(), res.end(), 0);
     }
 
-    template <typename... Args>
-    static void vectorVector(Args &&...)
+    static void vectorVector(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const ColumnArray & needles_col,
+        PaddedPODArray<ResultType> & res,
+        PaddedPODArray<UInt64> & /*offsets*/,
+        bool /*allow_hyperscan*/,
+        size_t /*max_hyperscan_regexp_length*/,
+        size_t /*max_hyperscan_regexp_total_length*/)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needles", name);
+        const size_t haystack_size = haystack_offsets.size();
+        res.resize(haystack_size);
+
+        size_t prev_offset = 0;
+
+        for (size_t i = 0; i < haystack_size; ++i)
+        {
+            Field field = needles_col[i];
+            const Array & needles_arr = DB::get<Array &>(field);
+
+            std::vector<std::string_view> needles;
+            needles.reserve(needles_arr.size());
+            for (const auto & needle : needles_arr)
+                needles.emplace_back(needle.get<String>());
+
+            auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal
+
+            const auto * const haystack = &haystack_data[prev_offset];
+            const auto * haystack_end = haystack + haystack_offsets[i] - prev_offset - 1;
+
+            size_t iteration = 0;
+            while (searcher.hasMoreToSearch())
+            {
+                if (iteration == 0 || res[i] == 0)
+                {
+                    res[i] = searcher.searchOneFirstIndex(haystack, haystack_end);
+                }
+                ++iteration;
+            }
+            if (iteration == 0)
+            {
+                res[i] = 0;
+            }
+            prev_offset = haystack_offsets[i];
+        }
     }
 };
 
