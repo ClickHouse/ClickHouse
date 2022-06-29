@@ -430,6 +430,9 @@ def test_postgres_schema(started_cluster):
     result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
     assert int(result.strip()) == 99
     node1.query("DROP DICTIONARY IF EXISTS postgres_dict")
+    cursor.execute("DROP TABLE test_schema.test_table")
+    cursor.execute("DROP SCHEMA test_schema")
+
 
 
 def test_predefined_connection_configuration(started_cluster):
