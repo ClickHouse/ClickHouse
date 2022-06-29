@@ -136,9 +136,7 @@ private:
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il) : data{il} {}
-    #ifdef __SSE2__
-    ColumnPtr replicateSSE2(const IColumn::Offsets & offsets) const;
-    #endif
+
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }
 
