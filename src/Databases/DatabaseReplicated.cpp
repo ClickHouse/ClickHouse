@@ -148,7 +148,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         if (hosts.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
                             "It's possible if the first replica is not fully created yet "
-                            "or if the last replica was just dropped or due to logical error", database_name);
+                            "or if the last replica was just dropped or due to logical error", zookeeper_path);
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
@@ -213,7 +213,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         /*priority=*/1,
-        database_name,
+        TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret);
 }
 
@@ -588,7 +588,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->makeQueryContext();
         query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         query_context->getClientInfo().is_replicated_database_internal = true;
-        query_context->setCurrentDatabase(database_name);
+        query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId("");
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
