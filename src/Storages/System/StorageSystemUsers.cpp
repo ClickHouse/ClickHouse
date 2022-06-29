@@ -218,14 +218,14 @@ void StorageSystemUsers::backupData(
     BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
-    access_control.backup(backup_entries_collector, AccessEntityType::USER, data_path_in_backup);
+    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::USER);
 }
 
 void StorageSystemUsers::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restore(restorer, data_path_in_backup);
+    access_control.restoreFromBackup(restorer);
 }
 
 }

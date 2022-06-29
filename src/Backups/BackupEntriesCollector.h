@@ -19,6 +19,7 @@ class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
+enum class AccessEntityType;
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
 class BackupEntriesCollector : private boost::noncopyable
@@ -42,6 +43,7 @@ public:
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
     void addBackupEntry(const String & file_name, BackupEntryPtr backup_entry);
+    void addBackupEntry(const std::pair<String, BackupEntryPtr> & backup_entry);
     void addBackupEntries(const BackupEntries & backup_entries_);
     void addBackupEntries(BackupEntries && backup_entries_);
 
@@ -49,6 +51,9 @@ public:
     /// This function is designed to help making a consistent in some complex cases like
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
+
+    /// Returns an incremental counter used to backup access control.
+    size_t getAccessCounter(AccessEntityType type);
 
 private:
     void calculateRootPathInBackup();
@@ -130,6 +135,7 @@ private:
 
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;
+    std::vector<size_t> access_counters;
 };
 
 }

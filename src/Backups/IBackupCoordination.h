@@ -44,6 +44,14 @@ public:
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
     virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
 
+    /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
+    virtual void addReplicatedAccessPath(const String & access_zk_path, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessPaths(const String & access_zk_path) const = 0;
+
+    /// Sets the host id of a host storing access entities of a ReplicatedAccessStorage to backup.
+    virtual void setReplicatedAccessHost(const String & access_zk_path, const String & host) = 0;
+    virtual String getReplicatedAccessHost(const String & access_zk_path) const = 0;
+
     struct FileInfo
     {
         String file_name;
