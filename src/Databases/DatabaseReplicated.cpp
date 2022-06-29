@@ -325,7 +325,7 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
 
     /// Other codes are unexpected, will throw
     zkutil::KeeperMultiException::check(res, ops, responses);
-    assert(false);
+    chassert(false);
     __builtin_unreachable();
 }
 
@@ -533,7 +533,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
         return UUIDHelpers::Nil;
     if (!startsWith(create.storage->engine->name, "Replicated") || !endsWith(create.storage->engine->name, "MergeTree"))
         return UUIDHelpers::Nil;
-    assert(create.uuid != UUIDHelpers::Nil);
+    chassert(create.uuid != UUIDHelpers::Nil);
     return create.uuid;
 }
 
@@ -767,8 +767,8 @@ std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(co
         }
         else
         {
-            assert(max_log_ptr == new_max_log_ptr);
-            assert(table_names.size() != table_name_to_metadata.size());
+            chassert(max_log_ptr == new_max_log_ptr);
+            chassert(table_names.size() != table_name_to_metadata.size());
             LOG_DEBUG(log, "Cannot get metadata of some tables due to ZooKeeper error, will retry");
         }
     }

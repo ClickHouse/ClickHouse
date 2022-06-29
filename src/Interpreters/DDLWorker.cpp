@@ -249,7 +249,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             auto & task = *task_it;
             if (task->completely_processed)
             {
-                assert(task->was_executed);
+                chassert(task->was_executed);
                 /// Status must be written (but finished/ node may not exist if entry was deleted).
                 /// If someone is deleting entry concurrently, then /active status dir must not exist.
                 assert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
@@ -310,7 +310,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     if (first_failed_task_name)
     {
         /// If we had failed tasks, then we should start from the first failed task.
-        assert(reinitialized);
+        chassert(reinitialized);
         begin_node = std::lower_bound(queue_nodes.begin(), queue_nodes.end(), first_failed_task_name);
     }
     else
@@ -503,7 +503,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
-    assert(!task.completely_processed);
+    chassert(!task.completely_processed);
 
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
@@ -521,14 +521,14 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     {
         if (create_active_res != Coordination::Error::ZNONODE && create_active_res != Coordination::Error::ZNODEEXISTS)
         {
-            assert(Coordination::isHardwareError(create_active_res));
+            chassert(Coordination::isHardwareError(create_active_res));
             throw Coordination::Exception(create_active_res, active_node_path);
         }
 
         /// Status dirs were not created in enqueueQuery(...) or someone is removing entry
         if (create_active_res == Coordination::Error::ZNONODE)
         {
-            assert(dynamic_cast<DatabaseReplicatedTask *>(&task) == nullptr);
+            chassert(dynamic_cast<DatabaseReplicatedTask *>(&task) == nullptr);
             if (task.was_executed)
             {
                 /// Special case:
@@ -804,7 +804,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         }
     }
 
-    assert(!(executed_by_us && executed_by_other_leader));
+    chassert(!(executed_by_us && executed_by_other_leader));
 
     /// Not executed by leader so was not executed at all
     if (!executed_by_us && !executed_by_other_leader)
@@ -895,9 +895,9 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 /// Possible rare case: initiator node has lost connection after enqueueing entry and failed to create status dirs.
                 /// No one has started to process the entry, so node_path/active and node_path/finished nodes were never created, node_path has no children.
                 /// Entry became outdated, but we cannot remove remove it in a transaction with node_path/finished.
-                assert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
+                chassert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
                 rm_entry_res = zookeeper->tryRemove(node_path);
-                assert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
+                chassert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
                 continue;
             }
             zkutil::KeeperMultiException::check(rm_entry_res, ops, res);
@@ -998,7 +998,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 
 bool DDLWorker::initializeMainThread()
 {
-    assert(!initialized);
+    chassert(!initialized);
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Initializing DDLWorker thread");
 
@@ -1017,7 +1017,7 @@ bool DDLWorker::initializeMainThread()
             {
                 /// A logical error.
                 LOG_ERROR(log, "ZooKeeper error: {}. Failed to start DDLWorker.", getCurrentExceptionMessage(true));
-                assert(false);  /// Catch such failures in tests with debug build
+                chassert(false);  /// Catch such failures in tests with debug build
             }
 
             tryLogCurrentException(__PRETTY_FUNCTION__);

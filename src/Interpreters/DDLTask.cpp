@@ -361,7 +361,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
         /// Update database name with actual name of local database
-        assert(!ddl_query->database);
+        chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
 }
