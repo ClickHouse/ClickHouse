@@ -9,7 +9,7 @@ Fixed-length integers, with or without a sign.
 
 When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them.
 
-## Int Ranges {#int-ranges}
+## Int Ranges
 
 -   `Int8` — \[-128 : 127\]
 -   `Int16` — \[-32768 : 32767\]
@@ -25,7 +25,7 @@ Aliases:
 -   `Int32` — `INT`, `INT4`, `INTEGER`.
 -   `Int64` — `BIGINT`.
 
-## UInt Ranges {#uint-ranges}
+## UInt Ranges
 
 -   `UInt8` — \[0 : 255\]
 -   `UInt16` — \[0 : 65535\]

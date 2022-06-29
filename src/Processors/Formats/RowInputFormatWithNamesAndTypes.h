@@ -24,13 +24,15 @@ class FormatWithNamesAndTypesReader;
 class RowInputFormatWithNamesAndTypes : public RowInputFormatWithDiagnosticInfo
 {
 protected:
-    /** with_names - in the first line the header with column names
+    /** is_binary - it is a binary format (e.g. don't search for BOM)
+      * with_names - in the first line the header with column names
       * with_types - in the second line the header with column names
       */
     RowInputFormatWithNamesAndTypes(
         const Block & header_,
         ReadBuffer & in_,
         const Params & params_,
+        bool is_binary_,
         bool with_names_,
         bool with_types_,
         const FormatSettings & format_settings_,
@@ -51,6 +53,7 @@ private:
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
+    bool is_binary;
     bool with_names;
     bool with_types;
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;

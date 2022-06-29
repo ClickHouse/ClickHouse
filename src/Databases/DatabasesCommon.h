@@ -15,6 +15,9 @@ namespace DB
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary, uint32_t max_parser_depth, bool throw_on_error);
 
+/// Cleans a CREATE QUERY from temporary flags like "IF NOT EXISTS", "OR REPLACE", "AS SELECT" (for non-views), etc.
+void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
+
 class Context;
 
 /// A base class for databases that manage their own list of tables.
@@ -33,19 +36,23 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
+    DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const override;
+    void checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector & backup_entries_collector) const override;
+    void createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer) override;
+
     void shutdown() override;
 
     ~DatabaseWithOwnTablesBase() override;
 
 protected:
-    Tables tables;
+    Tables tables TSA_GUARDED_BY(mutex);
     Poco::Logger * log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
-    void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
-    StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);
-    StoragePtr getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock) const;
+    void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
+    StoragePtr detachTableUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
+    StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
 };
 
 }

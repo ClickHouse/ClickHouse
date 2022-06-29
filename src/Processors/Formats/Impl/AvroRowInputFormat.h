@@ -15,10 +15,10 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
-#include <avro/DataFile.hh>
-#include <avro/Decoder.hh>
-#include <avro/Schema.hh>
-#include <avro/ValidSchema.hh>
+#include <DataFile.hh>
+#include <Decoder.hh>
+#include <Schema.hh>
+#include <ValidSchema.hh>
 
 
 namespace DB
@@ -32,13 +32,13 @@ namespace ErrorCodes
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
     using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
-    static DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
+    DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
     SkipFn createSkipFn(avro::NodePtr root_node);
 
     struct Action
@@ -113,6 +113,8 @@ private:
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
+
+    bool null_as_default = false;
 };
 
 class AvroRowInputFormat final : public IRowInputFormat
@@ -128,7 +130,7 @@ private:
 
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
-    bool allow_missing_fields;
+    FormatSettings format_settings;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.

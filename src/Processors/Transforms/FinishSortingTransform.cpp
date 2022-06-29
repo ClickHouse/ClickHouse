@@ -25,8 +25,9 @@ FinishSortingTransform::FinishSortingTransform(
     const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
     size_t max_merged_block_size_,
-    UInt64 limit_)
-    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
+    UInt64 limit_,
+    bool increase_sort_description_compile_attempts)
+    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
