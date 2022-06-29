@@ -178,5 +178,5 @@ SELECT * FROM mysql_table
 
 ## См. также {#see-also}
 
--   [Табличная функция mysql](../../../engines/table-engines/integrations/mysql.md)
--   [Использование MySQL в качестве источника для внешнего словаря](../../../engines/table-engines/integrations/mysql.md#dicts-external_dicts_dict_sources-mysql)
+-   [Табличная функция mysql](../../../sql-reference/table-functions/mysql.md)
+-   [Использование MySQL в качестве источника для внешнего словаря](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
