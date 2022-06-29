@@ -203,15 +203,12 @@ public:
     HardwareCodecDeflate();
     ~HardwareCodecDeflate();
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
-    uint32_t doCompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t dest_size);
-    uint32_t doCompressDataFlush(uint32_t req_id);
     uint32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
     uint32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
     void doDecompressDataFlush();
 
 private:
     std::map<uint32_t, qpl_job *> jobDecompAsyncMap;
-    std::vector<uint32_t> jobCompAsyncList;
     Poco::Logger * log;
 };
 class CompressionCodecDeflate : public ICompressionCodec
@@ -234,9 +231,6 @@ protected:
     }
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest) const override;
     uint32_t doCompressDataSW(const char * source, uint32_t source_size, char * dest) const;
-    uint32_t doCompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t & req_id) override;
-    uint32_t doCompressDataFlush(uint32_t req_id) override;
-
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
     void doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) override;
     void doDecompressDataSW(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
