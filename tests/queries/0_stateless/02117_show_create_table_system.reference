@@ -580,6 +580,8 @@ CREATE TABLE system.processes
     `http_method` UInt8,
     `http_user_agent` String,
     `http_referer` String,
+    `http_host` String,
+    `tls_sni` String,
     `forwarded_for` String,
     `quota_key` String,
     `distributed_depth` UInt64,
