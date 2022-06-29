@@ -1322,20 +1322,29 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
     {
+        const DataPartPtr & part = *it;
 
-        (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
-        auto creation_csn = (*it)->version.creation_csn.load(std::memory_order_relaxed);
-        if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && !(*it)->version.isRemovalTIDLocked())
+        part->remove_time.store(part->modification_time, std::memory_order_relaxed);
+        auto creation_csn = part->version.creation_csn.load(std::memory_order_relaxed);
+        if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && !part->version.isRemovalTIDLocked())
         {
             /// It's possible that covering part was created without transaction,
             /// but if covered part was created with transaction (i.e. creation_tid is not prehistoric),
             /// then it must have removal tid in metadata file.
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part {} is Outdated and has creation TID {} and CSN {}, "
                             "but does not have removal tid. It's a bug or a result of manual intervention.",
-                            (*it)->name, (*it)->version.creation_tid, creation_csn);
+                            part->name, part->version.creation_tid, creation_csn);
         }
         modifyPartState(it, DataPartState::Outdated);
-        removePartContributionToDataVolume(*it);
+        removePartContributionToDataVolume(part);
+
+        /// Explicitly set removal_tid_lock for parts w/o transaction (i.e. w/o txn_version.txt)
+        /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
+        if (!part->version.isRemovalTIDLocked())
+        {
+            TransactionInfoContext transaction_context{getStorageID(), part->name};
+            part->version.lockRemovalTID(Tx::PrehistoricTID, transaction_context);
+        }
     };
 
     /// All parts are in "Active" state after loading
