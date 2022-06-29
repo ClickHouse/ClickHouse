@@ -694,10 +694,10 @@ public:
     {
     }
 
-    String function_name;
+    OperatorType type;
     Int32 priority;
     Int32 arity;
-    OperatorType type;
+    String function_name;
 };
 
 class Layer
@@ -2045,50 +2045,50 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     static std::vector<std::pair<const char *, Operator>> op_table({
-        {"+",             Operator("plus",            20)},
-        {"-",             Operator("minus",           20)},
-        {"*",             Operator("multiply",        30)},
-        {"/",             Operator("divide",          30)},
-        {"%",             Operator("modulo",          30)},
-        {"MOD",           Operator("modulo",          30)},
-        {"DIV",           Operator("intDiv",          30)},
-        {"==",            Operator("equals",          10, 2, OperatorType::Comparison)},
-        {"!=",            Operator("notEquals",       10, 2, OperatorType::Comparison)},
-        {"<>",            Operator("notEquals",       10, 2, OperatorType::Comparison)},
-        {"<=",            Operator("lessOrEquals",    10, 2, OperatorType::Comparison)},
-        {">=",            Operator("greaterOrEquals", 10, 2, OperatorType::Comparison)},
-        {"<",             Operator("less",            10, 2, OperatorType::Comparison)},
-        {">",             Operator("greater",         10, 2, OperatorType::Comparison)},
-        {"=",             Operator("equals",          10, 2, OperatorType::Comparison)},
-        {"AND",           Operator("and",             5,  2, OperatorType::Mergeable)},
-        {"OR",            Operator("or",              4,  2, OperatorType::Mergeable)},
-        {"||",            Operator("concat",          11, 2, OperatorType::Mergeable)},
-        {".",             Operator("tupleElement",    40, 2, OperatorType::TupleElement)},
-        {"IS NULL",       Operator("isNull",          9,  1, OperatorType::IsNull)},
-        {"IS NOT NULL",   Operator("isNotNull",       9,  1, OperatorType::IsNull)},
-        {"LIKE",          Operator("like",            10)},
-        {"ILIKE",         Operator("ilike",           10)},
-        {"NOT LIKE",      Operator("notLike",         10)},
-        {"NOT ILIKE",     Operator("notILike",        10)},
-        {"IN",            Operator("in",              10)},
-        {"NOT IN",        Operator("notIn",           10)},
-        {"GLOBAL IN",     Operator("globalIn",        10)},
-        {"GLOBAL NOT IN", Operator("globalNotIn",     10)},
-        {"?",             Operator("",                3, 0,  OperatorType::StartIf)},
-        {":",             Operator("if",              4, 3,  OperatorType::FinishIf)},
-        {"BETWEEN",       Operator("",                7, 0,  OperatorType::StartBetween)},
-        {"NOT BETWEEN",   Operator("",                7, 0,  OperatorType::StartNotBetween)},
-        {"[",             Operator("arrayElement",    40, 2, OperatorType::ArrayElement)},
-        {"::",            Operator("CAST",            40, 2, OperatorType::Cast)}
+        {"+",             Operator("plus",            11)},
+        {"-",             Operator("minus",           11)},
+        {"*",             Operator("multiply",        12)},
+        {"/",             Operator("divide",          12)},
+        {"%",             Operator("modulo",          12)},
+        {"MOD",           Operator("modulo",          12)},
+        {"DIV",           Operator("intDiv",          12)},
+        {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
+        {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+        {"<>",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+        {"<=",            Operator("lessOrEquals",    9,  2, OperatorType::Comparison)},
+        {">=",            Operator("greaterOrEquals", 9,  2, OperatorType::Comparison)},
+        {"<",             Operator("less",            9,  2, OperatorType::Comparison)},
+        {">",             Operator("greater",         9,  2, OperatorType::Comparison)},
+        {"=",             Operator("equals",          9,  2, OperatorType::Comparison)},
+        {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
+        {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
+        {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+        {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
+        {"IS NULL",       Operator("isNull",          8,  1, OperatorType::IsNull)},
+        {"IS NOT NULL",   Operator("isNotNull",       8,  1, OperatorType::IsNull)},
+        {"LIKE",          Operator("like",            9)},
+        {"ILIKE",         Operator("ilike",           9)},
+        {"NOT LIKE",      Operator("notLike",         9)},
+        {"NOT ILIKE",     Operator("notILike",        9)},
+        {"IN",            Operator("in",              9)},
+        {"NOT IN",        Operator("notIn",           9)},
+        {"GLOBAL IN",     Operator("globalIn",        9)},
+        {"GLOBAL NOT IN", Operator("globalNotIn",     9)},
+        {"?",             Operator("",                2,  0, OperatorType::StartIf)},
+        {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
+        {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
+        {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
+        {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
+        {"::",            Operator("CAST",            14, 2, OperatorType::Cast)}
     });
 
     static std::vector<std::pair<const char *, Operator>> op_table_unary({
-        {"-",             Operator("negate",    39, 1)},
-        {"NOT",           Operator("not",       6, 1)}
+        {"NOT",           Operator("not",             5,  1)},
+        {"-",             Operator("negate",          13, 1)}
     });
 
-    auto finish_between_operator = Operator("", 8, 0, OperatorType::FinishBetween);
-    auto lambda_operator = Operator("lambda", 2, 2);
+    auto lambda_operator = Operator("lambda",         1, 2);
+    auto finish_between_operator = Operator("",       7, 0, OperatorType::FinishBetween);
 
     ParserCompoundIdentifier identifier_parser(false, true);
     ParserNumber number_parser;
