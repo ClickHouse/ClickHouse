@@ -45,15 +45,20 @@ cat > /tmp/actions-hooks/post-run.sh << 'EOF'
 #!/bin/bash
 set -xuo pipefail
 
-# Free KiB, free percents
-ROOT_STAT=($(df / | awk '/\// {print $4 " " int($4/$2 * 100)}'))
-if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
-  echo "Going to terminate the runner, it has ${ROOT_STAT[0]}KiB and ${ROOT_STAT[1]}% of free space on /"
+terminate-and-exit() {
+  echo "Going to terminate the runner"
   INSTANCE_ID=$(ec2metadata --instance-id)
   # We execute it with at to not have it as an orphan process
   # GH Runners kill all remain processes
   echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now
   exit 0
+}
+
+# Free KiB, free percents
+ROOT_STAT=($(df / | awk '/\// {print $4 " " int($4/$2 * 100)}'))
+if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
+  echo "The runner has ${ROOT_STAT[0]}KiB and ${ROOT_STAT[1]}% of free space on /"
+  terminate-and-exit
 fi
 
 # shellcheck disable=SC2046
@@ -64,7 +69,9 @@ docker rm -f $(docker ps -a -q) ||:
 # If we have hanged containers after the previous commands, than we have a hanged one
 # and should restart the daemon
 if [ "$(docker ps -a -q)" ]; then
-  for i in {1..5};
+  # Systemd service of docker has StartLimitBurst=3 and StartLimitInterval=60s,
+  # that's why we try restarting it for long
+  for i in {1..25};
   do
     sudo systemctl restart docker && break || sleep 5
   done
@@ -73,6 +80,8 @@ if [ "$(docker ps -a -q)" ]; then
   do
     docker info && break || sleep 2
   done
+  # Last chance, otherwise we have to terminate poor instance
+  docker info 1>/dev/null || { echo Docker unable to start; terminate-and-exit; }
 fi
 EOF
 
