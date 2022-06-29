@@ -198,7 +198,7 @@ public:
     virtual void dropTable( /// NOLINT
         ContextPtr /*context*/,
         const String & /*name*/,
-        [[maybe_unused]] bool no_delay = false)
+        [[maybe_unused]] bool sync = false)
     {
         throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -356,8 +356,8 @@ protected:
     }
 
     mutable std::mutex mutex;
-    String database_name;
-    String comment;
+    String database_name TSA_GUARDED_BY(mutex);
+    String comment TSA_GUARDED_BY(mutex);
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

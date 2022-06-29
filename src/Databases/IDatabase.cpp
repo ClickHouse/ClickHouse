@@ -19,7 +19,7 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 {
     if (auto storage = tryGetTable(name, context))
         return storage;
-    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(database_name), backQuoteIfNeed(name));
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
 }
 
 ASTPtr IDatabase::getCreateDatabaseQueryForBackup() const

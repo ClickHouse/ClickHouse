@@ -37,7 +37,7 @@ def started_cluster():
 CREATE DATABASE shard_{shard};
 
 CREATE TABLE shard_{shard}.replicated(date Date, id UInt32, shard_id UInt32)
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{replica}', date, id, 8192);
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
                 """.format(
                         shard=shard, replica=node.name
                     )
