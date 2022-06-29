@@ -165,9 +165,8 @@ struct MultiMatchAllIndicesImpl
         size_t prev_haystack_offset = 0;
         for (size_t i = 0; i < haystack_offsets.size(); ++i)
         {
-            Field field;
-            needles_col.get(i, field);
-            Array & needles_arr = DB::get<Array &>(field);
+            Field field = needles_col[i];
+            const Array & needles_arr = DB::get<Array &>(field);
 
             std::vector<std::string_view> needles;
             needles.reserve(needles_arr.size());
