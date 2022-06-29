@@ -465,6 +465,7 @@ bool HTTPHandler::authenticateUser(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
     client_info.http_referer = request.get("Referer", "");
+    client_info.peer_address = request.peerAddress().toString();
     client_info.http_host = request.get("Host", "");
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
     client_info.quota_key = quota_key;

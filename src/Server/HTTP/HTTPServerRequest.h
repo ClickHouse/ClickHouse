@@ -41,6 +41,9 @@ public:
     /// Returns the server's address.
     const Poco::Net::SocketAddress & serverAddress() const { return server_address; }
 
+    /// Returns the peer address i.e the server name from SNI extension
+    const Poco::Net::SocketAddress & peerAddress() const { return peer_address; }
+
 #if USE_SSL
     bool havePeerCertificate() const;
     Poco::Net::X509Certificate peerCertificate() const;
@@ -63,6 +66,7 @@ private:
     Poco::Net::SocketImpl * socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
+    Poco::Net::SocketAddress peer_address;
 
     bool secure;
 
