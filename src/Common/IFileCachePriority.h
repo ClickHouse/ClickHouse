@@ -1,17 +1,14 @@
 #pragma once
 
-#include <list>
 #include <memory>
 #include <mutex>
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Common/FileCache.h>
 #include <Common/FileCacheType.h>
 
 namespace DB
 {
 
-class FileCache;
 class IFileCachePriority;
 using FileCachePriorityPtr = std::shared_ptr<IFileCachePriority>;
 
@@ -20,9 +17,6 @@ class IFileCachePriority
 {
 public:
     class IIterator;
-    friend class IIterator;
-    friend class FileCache;
-
     using Key = FileCacheKey;
     using ReadIterator = std::shared_ptr<const IIterator>;
     using WriteIterator = std::shared_ptr<IIterator>;
