@@ -709,12 +709,6 @@ void DataPartStorageBuilderOnDisk::rename(
     bool remove_new_dir_if_exists,
     bool fsync_part_dir)
 {
-    if (!exists())
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "Part directory {} doesn't exist. Most likely it is a logical error.",
-            std::string(fs::path(volume->getDisk()->getPath()) / root_path / part_dir));
-
     String to = fs::path(new_root_path) / new_part_dir / "";
 
     if (volume->getDisk()->exists(to))
