@@ -115,7 +115,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     }
 }
 
-void StorageSystemFunctions::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> &)
+void StorageSystemFunctions::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
@@ -131,18 +131,21 @@ void StorageSystemFunctions::backupData(BackupEntriesCollector & backup_entries_
     }
 }
 
-void StorageSystemFunctions::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
+void StorageSystemFunctions::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto backup = restorer.getBackup();
+    fs::path data_path_in_backup_fs{data_path_in_backup};
 
     Strings filenames = backup->listFiles(data_path_in_backup);
     for (const auto & filename : filenames)
     {
         if (!filename.ends_with(".sql"))
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore user-defined functions, expected *.sql files, got {}", filename);
+        {
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File name {} doesn't have the extension .sql",
+                            getStorageID().getFullTableName(), String{data_path_in_backup_fs / filename});
+        }
     }
 
-    fs::path data_path_in_backup_fs{data_path_in_backup};
     auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
     const auto & restore_settings = restorer.getRestoreSettings();
     auto context = restorer.getContext();

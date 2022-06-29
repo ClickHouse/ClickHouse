@@ -370,8 +370,9 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
     res_table_info.is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    res_table_info.data_path_in_backup = data_path_in_backup;
     res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
+    res_table_info.has_data = backup->hasFiles(data_path_in_backup);
+    res_table_info.data_path_in_backup = data_path_in_backup;
 
     if (partitions)
     {
@@ -384,7 +385,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     {
         if (!access_restore_task)
             access_restore_task = std::make_shared<AccessRestoreTask>(backup, restore_settings, restore_coordination);
-        access_restore_task->addDataPath(data_path_in_backup);
+        access_restore_task->addDataPath(data_path_in_backup, table_name);
     }
 }
 
@@ -510,7 +511,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             if (isSystemFunctionsTableName(table_name))
             {
                 /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
-                if (!restore_settings.structure_only && backup->hasFiles(table_info.data_path_in_backup))
+                if (!restore_settings.structure_only && table_info.has_data)
                     required_access.emplace_back(AccessType::CREATE_FUNCTION);
             }
             /// Privileges required to restore ACL system tables are checked separately
@@ -538,8 +539,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 flags |= AccessType::CREATE_TABLE;
         }
 
-        if (!restore_settings.structure_only && !create.is_dictionary && !create.is_ordinary_view
-            && backup->hasFiles(table_info.data_path_in_backup))
+        if (!restore_settings.structure_only && table_info.has_data)
         {
             flags |= AccessType::INSERT;
         }
@@ -685,6 +685,15 @@ void RestorerFromBackup::createTables()
             {
                 const auto & data_path_in_backup = table_info.data_path_in_backup;
                 const auto & partitions = table_info.partitions;
+                if (partitions && !storage->supportsBackupPartition())
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Table engine {} doesn't support partitions, cannot restore {}",
+                        storage->getName(),
+                        tableNameWithTypeToString(table_name.database, table_name.table, false));
+                }
+
                 storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
             }
         }
@@ -793,15 +802,6 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
         res_tasks.push_back([task = access_restore_task, access_control = &context->getAccessControl()] { task->restore(*access_control); });
 
     return res_tasks;
-}
-
-void RestorerFromBackup::throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine)
-{
-    throw Exception(
-        ErrorCodes::CANNOT_RESTORE_TABLE,
-        "Table engine {} doesn't support partitions, cannot  table {}",
-        table_engine,
-        storage_id.getFullTableName());
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)

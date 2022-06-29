@@ -34,9 +34,6 @@ namespace
         /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
         /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
         auto & create = data.create_query->as<ASTCreateQuery &>();
-        if (create.uuid == UUIDHelpers::Nil)
-            return;
-
         auto & engine = *storage.engine;
 
         auto * engine_args_ast = typeid_cast<ASTExpressionList *>(engine.arguments.get());
@@ -54,9 +51,12 @@ namespace
         {
             String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
             String & replica_name_arg = replica_name_ast->value.get<String>();
-            String table_uuid_str = toString(create.uuid);
-            if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
-                zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
+            if (create.uuid != UUIDHelpers::Nil)
+            {
+                String table_uuid_str = toString(create.uuid);
+                if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
+                    zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
+            }
             const auto & config = data.global_context->getConfigRef();
             if ((zookeeper_path_arg == StorageReplicatedMergeTree::getDefaultZooKeeperPath(config))
                 && (replica_name_arg == StorageReplicatedMergeTree::getDefaultReplicaName(config))

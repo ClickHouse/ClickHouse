@@ -232,6 +232,9 @@ public:
     /// Extracts data from the backup and put it to the storage.
     virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
+    /// Returns true if the storage supports backup/restore for specific partitions.
+    virtual bool supportsBackupPartition() const { return false; }
+
 private:
 
     StorageID storage_id;
