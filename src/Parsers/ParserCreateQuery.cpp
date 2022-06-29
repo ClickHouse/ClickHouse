@@ -575,6 +575,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!table_properties_p.parse(pos, columns_list, expected))
             return false;
 
+        /// We allow a trailing comma in the columns list for user convenience.
+        /// Although it diverges from the SQL standard slightly.
         s_comma.ignore(pos, expected);
 
         if (!s_rparen.ignore(pos, expected))
