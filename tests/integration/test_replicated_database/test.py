@@ -417,7 +417,7 @@ def test_alters_from_different_replicas(started_cluster):
         "distributed_ddl_task_timeout": 5,
         "distributed_ddl_output_mode": "null_status_on_timeout",
     }
-    assert "shard1|replica2\t\\N\t\\N" in main_node.query(
+    assert "shard1\treplica2\tQUEUED\t" in main_node.query(
         "ALTER TABLE testdb.concurrent_test ADD COLUMN Added2 UInt32;",
         settings=settings,
     )
@@ -425,7 +425,7 @@ def test_alters_from_different_replicas(started_cluster):
         "distributed_ddl_task_timeout": 5,
         "distributed_ddl_output_mode": "never_throw",
     }
-    assert "shard1|replica2\t\\N\t\\N" in competing_node.query(
+    assert "shard1\treplica2\tQUEUED\t" in competing_node.query(
         "ALTER TABLE testdb.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;",
         settings=settings,
     )
@@ -495,11 +495,11 @@ def test_alters_from_different_replicas(started_cluster):
     )
     res = main_node.query("ALTER TABLE testdb.concurrent_test DELETE WHERE UserID % 2")
     assert (
-        "shard1|replica1" in res
-        and "shard1|replica2" in res
-        and "shard1|replica3" in res
+        "shard1\treplica1\tOK" in res
+        and "shard1\treplica2\tOK" in res
+        and "shard1\treplica3\tOK" in res
     )
-    assert "shard2|replica1" in res and "shard2|replica2" in res
+    assert "shard2\treplica1\tOK" in res and "shard2\treplica2\tOK" in res
 
     expected = (
         "1\t1\tmain_node\n"

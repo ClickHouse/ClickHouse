@@ -32,7 +32,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
     {
         try
         {
-            assert(!database->is_probably_dropped);
+            chassert(!database->is_probably_dropped);
             auto zookeeper = getAndSetZooKeeper();
             if (database->is_readonly)
                 database->tryConnectToZooKeeperAndInitDatabase(/* force_attach */ false, /* is_create_query */ false);
@@ -94,7 +94,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(max_log_ptr_path));
-    assert(our_log_ptr <= max_log_ptr);
+    chassert(our_log_ptr <= max_log_ptr);
 
     /// max_log_ptr is the number of the last successfully executed request on the initiator
     /// The log could contain other entries which are not committed yet
@@ -206,7 +206,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
     task->entry = entry;
     task->parseQueryFromEntry(context);
-    assert(!task->entry.query.empty());
+    chassert(!task->entry.query.empty());
     assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
