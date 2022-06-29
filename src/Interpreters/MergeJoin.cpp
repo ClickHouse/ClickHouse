@@ -580,7 +580,7 @@ void MergeJoin::mergeRightBlocks()
 
 void MergeJoin::mergeInMemoryRightBlocks()
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (right_blocks.empty())
         return;
@@ -613,7 +613,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
 void MergeJoin::mergeFlushedRightBlocks()
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     auto callback = [&](const Block & block)
     {
@@ -638,7 +638,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 {
     if (is_in_memory)
     {
-        std::unique_lock lock(rwlock);
+        std::lock_guard lock(rwlock);
 
         if (!is_in_memory)
         {

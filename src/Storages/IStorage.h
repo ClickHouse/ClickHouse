@@ -396,7 +396,7 @@ public:
       */
     virtual void drop() {}
 
-    virtual void dropInnerTableIfAny(bool /* no_delay */, ContextPtr /* context */) {}
+    virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
