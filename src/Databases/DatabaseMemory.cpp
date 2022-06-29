@@ -52,7 +52,7 @@ void DatabaseMemory::createTable(
 void DatabaseMemory::dropTable(
     ContextPtr /*context*/,
     const String & table_name,
-    bool /*no_delay*/)
+    bool /*sync*/)
 {
     std::unique_lock lock{mutex};
     auto table = detachTableUnlocked(table_name, lock);
