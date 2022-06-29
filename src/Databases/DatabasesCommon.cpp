@@ -218,11 +218,11 @@ bool DatabaseWithOwnTablesBase::empty() const
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
-    std::unique_lock lock(mutex);
-    return detachTableUnlocked(table_name, lock);
+    std::lock_guard lock(mutex);
+    return detachTableUnlocked(table_name);
 }
 
-StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &)
+StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
     StoragePtr res;
 
@@ -245,11 +245,11 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
-    std::unique_lock lock(mutex);
-    attachTableUnlocked(table_name, table, lock);
+    std::lock_guard lock(mutex);
+    attachTableUnlocked(table_name, table);
 }
 
-void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> &)
+void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
 {
     auto table_id = table->getStorageID();
     if (table_id.database_name != database_name)
@@ -313,7 +313,7 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     }
 }
 
-StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &) const
+StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name) const
 {
     auto it = tables.find(table_name);
     if (it != tables.end())
