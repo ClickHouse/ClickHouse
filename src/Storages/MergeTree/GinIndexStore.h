@@ -10,7 +10,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <roaring.hh>
 #include <Common/FST.h>
-
+#include <Storages/MergeTree/IDataPartStorage.h>
 namespace DB
 {
 
@@ -103,10 +103,10 @@ public:
         : name(name_)
     {
     }
-    GinIndexStore(const String& name_, DiskPtr disk_, const String& part_path_, UInt64 max_digestion_size_)
+    GinIndexStore(const String& name_, DataPartStoragePtr storage_, DataPartStorageBuilderPtr data_part_storage_builder_, UInt64 max_digestion_size_)
         : name(name_),
-        disk(disk_),
-        part_path(part_path_),
+        storage(storage_),
+        data_part_storage_builder(data_part_storage_builder_),
         max_digestion_size(max_digestion_size_)
     {
     }
@@ -126,10 +126,9 @@ public:
 
     using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 
-    void SetDiskAndPath(DiskPtr disk_, const String& part_path_)
+    void SetStorage(DataPartStoragePtr storage_)
     {
-        disk = disk_;
-        part_path = part_path_;
+        storage = storage_;
     }
 
     GinIndexPostingsBuilderContainer& getPostings() { return current_postings; }
@@ -149,14 +148,15 @@ public:
     void writeSegment();
 
     String getName() const {return name;}
+
 private:
     void init_file_streams();
 private:
     friend class GinIndexStoreReader;
 
     String name;
-    DiskPtr disk;
-    String part_path;
+    DataPartStoragePtr storage;    
+    DataPartStorageBuilderPtr data_part_storage_builder;
 
     std::mutex gin_index_store_mutex;
 
@@ -208,7 +208,7 @@ public:
     static GinIndexStoreFactory& instance();
 
     /// Get GinIndexStore by using index name, disk and part_path (which are combined to create key in stores)
-    GinIndexStorePtr get(const String& name, DiskPtr disk_, const String& part_path_);
+    GinIndexStorePtr get(const String& name, DataPartStoragePtr storage_);
 
     /// Remove all GinIndexStores which are under the same part_path
     void remove(const String& part_path);

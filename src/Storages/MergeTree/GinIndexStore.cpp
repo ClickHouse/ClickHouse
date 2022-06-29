@@ -125,17 +125,17 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
 
 bool GinIndexStore::exists() const
 {
-    String id_file_name = part_path + name + ".gin_sid";
-    return disk->exists(id_file_name);
+    String id_file_name = getName() + ".gin_sid";
+    return storage->exists(id_file_name);
 }
 
 UInt32 GinIndexStore::getNextIDRange(const String& file_name, size_t n)
 {
     std::lock_guard<std::mutex> guard{gin_index_store_mutex};
 
-    if (!disk->exists(file_name))
+    if (!storage->exists(file_name))
     {
-        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->disk->writeFile(file_name);
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
 
         const auto& int_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
         auto size_serialization = int_type->getDefaultSerialization();
@@ -146,7 +146,7 @@ UInt32 GinIndexStore::getNextIDRange(const String& file_name, size_t n)
     /// read id in file
     UInt32 result = 0;
     {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->disk->readFile(file_name);
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(file_name, {}, std::nullopt, std::nullopt);
 
         Field field_rows;
         const auto& size_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
@@ -157,7 +157,7 @@ UInt32 GinIndexStore::getNextIDRange(const String& file_name, size_t n)
     }
     //save result+n
     {
-        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->disk->writeFile(file_name);
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
 
         const auto& int_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
         auto size_serialization = int_type->getDefaultSerialization();
@@ -176,17 +176,18 @@ UInt32 GinIndexStore::getNextRowIDRange(size_t n)
 
 UInt32 GinIndexStore::getNextSegmentID()
 {
-    String sid_file_name = part_path + name + ".gin_sid";
+    String sid_file_name = getName() + ".gin_sid";
     return getNextIDRange(sid_file_name, 1);
 }
+
 UInt32 GinIndexStore::getSegmentNum()
 {
-    String sid_file_name = part_path + name + ".gin_sid";
-    if (!disk->exists(sid_file_name))
+    String sid_file_name = getName() + ".gin_sid";
+    if (!storage->exists(sid_file_name))
         return 0;
     Int32 result = 0;
     {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->disk->readFile(sid_file_name);
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(sid_file_name, {}, std::nullopt, std::nullopt);
 
         Field field_rows;
         const auto& size_type = DB::DataTypePtr(std::make_shared<DB::DataTypeUInt32>());
@@ -214,13 +215,13 @@ void GinIndexStore::finalize()
 
 void GinIndexStore::init_file_streams()
 {
-    String segment_file_name = part_path + name + ".gin_seg";
-    String item_dict_file_name = part_path + name + ".gin_dict";
-    String postings_file_name = part_path + name + ".gin_post";
+    String segment_file_name = getName() + ".gin_seg";
+    String item_dict_file_name = getName() + ".gin_dict";
+    String postings_file_name = getName() + ".gin_post";
 
-    segment_file_stream = disk->writeFile(segment_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
-    term_dict_file_stream = disk->writeFile(item_dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
-    postings_file_stream = disk->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    segment_file_stream = data_part_storage_builder->writeFile(segment_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    term_dict_file_stream = data_part_storage_builder->writeFile(item_dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
 
 void GinIndexStore::writeSegment()
@@ -290,13 +291,13 @@ void GinIndexStore::writeSegment()
 
 void GinIndexStoreReader::init_file_streams()
 {
-    String segment_file_name = store->part_path + store->name + ".gin_seg";
-    String item_dict_file_name = store->part_path + store->name + ".gin_dict";
-    String postings_file_name = store->part_path + store->name + ".gin_post";
+    String segment_file_name = store->getName() + ".gin_seg";
+    String item_dict_file_name = store->getName() + ".gin_dict";
+    String postings_file_name = store->getName() + ".gin_post";
 
-    segment_file_stream = store->disk->readFile(segment_file_name);
-    term_dict_file_stream = store->disk->readFile(item_dict_file_name);
-    postings_file_stream = store->disk->readFile(postings_file_name);
+    segment_file_stream = store->storage->readFile(segment_file_name, {}, std::nullopt, std::nullopt);
+    term_dict_file_stream = store->storage->readFile(item_dict_file_name, {}, std::nullopt, std::nullopt);
+    postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
 }
 void GinIndexStoreReader::readSegments()
 {
@@ -388,8 +389,9 @@ GinIndexStoreFactory& GinIndexStoreFactory::instance()
     return instance;
 }
 
-GinIndexStorePtr GinIndexStoreFactory::get(const String& name, DiskPtr disk_, const String& part_path_)
+GinIndexStorePtr GinIndexStoreFactory::get(const String& name, DataPartStoragePtr storage_)
 {
+    const String& part_path_ = storage_->getRelativePath();
     std::lock_guard lock(stores_mutex);
     String key = name + String(":")+part_path_;
 
@@ -398,7 +400,7 @@ GinIndexStorePtr GinIndexStoreFactory::get(const String& name, DiskPtr disk_, co
     if (it == stores.cend())
     {
         GinIndexStorePtr store = std::make_shared<GinIndexStore>(name);
-        store->SetDiskAndPath(disk_, part_path_);
+        store->SetStorage(storage_);
         if (!store->exists())
             throw Exception("Index '" + name + "' does not exist", ErrorCodes::LOGICAL_ERROR);
 

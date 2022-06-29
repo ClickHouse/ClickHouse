@@ -1,5 +1,6 @@
 #pragma once
 #include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -224,6 +225,8 @@ public:
     virtual void createFile(const String & name) = 0;
     virtual void moveFile(const String & from_name, const String & to_name) = 0;
     virtual void replaceFile(const String & from_name, const String & to_name) = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & name, size_t buf_size, const WriteSettings & settings) = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & name, size_t buf_size, WriteMode mode, const WriteSettings & settings) = 0;
 
     virtual void removeFile(const String & name) = 0;
     virtual void removeFileIfExists(const String & name) = 0;
