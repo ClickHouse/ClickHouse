@@ -17,10 +17,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     ...
 ) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 SETTINGS
-    [connection_pool_size=16, ]
-    [connection_max_tries=3, ]
-    [connection_wait_timeout=5, ] /* 0 -- не ждать */
-    [connection_auto_close=true ]
+    [ connection_pool_size=16, ]
+    [ connection_max_tries=3, ]
+    [ connection_wait_timeout=5, ]
+    [ connection_auto_close=true, ]
+    [ connect_timeout=10, ]
+    [ read_write_timeout=300 ]    
 ;
 ```
 
@@ -143,6 +145,36 @@ SELECT * FROM mysql_table
 -   Положительное целое число.
 
 Значение по умолчанию: `16`.
+
+### connection_wait_timeout {#connection-wait-timeout}
+
+Задает таймаут (в секундах) ожидания свободного подключения (в случае, если уже есть активные подключения connection_pool_size), 0 - не ждать.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `5`.
+
+### connect_timeout {#connect-timeout}
+
+Задает таймаут ожидания подключения (в секундах).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `10`.
+
+### read_write_timeout {#read-write-timeout}
+
+Задает таймаут ожидания ввода/вывода (в секундах).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `300`.
 
 ## См. также {#see-also}
 
