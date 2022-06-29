@@ -213,9 +213,11 @@ def test_store_cleanup(started_cluster):
     node1.query("DETACH DATABASE db2")
     node1.query("DETACH TABLE db3.log")
 
-    node1.wait_for_log_line("Removing access rights for unused directory")
-    time.sleep(1)
-    node1.wait_for_log_line("testgarbage")
+    node1.wait_for_log_line(
+        "Removing access rights for unused directory",
+        timeout=60,
+        look_behind_lines=1000,
+    )
     node1.wait_for_log_line("directories from store")
 
     store = node1.exec_in_container(["ls", f"{path_to_data}/store"])
@@ -268,8 +270,9 @@ def test_store_cleanup(started_cluster):
         ["ls", "-l", f"{path_to_data}/store/456"]
     )
 
-    node1.wait_for_log_line("Removing unused directory")
-    time.sleep(1)
+    node1.wait_for_log_line(
+        "Removing unused directory", timeout=90, look_behind_lines=1000
+    )
     node1.wait_for_log_line("directories from store")
 
     store = node1.exec_in_container(["ls", f"{path_to_data}/store"])

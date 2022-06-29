@@ -2969,7 +2969,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
 String StorageReplicatedMergeTree::getLastQueueUpdateException() const
 {
-    std::unique_lock lock(last_queue_update_exception_lock);
+    std::lock_guard lock(last_queue_update_exception_lock);
     return last_queue_update_exception;
 }
 
@@ -2991,7 +2991,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        std::unique_lock lock(last_queue_update_exception_lock);
+        std::lock_guard lock(last_queue_update_exception_lock);
         last_queue_update_exception = getCurrentExceptionMessage(false);
 
         if (e.code == Coordination::Error::ZSESSIONEXPIRED)
@@ -3006,7 +3006,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        std::unique_lock lock(last_queue_update_exception_lock);
+        std::lock_guard lock(last_queue_update_exception_lock);
         last_queue_update_exception = getCurrentExceptionMessage(false);
 
         queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
@@ -4340,7 +4340,7 @@ void StorageReplicatedMergeTree::shutdown()
         /// Ask all parts exchange handlers to finish asap. New ones will fail to start
         data_parts_exchange_ptr->blocker.cancelForever();
         /// Wait for all of them
-        std::unique_lock lock(data_parts_exchange_ptr->rwlock);
+        std::lock_guard lock(data_parts_exchange_ptr->rwlock);
     }
 }
 
@@ -7399,7 +7399,7 @@ void StorageReplicatedMergeTree::checkBrokenDisks()
         if (disk_ptr->isBroken())
         {
             {
-                std::unique_lock lock(last_broken_disks_mutex);
+                std::lock_guard lock(last_broken_disks_mutex);
                 if (!last_broken_disks.insert(disk_ptr->getName()).second)
                     continue;
             }
@@ -7419,7 +7419,7 @@ void StorageReplicatedMergeTree::checkBrokenDisks()
         else
         {
             {
-                std::unique_lock lock(last_broken_disks_mutex);
+                std::lock_guard lock(last_broken_disks_mutex);
                 if (last_broken_disks.erase(disk_ptr->getName()) > 0)
                     LOG_INFO(
                         log,
