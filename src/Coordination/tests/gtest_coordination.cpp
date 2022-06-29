@@ -2001,7 +2001,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
 
     const auto get_children = [&](const auto list_request_type)
     {
-        const auto list_request = std::make_shared<ZooKeeperListRequest>();
+        const auto list_request = std::make_shared<ZooKeeperFilteredListRequest>();
         int new_zxid = ++zxid;
         list_request->path = parentPath(StringRef{path}).toString();
         list_request->list_request_type = list_request_type;

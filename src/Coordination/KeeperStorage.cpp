@@ -6,6 +6,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Poco/Base64Encoder.h>
 #include <Poco/SHA1Engine.h>
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -1184,7 +1185,11 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             {
                 using enum Coordination::ListRequestType;
 
-                if (request.list_request_type == ALL)
+                auto list_request_type = ALL;
+                if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
+                    list_request_type = filtered_list->list_request_type;
+
+                if (list_request_type == ALL)
                     return true;
 
                 auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
@@ -1193,7 +1198,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
                     onStorageInconsistency();
 
                 const auto is_ephemeral = child_it->value.stat.ephemeralOwner != 0;
-                return (is_ephemeral && request.list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && request.list_request_type == PERSISTENT_ONLY);
+                return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
             };
 
             for (const auto child : children)
@@ -1710,6 +1715,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::Set, KeeperStorageSetRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::List, KeeperStorageListRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SimpleList, KeeperStorageListRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::FilteredList, KeeperStorageListRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);

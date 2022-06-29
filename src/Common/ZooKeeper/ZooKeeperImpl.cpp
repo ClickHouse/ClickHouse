@@ -1172,7 +1172,7 @@ void ZooKeeper::list(
     ListCallback callback,
     WatchCallback watch)
 {
-    ZooKeeperListRequest request;
+    ZooKeeperFilteredListRequest request;
     request.path = path;
     request.list_request_type = list_request_type;
 
