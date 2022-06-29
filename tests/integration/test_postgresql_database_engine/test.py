@@ -50,7 +50,9 @@ def started_cluster():
 
 def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     # connect to database as well
-    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True)
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
     cursor = conn.cursor()
 
     node1.query(
@@ -78,7 +80,9 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
 
 
 def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
-    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True)
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
     cursor = conn.cursor()
 
     node1.query(
@@ -107,7 +111,9 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
 
 
 def test_postgresql_database_engine_queries(started_cluster):
-    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True)
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
     cursor = conn.cursor()
 
     node1.query(
@@ -115,13 +121,16 @@ def test_postgresql_database_engine_queries(started_cluster):
     )
 
     create_postgres_table(cursor, "test_table")
-    assert node1.query("SELECT count() FROM postgres_database.test_table").rstrip() == "0"
+    assert (
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip() == "0"
+    )
 
     node1.query(
         "INSERT INTO postgres_database.test_table SELECT number, number from numbers(10000)"
     )
     assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip() == "10000"
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
+        == "10000"
     )
 
     drop_postgres_table(cursor, "test_table")
@@ -132,7 +141,9 @@ def test_postgresql_database_engine_queries(started_cluster):
 
 
 def test_get_create_table_query_with_multidim_arrays(started_cluster):
-    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True)
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
     cursor = conn.cursor()
 
     node1.query(
@@ -173,7 +184,9 @@ def test_get_create_table_query_with_multidim_arrays(started_cluster):
 
 
 def test_postgresql_database_engine_table_cache(started_cluster):
-    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True)
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
     cursor = conn.cursor()
 
     node1.query(
@@ -213,7 +226,8 @@ def test_postgresql_database_engine_table_cache(started_cluster):
         "INSERT INTO postgres_database.test_table SELECT number, number, toString(number) from numbers(10000)"
     )
     assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip() == "10000"
+        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
+        == "10000"
     )
 
     cursor.execute("DROP TABLE test_table;")
@@ -224,7 +238,9 @@ def test_postgresql_database_engine_table_cache(started_cluster):
 
 
 def test_postgresql_database_with_schema(started_cluster):
-    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True)
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
     cursor = conn.cursor()
 
     cursor.execute("CREATE SCHEMA test_schema")
@@ -238,11 +254,17 @@ def test_postgresql_database_with_schema(started_cluster):
 
     assert node1.query("SHOW TABLES FROM postgres_database") == "table1\ntable2\n"
 
-    node1.query("INSERT INTO postgres_database.table1 SELECT number from numbers(10000)")
-    assert node1.query("SELECT count() FROM postgres_database.table1").rstrip() == "10000"
+    node1.query(
+        "INSERT INTO postgres_database.table1 SELECT number from numbers(10000)"
+    )
+    assert (
+        node1.query("SELECT count() FROM postgres_database.table1").rstrip() == "10000"
+    )
     node1.query("DETACH TABLE postgres_database.table1")
     node1.query("ATTACH TABLE postgres_database.table1")
-    assert node1.query("SELECT count() FROM postgres_database.table1").rstrip() == "10000"
+    assert (
+        node1.query("SELECT count() FROM postgres_database.table1").rstrip() == "10000"
+    )
     node1.query("DROP DATABASE postgres_database")
 
     cursor.execute("DROP SCHEMA test_schema CASCADE")
@@ -311,7 +333,9 @@ def test_predefined_connection_configuration(started_cluster):
 
 
 def test_postgres_database_old_syntax(started_cluster):
-    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port, database=True)
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
     cursor = conn.cursor()
 
     node1.query(
@@ -323,6 +347,7 @@ def test_postgres_database_old_syntax(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
     cursor.execute(f"DROP TABLE test_table ")
     node1.query("DROP DATABASE IF EXISTS postgres_database;")
+
 
 if __name__ == "__main__":
     cluster.start()
