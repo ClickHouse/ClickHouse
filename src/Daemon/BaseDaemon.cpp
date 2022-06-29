@@ -925,7 +925,7 @@ void BaseDaemon::handleSignal(int signal_id)
         signal_id == SIGQUIT ||
         signal_id == SIGTERM)
     {
-        std::unique_lock<std::mutex> lock(signal_handler_mutex);
+        std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
             sigint_signals_counter += signal_id == SIGINT;

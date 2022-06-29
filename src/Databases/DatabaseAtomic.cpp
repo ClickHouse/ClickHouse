@@ -73,7 +73,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
-    assert(tables.empty());
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
         fs::remove(path_to_metadata_symlink);
@@ -90,40 +90,40 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     not_in_use = cleanupDetachedTables();
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
-    DatabaseOrdinary::attachTableUnlocked(name, table, lock);
+    DatabaseOrdinary::attachTableUnlocked(name, table);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
     DetachedTables not_in_use;
-    std::unique_lock lock(mutex);
-    auto table = DatabaseOrdinary::detachTableUnlocked(name, lock);
+    std::lock_guard lock(mutex);
+    auto table = DatabaseOrdinary::detachTableUnlocked(name);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
     not_in_use = cleanupDetachedTables(); //-V1001
     return table;
 }
 
-void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
+void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
     if (table)
-        table->dropInnerTableIfAny(no_delay, local_context);
+        table->dropInnerTableIfAny(sync, local_context);
     else
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
-                        backQuote(database_name), backQuote(table_name));
+                        backQuote(getDatabaseName()), backQuote(table_name));
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -136,7 +136,7 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
         /// TODO better detection and recovery
 
         fs::rename(table_metadata_path, table_metadata_path_drop);  /// Mark table as dropped
-        DatabaseOrdinary::detachTableUnlocked(table_name, lock);  /// Should never throw
+        DatabaseOrdinary::detachTableUnlocked(table_name);  /// Should never throw
         table_name_to_path.erase(table_name);
     }
 
@@ -145,11 +145,12 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, sync);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                  const String & to_table_name, bool exchange, bool dictionary)
+    TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking
 {
     if (typeid(*this) != typeid(to_database))
     {
@@ -173,7 +174,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
 
-    auto detach = [](DatabaseAtomic & db, const String & table_name_, bool has_symlink)
+    auto detach = [](DatabaseAtomic & db, const String & table_name_, bool has_symlink) TSA_REQUIRES(db.mutex)
     {
         auto it = db.table_name_to_path.find(table_name_);
         String table_data_path_saved;
@@ -188,7 +189,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         return table_data_path_saved;
     };
 
-    auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_)
+    auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_) TSA_REQUIRES(db.mutex)
     {
         db.tables.emplace(table_name_, table_);
         if (table_data_path_.empty())
@@ -229,9 +230,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     }
 
     if (!exchange)
-        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name, inside_database ? db_lock : other_db_lock);
+        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name);
 
-    StoragePtr table = getTableUnlocked(table_name, db_lock);
+    StoragePtr table = getTableUnlocked(table_name);
 
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
@@ -244,7 +245,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     StorageID other_table_new_id = StorageID::createEmpty();
     if (exchange)
     {
-        other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        other_table = other_db.getTableUnlocked(to_table_name);
         if (dictionary && !other_table->isDictionary())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
         other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
@@ -294,7 +295,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     auto table_data_path = getTableDataPath(query);
     try
     {
-        std::unique_lock lock{mutex};
+        std::lock_guard lock{mutex};
         if (query.getDatabase() != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                             database_name, query.getDatabase());
@@ -312,7 +313,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
-        attachTableUnlocked(query.getTable(), table, lock);   /// Should never throw
+        attachTableUnlocked(query.getTable(), table);   /// Should never throw
         table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
@@ -330,8 +331,8 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     bool check_file_exists = true;
     SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
 
-    std::unique_lock lock{mutex};
-    auto actual_table_id = getTableUnlocked(table_id.table_name, lock)->getStorageID();
+    std::lock_guard lock{mutex};
+    auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
 
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
@@ -363,7 +364,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
 
 void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     detached_tables.erase(uuid);
 }
 
