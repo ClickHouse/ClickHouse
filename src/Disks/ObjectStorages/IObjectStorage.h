@@ -41,6 +41,7 @@ struct PathWithSize
 
 /// List of paths with their sizes
 using PathsWithSize = std::vector<PathWithSize>;
+using RelativePathsWithSize = PathsWithSize;
 
 struct ObjectMetadata
 {
@@ -65,7 +66,7 @@ public:
     virtual bool exists(const std::string & path) const = 0;
 
     /// List on prefix, return children (relative paths) with their sizes.
-    virtual void listPrefix(const std::string & path, PathsWithSize & children) const = 0;
+    virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const = 0;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
