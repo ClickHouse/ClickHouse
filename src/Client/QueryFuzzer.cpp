@@ -549,10 +549,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 select->groupBy()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
             }
-            else
-            {
-                fuzz(select->groupBy()->children);
-            }
         }
         else if (fuzz_rand() % 50 == 0)
         {
@@ -565,10 +561,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 select->where()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::WHERE, {});
-            }
-            else
-            {
-                fuzz(select->where()->children);
             }
         }
         else if (fuzz_rand() % 50 == 0)
