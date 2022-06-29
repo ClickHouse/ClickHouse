@@ -336,7 +336,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
 
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &)
 {
-    std::unique_lock<std::shared_mutex> lock(rocksdb_ptr_mx);
+    std::lock_guard lock(rocksdb_ptr_mx);
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
 

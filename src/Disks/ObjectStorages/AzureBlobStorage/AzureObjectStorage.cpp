@@ -67,16 +67,18 @@ std::unique_ptr<SeekableReadBuffer> AzureObjectStorage::readObject( /// NOLINT
 }
 
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOLINT
-    const std::string & common_path_prefix,
-    const BlobsPathToSize & blobs_to_read,
+    const PathsWithSize & paths_to_read,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
     auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
-        client.get(), common_path_prefix, blobs_to_read,
-        settings_ptr->max_single_read_retries, settings_ptr->max_single_download_retries, read_settings);
+        client.get(),
+        paths_to_read,
+        settings_ptr->max_single_read_retries,
+        settings_ptr->max_single_download_retries,
+        read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
@@ -111,7 +113,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), path);
 }
 
-void AzureObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
+void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     auto client_ptr = client.get();
 
@@ -134,10 +136,10 @@ void AzureObjectStorage::removeObject(const std::string & path)
         throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", path);
 }
 
-void AzureObjectStorage::removeObjects(const std::vector<std::string> & paths)
+void AzureObjectStorage::removeObjects(const PathsWithSize & paths)
 {
     auto client_ptr = client.get();
-    for (const auto & path : paths)
+    for (const auto & [path, _] : paths)
     {
         auto delete_info = client_ptr->DeleteBlob(path);
         if (!delete_info.Value.Deleted)
@@ -151,10 +153,10 @@ void AzureObjectStorage::removeObjectIfExists(const std::string & path)
     auto delete_info = client_ptr->DeleteBlob(path);
 }
 
-void AzureObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
+void AzureObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
 {
     auto client_ptr = client.get();
-    for (const auto & path : paths)
+    for (const auto & [path, _] : paths)
         auto delete_info = client_ptr->DeleteBlob(path);
 }
 

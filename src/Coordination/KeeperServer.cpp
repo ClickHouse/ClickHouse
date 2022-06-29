@@ -576,7 +576,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
     auto set_initialized = [this]()
     {
-        std::unique_lock lock(initialized_mutex);
+        std::lock_guard lock(initialized_mutex);
         initialized_flag = true;
         initialized_cv.notify_all();
     };
