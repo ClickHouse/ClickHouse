@@ -72,7 +72,6 @@ namespace
             return ColumnVector<T>::create();
 
         auto size = index.size();
-
         T max_val = index[0];
         for (size_t i = 1; i < size; ++i)
             max_val = std::max(max_val, index[i]);
@@ -639,18 +638,27 @@ void ColumnLowCardinality::Index::convertPositions()
             size_t size = data.size();
             auto new_positions = ColumnVector<IndexType>::create(size);
             auto & new_data = new_positions->getData();
+            size_t i=0;
 
-            /// TODO: Optimize with SSE?
-            for (size_t i = 0; i < size; ++i)
+#if defined(__SSE2__)
+
+            const auto bytes_sse = sizeof(__m128i);
+            const __m128i * sse_data_pos = reinterpret_cast<const __m128i *>(&data);
+            const  auto loop_count_sse = (sizeof(IndexType)*size)/bytes_sse;
+            __m128i * sse_new_data_pos = reinterpret_cast<__m128i *>(&new_data);
+            for (size_t j=0;j<loop_count_sse;j++,sse_data_pos += bytes_sse,sse_new_data_pos += bytes_sse)
+                _mm_storeu_si128(sse_new_data_pos , _mm_loadu_si128(sse_data_pos));
+            i =  loop_count_sse * (bytes_sse/sizeof(IndexType));
+#endif
+            // handle left handover
+            for (; i < size; ++i)
                 new_data[i] = data[i];
 
             positions = std::move(new_positions);
             size_of_type = sizeof(IndexType);
         }
     };
-
     callForType(std::move(convert), size_of_type);
-
     checkSizeOfType();
 }
 
@@ -732,7 +740,6 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
 
             callForType(std::move(copy), size_of_type);
         }
-
         return true;
     };
 
@@ -742,8 +749,6 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
         !insert_for_type(UInt64()))
         throw Exception("Invalid column for ColumnLowCardinality index. Expected UInt, got " + column.getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
-
-    checkSizeOfType();
 }
 
 void ColumnLowCardinality::Index::checkSizeOfType()
