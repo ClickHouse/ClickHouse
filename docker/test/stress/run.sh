@@ -42,6 +42,7 @@ function install_packages()
 function configure()
 {
     # install test configs
+    export USE_DATABASE_ORDINARY=1
     /usr/share/clickhouse-test/config/install.sh
 
     # we mount tests folder from repo to /usr/share
