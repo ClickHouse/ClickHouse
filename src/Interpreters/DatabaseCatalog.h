@@ -221,7 +221,7 @@ public:
     DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
 
     TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
-    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false);
+    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false) TSA_REQUIRES(databases_mutex);
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
 
     void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
@@ -233,15 +233,15 @@ private:
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
-    void assertDatabaseExistsUnlocked(const String & database_name) const;
-    void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
+    void assertDatabaseExistsUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
+    void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
     void shutdownImpl();
 
 
     struct UUIDToStorageMapPart
     {
-        std::unordered_map<UUID, DatabaseAndTable> map;
+        std::unordered_map<UUID, DatabaseAndTable> map TSA_GUARDED_BY(mutex);
         mutable std::mutex mutex;
     };
 
@@ -273,12 +273,12 @@ private:
 
     mutable std::mutex databases_mutex;
 
-    ViewDependencies view_dependencies;
+    ViewDependencies view_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    Databases databases;
+    Databases databases TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
-    DependenciesInfos loading_dependencies;
+    DependenciesInfos loading_dependencies TSA_GUARDED_BY(databases_mutex);
 
     Poco::Logger * log;
 
@@ -290,12 +290,12 @@ private:
     /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
     using DatabaseGuard = std::pair<DDLGuard::Map, std::shared_mutex>;
     using DDLGuards = std::map<String, DatabaseGuard>;
-    DDLGuards ddl_guards;
+    DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
     mutable std::mutex ddl_guards_mutex;
 
-    TablesMarkedAsDropped tables_marked_dropped;
-    std::unordered_set<UUID> tables_marked_dropped_ids;
+    TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;

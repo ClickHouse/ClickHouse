@@ -51,9 +51,9 @@ public:
     void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 
 private:
-    String data_path;
+    const String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;
-    NameToASTCreate create_queries;
+    NameToASTCreate create_queries TSA_GUARDED_BY(mutex);
 };
 
 }

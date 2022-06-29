@@ -158,6 +158,7 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const Filt
 
 bool DatabaseLazy::empty() const
 {
+    std::lock_guard lock(mutex);
     return tables_cache.empty();
 }
 
