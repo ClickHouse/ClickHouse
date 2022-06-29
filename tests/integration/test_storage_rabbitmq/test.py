@@ -2752,7 +2752,8 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
 
 def test_rabbitmq_address(rabbitmq_cluster):
 
-    instance2.query("""
+    instance2.query(
+        """
         drop table if exists rabbit_in;
         drop table if exists rabbit_out;
         create table
@@ -2770,7 +2771,8 @@ def test_rabbitmq_address(rabbitmq_cluster):
                      rabbitmq_address='amqp://root:clickhouse@rabbitmq1:5672/';
         set stream_like_engine_allow_direct_select=1;
         insert into rabbit_out select 'kek';
-    """)
+    """
+    )
 
     result = ""
     try_no = 0
