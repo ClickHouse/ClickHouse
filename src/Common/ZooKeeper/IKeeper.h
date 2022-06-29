@@ -291,7 +291,6 @@ enum class ListRequestType : uint8_t
 struct ListRequest : virtual Request
 {
     String path;
-    ListRequestType list_request_type{ListRequestType::ALL};
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
