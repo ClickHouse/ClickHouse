@@ -70,12 +70,22 @@ void checkRemoveAccess(IDisk & disk)
     disk.removeFile("test_acl");
 }
 
-bool checkBatchRemoveAccess(IDisk & disk)
+bool checkBatchRemoveCapability(S3ObjectStorage & storage, const String & key)
 {
+    String path = key + "/test_acl";
+    auto file = storage.writeObject(path, WriteMode::Rewrite);
     try
     {
-        checkWriteAccess(disk);
-        disk.removeRecursive("test_acl");
+        file->write("test", 4);
+    }
+    catch (...)
+    {
+        file->finalize();
+        return true; /// We don't have write access, therefore no information about batch remove.
+    }
+    try
+    {
+        storage.removeObjects({ path });
         return true;
     }
     catch (const Exception &)
@@ -113,6 +123,14 @@ void registerDiskS3(DiskFactory & factory)
             getSettings(config, config_prefix, context),
             uri.version_id, s3_capabilities, uri.bucket);
 
+        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        {
+            if (s3_capabilities.support_batch_delete && !checkBatchRemoveCapability(*s3_storage, uri.key))
+            {
+                s3_storage->setCapabilitiesSupportBatchDelete(false);
+            }
+        }
+
         bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
 
@@ -132,11 +150,6 @@ void registerDiskS3(DiskFactory & factory)
             checkWriteAccess(*s3disk);
             checkReadAccess(name, *s3disk);
             checkRemoveAccess(*s3disk);
-
-            if (s3_capabilities.support_batch_delete && !checkBatchRemoveAccess(*s3disk))
-            {
-                s3_storage->setCapabilitiesSupportBatchDelete(false);
-            }
         }
 
         s3disk->startup(context);
