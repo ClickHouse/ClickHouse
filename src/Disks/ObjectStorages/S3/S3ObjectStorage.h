@@ -113,7 +113,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void setCapabilitiesSupportBatchDelete(bool value);
+    void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
 
     String getObjectsNamespace() const override { return bucket; }
 

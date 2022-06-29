@@ -471,11 +471,6 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
     client.set(getClient(config, config_prefix, context));
 }
 
-void S3ObjectStorage::setCapabilitiesSupportBatchDelete(bool value)
-{
-    s3_capabilities.support_batch_delete = value;
-}
-
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     return std::make_unique<S3ObjectStorage>(
