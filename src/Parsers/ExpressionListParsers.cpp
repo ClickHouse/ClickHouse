@@ -690,7 +690,7 @@ public:
     Operator(String function_name_,
              Int32 priority_,
              Int32 arity_ = 2,
-             OperatorType type_ = OperatorType::None) : function_name(function_name_), priority(priority_), arity(arity_), type(type_)
+             OperatorType type_ = OperatorType::None) : type(type_), priority(priority_), arity(arity_), function_name(function_name_)
     {
     }
 

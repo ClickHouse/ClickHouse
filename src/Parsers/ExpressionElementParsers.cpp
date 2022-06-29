@@ -2074,7 +2074,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         ASTPtr func_name;
         ASTPtr expr_list_args;
         auto opos = pos;
-        if (ParserLambdaExpression().parse(pos, lambda, expected))
+        if (ParserExpression().parse(pos, lambda, expected))
         {
             if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {

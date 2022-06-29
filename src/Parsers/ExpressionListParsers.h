@@ -448,12 +448,19 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "lambda expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 // It's used to parse expressions in table function.
 class ParserTableFunctionExpression : public IParserBase
 {
 private:
-    ParserLambdaExpression elem_parser;
+    ParserExpression elem_parser;
 
 protected:
     const char * getName() const override { return "table function expression"; }
@@ -506,15 +513,6 @@ private:
     ParserExpressionList nested_parser;
 protected:
     const char * getName() const override { return "not empty list of expressions"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-class ParserExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "lambda expression"; }
-
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
