@@ -598,6 +598,9 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     auto zookeeper = getZooKeeper();
 
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
+    /// We need to confirm /quorum exists here although it's called under createTableIfNotExists because in older CH releases (pre 22.4)
+    /// it was created here, so if metadata creation is done by an older replica the node might not exists when reaching this call
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum", String(), zkutil::CreateMode::Persistent));
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum/parallel", String(), zkutil::CreateMode::Persistent));
 
     /// Nodes for remote fs zero-copy replication
@@ -1657,7 +1660,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             Transaction transaction(*this, NO_TRANSACTION_RAW);
 
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-            renameTempPartAndReplace(part, NO_TRANSACTION_RAW, nullptr, &transaction);
+            renameTempPartAndReplace(part, transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
@@ -2342,7 +2345,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         Coordination::Requests ops;
         for (PartDescriptionPtr & part_desc : final_parts)
         {
-            renameTempPartAndReplace(part_desc->res_part, NO_TRANSACTION_RAW, nullptr, &transaction);
+            renameTempPartAndReplace(part_desc->res_part, transaction);
             getCommitPartOps(ops, part_desc->res_part);
 
             lockSharedData(*part_desc->res_part, false, part_desc->hardlinked_files);
@@ -2969,7 +2972,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
 String StorageReplicatedMergeTree::getLastQueueUpdateException() const
 {
-    std::unique_lock lock(last_queue_update_exception_lock);
+    std::lock_guard lock(last_queue_update_exception_lock);
     return last_queue_update_exception;
 }
 
@@ -2991,7 +2994,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        std::unique_lock lock(last_queue_update_exception_lock);
+        std::lock_guard lock(last_queue_update_exception_lock);
         last_queue_update_exception = getCurrentExceptionMessage(false);
 
         if (e.code == Coordination::Error::ZSESSIONEXPIRED)
@@ -3006,7 +3009,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        std::unique_lock lock(last_queue_update_exception_lock);
+        std::lock_guard lock(last_queue_update_exception_lock);
         last_queue_update_exception = getCurrentExceptionMessage(false);
 
         queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
@@ -4081,7 +4084,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         if (!to_detached)
         {
             Transaction transaction(*this, NO_TRANSACTION_RAW);
-            renameTempPartAndReplace(part, NO_TRANSACTION_RAW, nullptr, &transaction);
+            renameTempPartAndReplace(part, transaction);
 
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, hardlinked_files);
 
@@ -4340,7 +4343,7 @@ void StorageReplicatedMergeTree::shutdown()
         /// Ask all parts exchange handlers to finish asap. New ones will fail to start
         data_parts_exchange_ptr->blocker.cancelForever();
         /// Wait for all of them
-        std::unique_lock lock(data_parts_exchange_ptr->rwlock);
+        std::lock_guard lock(data_parts_exchange_ptr->rwlock);
     }
 }
 
@@ -6602,9 +6605,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             Transaction transaction(*this, NO_TRANSACTION_RAW);
             {
                 auto data_parts_lock = lockParts();
-
-                for (MutableDataPartPtr & part : dst_parts)
-                    renameTempPartAndReplace(part, query_context->getCurrentTransaction().get(), nullptr, &transaction, data_parts_lock);
+                for (auto & part : dst_parts)
+                    renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock);
             }
 
             for (size_t i = 0; i < dst_parts.size(); ++i)
@@ -6837,11 +6839,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 auto src_data_parts_lock = lockParts();
                 auto dest_data_parts_lock = dest_table_storage->lockParts();
 
-                std::mutex mutex;
-                DataPartsLock lock(mutex);
-
-                for (MutableDataPartPtr & part : dst_parts)
-                    dest_table_storage->renameTempPartAndReplace(part, query_context->getCurrentTransaction().get(), nullptr, &transaction, lock);
+                for (auto & part : dst_parts)
+                    dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock);
 
                 for (size_t i = 0; i < dst_parts.size(); ++i)
                     dest_table_storage->lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
@@ -6852,8 +6851,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 else
                     zkutil::KeeperMultiException::check(code, ops, op_results);
 
-                parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, lock);
-                transaction.commit(&lock);
+                parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
+                transaction.commit(&src_data_parts_lock);
             }
 
             PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
@@ -7403,7 +7402,7 @@ void StorageReplicatedMergeTree::checkBrokenDisks()
         if (disk_ptr->isBroken())
         {
             {
-                std::unique_lock lock(last_broken_disks_mutex);
+                std::lock_guard lock(last_broken_disks_mutex);
                 if (!last_broken_disks.insert(disk_ptr->getName()).second)
                     continue;
             }
@@ -7423,7 +7422,7 @@ void StorageReplicatedMergeTree::checkBrokenDisks()
         else
         {
             {
-                std::unique_lock lock(last_broken_disks_mutex);
+                std::lock_guard lock(last_broken_disks_mutex);
                 if (last_broken_disks.erase(disk_ptr->getName()) > 0)
                     LOG_INFO(
                         log,
@@ -8020,7 +8019,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     try
     {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        auto replaced_parts = renameTempPartAndReplace(new_data_part, NO_TRANSACTION_RAW, nullptr, &transaction);
+        auto replaced_parts = renameTempPartAndReplace(new_data_part, transaction);
 
         if (!replaced_parts.empty())
         {
