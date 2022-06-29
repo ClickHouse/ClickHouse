@@ -14,7 +14,8 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Backups/IBackup.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -257,8 +258,13 @@ void IStorage::backupData(BackupEntriesCollector &, const String &, const std::o
 {
 }
 
-void IStorage::restoreDataFromBackup(RestorerFromBackup &, const String &, const std::optional<ASTs> &)
+void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
+    /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
+    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
+    if (!filenames.empty())
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
+                        getStorageID().getFullTableName(), data_path_in_backup);
 }
 
 std::string PrewhereInfo::dump() const

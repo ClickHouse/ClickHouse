@@ -17,6 +17,7 @@ class IRestoreCoordination;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class AccessRightsElements;
+struct QualifiedTableName;
 
 
 /// Makes a backup of access entities of a specified type.
@@ -35,7 +36,7 @@ public:
     ~AccessRestoreTask();
 
     /// Adds a data path to loads access entities from.
-    void addDataPath(const String & data_path);
+    void addDataPath(const String & data_path, const QualifiedTableName & table_name_for_logs);
     bool hasDataPath(const String & data_path) const;
 
     /// Checks that the current user can do restoring.

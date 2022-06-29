@@ -50,9 +50,6 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
-    /// Throws an exception that a specified table engine doesn't support partitions.
-    [[noreturn]] static void throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine);
-
 private:
     void calculateRootPathInBackup();
 

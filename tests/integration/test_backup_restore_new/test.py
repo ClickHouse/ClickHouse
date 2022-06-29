@@ -799,3 +799,29 @@ def test_system_functions():
     assert instance.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
         [[0, "even"], [1, "odd"], [2, "even"]]
     )
+
+
+def test_backup_partition():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table PARTITIONS '1', '4' TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV([[1, '1'], [4, '4'], [11, '11'], [14, '14'], [21, '21'], [24, '24']])
+
+
+def test_restore_partition():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table PARTITIONS '2', '3' FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV([[2, '2'], [3, '3'], [12, '12'], [13, '13'], [22, '22'], [23, '23']])

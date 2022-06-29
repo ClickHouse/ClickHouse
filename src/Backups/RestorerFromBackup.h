@@ -59,9 +59,6 @@ public:
     /// Checks that a specified path is already registered to be used for restoring access control.
     void checkPathInBackupIsRegisteredToRestoreAccess(const String & path);
 
-    /// Throws an exception that a specified table engine doesn't support partitions.
-    [[noreturn]] static void throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine);
-
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
 
@@ -104,9 +101,10 @@ private:
     {
         ASTPtr create_table_query;
         bool is_predefined_table = false;
-        std::optional<ASTs> partitions;
-        std::filesystem::path data_path_in_backup;
         std::unordered_set<QualifiedTableName> dependencies;
+        bool has_data = false;
+        std::filesystem::path data_path_in_backup;
+        std::optional<ASTs> partitions;
         bool created = false;
         StoragePtr storage;
         TableLockHolder table_lock;

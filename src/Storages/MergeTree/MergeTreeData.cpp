@@ -150,6 +150,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
@@ -4092,7 +4093,10 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     {
         const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
         if (!part_info)
-            continue;
+        {
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File name {} doesn't look like the name of a part",
+                            getStorageID().getFullTableName(), String{data_path_in_backup_fs / part_name});
+        }
 
         if (partition_ids && !partition_ids->contains(part_info->partition_id))
             continue;

@@ -478,6 +478,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
         for (const auto & db_table : db_tables)
         {
             const auto & create_table_query = db_table.first;
+            const auto & storage = db_table.second;
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             String table_name = create.getTable();
 
@@ -499,14 +500,28 @@ void BackupEntriesCollector::gatherTablesMetadata()
             /// Add information to `table_infos`.
             auto & res_table_info = table_infos[QualifiedTableName{database_name, table_name}];
             res_table_info.database = database;
-            res_table_info.storage = db_table.second;
+            res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
-            auto partitions_it = database_info.tables.find(table_name);
-            if (partitions_it != database_info.tables.end())
-                res_table_info.partitions = partitions_it->second.partitions;
+            if (!backup_settings.structure_only)
+            {
+                auto it = database_info.tables.find(table_name);
+                if (it != database_info.tables.end())
+                {
+                    const auto & partitions = it->second.partitions;
+                    if (partitions && !storage->supportsBackupPartition())
+                    {
+                        throw Exception(
+                            ErrorCodes::CANNOT_BACKUP_TABLE,
+                            "Table engine {} doesn't support partitions, cannot backup {}",
+                            storage->getName(),
+                            tableNameWithTypeToString(database_name, table_name, false));
+                    }
+                    res_table_info.partitions = partitions;
+                }
+            }
         }
     }
 }
@@ -722,15 +737,6 @@ void BackupEntriesCollector::runPostTasks()
         post_tasks.pop();
         std::move(task)();
     }
-}
-
-void BackupEntriesCollector::throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine)
-{
-    throw Exception(
-        ErrorCodes::CANNOT_BACKUP_TABLE,
-        "Table engine {} doesn't support partitions, cannot backup table {}",
-        table_engine,
-        storage_id.getFullTableName());
 }
 
 }

@@ -25,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_RESTORE_TABLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -317,12 +318,21 @@ AccessRestoreTask::AccessRestoreTask(
 
 AccessRestoreTask::~AccessRestoreTask() = default;
 
-void AccessRestoreTask::addDataPath(const String & data_path)
+void AccessRestoreTask::addDataPath(const String & data_path, const QualifiedTableName & table_name_for_logs)
 {
     if (!data_paths.emplace(data_path).second)
         return;
 
+    if (!backup->hasFiles(data_path))
+        return;
+
     String file_path = fs::path{data_path} / "access.txt";
+    if (!backup->fileExists(file_path))
+    {
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
+                        table_name_for_logs.getFullName(), file_path);
+    }
+
     auto backup_entry = backup->readFile(file_path);
     auto ab = AccessEntitiesInBackup::fromBackupEntry(*backup_entry, file_path);
 
