@@ -32,7 +32,8 @@ public:
         const SizeLimits & output_size_limits_,
         UInt64 limit_hint_,
         const SortDescription & sorted_columns_descr_,
-        const Names & source_columns_);
+        const Names & source_columns_,
+        size_t range_search_step);
 
     String getName() const override { return "DistinctSortedChunkTransform"; }
 
@@ -67,6 +68,7 @@ private:
     ColumnRawPtrs other_columns; // used during processing
 
     MutableColumns current_key;
+    const size_t range_search_step = 0;
 };
 
 }
