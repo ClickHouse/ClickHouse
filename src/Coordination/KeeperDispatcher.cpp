@@ -48,7 +48,7 @@ void KeeperDispatcher::requestThread()
 
     auto process_read_requests = [&, this]() mutable
     {
-        server->getLeaderInfo()->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> &) mutable
+        server->getLeaderInfo()->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
         {
             if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
             {
@@ -60,8 +60,20 @@ void KeeperDispatcher::requestThread()
                 addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
                 return;
             }
+            else if (exception)
+            {
+                LOG_INFO(&Poco::Logger::get("KeeperDispatcher"), "Got exception while waiting for read results {}", exception->what());
+                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                return;
+            }
 
             auto & leader_info_ctx = result.get();
+
+            if (!leader_info_ctx)
+            {
+                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                return;
+            }
 
             KeeperServer::NodeInfo leader_info;
             leader_info.term = leader_info_ctx->get_ulong();
