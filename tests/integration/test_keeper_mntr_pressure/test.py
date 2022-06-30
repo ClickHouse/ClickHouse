@@ -23,6 +23,7 @@ node3 = cluster.add_instance(
     "node3", main_configs=["config/enable_keeper3.xml"], stay_alive=True
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -46,6 +47,7 @@ def close_keeper_socket(cli):
     if cli is not None:
         cli.close()
 
+
 def send_4lw_cmd(node_name, cmd="ruok"):
     client = None
     try:
@@ -60,7 +62,6 @@ def send_4lw_cmd(node_name, cmd="ruok"):
 
 
 def test_aggressive_mntr(started_cluster):
-
     def go_mntr(node_name):
         for i in range(100000):
             print(node_name, send_4lw_cmd(node_name, "mntr"))
