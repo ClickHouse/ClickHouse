@@ -1594,6 +1594,8 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
 
                 queue.close()
         except Full:
+            print("Couldn't put test to the queue within timeout. Server probably hung.")
+            print_stacktraces()
             queue.close()
 
         pool.join()
