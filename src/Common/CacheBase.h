@@ -11,7 +11,8 @@
 #include <mutex>
 #include <unordered_map>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -176,6 +177,7 @@ public:
     }
 
     size_t maxSize() const
+        TSA_NO_THREAD_SAFETY_ANALYSIS // disabled because max_size of cache_policy is a constant parameter
     {
         return cache_policy->maxSize();
     }
@@ -188,7 +190,7 @@ protected:
 private:
     using CachePolicy = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
 
-    std::unique_ptr<CachePolicy> cache_policy;
+    std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
 
     inline static const String default_cache_policy_name = "SLRU";
 
@@ -201,8 +203,8 @@ private:
         explicit InsertToken(CacheBase & cache_) : cache(cache_) {}
 
         std::mutex mutex;
-        bool cleaned_up = false; /// Protected by the token mutex
-        MappedPtr value; /// Protected by the token mutex
+        bool cleaned_up TSA_GUARDED_BY(mutex) = false;
+        MappedPtr value TSA_GUARDED_BY(mutex);
 
         CacheBase & cache;
         size_t refcount = 0; /// Protected by the cache mutex
@@ -258,7 +260,7 @@ private:
 
     friend struct InsertTokenHolder;
 
-    InsertTokenById insert_tokens;
+    InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
     virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
