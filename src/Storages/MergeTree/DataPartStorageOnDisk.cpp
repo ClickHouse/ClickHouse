@@ -875,11 +875,6 @@ DataPartStoragePtr DataPartStorageBuilderOnDisk::getStorage() const
     return std::make_shared<DataPartStorageOnDisk>(volume, root_path, part_dir);
 }
 
-String DataPartStorageBuilderOnDisk::getUniqueId() const
-{
-    return transaction->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
-}
-
 void DataPartStorageBuilderOnDisk::commit()
 {
     transaction->commit();

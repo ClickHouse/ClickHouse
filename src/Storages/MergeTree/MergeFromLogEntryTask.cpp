@@ -269,7 +269,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
     try
     {
-        storage.checkPartChecksumsAndCommit(*transaction_ptr, part, builder);
+        storage.checkPartChecksumsAndCommit(*transaction_ptr, part);
     }
     catch (const Exception & e)
     {

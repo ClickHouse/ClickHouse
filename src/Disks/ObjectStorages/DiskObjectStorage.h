@@ -163,6 +163,9 @@ public:
 
     UInt64 getRevision() const override;
 private:
+
+    DiskTransactionPtr createObjectStorageTransaction();
+
     const String name;
     const String remote_fs_root_path;
     Poco::Logger * log;

@@ -598,9 +598,6 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     auto zookeeper = getZooKeeper();
 
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
-    /// We need to confirm /quorum exists here although it's called under createTableIfNotExists because in older CH releases (pre 22.4)
-    /// it was created here, so if metadata creation is done by an older replica the node might not exists when reaching this call
-    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum", String(), zkutil::CreateMode::Persistent));
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum/parallel", String(), zkutil::CreateMode::Persistent));
 
     /// Nodes for remote fs zero-copy replication
@@ -1504,7 +1501,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 }
 
 MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
-     const DataPartPtr & part, DataPartStorageBuilderPtr builder, std::optional<MergeTreeData::HardlinkedFiles> hardlinked_files)
+    const DataPartPtr & part, std::optional<MergeTreeData::HardlinkedFiles> hardlinked_files)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1514,7 +1511,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
 
-        lockSharedData(*part, builder, false, hardlinked_files);
+        lockSharedData(*part, false, hardlinked_files);
 
         /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
         checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, &absent_part_paths_on_replicas);
@@ -1662,7 +1659,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
             auto builder = part->data_part_storage->getBuilder();
             renameTempPartAndReplace(part, transaction, builder);
-            checkPartChecksumsAndCommit(transaction, part, nullptr);
+            checkPartChecksumsAndCommit(transaction, part);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr);
@@ -2350,7 +2347,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             renameTempPartAndReplace(part_desc->res_part, transaction, builder);
             getCommitPartOps(ops, part_desc->res_part);
 
-            lockSharedData(*part_desc->res_part, nullptr, false, part_desc->hardlinked_files);
+            lockSharedData(*part_desc->res_part, false, part_desc->hardlinked_files);
         }
 
 
@@ -4092,7 +4089,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             Transaction transaction(*this, NO_TRANSACTION_RAW);
             renameTempPartAndReplace(part, transaction, builder);
 
-            replaced_parts = checkPartChecksumsAndCommit(transaction, part, nullptr, hardlinked_files);
+            replaced_parts = checkPartChecksumsAndCommit(transaction, part, hardlinked_files);
 
             /** If a quorum is tracked for this part, you must update it.
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
@@ -6627,7 +6624,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             }
 
             for (size_t i = 0; i < dst_parts.size(); ++i)
-                lockSharedData(*dst_parts[i], nullptr, false, hardlinked_files_for_parts[i]);
+                lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
 
             Coordination::Error code = zookeeper->tryMulti(ops, op_results);
             if (code == Coordination::Error::ZOK)
@@ -6863,7 +6860,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 }
 
                 for (size_t i = 0; i < dst_parts.size(); ++i)
-                    dest_table_storage->lockSharedData(*dst_parts[i], nullptr, false, hardlinked_files_for_parts[i]);
+                    dest_table_storage->lockSharedData(*dst_parts[i], false, hardlinked_files_for_parts[i]);
+
                 Coordination::Error code = zookeeper->tryMulti(ops, op_results);
                 if (code == Coordination::Error::ZBADVERSION)
                     continue;
@@ -7548,7 +7546,7 @@ void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_nam
     }
 }
 
-void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part, DataPartStorageBuilderPtr builder, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const
+void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const
 {
     auto settings = getSettings();
 
@@ -7562,12 +7560,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
     if (!zookeeper)
         return;
 
-    String id;
-    if (builder)
-        id = builder->getUniqueId();
-    else
-        id = part.data_part_storage->getUniqueId();
-
+    String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(
@@ -7619,7 +7612,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         return std::make_pair(true, NameSet{});
     }
 
-    return unlockSharedDataByID(part.data_part_storage->getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), getZooKeeper(), *getSettings(), log,
+    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), getZooKeeper(), *getSettings(), log,
         zookeeper_path);
 }
 
@@ -8062,7 +8055,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             throw Exception(ErrorCodes::INCORRECT_DATA, "Tried to create empty part {}, but it replaces existing parts {}.", lost_part_name, fmt::join(part_names, ", "));
         }
 
-        lockSharedData(*new_data_part, data_part_storage_builder, false, {});
+        lockSharedData(*new_data_part, false, {});
 
         while (true)
         {

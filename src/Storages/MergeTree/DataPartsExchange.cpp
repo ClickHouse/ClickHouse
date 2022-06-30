@@ -928,7 +928,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-    data.lockSharedData(*new_data_part, nullptr, /* replace_existing_lock = */ true, {});
+    data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
 
     LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.",
         part_name, part_id, disk->getName());
