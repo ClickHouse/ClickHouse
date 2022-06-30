@@ -633,7 +633,8 @@ namespace
 
                 while (sse_copy_counter)
                 {
-                    _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data_copy), *(reinterpret_cast<const __m128i *>(data_copy_begin_ptr)));
+                    __m128i copy_batch = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data_copy_begin_ptr));
+                    _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data_copy), copy_batch);
                     result_data_copy += 4;
                     data_copy_begin_ptr += 4;
                     --sse_copy_counter;
@@ -673,7 +674,8 @@ namespace
 
             while (sse_copy_counter)
             {
-                _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data), *(reinterpret_cast<const __m128i *>(data_copy_begin_ptr)));
+                __m128i copy_batch = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data_copy_begin_ptr));
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data), copy_batch);
                 result_data += 4;
                 data_copy_begin_ptr += 4;
                 --sse_copy_counter;
