@@ -103,7 +103,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (!data.empty())
         return;

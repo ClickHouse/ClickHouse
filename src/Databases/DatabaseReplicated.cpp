@@ -148,7 +148,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         if (hosts.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
                             "It's possible if the first replica is not fully created yet "
-                            "or if the last replica was just dropped or due to logical error", database_name);
+                            "or if the last replica was just dropped or due to logical error", zookeeper_path);
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
@@ -213,7 +213,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         /*priority=*/1,
-        database_name,
+        TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret);
 }
 
@@ -588,7 +588,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->makeQueryContext();
         query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         query_context->getClientInfo().is_replicated_database_internal = true;
-        query_context->setCurrentDatabase(database_name);
+        query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId("");
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
@@ -608,6 +608,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// and make possible creation of new table with the same UUID.
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
+        query_context->setSetting("allow_deprecated_database_ordinary", 1);
         executeQuery(query, query_context, true);
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
@@ -811,7 +812,7 @@ void DatabaseReplicated::shutdown()
 }
 
 
-void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
+void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
@@ -820,7 +821,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
-    DatabaseAtomic::dropTable(local_context, table_name, no_delay);
+    DatabaseAtomic::dropTable(local_context, table_name, sync);
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
