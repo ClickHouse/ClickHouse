@@ -37,13 +37,38 @@ export FASTTEST_DATA
 export FASTTEST_OUT
 export PATH
 
+server_pid=none
+
+function stop_server
+{
+    if ! kill -0 -- "$server_pid"
+    then
+        echo "ClickHouse server pid '$server_pid' is not running"
+        return 0
+    fi
+
+    for _ in {1..60}
+    do
+        if ! pkill -f "clickhouse-server" && ! kill -- "$server_pid" ; then break ; fi
+        sleep 1
+    done
+
+    if kill -0 -- "$server_pid"
+    then
+        pstree -apgT
+        jobs
+        echo "Failed to kill the ClickHouse server pid '$server_pid'"
+        return 1
+    fi
+
+    server_pid=none
+}
+
 function start_server
 {
     set -m # Spawn server in its own process groups
-
     local opts=(
         --config-file "$FASTTEST_DATA/config.xml"
-        --pid-file "$FASTTEST_DATA/clickhouse-server.pid"
         --
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
@@ -51,22 +76,40 @@ function start_server
         --keeper_server.storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
+    server_pid=$!
     set +m
 
-    for _ in {1..60}; do
-        if clickhouse-client --query "select 1"; then
+    if [ "$server_pid" == "0" ]
+    then
+        echo "Failed to start ClickHouse server"
+        # Avoid zero PID because `kill` treats it as our process group PID.
+        server_pid="none"
+        return 1
+    fi
+
+    for _ in {1..60}
+    do
+        if clickhouse-client --query "select 1" || ! kill -0 -- "$server_pid"
+        then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --query "select 1"; then
+    if ! clickhouse-client --query "select 1"
+    then
         echo "Failed to wait until ClickHouse server starts."
+        server_pid="none"
         return 1
     fi
 
-    local server_pid
-    server_pid="$(cat "$FASTTEST_DATA/clickhouse-server.pid")"
+    if ! kill -0 -- "$server_pid"
+    then
+        echo "Wrong clickhouse server started: PID '$server_pid' we started is not running, but '$(pgrep -f clickhouse-server)' is running"
+        server_pid="none"
+        return 1
+    fi
+
     echo "ClickHouse server pid '$server_pid' started and responded"
 }
 
@@ -211,6 +254,9 @@ function run_tests
     clickhouse-server --version
     clickhouse-test --help
 
+    # Kill the server in case we are running locally and not in docker
+    stop_server ||:
+
     start_server
 
     set +e
@@ -238,8 +284,6 @@ function run_tests
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee "$FASTTEST_OUTPUT/test_result.txt"
     set -e
-
-    clickhouse stop --pid-path "$FASTTEST_DATA"
 }
 
 case "$stage" in

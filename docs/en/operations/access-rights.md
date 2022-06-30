@@ -1,8 +1,9 @@
 ---
 sidebar_position: 48
 sidebar_label: Access Control and Account Management
-title: Access Control and Account Management
 ---
+
+# Access Control and Account Management
 
 ClickHouse supports access control management based on [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) approach.
 

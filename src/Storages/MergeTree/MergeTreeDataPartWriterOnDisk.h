@@ -49,7 +49,7 @@ public:
     {
         Stream(
             const String & escaped_column_name_,
-            const DataPartStorageBuilderPtr & data_part_storage_builder,
+            DiskPtr disk_,
             const String & data_path_,
             const std::string & data_file_extension_,
             const std::string & marks_path_,
@@ -87,7 +87,6 @@ public:
 
     MergeTreeDataPartWriterOnDisk(
         const MergeTreeData::DataPartPtr & data_part_,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -129,6 +128,7 @@ protected:
 
     const MergeTreeIndices skip_indices;
 
+    const String part_path;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
 

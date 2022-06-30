@@ -4,10 +4,20 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
-#include "MetadataStorageFromDiskTransactionOperations.h"
 
 namespace DB
 {
+
+
+struct IMetadataOperation
+{
+    virtual void execute() = 0;
+    virtual void undo() = 0;
+    virtual void finalize() {}
+    virtual ~IMetadataOperation() = default;
+};
+
+using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
 
 enum class MetadataFromDiskTransactionState
 {
@@ -59,7 +69,9 @@ public:
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
-    PathsWithSize getObjectStoragePaths(const std::string & path) const override;
+    BlobsPathToSize getBlobs(const std::string & path) const override;
+
+    std::vector<std::string> getRemotePaths(const std::string & path) const override;
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 

@@ -16,7 +16,6 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_FILE_SIZE;
 }
 
 
@@ -60,11 +59,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    size_t getFileSize() const
+    std::optional<size_t> getFileSize() const
     {
         auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
         if (!file_info)
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
+            return std::nullopt;
         return file_info->mSize;
     }
 
@@ -132,7 +131,7 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
 {
 }
 
-size_t ReadBufferFromHDFS::getFileSize()
+std::optional<size_t> ReadBufferFromHDFS::getFileSize()
 {
     return impl->getFileSize();
 }

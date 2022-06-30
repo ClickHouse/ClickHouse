@@ -22,7 +22,7 @@ public:
 
     static constexpr char STORAGE_TYPE[] = "users.xml";
 
-    UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_);
+    UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_);
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -44,20 +44,17 @@ public:
 
     bool exists(const UUID & id) const override;
 
-    bool isBackupAllowed() const override { return backup_allowed; }
-
 private:
     void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     AccessControl & access_control;
     MemoryAccessStorage memory_storage;
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
-    bool backup_allowed = false;
     mutable std::mutex load_mutex;
 };
 }

@@ -16,7 +16,7 @@
 
 #include "config_functions.h"
 
-#if USE_VECTORSCAN
+#if USE_HYPERSCAN
 #    include <hs.h>
 #endif
 
@@ -103,7 +103,7 @@ private:
 
 }
 
-#if USE_VECTORSCAN
+#if USE_HYPERSCAN
 
 namespace MultiRegexps
 {
@@ -145,7 +145,7 @@ public:
 
     Regexps * operator()()
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         if (regexp)
             return &*regexp;
         regexp = constructor();
@@ -166,9 +166,10 @@ struct Pool
     std::map<std::pair<std::vector<String>, std::optional<UInt32>>, RegexpsConstructor> storage;
 };
 
-template <bool save_indices, bool WithEditDistance>
-inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[maybe_unused]] std::optional<UInt32> edit_distance)
+template <bool save_indices, bool CompileForEditDistance>
+inline Regexps constructRegexps(const std::vector<String> & str_patterns, std::optional<UInt32> edit_distance)
 {
+    (void)edit_distance;
     /// Common pointers
     std::vector<const char *> patterns;
     std::vector<unsigned int> flags;
@@ -180,7 +181,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     patterns.reserve(str_patterns.size());
     flags.reserve(str_patterns.size());
 
-    if constexpr (WithEditDistance)
+    if constexpr (CompileForEditDistance)
     {
         ext_exprs.reserve(str_patterns.size());
         ext_exprs_ptrs.reserve(str_patterns.size());
@@ -198,7 +199,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
          * as it is said in the Hyperscan documentation. https://intel.github.io/hyperscan/dev-reference/performance.html#single-match-flag
          */
         flags.push_back(HS_FLAG_DOTALL | HS_FLAG_SINGLEMATCH | HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8);
-        if constexpr (WithEditDistance)
+        if constexpr (CompileForEditDistance)
         {
             /// Hyperscan currently does not support UTF8 matching with edit distance.
             flags.back() &= ~HS_FLAG_UTF8;
@@ -223,7 +224,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     }
 
     hs_error_t err;
-    if constexpr (!WithEditDistance)
+    if constexpr (!CompileForEditDistance)
         err = hs_compile_multi(
             patterns.data(),
             flags.data(),
@@ -269,22 +270,23 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     if (err != HS_SUCCESS)
         throw Exception("Could not allocate scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-    return {db, scratch};
+    return Regexps{db, scratch};
 }
 
-/// If WithEditDistance is False, edit_distance must be nullopt
+/// If CompileForEditDistance is False, edit_distance must be nullopt
 /// Also, we use templates here because each instantiation of function
 /// template has its own copy of local static variables which must not be the same
 /// for different hyperscan compilations.
-template <bool save_indices, bool WithEditDistance>
-inline Regexps * get(const std::vector<std::string_view> & patterns, std::optional<UInt32> edit_distance)
+template <bool save_indices, bool CompileForEditDistance>
+inline Regexps * get(const std::vector<StringRef> & patterns, std::optional<UInt32> edit_distance)
 {
-    static Pool known_regexps; /// Different variables for different pattern parameters, thread-safe in C++11
+    /// C++11 has thread-safe function-local static on most modern compilers.
+    static Pool known_regexps; /// Different variables for different pattern parameters.
 
     std::vector<String> str_patterns;
     str_patterns.reserve(patterns.size());
-    for (const auto & pattern : patterns)
-        str_patterns.emplace_back(std::string(pattern.data(), pattern.size()));
+    for (const StringRef & ref : patterns)
+        str_patterns.push_back(ref.toString());
 
     /// Get the lock for finding database.
     std::unique_lock lock(known_regexps.mutex);
@@ -299,7 +301,7 @@ inline Regexps * get(const std::vector<std::string_view> & patterns, std::option
                  .first;
         it->second.setConstructor([&str_patterns = it->first.first, edit_distance]()
         {
-            return constructRegexps<save_indices, WithEditDistance>(str_patterns, edit_distance);
+            return constructRegexps<save_indices, CompileForEditDistance>(str_patterns, edit_distance);
         });
     }
 
@@ -310,6 +312,6 @@ inline Regexps * get(const std::vector<std::string_view> & patterns, std::option
 
 }
 
-#endif // USE_VECTORSCAN
+#endif // USE_HYPERSCAN
 
 }

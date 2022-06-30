@@ -212,7 +212,7 @@ namespace
             size_t max_connections_per_endpoint,
             bool resolve_host = true)
         {
-            std::lock_guard lock(mutex);
+            std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);

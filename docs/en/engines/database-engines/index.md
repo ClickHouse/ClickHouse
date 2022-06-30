@@ -20,8 +20,6 @@ Here is a complete list of available database engines. Follow the links for more
 
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
--   [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
-
 -   [Replicated](../../engines/database-engines/replicated.md)
 
 -   [SQLite](../../engines/database-engines/sqlite.md)

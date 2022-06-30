@@ -35,17 +35,17 @@ protected:
     static String getDefaultConfigFileName();
 
     void addOptions(
-        ProgramOptionsDescription & options_description,
+        std::optional<ProgramOptionsDescription> & options_description,
         boost::program_options::positional_options_description & positional_options_description);
     void processOptions();
 
-    void printHelpMessage(ProgramOptionsDescription & command_option_description);
+    void printHelpMessage(std::optional<ProgramOptionsDescription> & command_option_description);
 
     size_t findCommandPos(std::vector<String> & common_arguments);
 
 private:
     void parseAndCheckOptions(
-        ProgramOptionsDescription & options_description,
+        std::optional<ProgramOptionsDescription> & options_description,
         boost::program_options::positional_options_description & positional_options_description,
         std::vector<String> & arguments);
 
@@ -54,7 +54,7 @@ protected:
     SharedContextHolder shared_context;
 
     String command_name;
-    std::vector<String> command_arguments;
+    std::vector<String> command_flags;
 
     std::unordered_set<String> supported_commands;
 

@@ -65,7 +65,7 @@ public:
 
     off_t getPosition() override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
 
@@ -120,7 +120,7 @@ public:
 
     off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> getFileSize() override;
 
     String getFileName() const override { return bucket + "/" + key; }
 

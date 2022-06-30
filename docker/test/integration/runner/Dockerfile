@@ -3,7 +3,6 @@ FROM ubuntu:20.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
-
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
@@ -68,7 +67,7 @@ RUN python3 -m pip install \
     dict2xml \
     dicttoxml \
     docker \
-    docker-compose==1.29.2 \
+    docker-compose==1.28.2 \
     grpcio \
     grpcio-tools \
     kafka-python \

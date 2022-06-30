@@ -31,7 +31,7 @@ public:
     /// Same as above
     bool is_view{false};
 
-    bool sync{false};
+    bool no_delay{false};
 
     // We detach the object permanently, so it will not be reattached back during server restart.
     bool permanently{false};

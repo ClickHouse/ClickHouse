@@ -16,9 +16,9 @@ public:
     CommandCopy()
     {
         command_name = "copy";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
+        command_option_description.emplace(createOptionsDescription("Help Message for copy", getTerminalWidth()));
         description = "Recursively copy data containing at `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
-        usage = "copy [OPTION]... <FROM_PATH> <TO_PATH>";
+        usage = "Usage: copy [OPTION]... <FROM_PATH> <TO_PATH>";
         command_option_description->add_options()
             ("diskFrom", po::value<String>(), "set name for disk from which we do operations")
             ("diskTo", po::value<String>(), "set name for disk to which we do operations")
@@ -36,12 +36,11 @@ public:
             config.setString("diskTo", options["diskTo"].as<String>());
     }
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration & config) override
+    void executeImpl(
+        const ContextMutablePtr & global_context,
+        const Poco::Util::LayeredConfiguration & config) const override
     {
-        if (command_arguments.size() != 2)
+        if (pos_arguments.size() != 2)
         {
             printHelpMessage();
             throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
@@ -50,8 +49,9 @@ public:
         String disk_name_from = config.getString("diskFrom", config.getString("disk", "default"));
         String disk_name_to = config.getString("diskTo", config.getString("disk", "default"));
 
-        String path_from = command_arguments[0];
-        String path_to =  command_arguments[1];
+        String path_from = pos_arguments[0];
+        String path_to =  pos_arguments[1];
+
 
         DiskPtr disk_from = global_context->getDisk(disk_name_from);
         DiskPtr disk_to = global_context->getDisk(disk_name_to);

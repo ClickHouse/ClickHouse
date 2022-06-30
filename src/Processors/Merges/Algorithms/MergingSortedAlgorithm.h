@@ -51,9 +51,10 @@ private:
 
     SortQueueVariants queue_variants;
 
-    template <typename TSortingQueue>
-    Status mergeBatchImpl(TSortingQueue & queue);
+    Status insertFromChunk(size_t source_num);
 
+    template <typename TSortingHeap>
+    Status mergeImpl(TSortingHeap & queue);
 };
 
 }

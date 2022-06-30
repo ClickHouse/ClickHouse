@@ -523,11 +523,8 @@ namespace
     }
 }
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_)
-    : IAccessStorage(storage_name_)
-    , access_control(access_control_)
-    , memory_storage(storage_name_, access_control.getChangesNotifier(), false)
-    , backup_allowed(allow_backup_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_)
+    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier())
 {
 }
 
@@ -658,9 +655,9 @@ AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id, bool throw_i
 }
 
 
-std::optional<std::pair<String, AccessEntityType>> UsersConfigAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.readNameWithType(id, throw_if_not_exists);
+    return memory_storage.readName(id, throw_if_not_exists);
 }
 
 }

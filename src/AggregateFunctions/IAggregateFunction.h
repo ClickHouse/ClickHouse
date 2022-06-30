@@ -150,7 +150,7 @@ public:
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(
-        ConstAggregateDataPtr __restrict /* place */,
+        ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
@@ -209,7 +209,7 @@ public:
     virtual void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
@@ -218,7 +218,7 @@ public:
     virtual void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena) const = 0;
 
@@ -228,7 +228,7 @@ public:
     virtual void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -237,7 +237,7 @@ public:
     virtual void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1)
@@ -370,7 +370,7 @@ template <typename Derived>
 class IAggregateFunctionHelper : public IAggregateFunction
 {
 private:
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena)
+    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
     {
         static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
     }
@@ -450,7 +450,7 @@ public:
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
@@ -474,7 +474,7 @@ public:
     void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena) const override
     {
@@ -493,7 +493,7 @@ public:
     void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -517,7 +517,7 @@ public:
     void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1)
@@ -661,7 +661,7 @@ public:
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    void create(AggregateDataPtr place) const override /// NOLINT
     {
         new (place) Data;
     }

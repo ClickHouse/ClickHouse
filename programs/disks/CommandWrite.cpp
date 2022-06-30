@@ -16,9 +16,9 @@ public:
     CommandWrite()
     {
         command_name = "write";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
+        command_option_description.emplace(createOptionsDescription("Help Message for write", getTerminalWidth()));
         description = "Write File `from_path` or stdin to `to_path`";
-        usage = "write [OPTION]... <FROM_PATH> <TO_PATH>\nor\nstdin | write [OPTION]... <TO_PATH>\nPath should be in format './' or './path' or 'path'";
+        usage = "Usage: write [OPTION]... <FROM_PATH> <TO_PATH>\nor\nstdin | write [OPTION]... <TO_PATH>\nPath should be in format './' or './path' or 'path'";
         command_option_description->add_options()
             ("input", po::value<String>(), "set path to file to which we are write")
             ;
@@ -32,12 +32,11 @@ public:
             config.setString("input", options["input"].as<String>());
     }
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration & config) override
+    void executeImpl(
+        const DB::ContextMutablePtr & global_context,
+        const Poco::Util::LayeredConfiguration & config) const override
     {
-        if (command_arguments.size() != 1)
+        if (pos_arguments.size() != 1)
         {
             printHelpMessage();
             throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
@@ -45,7 +44,7 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path = command_arguments[0];
+        String path = pos_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
@@ -66,6 +65,7 @@ public:
         auto out = disk->writeFile(full_path);
         copyData(*in, *out);
         out->finalize();
+        return;
     }
 };
 }

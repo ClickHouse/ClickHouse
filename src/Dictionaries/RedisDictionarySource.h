@@ -8,6 +8,11 @@
 
 namespace Poco
 {
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+
     namespace Redis
     {
         class Client;

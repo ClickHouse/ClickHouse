@@ -8,13 +8,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Backups/BackupEntriesCollector.h>
 
 
 namespace DB
@@ -248,59 +246,20 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-ASTPtr IStorage::getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const
+BackupEntries IStorage::backupData(ContextPtr, const ASTs &)
 {
-    auto table_id = getStorageID();
-    auto db = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
-    if (!db)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-    ASTPtr query = db->tryGetCreateTableQuery(table_id.getTableName(), context);
-    if (!query)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-
-    /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
-    auto & create = query->as<ASTCreateQuery &>();
-    create.uuid = UUIDHelpers::Nil;
-    create.to_inner_uuid = UUIDHelpers::Nil;
-
-    /// If this is a definition of a system table we'll remove columns and comment because they're excessive for backups.
-    if (create.storage && create.storage->engine && create.storage->engine->name.starts_with("System"))
-    {
-        create.reset(create.columns_list);
-        create.reset(create.comment);
-    }
-
-    if (database)
-        *database = db;
-
-    return query;
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-ASTPtr IStorage::getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const
+RestoreTaskPtr IStorage::restoreData(ContextMutablePtr, const ASTs &, const BackupPtr &, const String &, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
-    DatabasePtr database;
-    auto query = getCreateQueryForBackup(backup_entries_collector.getContext(), &database);
-    database->checkCreateTableQueryForBackup(query, backup_entries_collector);
-    return query;
-}
-
-void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
-{
-}
-
-void IStorage::restoreDataFromBackup(RestorerFromBackup &, const String &, const std::optional<ASTs> &)
-{
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
-
-    if (row_level_filter)
-    {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
-    }
 
     if (prewhere_actions)
     {

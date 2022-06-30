@@ -556,9 +556,11 @@ L$handle_ctr32_2:
 .p2align	5
 _aesni_gcm_encrypt:
 
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
+#ifndef BORINGSSL_FIPS
 
 	movb	$1,_BORINGSSL_function_hit+2(%rip)
+#endif
 #endif
 	xorq	%r10,%r10
 

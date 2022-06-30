@@ -515,7 +515,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
                 ++new_elements_size;
             }
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
-            if (func && AggregateUtils::isAggregateFunction(*func) && !select_query->groupBy())
+            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
             {
                 new_elements[result_index] = elem;
                 ++new_elements_size;
@@ -843,43 +843,17 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
 class MarkTupleLiteralsAsLegacyData
 {
 public:
-    struct Data
-    {
-    };
+    using TypeToVisit = ASTLiteral;
 
-    static void visitLiteral(ASTLiteral & literal, ASTPtr &)
+    static void visit(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple)
             literal.use_legacy_column_name_of_tuple = true;
     }
-    static void visitFunction(ASTFunction & func, ASTPtr &ast)
-    {
-        if (func.name == "tuple" && func.arguments && !func.arguments->children.empty())
-        {
-            // re-write tuple() function as literal
-            if (auto literal = func.toLiteral())
-            {
-                ast = literal;
-                visitLiteral(*typeid_cast<ASTLiteral *>(ast.get()), ast);
-            }
-        }
-    }
-
-    static void visit(ASTPtr & ast, Data &)
-    {
-        if (auto * identifier = typeid_cast<ASTFunction *>(ast.get()))
-            visitFunction(*identifier, ast);
-        if (auto * identifier = typeid_cast<ASTLiteral *>(ast.get()))
-            visitLiteral(*identifier, ast);
-    }
-
-    static bool needChildVisit(const ASTPtr & /*parent*/, const ASTPtr & /*child*/)
-    {
-        return true;
-    }
 };
 
-using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyData, true>;
+using MarkTupleLiteralsAsLegacyMatcher = OneTypeMatcher<MarkTupleLiteralsAsLegacyData>;
+using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyMatcher, true>;
 
 void markTupleLiteralsAsLegacy(ASTPtr & query)
 {
@@ -1282,7 +1256,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
-    result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
     result.collectUsedColumns(query, true);
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
@@ -1306,7 +1279,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         {
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
-            result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
             result.collectUsedColumns(query, true);
         }
     }

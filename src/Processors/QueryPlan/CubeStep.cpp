@@ -24,15 +24,14 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_)
-    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_.getHeader(input_stream_.header, final_)), getTraits())
-    , keys_size(params_.keys_size)
+CubeStep::CubeStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_)
+    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_->getHeader()), getTraits())
+    , keys_size(params_->params.keys_size)
     , params(std::move(params_))
-    , final(final_)
 {
     /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
+    for (auto key : params->params.keys)
+        output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
 }
 
 ProcessorPtr addGroupingSetForTotals(const Block & header, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
@@ -60,23 +59,13 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return addGroupingSetForTotals(header, settings, (UInt64(1) << keys_size) - 1);
 
-        auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final);
-        return std::make_shared<CubeTransform>(header, std::move(transform_params));
+        return std::make_shared<CubeTransform>(header, std::move(params));
     });
 }
 
 const Aggregator::Params & CubeStep::getParams() const
 {
-    return params;
+    return params->params;
 }
 
-void CubeStep::updateOutputStream()
-{
-    output_stream = createOutputStream(
-        input_streams.front(), appendGroupingSetColumn(params.getHeader(input_streams.front().header, final)), getDataStreamTraits());
-
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
-}
 }

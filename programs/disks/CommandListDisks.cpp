@@ -16,21 +16,20 @@ public:
     CommandListDisks()
     {
         command_name = "list-disks";
+        command_option_description.emplace(createOptionsDescription("Help Message for list-disks", getTerminalWidth()));
         description = "List disks names";
-        usage = "list-disks [OPTION]";
+        usage = "Usage: list-disks [OPTION]";
     }
 
     void processOptions(
         Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override
-    {}
+        po::variables_map &) const override{}
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration &) override
+    void executeImpl(
+        const DB::ContextMutablePtr & global_context,
+        const Poco::Util::LayeredConfiguration &) const override
     {
-        if (!command_arguments.empty())
+        if (pos_arguments.size() != 0)
         {
             printHelpMessage();
             throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);

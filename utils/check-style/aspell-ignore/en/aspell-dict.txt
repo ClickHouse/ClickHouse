@@ -462,13 +462,11 @@ unencrypted
 unixodbc
 url
 userspace
-userver
 utils
 uuid
 variadic
 varint
 vectorized
-vectorscan
 wchc
 wchs
 webpage

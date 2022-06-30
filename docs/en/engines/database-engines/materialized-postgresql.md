@@ -150,21 +150,21 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ## Settings {#settings}
 
-### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
+1. `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
     Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
 
     Default value: empty list — means whole PostgreSQL database will be replicated.
 
-### `materialized_postgresql_schema` {#materialized-postgresql-schema}
+2. `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
     Default value: empty string. (Default schema is used)
 
-### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
+3. `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
     Default value: empty list. (Default schema is used)
 
-### `materialized_postgresql_allow_automatic_update` {#materialized-postgresql-allow-automatic-update}
+4. `materialized_postgresql_allow_automatic_update` {#materialized-postgresql-allow-automatic-update}
 
     Do not use this setting before 22.1 version.
 
@@ -177,7 +177,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Default value: `0`.
 
-### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
+5. `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
     Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
 
@@ -187,11 +187,11 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Default value: `65536`.
 
-### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
+6. `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
     A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
 
-### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
+7. `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
     A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 

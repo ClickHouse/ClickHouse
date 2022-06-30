@@ -20,7 +20,7 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    ColumnNumbers keys;
+    const ColumnNumbers keys;
     const ColumnsMask aggregates_mask;
 
     Chunks consumed_chunks;

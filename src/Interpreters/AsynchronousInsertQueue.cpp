@@ -215,7 +215,7 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         }
     }
 
-    std::lock_guard write_lock(rwlock);
+    std::unique_lock write_lock(rwlock);
     auto it = queue.emplace(key, std::make_shared<Container>()).first;
     pushImpl(std::move(entry), it);
 }
@@ -343,7 +343,7 @@ void AsynchronousInsertQueue::cleanup()
 
         if (!keys_to_remove.empty())
         {
-            std::lock_guard write_lock(rwlock);
+            std::unique_lock write_lock(rwlock);
             size_t total_removed = 0;
 
             for (const auto & key : keys_to_remove)

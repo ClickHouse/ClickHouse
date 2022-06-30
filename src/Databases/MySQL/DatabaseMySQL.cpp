@@ -447,7 +447,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     table_iter->second.second->is_dropped = true;
 }
 
-void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
+void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
 {
     detachTablePermanently(local_context, table_name);
 }

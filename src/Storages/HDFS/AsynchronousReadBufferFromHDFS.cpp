@@ -90,7 +90,7 @@ void AsynchronousReadBufferFromHDFS::prefetch()
 }
 
 
-size_t AsynchronousReadBufferFromHDFS::getFileSize()
+std::optional<size_t> AsynchronousReadBufferFromHDFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -134,9 +134,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         prefetch_buffer.swap(memory);
 
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-        pos = working_buffer.begin();
+        setWithBytesToIgnore(memory.data(), size, offset);
     }
     else
     {
@@ -152,9 +150,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-            pos = working_buffer.begin();
+            setWithBytesToIgnore(memory.data(), size, offset);
         }
     }
 

@@ -169,7 +169,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    PathsWithSize getObjectStoragePaths(const String &) const override { return {}; }
+    std::vector<String> getRemotePaths(const String &) const override { return {}; }
 
     void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
 

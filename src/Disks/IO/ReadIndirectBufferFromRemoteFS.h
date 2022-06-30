@@ -30,8 +30,6 @@ public:
 
     void setReadUntilEnd() override;
 
-    size_t getFileSize() override;
-
 private:
     bool nextImpl() override;
 

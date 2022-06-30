@@ -368,7 +368,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-extract-from-config",
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
-            "clickhouse-disks",
         };
 
         for (const auto & tool : tools)

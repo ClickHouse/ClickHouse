@@ -1003,13 +1003,15 @@ public:
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                const auto & column_from_block = block.getByPosition(right_indexes[j]);
+                auto column_from_block = block.getByPosition(right_indexes[j]);
+                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+                {
+                    JoinCommon::changeLowCardinalityInplace(column_from_block);
+                }
+
                 if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get());
                     nullable_col && !column_from_block.column->isNullable())
                     nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
-                else if (auto * lowcard_col = typeid_cast<ColumnLowCardinality *>(columns[j].get());
-                         lowcard_col && !typeid_cast<const ColumnLowCardinality *>(column_from_block.column.get()))
-                    lowcard_col->insertFromFullColumn(*column_from_block.column, row_num);
                 else
                     columns[j]->insertFrom(*column_from_block.column, row_num);
             }
@@ -1018,12 +1020,12 @@ public:
         {
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                const auto & column_from_block = block.getByPosition(right_indexes[j]);
-                if (auto * lowcard_col = typeid_cast<ColumnLowCardinality *>(columns[j].get());
-                    lowcard_col && !typeid_cast<const ColumnLowCardinality *>(column_from_block.column.get()))
-                    lowcard_col->insertFromFullColumn(*column_from_block.column, row_num);
-                else
-                    columns[j]->insertFrom(*column_from_block.column, row_num);
+                auto column_from_block = block.getByPosition(right_indexes[j]);
+                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+                {
+                    JoinCommon::changeLowCardinalityInplace(column_from_block);
+                }
+                columns[j]->insertFrom(*column_from_block.column, row_num);
             }
         }
     }

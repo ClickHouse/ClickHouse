@@ -357,7 +357,7 @@ void TCPHandler::runImpl()
                             return true;
 
                         sendProgress();
-                        sendSelectProfileEvents();
+                        sendProfileEvents();
                         sendLogs();
 
                         return false;
@@ -586,10 +586,7 @@ bool TCPHandler::readDataNext()
     }
 
     if (read_ok)
-    {
         sendLogs();
-        sendInsertProfileEvents();
-    }
     else
         state.read_all_data = true;
 
@@ -662,8 +659,6 @@ void TCPHandler::processInsertQuery()
         PushingPipelineExecutor executor(state.io.pipeline);
         run_executor(executor);
     }
-
-    sendInsertProfileEvents();
 }
 
 
@@ -706,7 +701,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 /// Some time passed and there is a progress.
                 after_send_progress.restart();
                 sendProgress();
-                sendSelectProfileEvents();
+                sendProfileEvents();
             }
 
             sendLogs();
@@ -732,7 +727,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
-            sendSelectProfileEvents();
+            sendProfileEvents();
         }
 
         if (state.is_connection_closed)
@@ -866,6 +861,9 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 void TCPHandler::sendProfileEvents()
 {
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+        return;
+
     Block block;
     ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
@@ -880,23 +878,6 @@ void TCPHandler::sendProfileEvents()
     }
 }
 
-void TCPHandler::sendSelectProfileEvents()
-{
-    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
-        return;
-
-    sendProfileEvents();
-}
-
-void TCPHandler::sendInsertProfileEvents()
-{
-    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
-        return;
-    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        return;
-
-    sendProfileEvents();
-}
 
 bool TCPHandler::receiveProxyHeader()
 {
@@ -1359,7 +1340,7 @@ void TCPHandler::receiveQuery()
     /// Settings
     ///
     auto settings_changes = passed_settings.changes();
-    query_kind = query_context->getClientInfo().query_kind;
+    auto query_kind = query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.

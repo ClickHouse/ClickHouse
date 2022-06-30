@@ -8,9 +8,9 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <iostream>
 
 #include "types.h"

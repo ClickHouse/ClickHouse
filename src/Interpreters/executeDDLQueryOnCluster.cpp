@@ -32,6 +32,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int INVALID_SHARD_ID;
+    extern const int NO_SUCH_REPLICA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -79,27 +81,48 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
     }
 
-    ClusterPtr cluster = params.cluster;
-    if (!cluster)
-    {
-        query->cluster = context->getMacros()->expand(query->cluster);
-        cluster = context->getCluster(query->cluster);
-    }
+    query->cluster = context->getMacros()->expand(query->cluster);
 
     /// TODO: support per-cluster grant
     context->checkAccess(AccessType::CLUSTER);
 
+    ClusterPtr cluster = params.cluster ? params.cluster : context->getCluster(query->cluster);
     DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
-    auto addresses = cluster->filterAddressesByShardOrReplica(params.only_shard_num, params.only_replica_num);
-    if (addresses.empty())
-        throw Exception("No hosts defined to execute distributed DDL query", ErrorCodes::LOGICAL_ERROR);
-
     std::vector<HostID> hosts;
-    hosts.reserve(addresses.size());
-    for (const auto * address : addresses)
-        hosts.emplace_back(*address);
+    Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
+
+    auto collect_hosts_from_replicas = [&](size_t shard_index)
+    {
+        if (shard_index > shards.size())
+            throw Exception(ErrorCodes::INVALID_SHARD_ID, "Cluster {} doesn't have shard #{}", query->cluster, shard_index);
+        const auto & replicas = shards[shard_index - 1];
+        if (params.only_replica_num)
+        {
+            if (params.only_replica_num > replicas.size())
+                throw Exception(ErrorCodes::NO_SUCH_REPLICA, "Cluster {} doesn't have replica #{} in shard #{}", query->cluster, params.only_replica_num, shard_index);
+            hosts.emplace_back(replicas[params.only_replica_num - 1]);
+        }
+        else
+        {
+            for (const auto & addr : replicas)
+                hosts.emplace_back(addr);
+        }
+    };
+
+    if (params.only_shard_num)
+    {
+        collect_hosts_from_replicas(params.only_shard_num);
+    }
+    else
+    {
+        for (size_t shard_index = 1; shard_index <= shards.size(); ++shard_index)
+            collect_hosts_from_replicas(shard_index);
+    }
+
+    if (hosts.empty())
+        throw Exception("No hosts defined to execute distributed DDL query", ErrorCodes::LOGICAL_ERROR);
 
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.
@@ -114,19 +137,22 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     if (need_replace_current_database)
     {
-        Strings host_default_databases;
-        for (const auto * address : addresses)
+        Strings shard_default_databases;
+        for (const auto & shard : shards)
         {
-            if (!address->default_database.empty())
-                host_default_databases.push_back(address->default_database);
-            else
-                use_local_default_database = true;
+            for (const auto & addr : shard)
+            {
+                if (!addr.default_database.empty())
+                    shard_default_databases.push_back(addr.default_database);
+                else
+                    use_local_default_database = true;
+            }
         }
-        ::sort(host_default_databases.begin(), host_default_databases.end());
-        host_default_databases.erase(std::unique(host_default_databases.begin(), host_default_databases.end()), host_default_databases.end());
-        assert(use_local_default_database || !host_default_databases.empty());
+        ::sort(shard_default_databases.begin(), shard_default_databases.end());
+        shard_default_databases.erase(std::unique(shard_default_databases.begin(), shard_default_databases.end()), shard_default_databases.end());
+        assert(use_local_default_database || !shard_default_databases.empty());
 
-        if (use_local_default_database && !host_default_databases.empty())
+        if (use_local_default_database && !shard_default_databases.empty())
             throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
 
         if (use_local_default_database)
@@ -140,10 +166,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
                 auto & element = access_to_check[i];
                 if (element.isEmptyDatabase())
                 {
-                    access_to_check.insert(access_to_check.begin() + i + 1, host_default_databases.size() - 1, element);
-                    for (size_t j = 0; j != host_default_databases.size(); ++j)
-                        access_to_check[i + j].replaceEmptyDatabase(host_default_databases[j]);
-                    i += host_default_databases.size();
+                    access_to_check.insert(access_to_check.begin() + i + 1, shard_default_databases.size() - 1, element);
+                    for (size_t j = 0; j != shard_default_databases.size(); ++j)
+                        access_to_check[i + j].replaceEmptyDatabase(shard_default_databases[j]);
+                    i += shard_default_databases.size();
                 }
                 else
                     ++i;

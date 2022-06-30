@@ -73,16 +73,6 @@ function download
     ) &
 
     wait
-    pwd
-    ls
-    ls db0
-    ls db0/metadata
-    cd db0 && echo "ATTACH DATABASE default ENGINE=Ordinary" > metadata/default.sql
-    cd db0 && echo "ATTACH DATABASE datasets ENGINE=Ordinary" > metadata/datasets.sql
-    pwd
-    ls
-    ls db0
-    ls db0/metadata
 }
 
 download

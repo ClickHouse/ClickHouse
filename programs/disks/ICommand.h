@@ -26,21 +26,21 @@ class ICommand
 {
 public:
     ICommand() = default;
-
     virtual ~ICommand() = default;
-
-    virtual void execute(
+    void execute(
         const std::vector<String> & command_arguments,
         DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration & config) = 0;
-
-    const std::optional<ProgramOptionsDescription> & getCommandOptions() const { return command_option_description; }
-
-    void addOptions(ProgramOptionsDescription & options_description);
-
-    virtual void processOptions(Poco::Util::LayeredConfiguration & config, po::variables_map & options) const = 0;
+        Poco::Util::LayeredConfiguration & config);
 
 protected:
+    virtual void processOptions(
+        Poco::Util::LayeredConfiguration & config,
+        po::variables_map & options) const = 0;
+
+    virtual void executeImpl(
+        const DB::ContextMutablePtr & global_context,
+        const Poco::Util::LayeredConfiguration & config) const = 0;
+
     void printHelpMessage() const;
 
     static String fullPathWithValidate(const DiskPtr & disk, const String & path);
@@ -53,6 +53,7 @@ protected:
     std::optional<ProgramOptionsDescription> command_option_description;
     String usage;
     po::positional_options_description positional_options_description;
+    std::vector<String> pos_arguments;
 };
 
 }

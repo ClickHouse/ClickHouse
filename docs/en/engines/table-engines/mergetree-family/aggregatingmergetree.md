@@ -11,8 +11,8 @@ You can use `AggregatingMergeTree` tables for incremental data aggregation, incl
 
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
+-   [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
+-   [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
@@ -36,7 +36,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 **Query clauses**
 
-When creating an `AggregatingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `AggregatingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 

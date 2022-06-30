@@ -707,7 +707,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinClangTidy:
+  BuilderBinTidy:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
@@ -1065,7 +1065,7 @@ jobs:
       - BuilderBinFreeBSD
       # - BuilderBinGCC
       - BuilderBinPPC64
-      - BuilderBinClangTidy
+      - BuilderBinTidy
       - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
     if: ${{ success() || failure() }}

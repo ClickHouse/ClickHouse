@@ -32,11 +32,10 @@ private:
     bool has_collation = false;
 
     /** Two different cursors are supported - with and without Collation.
-      * Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
+      *  Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
       */
-    template <typename TSortingQueue>
-    Chunk mergeBatchImpl(TSortingQueue & queue);
-
+    template <typename TSortingHeap>
+    Chunk mergeImpl(TSortingHeap & queue);
 };
 
 

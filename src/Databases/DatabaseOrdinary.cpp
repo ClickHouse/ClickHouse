@@ -29,12 +29,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace
@@ -89,7 +83,7 @@ void DatabaseOrdinary::loadStoredObjects(
       */
 
     ParsedTablesMetadata metadata;
-    loadTablesMetadata(local_context, metadata, force_attach);
+    loadTablesMetadata(local_context, metadata);
 
     size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
 
@@ -157,12 +151,12 @@ void DatabaseOrdinary::loadStoredObjects(
     }
 }
 
-void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
+void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata)
 {
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, this](const String & file_name)
+    auto process_metadata = [&metadata, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -174,35 +168,20 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                /// NOTE No concurrent writes are possible during database loading
-                create_query->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
-
-                /// Even if we don't load the table we can still mark the uuid of it as taken.
-                if (create_query->uuid != UUIDHelpers::Nil)
-                {
-                    /// A bit tricky way to distinguish ATTACH DATABASE and server startup (actually it's "force_attach" flag).
-                    if (is_startup)
-                    {
-                        /// Server is starting up. Lock UUID used by permanently detached table.
-                        DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-                    }
-                    else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
-                    {
-                        /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
-                        /// FIXME MaterializedPostgreSQL works with UUIDs incorrectly and breaks invariants
-                        if (getEngineName() != "MaterializedPostgreSQL")
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create_query->uuid);
-                    }
-                }
+                create_query->setDatabase(database_name);
 
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
+                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
+                    /// if (create_query->uuid != UUIDHelpers::Nil)
+                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     return;
                 }
 
-                QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
+                QualifiedTableName qualified_name{database_name, create_query->getTable()};
                 TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
 
                 std::lock_guard lock{metadata.mutex};
@@ -235,12 +214,12 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t tables_in_database = objects_in_database - dictionaries_in_database;
 
     LOG_INFO(log, "Metadata processed, database {} has {} tables and {} dictionaries in total.",
-             TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database);
+             database_name, tables_in_database, dictionaries_in_database);
 }
 
 void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
 {
-    assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
+    assert(name.database == database_name);
     const auto & create_query = ast->as<const ASTCreateQuery &>();
 
     tryAttachTable(
@@ -256,8 +235,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_rest
 {
     LOG_INFO(log, "Starting up tables.");
 
-    /// NOTE No concurrent writes are possible during database loading
-    const size_t total_tables = TSA_SUPPRESS_WARNING_FOR_READ(tables).size();
+    const size_t total_tables = tables.size();
     if (!total_tables)
         return;
 
@@ -273,7 +251,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_rest
 
     try
     {
-        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
+        for (const auto & table : tables)
             thread_pool.scheduleOrThrowOnError([&]() { startup_one_table(table.second); });
     }
     catch (...)

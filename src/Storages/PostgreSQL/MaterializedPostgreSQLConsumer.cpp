@@ -271,24 +271,8 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         }
     };
 
-    std::exception_ptr error;
     for (int column_idx = 0; column_idx < num_columns; ++column_idx)
-    {
-        try
-        {
-            proccess_column_value(readInt8(message, pos, size), column_idx);
-        }
-        catch (...)
-        {
-            insertDefaultValue(buffer, column_idx);
-            /// Let's collect only the first exception.
-            /// This delaying of error throw is needed because
-            /// some errors can be ignored and just logged,
-            /// but in this case we need to finish insertion to all columns.
-            if (!error)
-                error = std::current_exception();
-        }
-    }
+        proccess_column_value(readInt8(message, pos, size), column_idx);
 
     switch (type)
     {
@@ -319,9 +303,6 @@ void MaterializedPostgreSQLConsumer::readTupleData(
             break;
         }
     }
-
-    if (error)
-        std::rethrow_exception(error);
 }
 
 

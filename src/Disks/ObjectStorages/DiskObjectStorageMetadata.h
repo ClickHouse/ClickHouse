@@ -19,8 +19,8 @@ private:
 
     const std::string & common_metadata_path;
 
-    /// Relative paths of blobs.
-    RelativePathsWithSize storage_objects;
+    /// Remote FS objects paths and their sizes.
+    std::vector<BlobPathWithSize> remote_fs_objects;
 
     /// URI
     const std::string & remote_fs_root_path;
@@ -60,9 +60,9 @@ public:
         return remote_fs_root_path;
     }
 
-    RelativePathsWithSize getBlobsRelativePaths() const
+    std::vector<BlobPathWithSize> getBlobs() const
     {
-        return storage_objects;
+        return remote_fs_objects;
     }
 
     bool isReadOnly() const

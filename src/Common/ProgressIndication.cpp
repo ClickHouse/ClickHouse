@@ -53,11 +53,8 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
-    {
-        std::lock_guard lock(profile_events_mutex);
-        host_cpu_usage.clear();
-        thread_data.clear();
-    }
+    host_cpu_usage.clear();
+    thread_data.clear();
 }
 
 void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
@@ -74,8 +71,6 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
 
 void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id)
 {
-    std::lock_guard lock(profile_events_mutex);
-
     auto & thread_to_times = thread_data[host];
     if (thread_to_times.contains(thread_id))
         return;
@@ -84,8 +79,6 @@ void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id
 
 void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time)
 {
-    std::lock_guard lock(profile_events_mutex);
-
     for (auto & new_host_map : new_thread_data)
     {
         host_cpu_usage[new_host_map.first] = calculateCPUUsage(new_host_map.second, elapsed_time);
@@ -95,8 +88,6 @@ void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread
 
 size_t ProgressIndication::getUsedThreadsCount() const
 {
-    std::lock_guard lock(profile_events_mutex);
-
     return std::accumulate(thread_data.cbegin(), thread_data.cend(), 0,
         [] (size_t acc, auto const & threads)
         {
@@ -106,8 +97,6 @@ size_t ProgressIndication::getUsedThreadsCount() const
 
 double ProgressIndication::getCPUUsage() const
 {
-    std::lock_guard lock(profile_events_mutex);
-
     double res = 0;
     for (const auto & elem : host_cpu_usage)
         res += elem.second;
@@ -116,8 +105,6 @@ double ProgressIndication::getCPUUsage() const
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 {
-    std::lock_guard lock(profile_events_mutex);
-
     return std::accumulate(thread_data.cbegin(), thread_data.cend(), MemoryUsage{},
         [](MemoryUsage const & acc, auto const & host_data)
         {
@@ -150,8 +137,6 @@ void ProgressIndication::writeFinalProgress()
 
 void ProgressIndication::writeProgress()
 {
-    std::lock_guard lock(progress_mutex);
-
     /// Output all progress bar commands to stderr at once to avoid flicker.
     WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 

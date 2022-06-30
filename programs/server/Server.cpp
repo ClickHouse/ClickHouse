@@ -1488,7 +1488,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
-        maybeConvertOrdinaryDatabaseToAtomic(global_context, DatabaseCatalog::instance().getSystemDatabase());
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1516,7 +1515,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_UNWIND && !WITH_COVERAGE
+#if USE_UNWIND && !WITH_COVERAGE && defined(__x86_64__)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
