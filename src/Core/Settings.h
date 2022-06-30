@@ -767,6 +767,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(String, output_format_sql_insert_table_name, "table", "The name of table in the output INSERT query", 0) \
     M(Bool, output_format_sql_insert_include_column_names, true, "Include column names in INSERT query", 0) \
     M(Bool, output_format_sql_insert_use_replace, false, "Use REPLACE statement instead of INSERT", 0) \
+    M(Bool, output_format_sql_insert_quote_names, true, "Quote column names with '`' characters", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.

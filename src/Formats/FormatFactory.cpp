@@ -162,6 +162,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.sql_insert.include_column_names = settings.output_format_sql_insert_include_column_names;
     format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;
     format_settings.sql_insert.use_replace = settings.output_format_sql_insert_use_replace;
+    format_settings.sql_insert.quote_names = settings.output_format_sql_insert_quote_names;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
