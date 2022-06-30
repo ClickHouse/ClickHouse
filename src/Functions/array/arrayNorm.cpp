@@ -57,17 +57,9 @@ struct L2Norm
     }
 };
 
-struct L2SquaredNorm
+struct L2SquaredNorm : L2Norm
 {
     static inline String name = "L2Squared";
-
-    struct ConstParams {};
-
-    template <typename ResultType>
-    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
-    {
-        return result + value * value;
-    }
 
     template <typename ResultType>
     inline static ResultType finalize(ResultType result, const ConstParams &)

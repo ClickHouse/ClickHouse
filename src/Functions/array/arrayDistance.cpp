@@ -70,25 +70,9 @@ struct L2Distance
     }
 };
 
-struct L2SquaredDistance
+struct L2SquaredDistance : L2Distance
 {
     static inline String name = "L2Squared";
-
-    struct ConstParams
-    {
-    };
-
-    template <typename FloatType>
-    struct State
-    {
-        FloatType sum = 0;
-    };
-
-    template <typename ResultType>
-    static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
-    {
-        state.sum += (x - y) * (x - y);
-    }
 
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
