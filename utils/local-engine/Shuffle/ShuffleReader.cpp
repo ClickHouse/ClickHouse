@@ -1,6 +1,6 @@
 #include "ShuffleReader.h"
-#include <Common/DebugUtils.h>
 #include <Shuffle/ShuffleSplitter.h>
+#include <Common/DebugUtils.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 
@@ -9,21 +9,21 @@ using namespace DB;
 namespace local_engine
 {
 
-local_engine::ShuffleReader::ShuffleReader(std::unique_ptr<ReadBuffer> in_, bool compressed):in(std::move(in_))
+local_engine::ShuffleReader::ShuffleReader(std::unique_ptr<ReadBuffer> in_, bool compressed) : in(std::move(in_))
 {
     if (compressed)
     {
-         compressed_in = std::make_unique<CompressedReadBuffer>(*in);
-         input_stream = std::make_unique<NativeReader>(*compressed_in, 0);
+        compressed_in = std::make_unique<CompressedReadBuffer>(*in);
+        input_stream = std::make_unique<NativeReader>(*compressed_in, 0);
     }
     else
     {
         input_stream = std::make_unique<NativeReader>(*in, 0);
     }
 }
-Block* local_engine::ShuffleReader::read()
+Block * local_engine::ShuffleReader::read()
 {
-    Block *cur_block = new Block(input_stream->read());
+    Block * cur_block = new Block(input_stream->read());
     if (header.columns() == 0)
         header = cur_block->cloneEmpty();
     if (cur_block->columns() == 0)
@@ -58,7 +58,9 @@ int ReadBufferFromJavaInputStream::readFromJava()
     assert(ShuffleReader::env != nullptr);
     if (buf == nullptr)
     {
-        buf = static_cast<jbyteArray>(ShuffleReader::env->NewGlobalRef(ShuffleReader::env->NewByteArray(4096)));
+        jbyteArray local_buf = ShuffleReader::env->NewByteArray(4096);
+        buf = static_cast<jbyteArray>(ShuffleReader::env->NewGlobalRef(local_buf));
+        ShuffleReader::env->DeleteLocalRef(local_buf);
     }
     jint count = ShuffleReader::env->CallIntMethod(java_in, ShuffleReader::input_stream_read, buf);
     if (count > 0)
@@ -67,8 +69,7 @@ int ReadBufferFromJavaInputStream::readFromJava()
     }
     return count;
 }
-ReadBufferFromJavaInputStream::ReadBufferFromJavaInputStream(jobject input_stream)
-    : java_in(input_stream)
+ReadBufferFromJavaInputStream::ReadBufferFromJavaInputStream(jobject input_stream) : java_in(input_stream)
 {
 }
 ReadBufferFromJavaInputStream::~ReadBufferFromJavaInputStream()

@@ -38,7 +38,6 @@ private:
     int readFromJava();
     bool nextImpl() override;
 
-
 };
 
 }
