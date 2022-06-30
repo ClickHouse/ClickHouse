@@ -9,7 +9,7 @@ This tool provides a means of obtaining a diagnostic bundle from a ClickHouse in
 - **No local dependencies** to run. We compile to a platform-independent binary, hence Go.
 - **Minimize resource overhead**. Improvements always welcome.
 - **Extendable framework**. At its core, the tool provides collectors and outputs. Collectors are independent and are responsible for collecting a specific dataset e.g. system configuration. Outputs produce the diagnostic bundle in a specific format. It should be trivial to add both for contributors. See [Collectors](#collectors) and [Outputs](#outputs) for more details.
-- **Convertable output formats**. Outputs produce diagnostic bundles in different formats e.g. archive, simple report etc. Where possible, it should be possible to convert between these formats. For example, an administrator may provide a bundle as an archive to their support provider who in turn wishes to visualise this as a report or even in ClickHouse itself...
+- **Convertible output formats**. Outputs produce diagnostic bundles in different formats e.g. archive, simple report etc. Where possible, it should be possible to convert between these formats. For example, an administrator may provide a bundle as an archive to their support provider who in turn wishes to visualise this as a report or even in ClickHouse itself...
 - **Something is better than nothing**. Collectors execute independently. We never fail a collection because one fails - preferring to warn the user only. There are good reasons for a collector failure e.g. insufficient permissions or missing data.
 - **Execute anywhere** - Ideally, this tool is executed on a ClickHouse host. Some collectors e.g. configuration file collection or system information, rely on this. However, collectors will obtain as much information remotely from the database as possible if executed remotely from the cluster - warning where collection fails. **We do currently require ClickHouse to be running, connecting over the native port**.
 
@@ -25,7 +25,7 @@ The `collect` command allows the collection of a diagnostic bundle. In its simpl
 clickhouse-diagnostics collect
 ```
 
-This will use the default collectors and the simple output. This output produces a timestamped archive bundle in `gz` format in a sub folder named after the host. This folder name can be controlled via the parameter `--id` or configured directly for the simple output parameter `output.simple.folder` (this allows a specific diretory to be specified).
+This will use the default collectors and the simple output. This output produces a timestamped archive bundle in `gz` format in a sub folder named after the host. This folder name can be controlled via the parameter `--id` or configured directly for the simple output parameter `output.simple.folder` (this allows a specific directory to be specified).
 
 Collectors, Outputs and ClickHouse connection credentials can be specified as shown below:
 

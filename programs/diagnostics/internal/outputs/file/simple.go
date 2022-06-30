@@ -149,7 +149,7 @@ func writeDatabaseFrame(frameId string, frame data.Frame, baseDir string) ([]str
 		errs = append(errs, errors.Wrapf(err, "unable to write columns for frame %s", frameId))
 		return []string{}, errs
 	}
-	// we don't collect an error for every line here like configs and logs - could mean alot of unnecessary noise
+	// we don't collect an error for every line here like configs and logs - could mean a lot of unnecessary noise
 	for {
 		values, ok, err := frame.Next()
 		if err != nil {
