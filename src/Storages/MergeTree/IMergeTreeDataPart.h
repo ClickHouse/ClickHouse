@@ -421,10 +421,6 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Return some uniq string for file.
-    /// Required for distinguish different copies of the same part on remote FS.
-    String getUniqueId() const;
-
     /// Ensures that creation_tid was correctly set after part creation.
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
 

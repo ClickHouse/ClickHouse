@@ -410,7 +410,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
         if (new_data_part->data_part_storage->exists())
         {
-            LOG_WARNING(log, "Removing old temporary directory {}", new_data_part->data_part_storage->getFullPath());
+            LOG_WARNING(log, "Removing old temporary directory {}", full_path);
             data_part_storage_builder->removeRecursive();
         }
 

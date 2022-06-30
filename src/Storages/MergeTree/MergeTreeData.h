@@ -961,7 +961,7 @@ public:
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
-    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false, std::optional<HardlinkedFiles> = {}) const {} /// NOLINT
+    virtual void lockSharedData(const IMergeTreeDataPart &, DataPartStorageBuilderPtr = nullptr, bool = false, std::optional<HardlinkedFiles> = {}) const {} /// NOLINT
 
     /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
