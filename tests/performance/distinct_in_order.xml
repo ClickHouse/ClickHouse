@@ -1,33 +1,33 @@
 <test>
     <!-- high cardinality -->
-    <drop_query>DROP TABLE IF EXISTS distinct_cardinality_high</drop_query>
-    <create_query>CREATE TABLE distinct_cardinality_high (high UInt64, medium UInt64, low UInt64) ENGINE MergeTree() ORDER BY (high, medium, low)</create_query>
-    <fill_query>INSERT INTO distinct_cardinality_high SELECT number % 10000, number % 1000, number % 100 from numbers(1000000)</fill_query>
+    <create_query>CREATE TABLE distinct_cardinality_high (high UInt64, medium UInt64, low UInt64) ENGINE MergeTree() ORDER BY (high, medium)</create_query>
+    <fill_query>INSERT INTO distinct_cardinality_high SELECT number % 10000, number % 1000, number % 100 FROM numbers_mt(1e8)</fill_query>
 
-    <query>select distinct high from distinct_cardinality_high</query>
-    <query>select distinct high, low from distinct_cardinality_high</query>
-    <query>select distinct high, medium from distinct_cardinality_high</query>
-    <query>select distinct high, medium, low from distinct_cardinality_high</query>
+    <query>SELECT DISTINCT high FROM distinct_cardinality_high FORMAT Null</query>
+    <query>SELECT DISTINCT high, low FROM distinct_cardinality_high FORMAT Null</query>
+    <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high FORMAT Null</query>
+    <query>SELECT DISTINCT high, medium, low FROM distinct_cardinality_high FORMAT Null</query>
 
-    <query>select distinct high, medium from distinct_cardinality_high order by medium</query>
-    <query>select distinct high, low from distinct_cardinality_high order by low</query>
-    <query>select distinct high, medium, low from distinct_cardinality_high order by high</query>
+    <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY medium FORMAT Null</query>
+    <query>SELECT DISTINCT high, medium FROM distinct_cardinality_high ORDER BY high FORMAT Null</query>
+    <query>SELECT DISTINCT high, low FROM distinct_cardinality_high ORDER BY low FORMAT Null</query>
+    <query>SELECT DISTINCT high, medium, low FROM distinct_cardinality_high ORDER BY low FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS distinct_cardinality_high</drop_query>
 
     <!-- low cardinality -->
-    <drop_query>DROP TABLE IF EXISTS distinct_cardinality_low</drop_query>
-    <create_query>CREATE TABLE distinct_cardinality_low (low UInt64, medium UInt64, high UInt64) ENGINE MergeTree() ORDER BY (low, medium, high)</create_query>
-    <fill_query>INSERT INTO distinct_cardinality_low SELECT number % 100, number % 1000, number % 10000 from numbers(1000000)</fill_query>
+    <create_query>CREATE TABLE distinct_cardinality_low (low UInt64, medium UInt64, high UInt64) ENGINE MergeTree() ORDER BY (low, medium)</create_query>
+    <fill_query>INSERT INTO distinct_cardinality_low SELECT number % 100, number % 1000, number % 10000 FROM numbers_mt(1e8)</fill_query>
 
-    <query>select distinct low from distinct_cardinality_low</query>
-    <query>select distinct low, medium from distinct_cardinality_low</query>
-    <query>select distinct low, high from distinct_cardinality_low</query>
-    <query>select distinct low, medium, high from distinct_cardinality_low</query>
+    <query>SELECT DISTINCT low FROM distinct_cardinality_low FORMAT Null</query>
+    <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low FORMAT Null</query>
+    <query>SELECT DISTINCT low, high FROM distinct_cardinality_low FORMAT Null</query>
+    <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low FORMAT Null</query>
 
-    <query>select distinct low, medium from distinct_cardinality_low order by medium</query>
-    <query>select distinct low, high from distinct_cardinality_low order by high</query>
-    <query>select distinct low, medium, high from distinct_cardinality_low order by low</query>
+    <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY medium FORMAT Null</query>
+    <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY low FORMAT Null</query>
+    <query>SELECT DISTINCT low, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
+    <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS distinct_cardinality_low</drop_query>
 </test>
