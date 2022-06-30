@@ -109,7 +109,10 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
 
+    virtual std::string getUniqueId(const String & path) const = 0;
+
     virtual bool isCommitedOrTriedToCommit() const = 0;
+
 
 };
 
