@@ -26,7 +26,7 @@ func NewSystemCollector(m *platform.ResourceManager) *SystemCollector {
 }
 
 func (sc *SystemCollector) Collect(conf config.Configuration) (*data.DiagnosticBundle, error) {
-	conf, err := conf.ValidateConfig(sc.Configuration())
+	_, err := conf.ValidateConfig(sc.Configuration())
 	if err != nil {
 		return &data.DiagnosticBundle{}, err
 	}
