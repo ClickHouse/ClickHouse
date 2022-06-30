@@ -125,6 +125,11 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
+    std::string getUniqueId(const String & path) const override
+    {
+        return disk.getUniqueId(path);
+    }
+
     bool isCommitedOrTriedToCommit() const override
     {
         return commit_called;
