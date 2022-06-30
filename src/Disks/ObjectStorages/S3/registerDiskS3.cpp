@@ -85,7 +85,7 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key)
     }
     try
     {
-        storage.removeObjects({ path });
+        storage.removeObjects({{ path, 0 }});
         return false;
     }
     catch (const Exception &)
