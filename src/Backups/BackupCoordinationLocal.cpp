@@ -74,7 +74,7 @@ Strings BackupCoordinationLocal::getReplicatedAccessPaths(const String & access_
 void BackupCoordinationLocal::setReplicatedAccessHost(const String & access_zk_path, const String & host_id)
 {
     std::lock_guard lock{mutex};
-    replicated_access_hosts[access_zk_path] = host_id;   
+    replicated_access_hosts[access_zk_path] = host_id;
 }
 
 String BackupCoordinationLocal::getReplicatedAccessHost(const String & access_zk_path) const

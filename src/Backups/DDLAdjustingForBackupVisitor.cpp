@@ -17,7 +17,7 @@ namespace
     {
         /// Precondition: storage.engine && storage.engine->name.starts_with("System"))
 
-        /// If this is a definition of a system table we'll remove columns and comment because they're reduntant for backups.
+        /// If this is a definition of a system table we'll remove columns and comment because they're redundant for backups.
         auto & create = data.create_query->as<ASTCreateQuery &>();
         create.reset(create.columns_list);
         create.reset(create.comment);
@@ -105,7 +105,7 @@ void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context, s
 {
     if (replicated_table_shared_id)
         *replicated_table_shared_id = {};
-    
+
     DDLAdjustingForBackupVisitor::Data data{ast, global_context, replicated_table_shared_id};
     DDLAdjustingForBackupVisitor::Visitor{data}.visit(ast);
 }

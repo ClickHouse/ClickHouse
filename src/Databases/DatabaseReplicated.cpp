@@ -928,7 +928,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>>
 DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const
 {
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
-    /// reading from ZooKeeper is better because thus we won't be dependant on how fast the replication queue of this database is.
+    /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
     auto zookeeper = getContext()->getZooKeeper();
     auto escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
@@ -940,7 +940,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
         String zk_metadata;
         if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
             throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
-        
+
         ParserCreateQuery parser;
         auto create_table_query = parseQuery(parser, zk_metadata, 0, getContext()->getSettingsRef().max_parser_depth);
 

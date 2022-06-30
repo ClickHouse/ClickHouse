@@ -159,7 +159,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
     extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 namespace ActionLocks

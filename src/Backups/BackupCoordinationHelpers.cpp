@@ -284,7 +284,7 @@ Strings BackupCoordinationStatusSync::setImpl(const String & current_host, const
 
     if ((all_hosts.size() == 1) && (all_hosts.front() == current_host))
         return {message};
-    
+
     /// Wait for other hosts.
 
     Strings ready_hosts_results;
@@ -314,7 +314,7 @@ Strings BackupCoordinationStatusSync::setImpl(const String & current_host, const
             {
                 host_with_error = host;
                 error_message = zookeeper->get(zookeeper_path + "/" + zk_node);
-                return;                
+                return;
             }
             auto it = unready_hosts.find(host);
             if ((it != unready_hosts.end()) && (status == new_status))

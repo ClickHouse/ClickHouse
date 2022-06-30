@@ -78,14 +78,14 @@ private:
     std::vector<std::filesystem::path> root_paths_in_backup;
 
     void findRootPathsInBackup();
-    
+
     void findDatabasesAndTablesInBackup();
     void findTableInBackup(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
     void findDatabaseInBackup(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
     void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
-    
+
     void checkAccessForObjectsFoundInBackup() const;
-    
+
     void createDatabases();
     void createTables();
 
