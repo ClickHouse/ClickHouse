@@ -5,7 +5,6 @@ namespace DB
 
 class FunctionFactory;
 
-void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
 void registerFunctionCurrentProfiles(FunctionFactory &);
 void registerFunctionCurrentRoles(FunctionFactory &);
@@ -94,7 +93,6 @@ void registerFunctionGetFuzzerData(FunctionFactory & factory);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
-    registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
     registerFunctionCurrentProfiles(factory);
     registerFunctionCurrentRoles(factory);

@@ -56,11 +56,9 @@ void registerFunctionBitHammingDistance(FunctionFactory & factory);
 void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
 void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
-void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 void registerFunctionsTimeWindow(FunctionFactory &);
-void registerFunctionToBool(FunctionFactory &);
 void registerFunctionMinSampleSize(FunctionFactory &);
 
 // meilisearch
@@ -125,9 +123,7 @@ void registerFunctions()
     registerFunctionTupleHammingDistance(factory);
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
-    registerFunctionsSnowflake(factory);
     registerFunctionsTimeWindow(factory);
-    registerFunctionToBool(factory);
     registerFunctionMinSampleSize(factory);
 
     //meilisearch

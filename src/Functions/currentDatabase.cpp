@@ -51,10 +51,7 @@ public:
 
 }
 
-void registerFunctionCurrentDatabase(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionCurrentDatabase>();
-    factory.registerFunction<FunctionCurrentDatabase>("DATABASE", FunctionFactory::CaseInsensitive);
-}
+FUNCTION_REGISTER_SIMPLE(FunctionCurrentDatabase);
+FUNCTION_REGISTER_SIMPLE_WITH_ARGS(FunctionCurrentDatabase, "DATABASE", FunctionFactory::CaseInsensitive);
 
 }
