@@ -444,13 +444,11 @@ bool KeeperServer::isLeader() const
     return raft_instance->is_leader();
 }
 
-
 bool KeeperServer::isObserver() const
 {
     auto srv_config = state_manager->get_srv_config();
     return srv_config->is_learner();
 }
-
 
 bool KeeperServer::isFollower() const
 {
