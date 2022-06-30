@@ -1490,9 +1490,9 @@ def collect_build_flags(args):
         result.append(BuildFlags.RELEASE)
 
     value = clickhouse_execute(
-        args, "SELECT value FROM system.settings WHERE name = 'default_database_engine'"
+        args, "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'"
     )
-    if value == b"Ordinary":
+    if value == b"1":
         result.append(BuildFlags.ORDINARY_DATABASE)
 
     value = int(
