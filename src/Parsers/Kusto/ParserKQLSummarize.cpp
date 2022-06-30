@@ -142,7 +142,7 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         if (sub_groupby.empty())
         {
             sub_columns =sub_aggregation;
-            sub_query = "(SELECT " + sub_columns+ " FROM "+ table_name+")";
+            sub_query = "SELECT " + sub_columns+ " FROM "+ table_name+"";
         }
         else
         {
@@ -155,17 +155,12 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
         Tokens token_subquery(sub_query.c_str(), sub_query.c_str()+sub_query.size());
         IParser::Pos pos_subquery(token_subquery, pos.max_depth);
-
         String converted_columns =  getExprFromToken(pos_subquery);
         converted_columns = "(" + converted_columns + ")";
-        
-        //std::cout << "MALLIK converted_columns: " << converted_columns << std::endl;
         
         Tokens token_converted_columns(converted_columns.c_str(), converted_columns.c_str() + converted_columns.size());
         IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth);
 
-        //if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, node, expected))
-            //return false;
         if (!ParserTablesInSelectQuery().parse(pos_converted_columns, sub_qurery_table, expected))
             return false;
         tables = sub_qurery_table;
@@ -210,14 +205,6 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
             else
             {
-                /*if (String(pos->begin, pos->end) == "=")
-                {
-                    std::pair<String, String> temp = removeLastWord(expr_aggregation);
-                    expr_aggregation = temp.first;
-                    column_name = temp.second;
-                }*/
-                //else
-                //{
                     if (!column_name.empty())
                     {
                         expr_aggregation = expr_aggregation + String(pos->begin, pos->end);
@@ -232,7 +219,7 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
                     {
                         expr_aggregation = expr_aggregation + String(pos->begin, pos->end) + " ";
                     }
-                //}
+                
             }
         }
         ++pos;
@@ -247,24 +234,6 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         else
             expr_columns = expr_groupby + "," + expr_aggregation;
     }
-    
-    
-    /*
-    Original
-
-    Tokens token_columns(expr_columns.c_str(), expr_columns.c_str() + expr_columns.size());
-    IParser::Pos pos_columns(token_columns, pos.max_depth);
-    if (!ParserNotEmptyExpressionList(true).parse(pos_columns, node, expected))
-        return false;
-
-    if (groupby)
-    {
-        Tokens token_groupby(expr_groupby.c_str(), expr_groupby.c_str() + expr_groupby.size());
-        IParser::Pos postoken_groupby(token_groupby, pos.max_depth);
-        if (!ParserNotEmptyExpressionList(false).parse(postoken_groupby, group_expression_list, expected))
-            return false;
-    }
-    */
 
    // For function
     Tokens token_columns(expr_columns.c_str(), expr_columns.c_str() + expr_columns.size());

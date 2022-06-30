@@ -11,6 +11,8 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
+
+#include <iostream>
 namespace DB
 {
 
@@ -26,7 +28,7 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
     std::vector<String> tokens;
     std::unique_ptr<IParserKQLFunction> kql_function;
     String alias;
-
+    
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         String token = String(pos->begin,pos->end);
@@ -46,19 +48,27 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
             if (pos->type == TokenType::BareWord )
             {
                 kql_function = KQLFunctionFactory::get(token);
-                if (kql_function && kql_function->convert(new_token,pos))
+                if (kql_function && kql_function->convert(new_token,pos)){
                     token = new_token;
+                }
+                    
             }
             tokens.push_back(token);
         }
 
-        if (pos->type == TokenType::Comma && !alias.empty())
+        if (!alias.empty())
         {
-            tokens.pop_back();
-            tokens.push_back("AS");
-            tokens.push_back(alias);
-            tokens.push_back(",");
-            alias.clear();
+            if(pos->type == TokenType::Comma || token == "FROM")
+            {
+                tokens.pop_back();
+                tokens.push_back("AS");
+                tokens.push_back(alias);
+                if(pos->type == TokenType::Comma)
+                    tokens.push_back(",");
+                else
+                    tokens.push_back("FROM");
+                alias.clear();
+            }
         }
         ++pos;
     }
@@ -68,7 +78,6 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
         tokens.push_back("AS");
         tokens.push_back(alias);
     }
-
     for (auto token:tokens) 
         res = res + token +" ";
     return res;
