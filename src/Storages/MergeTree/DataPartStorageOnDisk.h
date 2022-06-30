@@ -86,8 +86,8 @@ public:
 
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
 
-    void loadDeletedRowMask(String & bitmap) const override;
-    void writeLightweightDeletedMask(String & bitmap, Poco::Logger * log) const override;
+    void loadDeletedRowsMask(MergeTreeDataPartDeletedMask & deleted_mask) const override;
+    void writeDeletedRowsMask(MergeTreeDataPartDeletedMask & deleted_mask) const override;
 
     void backup(
         TemporaryFilesOnDisks & temp_dirs,

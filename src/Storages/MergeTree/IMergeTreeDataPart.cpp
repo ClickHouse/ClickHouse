@@ -648,7 +648,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
-        loadDeletedRowMask();
+        loadDeletedMask();
     }
     catch (...)
     {
@@ -1209,25 +1209,31 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setSerializationInfos(infos);
 }
 
-void IMergeTreeDataPart::loadDeletedRowMask()
+void IMergeTreeDataPart::loadDeletedMask()
 {
     if (part_type == Type::Compact)
         return;
 
-    if (data_part_storage->exists(DELETED_ROW_MARK_FILE_NAME))
+    if (data_part_storage->exists(deleted_mask.name))
     {
         has_lightweight_delete = true;
 
-        data_part_storage->loadDeletedRowMask(deleted_rows_mask);
+        data_part_storage->loadDeletedRowsMask(deleted_mask);
+
+        if (deleted_mask.getDeletedRows().size() != rows_count)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Size of deleted mask loaded from '{}':'{}' doesn't match expected "
+                    "for part {}"
+                    "(loaded {} rows, expected {} rows).",
+                    data_part_storage->getDiskPath(), deleted_mask.name, name, deleted_mask.getDeletedRows().size(), rows_count);
     }
 }
 
-void IMergeTreeDataPart::writeLightweightDeletedMask(String bitmap) const
+void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask)
 {
-    if (bitmap.empty())
-        return;
-
-    data_part_storage->writeLightweightDeletedMask(bitmap, storage.log);
+    deleted_mask.setDeletedRows(new_mask);
+    has_lightweight_delete = true;
+    data_part_storage->writeDeletedRowsMask(deleted_mask);
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const

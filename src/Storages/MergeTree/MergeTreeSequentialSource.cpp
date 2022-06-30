@@ -76,10 +76,7 @@ try
     const auto & header = getPort().getHeader();
 
     /// The chunk after deleted mask applied maybe empty. But the empty chunk means done of read rows.
-    String deleted_rows_mask;
     bool need_read_deleted_mask = data_part->hasLightweightDelete();
-    if (need_read_deleted_mask)
-        deleted_rows_mask = data_part->deleted_rows_mask;
 
     do
     {
@@ -99,13 +96,16 @@ try
 
                 if (need_read_deleted_mask)
                 {
+                    const auto & deleted_rows_col = data_part->getDeletedMask().getDeletedRows();
+                    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col.getData();
+
                     size_t pos = current_row - rows_read;
 
                     /// Get deleted mask for rows_read
                     IColumn::Filter deleted_rows_filter(rows_read, true);
                     for (size_t i = 0; i < rows_read; i++)
                     {
-                        if (deleted_rows_mask[pos++] == '1')
+                        if (deleted_rows_mask[pos++])
                             deleted_rows_filter[i] = 0;
                     }
 
