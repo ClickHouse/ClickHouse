@@ -298,7 +298,8 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void execute(MetadataTransactionPtr tx) override
     {
-        on_execute(tx);
+        if (on_execute)
+            on_execute(tx);
     }
 
     void undo() override
