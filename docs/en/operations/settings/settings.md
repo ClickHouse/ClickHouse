@@ -4663,3 +4663,9 @@ Default value: `true`.
 Use REPLACE keyword instead of INSERT.
 
 Default value: `false`.
+
+### output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
+
+Quote column names with "`" characters
+
+Default value: `true`.

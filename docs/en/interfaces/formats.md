@@ -495,6 +495,7 @@ To read data output by this format ypu can use [MySQLDump](#mysqldump) input for
 - [output_format_sql_insert_table_name](../operations/settings/settings.md#output_format_sql_insert_table_name) - The name of table in the output INSERT query. Default value - `'table'`.
 - [output_format_sql_insert_include_column_names](../operations/settings/settings.md#output_format_sql_insert_include_column_names) - Include column names in INSERT query. Default value - `true`.
 - [output_format_sql_insert_use_replace](../operations/settings/settings.md#output_format_sql_insert_use_replace) - Use REPLACE statement instead of INSERT. Default value - `false`.
+- [output_format_sql_insert_quote_names](../operations/settings/settings.md#output_format_sql_insert_quote_names) - Quote column names with "\`" characters . Default value - `true`.
 
 ## JSON {#json}
 
