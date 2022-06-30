@@ -15,9 +15,7 @@ public:
         : disk(disk_)
     {}
 
-    void commit() override
-    {
-    }
+    void commit() override {}
 
     void createDirectory(const std::string & path) override
     {
