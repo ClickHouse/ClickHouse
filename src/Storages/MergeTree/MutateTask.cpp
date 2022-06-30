@@ -604,7 +604,7 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
-    new_data_part->loadDeletedRowMask();
+    new_data_part->loadDeletedMask();
     new_data_part->setBytesOnDisk(new_data_part->data_part_storage->calculateTotalSizeOnDisk());
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
@@ -1484,14 +1484,20 @@ private:
         Block block;
         bool has_deleted_rows = false;
 
+        auto new_deleted_rows = ColumnUInt8::create();
+        auto & data = new_deleted_rows->getData();
+
         /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
         if (ctx->source_part->hasLightweightDelete())
         {
-            new_bitmap = ctx->source_part->deleted_rows_mask;
+            const auto & deleted_rows_col = ctx->source_part->getDeletedMask().getDeletedRows();
+            const auto & source_data = deleted_rows_col.getData();
+            data.insert(source_data.begin(), source_data.begin() + ctx->source_part->rows_count);
+
             has_deleted_rows = true;
         }
         else
-            new_bitmap.resize(ctx->source_part->rows_count, '0');
+            new_deleted_rows->insertManyDefaults(ctx->source_part->rows_count);
 
         /// Mark the data corresponding to the offset in the as deleted.
         while (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(block))
@@ -1507,12 +1513,12 @@ private:
 
             /// Fill 1 for rows in offset
             for (size_t current_row = 0; current_row < block_rows; current_row++)
-                new_bitmap[offset[current_row]] = '1';
+                data[offset[current_row]] = 1;
         }
 
         if (has_deleted_rows)
         {
-            ctx->new_data_part->writeLightweightDeletedMask(new_bitmap);
+            ctx->new_data_part->writeDeletedMask(ColumnUInt8::Ptr(std::move(new_deleted_rows)));
         }
     }
 
@@ -1539,8 +1545,6 @@ private:
     State state{State::NEED_PREPARE};
 
     MutationContextPtr ctx;
-
-    String new_bitmap;
 };
 
 
@@ -1729,9 +1733,9 @@ bool MutateTask::prepare()
     else if (ctx->is_lightweight_mutation)
     {
         ctx->files_to_skip = ctx->source_part->getFileNamesWithoutChecksums();
-        /// Skip to create hardlink for deleted_row_mask.bin
+        /// Skip to create hardlink for deleted_rows_mask.bin
         if (ctx->source_part->hasLightweightDelete())
-            ctx->files_to_skip.insert("deleted_row_mask.bin");
+            ctx->files_to_skip.insert("deleted_rows_mask.bin");
 
         /// We will modify or create only deleted_row_mask for lightweight delete. Other columns and key values are copied as-is.
         task = std::make_unique<LightweightDeleteTask>(ctx);

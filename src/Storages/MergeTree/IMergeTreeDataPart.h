@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -327,9 +328,8 @@ public:
 
     mutable VersionMetadata version;
 
-    /// True if the part has deleted_row_mask.bin file used for lightweight delete.
+    /// True if the part has deleted_rows_mask.bin file used for lightweight delete.
     bool has_lightweight_delete = false;
-    String deleted_rows_mask;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -408,9 +408,6 @@ public:
 
     static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
-    /// File name for lightweight delete rows mask bitmap file.
-    static inline constexpr auto DELETED_ROW_MARK_FILE_NAME = "deleted_row_mask.bin";
-
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
     /// for zero copy replication. Sadly it's very complex.
@@ -466,13 +463,13 @@ public:
     /// True if here is light weight bitmap file in part.
     bool hasLightweightDelete() const { return has_lightweight_delete; }
 
-    /// Reads deleted row mask from deleted_row_mask.bin if exists and set has_lightweight_delete.
-    void loadDeletedRowMask();
-
-    /// Write lightweight deleted mask to a file.
-    void writeLightweightDeletedMask(String bitmap) const;
+    const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
+    void writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask);
+    void loadDeletedMask();
 
 protected:
+
+    MergeTreeDataPartDeletedMask deleted_mask {};
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;

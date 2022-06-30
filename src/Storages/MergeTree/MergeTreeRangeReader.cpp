@@ -675,8 +675,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     }
 
     need_read_deleted_mask = merge_tree_reader->needReadDeletedMask();
-    if (need_read_deleted_mask)
-        deleted_rows_mask = merge_tree_reader->data_part->deleted_rows_mask;
 
     if (prewhere_info)
     {
@@ -1002,12 +1000,15 @@ void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 
     UInt8 * pos = vec.data();
     UInt8 * end = &vec[num_rows];
 
+    const auto & deleted_rows_col = merge_tree_reader->data_part->getDeletedMask().getDeletedRows();
+    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col.getData();
+
     while (pos < end && leading_begin_part_offset < leading_end_part_offset)
     {
-        if (deleted_rows_mask[leading_begin_part_offset++] == '0')
-            *pos++ = 1;
-        else
+        if (deleted_rows_mask[leading_begin_part_offset++])
             *pos++ = 0;
+        else
+            *pos++ = 1;
     }
 
     const auto start_ranges = result.startedRanges();
@@ -1019,10 +1020,10 @@ void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 
 
         while (pos < end && start_part_offset < end_part_offset)
         {
-            if (deleted_rows_mask[start_part_offset++] == '0')
-                *pos++ = 1;
-            else
+            if (deleted_rows_mask[start_part_offset++])
                 *pos++ = 0;
+            else
+                *pos++ = 1;
         }
     }
 
