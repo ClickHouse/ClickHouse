@@ -2578,8 +2578,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
             limit_for_distinct,
             columns,
             pre_distinct,
-            settings.optimize_distinct_in_order,
-            settings.distinct_in_order_range_search_step);
+            settings.optimize_distinct_in_order);
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
