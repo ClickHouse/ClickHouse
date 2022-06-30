@@ -3286,7 +3286,7 @@ Possible values:
 
 Default value: `0`.
 
-## shutdown_wait_unfinished_queries
+## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
 
 Enables or disables waiting unfinished queries when shutdown server.
 
@@ -3297,13 +3297,13 @@ Possible values:
 
 Default value: 0.
 
-## shutdown_wait_unfinished
+## shutdown_wait_unfinished {#shutdown_wait_unfinished}
 
 The waiting time in seconds for currently handled connections when shutdown server.
 
 Default Value: 5.
 
-## memory_overcommit_ratio_denominator
+## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
 
 It represents soft memory limit in case when hard limit is reached on user level.
 This value is used to compute overcommit ratio for the query.
@@ -3312,7 +3312,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
 
-## memory_usage_overcommit_max_wait_microseconds
+## memory_usage_overcommit_max_wait_microseconds {#memory_usage_overcommit_max_wait_microseconds}
 
 Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
 If the timeout is reached and memory is not freed, an exception is thrown.
@@ -3320,7 +3320,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `5000000`.
 
-## memory_overcommit_ratio_denominator_for_user
+## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
 
 It represents soft memory limit in case when hard limit is reached on global level.
 This value is used to compute overcommit ratio for the query.
@@ -3328,6 +3328,72 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
+
+## use_cache_for_file_schema_inference {use_cache_for_file_schema_inference}
+
+Enable schemas cache for schema inference in `file` table function.
+
+Default value: `true`.
+
+## cache_ttl_for_file_schema_inference {#cache_ttl_for_file_schema_inference}
+
+TTL for schemes in cache in schema inference while using `file` table function. 0 means no ttl.
+Schema will be removed from cache if it was not accessed during specified TTL. 
+
+Type: seconds.
+
+Default value: `3600 * 24`.
+
+## use_cache_for_s3_schema_inference {use_cache_for_s3_schema_inference}
+
+Enable schemas cache for schema inference in `s3` table function.
+
+Default value: `true`.
+
+## cache_ttl_for_s3_schema_inference {#cache_ttl_for_s3_schema_inference}
+
+TTL for schemes in cache in schema inference while using `s3` table function. 0 means no ttl.
+Schema will be removed from cache if it was not accessed during specified TTL.
+
+Type: seconds.
+
+Default value: `3600 * 24`.
+
+## use_cache_for_url_schema_inference {use_cache_for_url_schema_inference}
+
+Enable schemas cache for schema inference in `url` table function.
+
+Default value: `true`.
+
+## cache_ttl_for_url_schema_inference {#cache_ttl_for_url_schema_inference}
+
+TTL for schemes in cache in schema inference while using `url` table function. 0 means no ttl.
+Schema will be removed from cache if it was not accessed during specified TTL.
+
+Type: seconds.
+
+Default value: `3600 * 24`.
+
+## use_cache_for_hdfs_schema_inference {use_cache_for_hdfs_schema_inference}
+
+Enable schemas cache for schema inference in `hdfs` table function.
+
+Default value: `true`.
+
+## cache_ttl_for_hdfs_schema_inference {#cache_ttl_for_hdfs_schema_inference}
+
+TTL for schemes in cache in schema inference while using `hdfs` table function. 0 means no ttl.
+Schema will be removed from cache if it was not accessed during specified TTL.
+
+Type: seconds.
+
+Default value: `3600 * 24`.
+
+## allow_urls_without_last_mod_time_in_schema_inference_cache {#allow_urls_without_last_mod_time_in_schema_inference_cache}
+
+Use schema from cache without last modification time validation for urls without `Last-Modified` header.
+
+Default value: `true`.
 
 # Format settings {#format-settings}
 

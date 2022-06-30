@@ -197,7 +197,7 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().use_cache_for_hdfs_schema_inference)
-        columns_from_cache = tryGetColumnsFromCache(paths, last_mod_time, format, ctx);
+        columns_from_cache = tryGetColumnsFromCache(paths, path_from_uri, last_mod_time, format, ctx);
 
     ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -216,7 +216,7 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 
     if (ctx->getSettingsRef().use_cache_for_hdfs_schema_inference)
-        addColumnsToCache(paths, columns, format, ctx);
+        addColumnsToCache(paths, path_from_uri, columns, format, ctx);
 
     return columns;
 }
@@ -727,6 +727,7 @@ SchemaCache & StorageHDFS::getSchemaCache()
 
 std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
     const Strings & paths,
+    const String & uri_without_path,
     std::unordered_map<String, time_t> & last_mod_time,
     const String & format_name,
     const ContextPtr & ctx)
@@ -742,7 +743,8 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
             return it->second;
         };
 
-        String cache_key = getKeyForSchemaCache(path, format_name, {}, ctx);
+        String url = fs::path(uri_without_path) / path;
+        String cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
         auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
         if (columns)
             return columns;
@@ -753,12 +755,16 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
 
 void StorageHDFS::addColumnsToCache(
     const Strings & paths,
+    const String & uri_without_path,
     const ColumnsDescription & columns,
     const String & format_name,
     const ContextPtr & ctx)
 {
     auto & schema_cache = getSchemaCache();
-    Strings cache_keys = getKeysForSchemaCache(paths, format_name, {}, ctx);
+    Strings sources;
+    sources.reserve(paths.size());
+    std::transform(paths.begin(), paths.end(), std::back_inserter(sources), [&](const String & path){ return fs::path(uri_without_path) / path; });
+    Strings cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
     schema_cache.addMany(cache_keys, columns, ctx->getSettingsRef().cache_ttl_for_hdfs_schema_inference.totalSeconds());
 }
 
