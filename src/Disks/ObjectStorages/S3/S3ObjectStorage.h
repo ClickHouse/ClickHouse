@@ -85,6 +85,7 @@ public:
     /// Remove file. Throws exception if file doesn't exist or it's a directory.
     void removeObject(const std::string & path) override;
 
+    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`.
     void removeObjects(const PathsWithSize & paths) override;
 
     void removeObjectIfExists(const std::string & path) override;

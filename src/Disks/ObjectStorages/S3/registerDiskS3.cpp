@@ -85,6 +85,7 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key)
     }
     try
     {
+        /// Uses `DeleteObjects` request (batch delete).
         storage.removeObjects({{ path, 0 }});
         return false;
     }
@@ -125,6 +126,7 @@ void registerDiskS3(DiskFactory & factory)
 
         if (!config.getBool(config_prefix + ".skip_access_check", false))
         {
+            /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
             if (s3_capabilities.support_batch_delete && checkBatchRemoveIsMissing(*s3_storage, uri.key))
             {
                 s3_storage->setCapabilitiesSupportBatchDelete(false);
