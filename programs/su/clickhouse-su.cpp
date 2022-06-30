@@ -84,7 +84,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
                 throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
-                throw Exception(fmt::format("User {} is not found in the system", arg_uid), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
 
             uid = entry.pw_uid;
         }
