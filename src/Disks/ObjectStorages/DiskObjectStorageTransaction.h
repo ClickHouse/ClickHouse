@@ -56,7 +56,6 @@ private:
     /// TODO we can get rid of this params
     const std::string & remote_fs_root_path;
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
-    std::unordered_map<std::string, std::string> unique_ids;
 
     DiskObjectStorageOperations operations_to_execute;
     bool commit_called{false};
@@ -109,8 +108,6 @@ public:
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
-
-    std::string getUniqueId(const std::string & path) const override;
 
     bool isCommitedOrTriedToCommit() const override
     {
