@@ -347,7 +347,7 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
     /// Serialized metadatadatas with zero ref counts.
     auto metadatas = data_part_storage_on_disk->getSerializedMetadata(paths);
 
-    String part_id = part->getUniqueId();
+    String part_id = data_part_storage_on_disk->getUniqueId();
     writeStringBinary(part_id, out);
 
     writeBinary(checksums.files.size(), out);
@@ -928,7 +928,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-    data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
+    data.lockSharedData(*new_data_part, nullptr, /* replace_existing_lock = */ true, {});
 
     LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.",
         part_name, part_id, disk->getName());

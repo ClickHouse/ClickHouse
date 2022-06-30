@@ -166,6 +166,8 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) override;
 
+    String getUniqueId() const override;
+
     void commit() override;
 
 private:

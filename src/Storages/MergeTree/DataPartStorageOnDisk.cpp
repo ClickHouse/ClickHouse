@@ -847,6 +847,7 @@ std::string DataPartStorageBuilderOnDisk::getRelativePath() const
 
 void DataPartStorageBuilderOnDisk::createDirectories()
 {
+    LOG_INFO(&Poco::Logger::get("DEBUG"), "CREATING DIRECTORY {}", (fs::path(root_path) / part_dir).string());
     transaction->createDirectories(fs::path(root_path) / part_dir);
 }
 
@@ -872,6 +873,11 @@ DataPartStorageBuilderPtr DataPartStorageBuilderOnDisk::getProjection(const std:
 DataPartStoragePtr DataPartStorageBuilderOnDisk::getStorage() const
 {
     return std::make_shared<DataPartStorageOnDisk>(volume, root_path, part_dir);
+}
+
+String DataPartStorageBuilderOnDisk::getUniqueId() const
+{
+    return transaction->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
 void DataPartStorageBuilderOnDisk::commit()

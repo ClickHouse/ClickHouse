@@ -502,7 +502,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     part->name);
         }
 
-        storage.lockSharedData(*part, false, {});
+        storage.lockSharedData(*part, builder, false, {});
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
