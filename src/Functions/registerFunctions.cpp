@@ -3,6 +3,9 @@
 #include <Functions/FunctionFactory.h>
 
 
+extern func_entry __start_func_list;
+extern func_entry __stop_func_list;
+
 namespace DB
 {
 void registerFunctionsArithmetic(FunctionFactory &);
@@ -140,6 +143,9 @@ void registerFunctions()
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
     registerFunctionHashID(factory);
+
+    for (func_entry *p = &__start_func_list; p < &__stop_func_list; ++p)
+        (*p)(factory);
 }
 
 }

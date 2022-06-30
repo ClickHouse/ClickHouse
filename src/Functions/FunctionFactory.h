@@ -82,3 +82,31 @@ private:
 };
 
 }
+
+typedef void (*func_entry)(DB::FunctionFactory &factory);
+
+#define COLD_INIT __attribute((__section__(".init.text"))) __attribute__((__cold__))
+
+#define FUNCTION_REGISTER(fn) \
+static __attribute((__section__("func_list"))) __attribute__((used)) \
+    func_entry fn_autocall_##fn = (fn);
+
+#define FUNCTION_REGISTER_NAME(name, fn) \
+static COLD_INIT void name(FunctionFactory & factory) \
+{ factory.registerFunction<fn>(); } \
+FUNCTION_REGISTER(name);
+
+#define FUNCTION_REGISTER_NAME_WITH_ARGS(name, fn, ...) \
+static COLD_INIT void name(FunctionFactory & factory) \
+{ factory.registerFunction<fn>(__VA_ARGS__); } \
+FUNCTION_REGISTER(name);
+
+#define FUNC_CAT(a,b) FUNC_CAT_EXP(a,b)
+#define FUNC_CAT_EXP(a,b) a##b
+#define FUNC_UNIQUE_ID() FUNC_CAT(registerFunction, __COUNTER__)
+
+#define FUNCTION_REGISTER_SIMPLE(fn) \
+    FUNCTION_REGISTER_NAME(FUNC_UNIQUE_ID(), fn)
+
+#define FUNCTION_REGISTER_SIMPLE_WITH_ARGS(fn, ...) \
+    FUNCTION_REGISTER_NAME_WITH_ARGS(FUNC_UNIQUE_ID(), fn, __VA_ARGS__)
