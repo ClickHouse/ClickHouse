@@ -298,7 +298,8 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void execute(MetadataTransactionPtr tx) override
     {
-        on_execute(tx);
+        if (on_execute)
+            on_execute(tx);
     }
 
     void undo() override
@@ -537,6 +538,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     {
         create_metadata_callback = [write_op = write_operation.get(), mode, path, blob_name] (size_t count)
         {
+            /// This callback called in WriteBuffer finalize method -- only there we actually know
+            /// how many bytes were written. We don't control when this finalize method will be called
+            /// so here we just modify operation itself, but don't execute anything (and don't modify metadata transaction).
+            /// Otherwise it's possible to get reorder of operations, like:
+            /// tx->createDirectory(xxx) -- will add metadata operation in execute
+            /// buf1 = tx->writeFile(xxx/yyy.bin)
+            /// buf2 = tx->writeFile(xxx/zzz.bin)
+            /// ...
+            /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
+            /// tx->commit()
             write_op->setOnExecute([mode, path, blob_name, count](MetadataTransactionPtr tx)
             {
                 if (mode == WriteMode::Rewrite)

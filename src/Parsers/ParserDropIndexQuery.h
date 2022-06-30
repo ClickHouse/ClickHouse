@@ -12,7 +12,7 @@ namespace DB
 class ParserDropIndexQuery : public IParserBase
 {
 protected:
-    const char * getName() const  override{ return "DROP INDEX query"; }
+    const char * getName() const override { return "DROP INDEX query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
