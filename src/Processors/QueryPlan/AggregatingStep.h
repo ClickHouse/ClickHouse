@@ -27,7 +27,6 @@ struct GroupingSetsParams
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 Block appendGroupingSetColumn(Block header);
-Block generateOutputHeader(const Block & input_header);
 Block generateOutputHeader(const Block & input_header, const ColumnNumbers & keys, bool use_nulls);
 
 /// Aggregation. See AggregatingTransform.
@@ -44,6 +43,7 @@ public:
         size_t merge_threads_,
         size_t temporary_data_merge_threads_,
         bool storage_has_evenly_distributed_read_,
+        bool group_by_use_nulls_,
         InputOrderInfoPtr group_by_info_,
         SortDescription group_by_sort_description_);
 
@@ -68,6 +68,7 @@ private:
     size_t temporary_data_merge_threads;
 
     bool storage_has_evenly_distributed_read;
+    bool group_by_use_nulls;
 
     InputOrderInfoPtr group_by_info;
     SortDescription group_by_sort_description;
