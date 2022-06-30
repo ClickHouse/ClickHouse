@@ -13,14 +13,14 @@ bool Base64EncodeToString::convertImpl(String &out,IParser::Pos &pos)
 
 bool Base64EncodeFromGuid::convertImpl(String &out,IParser::Pos &pos)
 {
-    return directMapping(out,pos,"base64Decode");
+    String res = String(pos->begin,pos->end);
+    out = res;
+    return false;
 }
 
 bool Base64DecodeToString::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out,pos,"base64Decode");
 }
 
 bool Base64DecodeToArray::convertImpl(String &out,IParser::Pos &pos)
