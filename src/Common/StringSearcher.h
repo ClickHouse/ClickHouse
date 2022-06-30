@@ -853,7 +853,8 @@ struct StdLibASCIIStringSearcher : public StringSearcherBase
         else
         {
             return std::search(
-                haystack_start, haystack_end, needle_start, needle_end);
+                haystack_start, haystack_end, needle_start, needle_end,
+                [](char c1, char c2) {return c1 == c2;});
         }
     }
 
