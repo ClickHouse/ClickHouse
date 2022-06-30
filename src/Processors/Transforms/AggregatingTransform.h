@@ -35,12 +35,14 @@ struct AggregatingTransformParams
     Aggregator & aggregator;
     bool final;
     bool only_merge = false;
+    bool use_nulls = false;
 
-    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(const Aggregator::Params & params_, bool final_, bool use_nulls_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
         , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
         , final(final_)
+        , use_nulls(use_nulls_)
     {
     }
 

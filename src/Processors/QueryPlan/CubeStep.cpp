@@ -25,7 +25,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 CubeStep::CubeStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_)
-    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_->getHeader()), getTraits())
+    : ITransformingStep(input_stream_, generateOutputHeader(params_->getHeader(), params_->params.keys, params_->use_nulls), getTraits())
     , keys_size(params_->params.keys_size)
     , params(std::move(params_))
 {
