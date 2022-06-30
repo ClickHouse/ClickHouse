@@ -161,7 +161,7 @@ protected:
 
     /// Data is already written up to this mark.
     size_t current_mark = 0;
-    
+
     GinIndexStores gin_index_stores;
 private:
     void initSkipIndices();

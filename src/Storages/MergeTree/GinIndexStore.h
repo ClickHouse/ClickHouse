@@ -155,7 +155,7 @@ private:
     friend class GinIndexStoreReader;
 
     String name;
-    DataPartStoragePtr storage;    
+    DataPartStoragePtr storage;
     DataPartStorageBuilderPtr data_part_storage_builder;
 
     std::mutex gin_index_store_mutex;
