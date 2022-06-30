@@ -2295,6 +2295,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         merge_threads,
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,
+        settings.group_by_use_nulls,
         std::move(group_by_info),
         std::move(group_by_sort_description));
     query_plan.addStep(std::move(aggregating_step));
