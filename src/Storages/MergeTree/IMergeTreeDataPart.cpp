@@ -1696,6 +1696,11 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     return true;
 }
 
+String IMergeTreeDataPart::getUniqueId() const
+{
+    return data_part_storage->getUniqueId();
+}
+
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)

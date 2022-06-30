@@ -250,11 +250,6 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 
-    /// A leak of abstraction.
-    /// Return some uniq string for file.
-    /// Required for distinguish different copies of the same part on remote FS.
-    virtual String getUniqueId() const = 0;
-
     virtual void commit() = 0;
 };
 
