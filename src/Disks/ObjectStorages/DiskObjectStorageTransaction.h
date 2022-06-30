@@ -56,7 +56,6 @@ private:
     /// TODO we can get rid of this params
     const std::string & remote_fs_root_path;
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
-    std::unordered_map<std::string, std::string> unique_ids;
 
     DiskObjectStorageOperations operations_to_execute;
 public:
