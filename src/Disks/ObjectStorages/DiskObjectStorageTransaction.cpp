@@ -486,14 +486,6 @@ String revisionToString(UInt64 revision)
 
 }
 
-std::string DiskObjectStorageTransaction::getUniqueId(const std::string & path) const
-{
-    auto it = unique_ids.find(path);
-    if (it != unique_ids.end())
-        return it->second;
-    return "";
-}
-
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile( /// NOLINT
     const std::string & path,
     size_t buf_size,
@@ -513,8 +505,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         };
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
-
-    unique_ids[path] = blob_name;
 
     auto blob_path = fs::path(remote_fs_root_path) / blob_name;
 
