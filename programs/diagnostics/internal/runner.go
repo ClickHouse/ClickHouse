@@ -96,7 +96,7 @@ func output(config *runConfiguration, bundles map[string]*data.DiagnosticBundle)
 		return err
 	}
 	frameErrors, err := output.Write(config.id, bundles, config.outputConfig)
-	// we report over failing hard on frame errors - upto the output to determine what is fatal via error
+	// we report over failing hard on frame errors - up to the output to determine what is fatal via error
 	for _, fError := range frameErrors.Errors {
 		log.Warn().Msgf("failure to write frame in output %s - %s", config.output, fError)
 	}

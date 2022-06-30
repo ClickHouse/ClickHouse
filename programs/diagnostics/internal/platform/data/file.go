@@ -303,7 +303,7 @@ func (x XmlConfigFile) FindLogPaths() ([]string, error) {
 
 func (x XmlConfigFile) FindIncludedConfig() (ConfigFile, error) {
 	if x.Included {
-		//cant recurse
+		//can't recurse
 		return XmlConfigFile{}, nil
 	}
 	config, err := x.UnmarshallConfig()
@@ -385,7 +385,7 @@ func (y YamlConfigFile) FindLogPaths() ([]string, error) {
 
 func (y YamlConfigFile) FindIncludedConfig() (ConfigFile, error) {
 	if y.Included {
-		//cant recurse
+		//can't recurse
 		return YamlConfigFile{}, nil
 	}
 	inputFile, err := ioutil.ReadFile(y.Path)

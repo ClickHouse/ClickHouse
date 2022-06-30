@@ -2,11 +2,12 @@ package utils
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 )
 
 func FileExists(name string) (bool, error) {
@@ -64,7 +65,7 @@ func CopyFile(sourceFilename string, destFilename string) error {
 	return err
 }
 
-// patterns passed are an OR - any can be satisified and the file will be listed
+// patterns passed are an OR - any can be satisfied and the file will be listed
 
 func ListFilesInDirectory(directory string, patterns []string) ([]string, []error) {
 	var files []string
