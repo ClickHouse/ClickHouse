@@ -79,12 +79,7 @@ function thread_partition_dst_to_src()
         SET throw_on_unsupported_query_inside_transaction=0;
         SYSTEM START MERGES dst;
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=4) != (toUInt8($i/2 + 1), (select sum(number) from numbers(1, $i) where number % 2 or number=$i))) FORMAT Null;
-        $action;" || $CLICKHOUSE_CLIENT --multiquery --query "
-                          begin transaction;
-                          set transaction snapshot 3;
-                          select $i, 'src', type, n, _part from src order by type, n;
-                          select $i, 'dst', type, n, _part from dst order by type, n;
-                          rollback" ||:
+        $action;"
     done
 }
 
@@ -102,12 +97,7 @@ function thread_select()
         SELECT _table, throwIf(arraySort(groupArrayIf(n, type=1)) != arraySort(groupArrayIf(n, type=2))) FROM merge(currentDatabase(), '') GROUP BY _table FORMAT Null;
         -- all rows are inserted in insert_thread
         SELECT type, throwIf(count(n) != max(n)), throwIf(sum(n) != max(n)*(max(n)+1)/2) FROM merge(currentDatabase(), '') WHERE type IN (1, 2) GROUP BY type ORDER BY type FORMAT Null;
-        COMMIT;" || $CLICKHOUSE_CLIENT --multiquery --query "
-                         begin transaction;
-                         set transaction snapshot 3;
-                         select $i, 'src', type, n, _part from src order by type, n;
-                         select $i, 'dst', type, n, _part from dst order by type, n;
-                         rollback" ||:
+        COMMIT;"
     done
 }
 

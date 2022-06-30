@@ -2,6 +2,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTAlterQuery.h>
 
 
 namespace DB
@@ -23,6 +24,9 @@ ASTPtr ASTCreateIndexQuery::clone() const
 
     res->index_decl = index_decl->clone();
     res->children.push_back(res->index_decl);
+
+    cloneTableOptions(*res);
+
     return res;
 }
 
@@ -56,6 +60,17 @@ void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, Forma
         settings.ostr << " ";
 
     index_decl->formatImpl(settings, state, frame);
+}
+
+ASTPtr ASTCreateIndexQuery::convertToASTAlterCommand() const
+{
+    auto command = std::make_shared<ASTAlterCommand>();
+    command->type = ASTAlterCommand::ADD_INDEX;
+    command->index = index_name->clone();
+    command->index_decl = index_decl->clone();
+    command->if_not_exists = if_not_exists;
+
+    return command;
 }
 
 }

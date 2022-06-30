@@ -112,8 +112,6 @@ public:
     virtual std::string getUniqueId(const String & path) const = 0;
 
     virtual bool isCommitedOrTriedToCommit() const = 0;
-
-
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
