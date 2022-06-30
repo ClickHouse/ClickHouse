@@ -2325,13 +2325,13 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     Operator prev_op;
                     storage.back()->popOperator(prev_op);
 
-                    if (op.type == OperatorType::Mergeable && op.function_name == prev_op.function_name)
+                    if (prev_op.type == OperatorType::Mergeable && op.function_name == prev_op.function_name)
                     {
                         op.arity += prev_op.arity - 1;
                         break;
                     }
 
-                    if (op.type == OperatorType::FinishBetween)
+                    if (prev_op.type == OperatorType::FinishBetween)
                     {
                         Operator tmp_op;
                         if (!storage.back()->popOperator(tmp_op))
