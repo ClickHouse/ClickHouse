@@ -414,7 +414,7 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
         }
     }
 
-    throwBackupNotAllowed();   
+    throwBackupNotAllowed();
 }
 
 }

@@ -550,7 +550,6 @@ void IAccessStorage::restoreFromBackup(RestorerFromBackup &)
 }
 
 
-
 UUID IAccessStorage::generateRandomID()
 {
     static Poco::UUIDGenerator generator;

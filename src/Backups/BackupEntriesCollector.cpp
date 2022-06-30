@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int INCONSISTENT_METADATA_FOR_BACKUP;
     extern const int CANNOT_BACKUP_TABLE;
     extern const int TABLE_IS_DROPPED;
+    extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -169,7 +170,7 @@ Strings BackupEntriesCollector::setStatus(const String & new_status, const Strin
         {
             auto now = std::chrono::steady_clock::now();
             auto end_of_timeout = std::max(now, consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout);
-            
+
             return backup_coordination->setStatusAndWaitFor(
                 backup_settings.host_id,
                 new_status,
@@ -213,7 +214,7 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
         {
             /// Gathered metadata and checked consistency, cool! But we have to check that other hosts cope with that too.
             auto all_hosts_results = setStatus(new_status, "consistent");
-            
+
             std::optional<String> host_with_inconsistency;
             std::optional<String> inconsistency_error_on_other_host;
             for (size_t i = 0; i != all_hosts.size(); ++i)
@@ -397,7 +398,7 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         {
             throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for database {}", database_name);
         }
-        
+
         database_info.create_database_query = create_database_query;
         const auto & create = create_database_query->as<const ASTCreateQuery &>();
 
@@ -420,7 +421,7 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         }
         database_info.except_table_names.emplace(*table_name);
     }
-    
+
     if (all_tables)
     {
         database_info.all_tables = all_tables;
@@ -437,13 +438,13 @@ void BackupEntriesCollector::gatherTablesMetadata()
     {
         const auto & database = database_info.database;
         bool is_temporary_database = (database_name == DatabaseCatalog::TEMPORARY_DATABASE);
-        
+
         auto filter_by_table_name = [database_info = &database_info](const String & table_name)
         {
             /// We skip inner tables of materialized views.
             if (table_name.starts_with(".inner_id."))
                 return false;
-                    
+
             if (database_info->tables.contains(table_name))
                 return true;
 
@@ -464,7 +465,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
 
             if (is_temporary_database && !create.temporary)
                 throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a non-temporary create query for {}", tableNameWithTypeToString(database_name, create.getTable(), false));
-            
+
             if (!is_temporary_database && (create.getDatabase() != database_name))
                 throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected database name {} for {}", backQuoteIfNeed(create.getDatabase()), tableNameWithTypeToString(database_name, create.getTable(), false));
         }
@@ -579,7 +580,7 @@ bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inco
         difference.reserve(databases_metadata.size());
         std::set_difference(databases_metadata.begin(), databases_metadata.end(), previous_databases_metadata.begin(),
                             previous_databases_metadata.end(), std::back_inserter(difference));
-        
+
         if (!difference.empty())
         {
             inconsistency_error = Exception{
@@ -593,7 +594,7 @@ bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inco
         difference.reserve(previous_databases_metadata.size());
         std::set_difference(previous_databases_metadata.begin(), previous_databases_metadata.end(), databases_metadata.begin(),
                             databases_metadata.end(), std::back_inserter(difference));
-        
+
         if (!difference.empty())
         {
             inconsistency_error = Exception{
@@ -611,7 +612,7 @@ bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inco
         difference.reserve(tables_metadata.size());
         std::set_difference(tables_metadata.begin(), tables_metadata.end(), previous_tables_metadata.begin(),
                             previous_tables_metadata.end(), std::back_inserter(difference));
-        
+
         if (!difference.empty())
         {
             inconsistency_error = Exception{
@@ -625,7 +626,7 @@ bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inco
         difference.reserve(previous_tables_metadata.size());
         std::set_difference(previous_tables_metadata.begin(), previous_tables_metadata.end(), tables_metadata.begin(),
                             tables_metadata.end(), std::back_inserter(difference));
-        
+
         if (!difference.empty())
         {
             inconsistency_error = Exception{
@@ -646,7 +647,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
     {
         if (!database_info.create_database_query)
             continue; /// We store CREATE DATABASE queries only if there was BACKUP DATABASE specified.
-        
+
         LOG_TRACE(log, "Adding definition of database {}", backQuoteIfNeed(database_name));
 
         ASTPtr new_create_query = database_info.create_database_query;

@@ -41,7 +41,6 @@ namespace
                     create.setDatabase(new_table_name.database);
                 }
             }
-                
         }
         else if (create.table)
         {

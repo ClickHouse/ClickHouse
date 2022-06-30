@@ -63,7 +63,7 @@ private:
     bool tryGatherMetadataAndCompareWithPrevious(std::optional<Exception> & inconsistency_error);
 
     void gatherDatabasesMetadata();
-    
+
     void gatherDatabaseMetadata(
         const String & database_name,
         bool throw_if_database_not_found,

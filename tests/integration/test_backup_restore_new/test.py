@@ -795,7 +795,7 @@ def test_system_functions():
     assert instance.query(
         "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
     ) == TSV([[0, 1], [1, 3], [2, 5]])
-    
+
     assert instance.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
         [[0, "even"], [1, "odd"], [2, "even"]]
     )
@@ -811,7 +811,9 @@ def test_backup_partition():
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
 
-    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV([[1, '1'], [4, '4'], [11, '11'], [14, '14'], [21, '21'], [24, '24']])
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
+        [[1, "1"], [4, "4"], [11, "11"], [14, "14"], [21, "21"], [24, "24"]]
+    )
 
 
 def test_restore_partition():
@@ -824,4 +826,6 @@ def test_restore_partition():
 
     instance.query(f"RESTORE TABLE test.table PARTITIONS '2', '3' FROM {backup_name}")
 
-    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV([[2, '2'], [3, '3'], [12, '12'], [13, '13'], [22, '22'], [23, '23']])
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
+        [[2, "2"], [3, "3"], [12, "12"], [13, "13"], [22, "22"], [23, "23"]]
+    )

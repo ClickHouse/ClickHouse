@@ -646,7 +646,7 @@ void DataPartStorageOnDisk::backup(
         String filepath_on_disk = part_path_on_disk / filepath;
         String filepath_in_backup = part_path_in_backup / filepath;
         String hardlink_filepath = temp_part_dir / filepath;
-        
+
         disk->createHardLink(filepath_on_disk, hardlink_filepath);
         UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
         backup_entries.emplace_back(

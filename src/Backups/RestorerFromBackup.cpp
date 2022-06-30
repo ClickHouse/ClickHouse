@@ -638,7 +638,7 @@ void RestorerFromBackup::createTables()
                     create_table_query = create_table_query->clone();
                     create_table_query->as<ASTCreateQuery &>().if_not_exists = true;
                 }
-                
+
                 LOG_TRACE(
                     log,
                     "Creating {}: {}",
