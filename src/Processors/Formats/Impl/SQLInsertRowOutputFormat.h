@@ -32,6 +32,9 @@ protected:
     virtual void writeRowBetweenDelimiter() override;
     virtual void writeSuffix() override;
 
+    void printLineStart();
+    void printColumnNames();
+
     size_t rows_in_line = 0;
     Names column_names;
     const FormatSettings format_settings;

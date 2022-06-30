@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/Defines.h>
 #include <base/types.h>
 
 
@@ -277,10 +278,11 @@ struct FormatSettings
 
     struct
     {
-        UInt64 max_batch_size = 65505;
+        UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
         String table_name = "table";
         bool include_column_names = true;
         bool use_replace = false;
+        bool quote_names = true;
     } sql_insert;
 };
 

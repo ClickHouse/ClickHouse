@@ -13,26 +13,42 @@ SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, const Blo
 void SQLInsertRowOutputFormat::writeRowStartDelimiter()
 {
     if (rows_in_line == 0)
-    {
-        if (format_settings.sql_insert.use_replace)
-            writeCString("REPLACE INTO ", out);
-        else
-            writeCString("INSERT INTO ", out);
-        writeString(format_settings.sql_insert.table_name, out);
-        if (format_settings.sql_insert.include_column_names)
-        {
-            writeCString(" (", out);
-            for (size_t i = 0; i != column_names.size(); ++i)
-            {
-                writeString(column_names[i], out);
-                if (i + 1 != column_names.size())
-                    writeCString(", ", out);
-            }
-            writeChar(')', out);
-        }
-        writeCString(" VALUES ", out);
-    }
+        printLineStart();
     writeChar('(', out);
+}
+
+void SQLInsertRowOutputFormat::printLineStart()
+{
+    if (format_settings.sql_insert.use_replace)
+        writeCString("REPLACE INTO ", out);
+    else
+        writeCString("INSERT INTO ", out);
+
+    writeString(format_settings.sql_insert.table_name, out);
+
+    if (format_settings.sql_insert.include_column_names)
+        printColumnNames();
+
+    writeCString(" VALUES ", out);
+}
+
+void SQLInsertRowOutputFormat::printColumnNames()
+{
+    writeCString(" (", out);
+    for (size_t i = 0; i != column_names.size(); ++i)
+    {
+        if (format_settings.sql_insert.quote_names)
+            writeChar('`', out);
+
+        writeString(column_names[i], out);
+
+        if (format_settings.sql_insert.quote_names)
+            writeChar('`', out);
+
+        if (i + 1 != column_names.size())
+            writeCString(", ", out);
+    }
+    writeChar(')', out);
 }
 
 void SQLInsertRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
