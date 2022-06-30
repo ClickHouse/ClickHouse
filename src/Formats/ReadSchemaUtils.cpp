@@ -235,6 +235,7 @@ Strings getKeysForSchemaCache(const Strings & sources, const String & format, co
     /// and message name.
     String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
     Strings cache_keys;
+    cache_keys.reserve(sources.size());
     std::transform(sources.begin(), sources.end(), std::back_inserter(cache_keys), [&](const auto & source){ return source + format + additional_format_info; });
     return cache_keys;
 }
