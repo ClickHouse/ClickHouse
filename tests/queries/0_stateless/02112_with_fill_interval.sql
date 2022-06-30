@@ -1,3 +1,5 @@
+SET max_threads = 1;
+
 DROP TABLE IF EXISTS with_fill_date;
 CREATE TABLE with_fill_date (d Date, d32 Date32) ENGINE = Memory;
 

@@ -119,11 +119,9 @@ public:
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
 
-    /// Return list of paths corresponding to metadata stored in local path
-    virtual std::vector<std::string> getRemotePaths(const std::string & path) const = 0;
-
-    /// Return [(remote_path, size_in_bytes), ...] for metadata path
-    virtual BlobsPathToSize getBlobs(const std::string & path) const = 0;
+    /// Return [(object_storage_path, size_in_bytes), ...] for metadata path
+    /// object_storage_path is a full path to the blob.
+    virtual PathsWithSize getObjectStoragePaths(const std::string & path) const = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;
