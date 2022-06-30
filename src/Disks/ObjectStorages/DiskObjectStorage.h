@@ -37,6 +37,7 @@ public:
         bool send_metadata_,
         uint64_t thread_pool_size);
 
+    /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
     DiskType getType() const override { return disk_type; }
@@ -164,6 +165,8 @@ public:
     UInt64 getRevision() const override;
 private:
 
+    /// Create actual disk object storage transaction for operations
+    /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
     const String name;

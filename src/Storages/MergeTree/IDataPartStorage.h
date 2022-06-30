@@ -199,6 +199,9 @@ public:
     /// Right now, this is needed for rename table query.
     virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
 
+    /// Leak of abstraction as well. We should use builder as one-time object which allow
+    /// us to build parts, while storage should be read-only method to access part properties
+    /// related to disk. However our code is really tricky and sometimes we need ad-hoc builders.
     virtual DataPartStorageBuilderPtr getBuilder() const = 0;
 };
 
@@ -243,6 +246,8 @@ public:
     /// Ideally, new_root_path should be the same as current root (but it is not true).
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
     ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    ///
+    /// To notify storage also call onRename for it with first two args
     virtual void rename(
         const std::string & new_root_path,
         const std::string & new_part_dir,
