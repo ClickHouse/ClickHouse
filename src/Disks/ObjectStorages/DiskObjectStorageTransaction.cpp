@@ -602,7 +602,6 @@ void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, 
 
 void DiskObjectStorageTransaction::commit()
 {
-    commit_called = true;
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
         try
