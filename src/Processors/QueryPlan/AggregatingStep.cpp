@@ -65,17 +65,20 @@ Block generateOutputHeader(const Block & input_header)
     return header;
 }
 
-Block generateOutputHeader(const Block & input_header, const ColumnNumbers & keys)
+Block generateOutputHeader(const Block & input_header, const ColumnNumbers & keys, bool use_nulls)
 {
     auto header = appendGroupingSetColumn(input_header);
-    for (auto key : keys)
+    if (use_nulls)
     {
-        auto & column = header.getByPosition(key + 1);
-
-        if (!isAggregateFunction(column.type))
+        for (auto key : keys)
         {
-            column.type = makeNullable(column.type);
-            column.column = makeNullable(column.column);
+            auto & column = header.getByPosition(key + 1);
+
+            if (!isAggregateFunction(column.type))
+            {
+                column.type = makeNullable(column.type);
+                column.column = makeNullable(column.column);
+            }
         }
     }
     return header;
@@ -144,7 +147,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final, false);
 
     if (!grouping_sets_params.empty())
     {
@@ -194,7 +197,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.intermediate_header,
                     transform_params->params.stats_collecting_params
                 };
-                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
+                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final, false);
 
                 if (streams > 1)
                 {

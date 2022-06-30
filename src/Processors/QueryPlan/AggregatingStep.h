@@ -28,7 +28,7 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header);
-Block generateOutputHeader(const Block & input_header, const ColumnNumbers & keys);
+Block generateOutputHeader(const Block & input_header, const ColumnNumbers & keys, bool use_nulls);
 
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep

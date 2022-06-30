@@ -1618,7 +1618,7 @@ static void executeMergeAggregatedImpl(
 
     Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row, settings.max_threads);
 
-    auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(params, final, false);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2363,7 +2363,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
         keys.push_back(header_before_transform.getPositionByName(key.name));
 
     auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0);
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true, settings.group_by_use_nulls);
 
     QueryPlanStepPtr step;
     if (modificator == Modificator::ROLLUP)

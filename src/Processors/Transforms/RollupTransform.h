@@ -7,33 +7,47 @@
 namespace DB
 {
 
-/// Takes blocks after grouping, with non-finalized aggregate functions.
-/// Calculates subtotals and grand totals values for a set of columns.
-class RollupTransform : public IAccumulatingTransform
+struct GroupByModifierTransform : public IAccumulatingTransform
 {
-public:
-    RollupTransform(Block header, AggregatingTransformParamsPtr params);
-    String getName() const override { return "RollupTransform"; }
+    GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_);
 
 protected:
     void consume(Chunk chunk) override;
-    Chunk generate() override;
 
-private:
+    void mergeConsumed();
+
+    Chunk merge(Chunks && chunks, bool is_input, bool final);
+
+    MutableColumnPtr getColumnWithDefaults(size_t key, size_t n) const;
+
     AggregatingTransformParamsPtr params;
-    const ColumnNumbers keys;
-    const ColumnsMask aggregates_mask;
+
+    const ColumnNumbers & keys;
 
     std::unique_ptr<Aggregator> output_aggregator;
 
     Block intermediate_header;
 
     Chunks consumed_chunks;
-    Chunk rollup_chunk;
+    Chunk current_chunk;
+};
+
+/// Takes blocks after grouping, with non-finalized aggregate functions.
+/// Calculates subtotals and grand totals values for a set of columns.
+class RollupTransform : public GroupByModifierTransform
+{
+public:
+    RollupTransform(Block header, AggregatingTransformParamsPtr params);
+    String getName() const override { return "RollupTransform"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    const ColumnsMask aggregates_mask;
+
     size_t last_removed_key = 0;
     size_t set_counter = 0;
-
-    Chunk merge(Chunks && chunks, bool is_input, bool final);
 };
 
 }
