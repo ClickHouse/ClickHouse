@@ -70,7 +70,7 @@ void checkRemoveAccess(IDisk & disk)
     disk.removeFile("test_acl");
 }
 
-bool checkBatchRemoveCapability(S3ObjectStorage & storage, const String & key)
+bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key)
 {
     String path = key + "/test_acl";
     auto file = storage.writeObject(path, WriteMode::Rewrite);
@@ -81,16 +81,16 @@ bool checkBatchRemoveCapability(S3ObjectStorage & storage, const String & key)
     catch (...)
     {
         file->finalize();
-        return true; /// We don't have write access, therefore no information about batch remove.
+        return false; /// We don't have write access, therefore no information about batch remove.
     }
     try
     {
         storage.removeObjects({ path });
-        return true;
+        return false;
     }
     catch (const Exception &)
     {
-        return false;
+        return true;
     }
 }
 
@@ -125,7 +125,7 @@ void registerDiskS3(DiskFactory & factory)
 
         if (!config.getBool(config_prefix + ".skip_access_check", false))
         {
-            if (s3_capabilities.support_batch_delete && !checkBatchRemoveCapability(*s3_storage, uri.key))
+            if (s3_capabilities.support_batch_delete && checkBatchRemoveIsMissing(*s3_storage, uri.key))
             {
                 s3_storage->setCapabilitiesSupportBatchDelete(false);
             }
