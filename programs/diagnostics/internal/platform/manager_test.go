@@ -1,3 +1,5 @@
+//go:build !no_docker
+
 package platform_test
 
 import (

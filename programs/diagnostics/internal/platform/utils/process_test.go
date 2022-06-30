@@ -1,3 +1,5 @@
+//go:build !no_docker
+
 package utils_test
 
 import (
