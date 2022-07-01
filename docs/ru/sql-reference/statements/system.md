@@ -1,6 +1,6 @@
 ---
-sidebar_position: 36
-sidebar_label: SYSTEM
+toc_priority: 36
+toc_title: SYSTEM
 ---
 
 # Запросы SYSTEM {#query-language-system}
@@ -30,7 +30,6 @@ sidebar_label: SYSTEM
 -   [START TTL MERGES](#query_language-start-ttl-merges)
 -   [STOP MOVES](#query_language-stop-moves)
 -   [START MOVES](#query_language-start-moves)
--   [SYSTEM UNFREEZE](#query_language-system-unfreeze)
 -   [STOP FETCHES](#query_language-system-stop-fetches)
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
@@ -189,9 +188,9 @@ ClickHouse может управлять фоновыми процессами �
 SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-    :::note
+!!! note "Note"
     `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
-    :::
+
 ### START MERGES {#query_language-system-start-merges}
 
 Включает фоновые мержи для таблиц семейства MergeTree:
@@ -234,14 +233,6 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ``` sql
 SYSTEM START MOVES [[db.]merge_tree_family_table_name]
-```
-
-### SYSTEM UNFREEZE {#query_language-system-unfreeze}
-
-Удаляет с диска все "замороженные" партиции данного бэкапа. Про удаление партиций по отдельности смотрите запрос [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.md#alter_unfreeze-partition)
-
-``` sql
-SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
@@ -332,7 +323,7 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 К реплике прикрепляются локально найденные куски, информация о них отправляется в Zookeeper.
 Если присутствующие в реплике до потери метаданных данные не устарели, они не скачиваются повторно с других реплик. Поэтому восстановление реплики не означает повторную загрузку всех данных по сети.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Потерянные данные в любых состояниях перемещаются в папку `detached/`. Куски, активные до потери данных (находившиеся в состоянии Committed), прикрепляются.
 
 **Синтаксис**

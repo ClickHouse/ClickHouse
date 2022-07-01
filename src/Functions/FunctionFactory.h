@@ -40,7 +40,7 @@ public:
             registerFunction(name, &Function::create, case_sensitiveness);
     }
 
-    /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
+    /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
     std::vector<std::string> getAllNames() const;
 
     bool has(const std::string & name) const;

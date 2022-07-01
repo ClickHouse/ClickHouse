@@ -30,8 +30,6 @@ class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
-class BackupEntriesCollector;
-class RestorerFromBackup;
 
 namespace ErrorCodes
 {
@@ -148,7 +146,7 @@ public:
     {
     }
 
-    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
+    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
@@ -170,8 +168,6 @@ public:
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
-
-    StoragePtr getTable(const String & name, ContextPtr context) const;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -198,7 +194,7 @@ public:
     virtual void dropTable( /// NOLINT
         ContextPtr /*context*/,
         const String & /*name*/,
-        [[maybe_unused]] bool sync = false)
+        [[maybe_unused]] bool no_delay = false)
     {
         throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -293,6 +289,12 @@ public:
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Whether the contained tables should be written to a backup.
+    virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(ContextPtr context) const
+    {
+        return getTablesIterator(context); /// By default we backup each table.
+    }
+
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
 
@@ -333,18 +335,6 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
-    /// Returns a slightly changed version of the CREATE DATABASE query which must be written to a backup.
-    virtual ASTPtr getCreateDatabaseQueryForBackup() const;
-
-    /// Returns an iterator that passes through all the tables when an user wants to backup the whole database.
-    virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & restorer) const;
-
-    /// Checks a CREATE TABLE query before it will be written to a backup. Called by IStorage::getCreateQueryForBackup().
-    virtual void checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector & backup_entries_collector) const;
-
-    /// Creates a table restored from backup.
-    virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer);
-
     virtual ~IDatabase() = default;
 
 protected:
@@ -356,8 +346,8 @@ protected:
     }
 
     mutable std::mutex mutex;
-    String database_name TSA_GUARDED_BY(mutex);
-    String comment TSA_GUARDED_BY(mutex);
+    String database_name;
+    String comment;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

@@ -592,7 +592,7 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types, bool allow_conversion_
     if (types_set.empty())
         return std::make_shared<DataTypeNothing>();
 
-    if (types.contains(TypeIndex::String))
+    if (types.count(TypeIndex::String))
     {
         if (types.size() != 1)
             return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are String and some of them are not", ErrorCodes::NO_COMMON_TYPE);

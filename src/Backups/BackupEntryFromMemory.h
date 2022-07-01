@@ -17,7 +17,7 @@ public:
 
     UInt64 getSize() const override { return data.size(); }
     std::optional<UInt128> getChecksum() const override { return checksum; }
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
+    std::unique_ptr<ReadBuffer> getReadBuffer() const override;
 
 private:
     const String data;

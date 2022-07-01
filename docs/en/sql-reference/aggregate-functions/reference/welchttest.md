@@ -1,9 +1,9 @@
 ---
-sidebar_position: 301
-sidebar_label: welchTTest
+toc_priority: 301
+toc_title: welchTTest
 ---
 
-# welchTTest
+# welchTTest {#welchttest}
 
 Applies Welch's t-test to samples from two populations.
 

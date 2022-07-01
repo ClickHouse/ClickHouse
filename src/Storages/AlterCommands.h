@@ -186,7 +186,7 @@ public:
     /// Checks that all columns exist and dependencies between them.
     /// This check is lightweight and base only on metadata.
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
-    void validate(const StoragePtr & table, ContextPtr context) const;
+    void validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)

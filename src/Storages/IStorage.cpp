@@ -8,13 +8,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Backups/BackupEntriesCollector.h>
 
 
 namespace DB
@@ -90,17 +88,6 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
-Pipe IStorage::watch(
-    const Names & /*column_names*/,
-    const SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
-    QueryProcessingStage::Enum & /*processed_stage*/,
-    size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
-{
-    throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
 Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -124,18 +111,6 @@ void IStorage::read(
     unsigned num_streams)
 {
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
-}
-
-void IStorage::readFromPipe(
-    QueryPlan & query_plan,
-    Pipe pipe,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    std::string storage_name)
-{
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -143,16 +118,9 @@ void IStorage::readFromPipe(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
         query_plan.addStep(std::move(read_step));
     }
-}
-
-std::optional<QueryPipeline> IStorage::distributedWrite(
-    const ASTInsertQuery & /*query*/,
-    ContextPtr /*context*/)
-{
-    return {};
 }
 
 Pipe IStorage::alterPartition(
@@ -248,48 +216,14 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-ASTPtr IStorage::getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const
+BackupEntries IStorage::backup(const ASTs &, ContextPtr)
 {
-    auto table_id = getStorageID();
-    auto db = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
-    if (!db)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-    ASTPtr query = db->tryGetCreateTableQuery(table_id.getTableName(), context);
-    if (!query)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-
-    /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
-    auto & create = query->as<ASTCreateQuery &>();
-    create.uuid = UUIDHelpers::Nil;
-    create.to_inner_uuid = UUIDHelpers::Nil;
-
-    /// If this is a definition of a system table we'll remove columns and comment because they're excessive for backups.
-    if (create.storage && create.storage->engine && create.storage->engine->name.starts_with("System"))
-    {
-        create.reset(create.columns_list);
-        create.reset(create.comment);
-    }
-
-    if (database)
-        *database = db;
-
-    return query;
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-ASTPtr IStorage::getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const
+RestoreDataTasks IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
 {
-    DatabasePtr database;
-    auto query = getCreateQueryForBackup(backup_entries_collector.getContext(), &database);
-    database->checkCreateTableQueryForBackup(query, backup_entries_collector);
-    return query;
-}
-
-void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
-{
-}
-
-void IStorage::restoreDataFromBackup(RestorerFromBackup &, const String &, const std::optional<ASTs> &)
-{
+    throw Exception("Table engine " + getName() + " doesn't support restoring", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::string PrewhereInfo::dump() const
@@ -297,9 +231,9 @@ std::string PrewhereInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
 
-    if (row_level_filter)
+    if (alias_actions)
     {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
+        ss << "alias_actions " << alias_actions->dumpDAG() << "\n";
     }
 
     if (prewhere_actions)

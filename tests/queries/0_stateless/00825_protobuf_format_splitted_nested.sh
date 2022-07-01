@@ -67,7 +67,7 @@ $CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format
 
 # Check the input in the protobuf format (now the table contains the same data twice).
 echo
-$CLICKHOUSE_CLIENT --query "INSERT INTO splitted_nested_protobuf_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_splitted_nested:Some' FORMAT Protobuf" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO splitted_nested_protobuf_00825 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_splitted_nested:Some'" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM splitted_nested_protobuf_00825"
 
 rm "$BINARY_FILE_PATH"

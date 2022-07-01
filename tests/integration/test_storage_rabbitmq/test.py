@@ -12,7 +12,7 @@ import pika
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 from . import rabbitmq_pb2
@@ -27,7 +27,6 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
-    stay_alive=True,
 )
 
 
@@ -47,7 +46,7 @@ def wait_rabbitmq_to_start(rabbitmq_docker_id, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            if check_rabbitmq_is_available(rabbitmq_docker_id):
+            if instance.cluster.check_rabbitmq_is_available(rabbitmq_docker_id):
                 logging.debug("RabbitMQ is available")
                 return
             time.sleep(0.5)
@@ -2733,52 +2732,9 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
         )
         if result == "1\t2\n":
             break
-    instance.restart_clickhouse()
-    channel.basic_publish(
-        exchange="named", routing_key="", body=json.dumps({"key": 1, "value": 2})
-    )
-    while True:
-        result = instance.query(
-            "SELECT * FROM test.rabbitmq ORDER BY key", ignore_error=True
-        )
-        if result == "1\t2\n":
-            break
 
 
-def test_rabbitmq_msgpack(rabbitmq_cluster):
-
-    instance.query(
-        """
-        drop table if exists rabbit_in;
-        drop table if exists rabbit_out;
-        create table
-            rabbit_in (val String)
-            engine=RabbitMQ
-            settings rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'xhep',
-                     rabbitmq_format = 'MsgPack',
-                     rabbitmq_num_consumers = 1;
-        create table
-            rabbit_out (val String)
-            engine=RabbitMQ
-            settings rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'xhep',
-                     rabbitmq_format = 'MsgPack',
-                     rabbitmq_num_consumers = 1;
-        set stream_like_engine_allow_direct_select=1;
-        insert into rabbit_out select 'kek';
-        """
-    )
-
-    result = ""
-    try_no = 0
-    while True:
-        result = instance.query("select * from rabbit_in;")
-        if result.strip() == "kek":
-            break
-        else:
-            try_no = try_no + 1
-            if try_no == 20:
-                break
-        time.sleep(1)
-    assert result.strip() == "kek"
+if __name__ == "__main__":
+    cluster.start()
+    input("Cluster created, press any key to destroy...")
+    cluster.shutdown()

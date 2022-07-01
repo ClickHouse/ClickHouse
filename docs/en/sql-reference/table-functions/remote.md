@@ -1,9 +1,9 @@
 ---
-sidebar_position: 40
-sidebar_label: remote
+toc_priority: 40
+toc_title: remote
 ---
 
-# remote, remoteSecure
+# remote, remoteSecure {#remote-remotesecure}
 
 Allows to access remote servers without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. `remoteSecure` - same as `remote` but with a secured connection.
 

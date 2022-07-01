@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
+
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
@@ -61,18 +63,11 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public StorageSetOrJoinBase
+class StorageSet final : public shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
-public:
-    StorageSet(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool persistent_);
+friend struct shared_ptr_helper<StorageSet>;
 
+public:
     String getName() const override { return "Set"; }
 
     /// Access the insides.
@@ -89,6 +84,16 @@ private:
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
+
+protected:
+    StorageSet(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool persistent_);
 };
 
 }

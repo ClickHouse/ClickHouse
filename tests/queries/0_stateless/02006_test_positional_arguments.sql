@@ -45,6 +45,3 @@ explain syntax select plus(1, 1) as a group by a;
 select substr('aaaaaaaaaaaaaa', 8) as a  group by a;
 select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
 
-select b from (select 5 as a, 'Hello' as b order by a);
-select b from (select 5 as a, 'Hello' as b group by a);
-select b from (select 5 as a, 'Hello' as b order by 1);

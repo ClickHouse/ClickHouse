@@ -15,7 +15,7 @@ static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & d
     /// Now we need to check that distinct_names is a subset of columns.
     std::unordered_set<std::string_view> columns_set(columns.begin(), columns.end());
     for (const auto & name : distinct_names)
-        if (!columns_set.contains(name))
+        if (columns_set.count(name) == 0)
             return false;
 
     return true;
@@ -110,23 +110,6 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         columns_array->add(column);
 
     map.add("Columns", std::move(columns_array));
-}
-
-void DistinctStep::updateOutputStream()
-{
-    output_stream = createOutputStream(
-        input_streams.front(),
-        input_streams.front().header,
-        getTraits(pre_distinct, checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns)).data_stream_traits);
-
-    if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
-        && (!pre_distinct /// Main distinct
-            || input_streams.front().has_single_port)) /// pre_distinct for single port works as usual one
-    {
-        /// Build distinct set.
-        for (const auto & name : columns)
-            output_stream->distinct_columns.insert(name);
-    }
 }
 
 }

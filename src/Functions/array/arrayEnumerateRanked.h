@@ -15,7 +15,7 @@
 // for better debug: #include <Core/iostream_debug_helpers.h>
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
-  * This is very unusual function made as a special order for our dear customer - Metrica web analytics system.
+  * This is very unusual function made as a special order for Yandex.Metrica.
   *
   * arrayEnumerateUniqRanked(['hello', 'world', 'hello']) = [1, 1, 2]
   * - it returns similar structured array containing number of occurrence of the corresponding value.

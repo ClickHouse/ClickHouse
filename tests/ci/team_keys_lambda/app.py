@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
+import requests
 import argparse
 import json
 
 from threading import Thread
 from queue import Queue
-
-import requests  # type: ignore
 
 
 def get_org_team_members(token: str, org: str, team_slug: str) -> tuple:
@@ -38,7 +37,7 @@ def get_members_keys(members: tuple) -> str:
                 self.results.append(f"# {m}\n{response.text}")
                 self.queue.task_done()
 
-    q = Queue()  # type: Queue
+    q = Queue()
     workers = []
     for m in members:
         q.put(m)
@@ -62,7 +61,7 @@ def get_members_keys(members: tuple) -> str:
 
 
 def get_token_from_aws() -> str:
-    import boto3  # type: ignore
+    import boto3
 
     secret_name = "clickhouse_robot_token"
     session = boto3.session.Session()
@@ -82,8 +81,6 @@ def main(token: str, org: str, team_slug: str) -> str:
 
 
 def handler(event, context):
-    _ = context
-    _ = event
     token = get_token_from_aws()
     result = {
         "statusCode": 200,

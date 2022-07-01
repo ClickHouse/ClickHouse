@@ -3,7 +3,7 @@
        <substitution>
            <name>hash_func</name>
            <values>
-               <value>kostikConsistentHash</value>
+               <value>yandexConsistentHash</value>
                <value>jumpConsistentHash</value>
            </values>
        </substitution>

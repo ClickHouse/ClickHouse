@@ -91,7 +91,7 @@ public:
     JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings);
 
 private:
-    NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
+    std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() override;
 
     bool json_strings;
     bool first_row = true;
