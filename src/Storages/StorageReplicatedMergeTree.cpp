@@ -582,11 +582,19 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     auto zookeeper = getZooKeeper();
 
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
-    /// We need to confirm /quorum exists here although it's called under createTableIfNotExists because in older CH releases (pre 22.4)
-    /// it was created here, so if metadata creation is done by an older replica the node might not exists when reaching this call
-    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum", String(), zkutil::CreateMode::Persistent));
-    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum/parallel", String(), zkutil::CreateMode::Persistent));
 
+    /// These 4 nodes used to be created in createNewZookeeperNodes() and they were moved to createTable()
+    /// This means that if the first replica creating the table metadata has an older version of CH (22.3 or previous)
+    /// there will be a time between its calls to `createTable` and `createNewZookeeperNodes` where the nodes won't exists
+    /// and that will cause issues in newer replicas
+    /// See https://github.com/ClickHouse/ClickHouse/issues/38600 for example
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum", String(), zkutil::CreateMode::Persistent));
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum/last_part", String(), zkutil::CreateMode::Persistent));
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum/failed_parts", String(), zkutil::CreateMode::Persistent));
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/mutations", String(), zkutil::CreateMode::Persistent));
+
+
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum/parallel", String(), zkutil::CreateMode::Persistent));
     /// Nodes for remote fs zero-copy replication
     const auto settings = getSettings();
     if (settings->allow_remote_fs_zero_copy_replication)
