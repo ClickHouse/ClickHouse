@@ -232,8 +232,8 @@ public:
 
     int getMetadataVersion() const { return metadata_version; }
 
-    /// Returns a slightly changed version of the CREATE TABLE query which must be written to a backup.
-    ASTPtr getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const override;
+    /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
+    void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -311,6 +311,9 @@ public:
 
     // Return table id, common for different replicas
     String getTableSharedID() const override;
+
+    /// Returns the same as getTableSharedID(), but extracts it from a create query.
+    static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
 
     static String getDefaultZooKeeperName() { return default_zookeeper_name; }
 

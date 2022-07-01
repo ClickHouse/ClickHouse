@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
 #include <Storages/Freeze.h>
 
 #include <Databases/DatabaseOnDisk.h>
@@ -1100,123 +1101,8 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
 void StorageReplicatedMergeTree::setTableStructure(
     ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-
-    new_metadata.columns = new_columns;
-
-    if (!metadata_diff.empty())
-    {
-        auto parse_key_expr = [] (const String & key_expr)
-        {
-            ParserNotEmptyExpressionList parser(false);
-            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-            ASTPtr order_by_ast;
-            if (new_sorting_key_expr_list->children.size() == 1)
-                order_by_ast = new_sorting_key_expr_list->children[0];
-            else
-            {
-                auto tuple = makeASTFunction("tuple");
-                tuple->arguments->children = new_sorting_key_expr_list->children;
-                order_by_ast = tuple;
-            }
-            return order_by_ast;
-        };
-
-        if (metadata_diff.sorting_key_changed)
-        {
-            auto order_by_ast = parse_key_expr(metadata_diff.new_sorting_key);
-            auto & sorting_key = new_metadata.sorting_key;
-            auto & primary_key = new_metadata.primary_key;
-
-            sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, getContext());
-
-            if (primary_key.definition_ast == nullptr)
-            {
-                /// Primary and sorting key become independent after this ALTER so we have to
-                /// save the old ORDER BY expression as the new primary key.
-                auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
-                primary_key = KeyDescription::getKeyFromAST(
-                    old_sorting_key_ast, new_metadata.columns, getContext());
-            }
-        }
-
-        if (metadata_diff.sampling_expression_changed)
-        {
-            if (!metadata_diff.new_sampling_expression.empty())
-            {
-                auto sample_by_ast = parse_key_expr(metadata_diff.new_sampling_expression);
-                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, getContext());
-            }
-            else /// SAMPLE BY was removed
-            {
-                new_metadata.sampling_key = {};
-            }
-        }
-
-        if (metadata_diff.skip_indices_changed)
-            new_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, getContext());
-
-        if (metadata_diff.constraints_changed)
-            new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
-
-        if (metadata_diff.projections_changed)
-            new_metadata.projections = ProjectionsDescription::parse(metadata_diff.new_projections, new_columns, getContext());
-
-        if (metadata_diff.ttl_table_changed)
-        {
-            if (!metadata_diff.new_ttl_table.empty())
-            {
-                ParserTTLExpressionList parser;
-                auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-                new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                    ttl_for_table_ast, new_metadata.columns, getContext(), new_metadata.primary_key);
-            }
-            else /// TTL was removed
-            {
-                new_metadata.table_ttl = TTLTableDescription{};
-            }
-        }
-    }
-
-    /// Changes in columns may affect following metadata fields
-    new_metadata.column_ttls_by_name.clear();
-    for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
-    {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, getContext(), new_metadata.primary_key);
-        new_metadata.column_ttls_by_name[name] = new_ttl_entry;
-    }
-
-    if (new_metadata.partition_key.definition_ast != nullptr)
-        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, getContext());
-
-    if (!metadata_diff.sorting_key_changed) /// otherwise already updated
-        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, getContext());
-
-    /// Primary key is special, it exists even if not defined
-    if (new_metadata.primary_key.definition_ast != nullptr)
-    {
-        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, getContext());
-    }
-    else
-    {
-        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, getContext());
-        new_metadata.primary_key.definition_ast = nullptr;
-    }
-
-    if (!metadata_diff.sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
-        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, getContext());
-
-    if (!metadata_diff.skip_indices_changed) /// otherwise already updated
-    {
-        for (auto & index : new_metadata.secondary_indices)
-            index.recalculateWithNewColumns(new_metadata.columns, getContext());
-    }
-
-    if (!metadata_diff.ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
-        new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            new_metadata.table_ttl.definition_ast, new_metadata.columns, getContext(), new_metadata.primary_key);
+    StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, getContext(), old_metadata);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
@@ -7511,6 +7397,24 @@ void StorageReplicatedMergeTree::createTableSharedID()
 }
 
 
+std::optional<String> StorageReplicatedMergeTree::tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context)
+{
+    auto zk_path = tryExtractZkPathFromCreateQuery(create_query, global_context);
+    if (!zk_path)
+        return {};
+
+    String zk_name = zkutil::extractZooKeeperName(*zk_path);
+    zk_path = zkutil::extractZooKeeperPath(*zk_path, false, nullptr);
+    zkutil::ZooKeeperPtr zookeeper = (zk_name == getDefaultZooKeeperName()) ? global_context->getZooKeeper() : global_context->getAuxiliaryZooKeeper(zk_name);
+
+    String id;
+    if (!zookeeper->tryGet(fs::path(*zk_path) / "table_shared_id", id))
+        return {};
+
+    return id;
+}
+
+
 void StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const
 {
     auto settings = getSettings();
@@ -8261,44 +8165,21 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-ASTPtr StorageReplicatedMergeTree::getCreateQueryForBackup(const ContextPtr & local_context, DatabasePtr * database) const
+void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    ASTPtr query = MergeTreeData::getCreateQueryForBackup(local_context, database);
+    /// Adjust the create query using values from ZooKeeper.
+    auto zookeeper = getZooKeeper();
+    auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
+    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
 
-    /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
-    /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
-    /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
-    auto & create = query->as<ASTCreateQuery &>();
-    if (create.storage && create.storage->engine && (create.uuid != UUIDHelpers::Nil))
-    {
-        auto & engine = *(create.storage->engine);
-        if (auto * engine_args_ast = typeid_cast<ASTExpressionList *>(engine.arguments.get()))
-        {
-            auto & engine_args = engine_args_ast->children;
-            if (engine_args.size() >= 2)
-            {
-                auto * zookeeper_path_ast = typeid_cast<ASTLiteral *>(engine_args[0].get());
-                auto * replica_name_ast = typeid_cast<ASTLiteral *>(engine_args[1].get());
-                if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
-                    replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
-                {
-                    String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
-                    String & replica_name_arg = replica_name_ast->value.get<String>();
-                    String table_uuid_str = toString(create.uuid);
-                    if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
-                        zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
-                    const auto & config = getContext()->getConfigRef();
-                    if ((zookeeper_path_arg == getDefaultZooKeeperPath(config)) && (replica_name_arg == getDefaultReplicaName(config))
-                        && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
-                    {
-                        engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
-                    }
-                }
-            }
-        }
-    }
+    auto current_metadata = getInMemoryMetadataPtr();
+    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
+    auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
+    applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
 
-    return query;
+    /// Check that tryGetTableSharedIDFromCreateQuery() works for this storage.
+    if (tryGetTableSharedIDFromCreateQuery(*create_query, getContext()) != getTableSharedID())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} has its shared ID to be different from one from the create query");
 }
 
 void StorageReplicatedMergeTree::backupData(
@@ -8310,8 +8191,8 @@ void StorageReplicatedMergeTree::backupData(
     auto backup_entries = backupParts(backup_entries_collector.getContext(), "", partitions);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
-    String full_zk_path = getZooKeeperName() + getZooKeeperPath();
-    coordination->addReplicatedDataPath(full_zk_path, data_path_in_backup);
+    String shared_id = getTableSharedID();
+    coordination->addReplicatedDataPath(shared_id, data_path_in_backup);
 
     std::unordered_map<String, SipHash> part_names_with_hashes_calculating;
     for (auto & [relative_path, backup_entry] : backup_entries)
@@ -8349,23 +8230,23 @@ void StorageReplicatedMergeTree::backupData(
     }
 
     /// Send our list of part names to the coordination (to compare with other replicas).
-    coordination->addReplicatedPartNames(full_zk_path, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
+    coordination->addReplicatedPartNames(shared_id, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
 
     /// This task will be executed after all replicas have collected their parts and the coordination is ready to
     /// give us the final list of parts to add to the BackupEntriesCollector.
-    auto post_collecting_task = [full_zk_path,
+    auto post_collecting_task = [shared_id,
                                  replica_name = getReplicaName(),
                                  coordination,
                                  backup_entries = std::move(backup_entries),
                                  &backup_entries_collector]()
     {
-        Strings data_paths = coordination->getReplicatedDataPaths(full_zk_path);
+        Strings data_paths = coordination->getReplicatedDataPaths(shared_id);
         std::vector<fs::path> data_paths_fs;
         data_paths_fs.reserve(data_paths.size());
         for (const auto & data_path : data_paths)
             data_paths_fs.push_back(data_path);
 
-        Strings part_names = coordination->getReplicatedPartNames(full_zk_path, replica_name);
+        Strings part_names = coordination->getReplicatedPartNames(shared_id, replica_name);
         std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
 
         for (const auto & [relative_path, backup_entry] : backup_entries)
@@ -8378,7 +8259,7 @@ void StorageReplicatedMergeTree::backupData(
                 backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
         }
     };
-    backup_entries_collector.addPostCollectingTask(post_collecting_task);
+    backup_entries_collector.addPostTask(post_collecting_task);
 }
 
 void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

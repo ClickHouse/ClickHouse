@@ -615,36 +615,50 @@ void DataPartStorageOnDisk::backup(
     TemporaryFilesOnDisks & temp_dirs,
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
+    const String & path_in_backup,
     BackupEntries & backup_entries) const
 {
-    auto disk = volume->getDisk();
+    fs::path part_path_on_disk = fs::path{root_path} / part_dir;
+    fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
 
+    auto disk = volume->getDisk();
     auto temp_dir_it = temp_dirs.find(disk);
     if (temp_dir_it == temp_dirs.end())
-        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_")).first;
+        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup/")).first;
     auto temp_dir_owner = temp_dir_it->second;
     fs::path temp_dir = temp_dir_owner->getPath();
-
-    fs::path temp_part_dir = temp_dir / part_dir;
+    fs::path temp_part_dir = temp_dir / part_path_in_backup.relative_path();
     disk->createDirectories(temp_part_dir);
+
+    /// For example,
+    /// part_path_in_backup = /data/test/table/0_1_1_0
+    /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0
+    /// tmp_part_dir = tmp/backup/1aaaaaa/data/test/table/0_1_1_0
+    /// Or, for projections:
+    /// part_path_in_backup = /data/test/table/0_1_1_0/prjmax.proj
+    /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0/prjmax.proj
+    /// tmp_part_dir = tmp/backup/1aaaaaa/data/test/table/0_1_1_0/prjmax.proj
 
     for (const auto & [filepath, checksum] : checksums.files)
     {
-        String relative_filepath = fs::path(part_dir) / filepath;
-        String full_filepath = fs::path(root_path) / part_dir / filepath;
+        if (filepath.ends_with(".proj"))
+            continue; /// Skip *.proj files - they're actually directories and will be handled.
+        String filepath_on_disk = part_path_on_disk / filepath;
+        String filepath_in_backup = part_path_in_backup / filepath;
         String hardlink_filepath = temp_part_dir / filepath;
-        disk->createHardLink(full_filepath, hardlink_filepath);
+
+        disk->createHardLink(filepath_on_disk, hardlink_filepath);
         UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
         backup_entries.emplace_back(
-            relative_filepath,
+            filepath_in_backup,
             std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
     }
 
     for (const auto & filepath : files_without_checksums)
     {
-        String relative_filepath = fs::path(part_dir) / filepath;
-        String full_filepath = fs::path(root_path) / part_dir / filepath;
-        backup_entries.emplace_back(relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, full_filepath));
+        String filepath_on_disk = part_path_on_disk / filepath;
+        String filepath_in_backup = part_path_in_backup / filepath;
+        backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk));
     }
 }
 

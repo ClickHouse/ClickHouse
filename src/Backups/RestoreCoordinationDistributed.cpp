@@ -9,7 +9,7 @@ namespace DB
 RestoreCoordinationDistributed::RestoreCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , stage_sync(zookeeper_path_ + "/stage", get_zookeeper_, &Poco::Logger::get("RestoreCoordination"))
+    , status_sync(zookeeper_path_ + "/status", get_zookeeper_, &Poco::Logger::get("RestoreCoordination"))
 {
     createRootNodes();
 }
@@ -26,14 +26,19 @@ void RestoreCoordinationDistributed::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
 }
 
-void RestoreCoordinationDistributed::syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout)
+void RestoreCoordinationDistributed::setStatus(const String & current_host, const String & new_status, const String & message)
 {
-    stage_sync.syncStage(current_host, new_stage, wait_hosts, timeout);
+    status_sync.set(current_host, new_status, message);
 }
 
-void RestoreCoordinationDistributed::syncStageError(const String & current_host, const String & error_message)
+Strings RestoreCoordinationDistributed::setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
 {
-    stage_sync.syncStageError(current_host, error_message);
+    return status_sync.setAndWait(current_host, new_status, message, all_hosts);
+}
+
+Strings RestoreCoordinationDistributed::setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
+{
+    return status_sync.setAndWaitFor(current_host, new_status, message, all_hosts, timeout_ms);
 }
 
 bool RestoreCoordinationDistributed::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
