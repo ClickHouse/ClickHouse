@@ -2784,9 +2784,3 @@ def test_rabbitmq_address(rabbitmq_cluster):
                 break
         time.sleep(1)
     assert result.strip() == "kek"
-
-
-if __name__ == "__main__":
-    cluster.start()
-    input("Cluster created, press any key to destroy...")
-    cluster.shutdown()

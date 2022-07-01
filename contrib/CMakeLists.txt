@@ -58,7 +58,7 @@ add_contrib (boost-cmake boost)
 add_contrib (cctz-cmake cctz)
 add_contrib (consistent-hashing)
 add_contrib (dragonbox-cmake dragonbox)
-add_contrib (hyperscan-cmake hyperscan)
+add_contrib (vectorscan-cmake vectorscan)
 add_contrib (jemalloc-cmake jemalloc)
 add_contrib (libcpuid-cmake libcpuid)
 add_contrib (libdivide)
@@ -155,6 +155,7 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
+add_contrib (base-x-cmake base-x)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

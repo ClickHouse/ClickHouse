@@ -42,6 +42,7 @@ function install_packages()
 function configure()
 {
     # install test configs
+    export USE_DATABASE_ORDINARY=1
     /usr/share/clickhouse-test/config/install.sh
 
     # we mount tests folder from repo to /usr/share
@@ -215,7 +216,7 @@ start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
-                       && grep -Fa "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
+                       && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
@@ -284,6 +285,11 @@ then
 
     rm -rf /var/lib/clickhouse/*
 
+    # Make BC check more funny by forcing Ordinary engine for system database
+    # New version will try to convert it to Atomic on startup
+    mkdir /var/lib/clickhouse/metadata
+    echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
+
     # Install previous release packages
     install_packages previous_release_package_folder
 
@@ -313,7 +319,7 @@ then
     start 500
     clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
         || (echo -e 'Backward compatibility check: Server failed to start\tFAIL' >> /test_output/test_results.tsv \
-        && grep -Fa "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
+        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt)
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -343,7 +349,7 @@ then
                -e "UNFINISHED" \
                -e "Renaming unexpected part" \
                -e "PART_IS_TEMPORARILY_LOCKED" \
-               -e "and a merge is impossible: we didn't find smaller parts" \
+               -e "and a merge is impossible: we didn't find" \
                -e "found in queue and some source parts for it was lost" \
                -e "is lost forever." \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \

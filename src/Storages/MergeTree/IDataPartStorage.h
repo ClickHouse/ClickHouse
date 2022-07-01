@@ -173,6 +173,7 @@ public:
         TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
+        const String & path_in_backup,
         BackupEntries & backup_entries) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
