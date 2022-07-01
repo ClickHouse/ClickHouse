@@ -552,7 +552,9 @@ def test_replicated_without_arguments(test_cluster):
     )
 
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE test_ordinary ON CLUSTER cluster ENGINE=Ordinary"
+        instance,
+        "CREATE DATABASE test_ordinary ON CLUSTER cluster ENGINE=Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
     )
     assert (
         "are supported only for ON CLUSTER queries with Atomic database engine"

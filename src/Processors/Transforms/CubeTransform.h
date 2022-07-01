@@ -13,7 +13,7 @@ namespace DB
 class CubeTransform : public GroupByModifierTransform
 {
 public:
-    CubeTransform(Block header, AggregatingTransformParamsPtr params);
+    CubeTransform(Block header, AggregatingTransformParamsPtr params, bool use_nulls_);
     String getName() const override { return "CubeTransform"; }
 
 protected:

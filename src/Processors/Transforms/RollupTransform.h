@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <Core/ColumnNumbers.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
@@ -9,7 +10,7 @@ namespace DB
 
 struct GroupByModifierTransform : public IAccumulatingTransform
 {
-    GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_);
+    GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_);
 
 protected:
     void consume(Chunk chunk) override;
@@ -22,7 +23,9 @@ protected:
 
     AggregatingTransformParamsPtr params;
 
-    const ColumnNumbers & keys;
+    bool use_nulls;
+
+    ColumnNumbers keys;
 
     std::unique_ptr<Aggregator> output_aggregator;
 
@@ -37,7 +40,7 @@ protected:
 class RollupTransform : public GroupByModifierTransform
 {
 public:
-    RollupTransform(Block header, AggregatingTransformParamsPtr params);
+    RollupTransform(Block header, AggregatingTransformParamsPtr params, bool use_nulls_);
     String getName() const override { return "RollupTransform"; }
 
 protected:
