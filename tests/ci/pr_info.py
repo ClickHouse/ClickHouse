@@ -85,6 +85,7 @@ class PRInfo:
         self.changed_files = set()  # type: Set[str]
         self.body = ""
         self.diff_urls = []
+        self.release_pr = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
@@ -193,6 +194,10 @@ class PRInfo:
                         f"https://github.com/{GITHUB_REPOSITORY}/"
                         f"compare/{self.head_ref}...master.diff"
                     )
+                    # Get release PR number.
+                    self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
+                        "number"
+                    ]
                 else:
                     self.diff_urls.append(pull_request["diff_url"])
         else:
