@@ -40,75 +40,84 @@ void KeeperDispatcher::requestThread()
 
     const auto needs_quorum = [](const auto & coordination_settings, const auto & request)
     {
-        return coordination_settings->quorum_reads || !request.request->isReadRequest();
+        return coordination_settings->quorum_reads || coordination_settings->read_mode.toString() == "quorum" || !request.request->isReadRequest();
     };
 
-    KeeperStorage::RequestsForSessions write_requests;
+    KeeperStorage::RequestsForSessions quorum_requests;
     KeeperStorage::RequestsForSessions read_requests;
 
-    auto process_read_requests = [&, this]() mutable
+    auto process_read_requests = [&, this](const auto & coordination_settings) mutable
     {
-        server->getLeaderInfo()->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
+        if (coordination_settings->read_mode.toString() == "fastlinear")
         {
-            if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+            server->getLeaderInfo()->when_ready([&, requests_for_sessions = std::move(read_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
             {
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
-                return;
-            }
-            else if (result.get_result_code() != nuraft::cmd_result_code::OK)
-            {
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-                return;
-            }
-            else if (exception)
-            {
-                LOG_INFO(&Poco::Logger::get("KeeperDispatcher"), "Got exception while waiting for read results {}", exception->what());
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-                return;
-            }
+                if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+                {
+                    addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+                    return;
+                }
+                else if (result.get_result_code() != nuraft::cmd_result_code::OK)
+                {
+                    addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                    return;
+                }
+                else if (exception)
+                {
+                    LOG_INFO(&Poco::Logger::get("KeeperDispatcher"), "Got exception while waiting for read results {}", exception->what());
+                    addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                    return;
+                }
 
-            auto & leader_info_ctx = result.get();
+                auto & leader_info_ctx = result.get();
 
-            if (!leader_info_ctx)
-            {
-                addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-                return;
-            }
+                if (!leader_info_ctx)
+                {
+                    addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+                    return;
+                }
 
-            KeeperServer::NodeInfo leader_info;
-            leader_info.term = leader_info_ctx->get_ulong();
-            leader_info.last_committed_index = leader_info_ctx->get_ulong();
+                KeeperServer::NodeInfo leader_info;
+                leader_info.term = leader_info_ctx->get_ulong();
+                leader_info.last_committed_index = leader_info_ctx->get_ulong();
+                std::lock_guard lock(leader_waiter_mutex);
+                auto node_info = server->getNodeInfo();
 
-            std::lock_guard lock(leader_waiter_mutex);
-            auto node_info = server->getNodeInfo();
-
-            if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
-            {
-                auto & leader_waiter = leader_waiters[leader_info];
-                leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
-                LOG_INFO(log, "waiting for {}, idx {}", leader_info.term, leader_info.last_committed_index);
-            }
-            else if (!read_requests_queue.push(std::move(requests_for_sessions)))
+                if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
+                {
+                    auto & leader_waiter = leader_waiters[leader_info];
+                    leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
+                    LOG_INFO(log, "waiting for {}, idx {}", leader_info.term, leader_info.last_committed_index);
+                }
+                else if (!read_requests_queue.push(std::move(requests_for_sessions)))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+            });
+        }
+        else
+        {
+            assert(coordination_settings->read_mode.toString() == "nonlinear");
+            if (!read_requests_queue.push(std::move(read_requests)))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
-        });
+        }
+
         read_requests.clear();
     };
 
-    auto process_write_requests = [&, this]() mutable
+    auto process_quorum_requests = [&, this]() mutable
     {
         /// Forcefully process all previous pending requests
         if (prev_result)
             forceWaitAndProcessResult(prev_result);
 
-        prev_result = server->putRequestBatch(write_requests);
-        prev_result->when_ready([&, requests_for_sessions = std::move(write_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> &) mutable
+        prev_result = server->putRequestBatch(quorum_requests);
+        prev_result->when_ready([&, requests_for_sessions = std::move(quorum_requests)](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> &) mutable
         {
             if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
                 addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
             else if (result.get_result_code() != nuraft::cmd_result_code::OK)
                 addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
         });
-        write_requests.clear();
+        quorum_requests.clear();
     };
 
     while (!shutdown_called)
@@ -128,7 +137,7 @@ void KeeperDispatcher::requestThread()
                     break;
 
                 if (needs_quorum(coordination_settings, request))
-                    write_requests.emplace_back(request);
+                    quorum_requests.emplace_back(request);
                 else
                     read_requests.emplace_back(request);
 
@@ -137,15 +146,15 @@ void KeeperDispatcher::requestThread()
                 /// Sometimes NuRaft set errorcode without setting result, so we check both here.
                 while (true)
                 {
-                    if (write_requests.size() > max_batch_size)
+                    if (quorum_requests.size() > max_batch_size)
                     {
-                        process_write_requests();
+                        process_quorum_requests();
                         break;
                     }
 
                     if (read_requests.size() > max_batch_size)
                     {
-                        process_read_requests();
+                        process_read_requests(coordination_settings);
                         break;
                     }
 
@@ -153,14 +162,14 @@ void KeeperDispatcher::requestThread()
                     if (requests_queue->tryPop(request, 1))
                     {
                         if (needs_quorum(coordination_settings, request))
-                            write_requests.emplace_back(request);
+                            quorum_requests.emplace_back(request);
                         else
                             read_requests.emplace_back(request);
                     }
-                    else 
+                    else
                     {
                         if (!read_requests.empty())
-                            process_read_requests();
+                            process_read_requests(coordination_settings);
 
                         if (!prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK)
                             break;
@@ -173,8 +182,8 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
-                if (!write_requests.empty())
-                    process_write_requests();
+                if (!quorum_requests.empty())
+                    process_quorum_requests();
 
             }
         }

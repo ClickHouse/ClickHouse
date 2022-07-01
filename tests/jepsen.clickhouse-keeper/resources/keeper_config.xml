@@ -23,6 +23,7 @@
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
             <quorum_reads>0</quorum_reads>
+            <read_mode>fastlinear</read_mode>
             <snapshot_distance>{snapshot_distance}</snapshot_distance>
             <stale_log_gap>{stale_log_gap}</stale_log_gap>
             <reserved_log_items>{reserved_log_items}</reserved_log_items>
