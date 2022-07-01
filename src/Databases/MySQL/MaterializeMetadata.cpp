@@ -307,7 +307,7 @@ void MaterializeMetadata::startReplication(
             while (mysqlxx::Row row = result_list.fetch())
             {
                 auto table_name = row[0].getString();
-                base_tables_list.insert(backQuoteIfNeed(table_name));
+                base_tables_list.insert(backQuote(table_name));
             }
 
             connection->query("FLUSH TABLES " + boost::algorithm::join(base_tables_list, ",") + " WITH READ LOCK;").execute();
@@ -325,7 +325,7 @@ void MaterializeMetadata::startReplication(
                 auto table_name = row[0].getString();
                 if (materialized_tables_list.contains(table_name))
                 {
-                    materialized_tables_list_exists.insert(backQuoteIfNeed(table_name));
+                    materialized_tables_list_exists.insert(backQuote(table_name));
                 }
             }
 
