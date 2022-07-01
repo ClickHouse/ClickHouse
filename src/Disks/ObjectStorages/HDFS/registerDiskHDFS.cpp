@@ -43,7 +43,7 @@ void registerDiskHDFS(DiskFactory & factory)
         auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
 
-        auto disk_result = std::make_shared<DiskObjectStorage>(
+        DiskPtr disk_result = std::make_shared<DiskObjectStorage>(
             name,
             uri,
             "DiskHDFS",
