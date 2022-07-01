@@ -5,6 +5,7 @@
 # pylint: disable=too-many-lines
 
 import enum
+from queue import Full
 import shutil
 import sys
 import os
@@ -425,7 +426,6 @@ class SettingsRandomizer:
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
-        "local_filesystem_read_method": lambda: random.choice(['pread', 'pread_threadpool', 'io_uring']),
     }
 
     @staticmethod
@@ -1490,9 +1490,9 @@ def collect_build_flags(args):
         result.append(BuildFlags.RELEASE)
 
     value = clickhouse_execute(
-        args, "SELECT value FROM system.settings WHERE name = 'default_database_engine'"
+        args, "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'"
     )
-    if value == b"Ordinary":
+    if value == b"1":
         result.append(BuildFlags.ORDINARY_DATABASE)
 
     value = int(
@@ -1582,15 +1582,18 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
         for _ in range(jobs):
             parallel_tests_array.append((None, batch_size, test_suite))
 
-        with closing(multiprocessing.Pool(processes=jobs)) as pool:
-            pool.map_async(run_tests_array, parallel_tests_array)
+        try:
+            with closing(multiprocessing.Pool(processes=jobs)) as pool:
+                pool.map_async(run_tests_array, parallel_tests_array)
 
-            for suit in test_suite.parallel_tests:
-                queue.put(suit, timeout=args.timeout * 1.1)
+                for suit in test_suite.parallel_tests:
+                    queue.put(suit, timeout=args.timeout * 1.1)
 
-            for _ in range(jobs):
-                queue.put(None, timeout=args.timeout * 1.1)
+                for _ in range(jobs):
+                    queue.put(None, timeout=args.timeout * 1.1)
 
+                queue.close()
+        except Full:
             queue.close()
 
         pool.join()
@@ -2172,5 +2175,8 @@ if __name__ == "__main__":
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
+
+    if args.db_engine and args.db_engine == "Ordinary":
+        MESSAGES_TO_RETRY.append(" locking attempt on ")
 
     main(args)

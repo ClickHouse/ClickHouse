@@ -56,7 +56,7 @@ void MetadataStorageFromDiskTransaction::commit()
                         toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
 
     {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
+        std::lock_guard lock(metadata_storage.metadata_mutex);
         for (size_t i = 0; i < operations.size(); ++i)
         {
             try
@@ -300,30 +300,27 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction() const
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
 }
 
-std::vector<std::string> MetadataStorageFromDisk::getRemotePaths(const std::string & path) const
+PathsWithSize MetadataStorageFromDisk::getObjectStoragePaths(const std::string & path) const
 {
     auto metadata = readMetadata(path);
 
-    std::vector<std::string> remote_paths;
-    auto blobs = metadata->getBlobs();
-    auto root_path = metadata->getBlobsCommonPrefix();
-    remote_paths.reserve(blobs.size());
-    for (const auto & [remote_path, _] : blobs)
-        remote_paths.push_back(fs::path(root_path) / remote_path);
+    auto object_storage_relative_paths = metadata->getBlobsRelativePaths(); /// Relative paths.
+    fs::path root_path = metadata->getBlobsCommonPrefix();
 
-    return remote_paths;
+    PathsWithSize object_storage_paths;
+    object_storage_paths.reserve(object_storage_relative_paths.size());
+
+    /// Relative paths -> absolute.
+    for (auto & [object_relative_path, size] : object_storage_relative_paths)
+        object_storage_paths.emplace_back(root_path / object_relative_path, size);
+
+    return object_storage_paths;
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
 {
     auto metadata = readMetadata(path);
     return metadata->getRefCount();
-}
-
-BlobsPathToSize MetadataStorageFromDisk::getBlobs(const std::string & path) const
-{
-    auto metadata = readMetadata(path);
-    return metadata->getBlobs();
 }
 
 void MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)

@@ -349,7 +349,7 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 <td>Only for Linux, x86_64 or aarch64.</td>
 </tr>
 <tr>
-<td><a name="install-stripped-binaries"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L270" rel="external nofollow noreferrer" target="_blank"><code class="syntax">INSTALL_STRIPPED_BINARIES</code></a></td>
+<td><a name="build-debug-symbols"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L270" rel="external nofollow noreferrer" target="_blank"><code class="syntax">SPLIT_DEBUG_SYMBOLS</code></a></td>
 <td><code class="syntax">OFF</code></td>
 <td>Build stripped binaries with debug info in separate directory</td>
 <td></td>
