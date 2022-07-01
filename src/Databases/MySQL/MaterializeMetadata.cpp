@@ -305,9 +305,12 @@ void MaterializeMetadata::startReplication(
             mysqlxx::UseQueryResult result_list = connection->query("SHOW FULL TABLES IN " + database + " WHERE Table_type = 'BASE TABLE'").use();
 
             while (mysqlxx::Row row = result_list.fetch())
-                base_tables_list.insert(row[0].getString());
+            {
+                auto table_name = row[0].getString();
+                base_tables_list.insert(backQuoteIfNeed(table_name));
+            }
 
-            connection->query("FLUSH TABLES `" + boost::algorithm::join(base_tables_list, "`,`") + "` WITH READ LOCK;").execute();
+            connection->query("FLUSH TABLES " + boost::algorithm::join(base_tables_list, ",") + " WITH READ LOCK;").execute();
         }
         else
         {
@@ -319,11 +322,14 @@ void MaterializeMetadata::startReplication(
             // https://github.com/ClickHouse/ClickHouse/pull/36698#issuecomment-1122222041
             while (mysqlxx::Row row = result_list.fetch())
             {
-                if (materialized_tables_list.contains(row[0].getString()))
-                    materialized_tables_list_exists.insert(row[0].getString());
+                auto table_name = row[0].getString();
+                if (materialized_tables_list.contains(table_name))
+                {
+                    materialized_tables_list_exists.insert(backQuoteIfNeed(table_name));
+                }
             }
 
-            connection->query("FLUSH TABLES `" + boost::algorithm::join(materialized_tables_list_exists, "`,`") + "` WITH READ LOCK;").execute();
+            connection->query("FLUSH TABLES " + boost::algorithm::join(materialized_tables_list_exists, ",") + " WITH READ LOCK;").execute();
         }
         locked_tables = true;
 
