@@ -408,3 +408,38 @@ def test_cache_dir_use(started_cluster):
         ["bash", "-c", "ls /tmp/clickhouse_local_cache1 | wc -l"]
     )
     assert result0 != "0" and result1 != "0"
+
+
+def test_cache_dir_use(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result0 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache | wc -l"]
+    )
+    result1 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache1 | wc -l"]
+    )
+    assert result0 != "0" and result1 != "0"
+
+
+def test_hive_struct_type(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query(
+        """
+        CREATE TABLE IF NOT EXISTS default.test_hive_types (`f_tinyint` Int8, `f_smallint` Int16, `f_int` Int32, `f_integer` Int32, `f_bigint` Int64, `f_float` Float32, `f_double` Float64, `f_decimal` Float64, `f_timestamp` DateTime, `f_date` Date, `f_string` String, `f_varchar` String, `f_char` String, `f_bool` Boolean, `f_array_int` Array(Int32), `f_array_string` Array(String), `f_array_float` Array(Float32), `f_map_int` Map(String, Int32), `f_map_string` Map(String, String), `f_map_float` Map(String, Float32), `f_struct` Tuple(a String, b Int32, c Float32, d Tuple(x Int32, y String)), `day` String) ENGINE = Hive('thrift://hivetest:9083', 'test', 'test_hive_types') PARTITION BY (day)
+        """
+    )
+    result = node.query(
+        """
+    SELECT * FROM default.test_hive_types WHERE day = '2022-02-20' SETTINGS input_format_parquet_import_nested=1
+        """
+    )
+    expected_result = """1	2	3	4	5	6.11	7.22	8	2022-02-20 14:47:04	2022-02-20	hello world	hello world	hello world	true	[1,2,3]	['hello world','hello world']	[1.1,1.2]	{'a':100,'b':200,'c':300}	{'a':'aa','b':'bb','c':'cc'}	{'a':111.1,'b':222.2,'c':333.3}	('aaa',200,333.3,(10,'xyz'))	2022-02-20"""
+    assert result.strip() == expected_result
+
+    result = node.query(
+        """
+    SELECT day, f_struct.a, f_struct.d.x FROM default.test_hive_types WHERE day = '2022-02-20' SETTINGS input_format_parquet_import_nested=1
+        """
+    )
+    expected_result = """2022-02-20	aaa	10"""
+    assert result.strip() == expected_result

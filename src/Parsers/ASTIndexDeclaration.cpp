@@ -25,7 +25,7 @@ ASTPtr ASTIndexDeclaration::clone() const
 
 void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    if (from_create_index)
+    if (part_of_create_index_query)
     {
         s.ostr << "(";
         expr->formatImpl(s, state, frame);
