@@ -31,12 +31,12 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
 }
-bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const String & name, const String & column_name, DataTypePtr column_type)
+bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const std::string_view & name, const String & column_name, DataTypePtr column_type)
 {
     if (name.size() < column_name.size())
         return false;
 
-    if (std::strncmp(name.data(), column_name.data(), column_name.size()) != 0)
+    if (!name.starts_with(column_name))
         return false;
 
     if (name.size() == column_name.size())
@@ -49,7 +49,7 @@ bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const String & name, 
         {
             const Strings & names = type_tuple->getElementNames();
             const DataTypes & element_types = type_tuple->getElements();
-            String sub_name = name.substr(column_name.size() + 1, name.size() - column_name.size());
+            std::string_view sub_name = name.substr(column_name.size() + 1);
             for (size_t i = 0; i < names.size(); ++i)
             {
                 if (matchColumnName(sub_name, names[i], element_types[i]))
