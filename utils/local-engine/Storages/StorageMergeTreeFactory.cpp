@@ -9,13 +9,12 @@ local_engine::CustomStorageMergeTreePtr
 local_engine::StorageMergeTreeFactory::getStorage(StorageID id,  ColumnsDescription columns, std::function<CustomStorageMergeTreePtr()> creator)
 {
     auto table_name = id.database_name + "." + id.table_name;
-
     if (!storage_map.contains(table_name))
     {
         std::lock_guard lock(storage_map_mutex);
         if (storage_map.contains(table_name))
         {
-            std::set<string>& existed_columns = storage_columns_map.at(table_name);
+            std::set<string> existed_columns = storage_columns_map.at(table_name);
             for (const auto& column : columns)
             {
                 if (!existed_columns.contains(column.name))

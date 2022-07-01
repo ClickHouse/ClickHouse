@@ -103,7 +103,8 @@ void Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNa
 {
     try
     {
-        init();
+        static std::once_flag init_flag;
+        std::call_once(init_flag, [](){init();});
     }
     catch (const DB::Exception & e)
     {

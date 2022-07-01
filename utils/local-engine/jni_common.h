@@ -46,7 +46,10 @@ jstring charTojstring(JNIEnv* env, const char* pat) {
     jbyteArray bytes = (env)->NewByteArray(strlen(pat));
     (env)->SetByteArrayRegion(bytes, 0, strlen(pat), (jbyte*) pat);
     jstring encoding = (env)->NewStringUTF("UTF-8");
-    return static_cast<jstring>((env)->NewObject(strClass, ctorID, bytes, encoding));
+    jstring result = static_cast<jstring>((env)->NewObject(strClass, ctorID, bytes, encoding));
+    env->DeleteLocalRef(bytes);
+    env->DeleteLocalRef(encoding);
+    return result;
 }
 
 
