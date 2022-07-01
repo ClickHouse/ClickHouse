@@ -401,9 +401,8 @@ def create_table_like_with_materialize_mysql_database(
     mysql_node.query("CREATE TABLE create_like.t2 LIKE create_like.t1")
     check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\n")
 
-    mysql_node.query("USE create_like")
-    mysql_node.query("CREATE TABLE t3 LIKE create_like2.t1")
-    mysql_node.query("CREATE TABLE t4 LIKE t1")
+    mysql_node.query("CREATE TABLE create_like.t3 LIKE create_like2.t1")
+    mysql_node.query("CREATE TABLE create_like.t4 LIKE create_like.t1")
 
     check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\nt4\n")
     check_query(clickhouse_node, "SHOW DATABASES LIKE 'create_like%'", "create_like\n")
