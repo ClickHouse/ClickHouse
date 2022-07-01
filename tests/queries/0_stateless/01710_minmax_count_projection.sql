@@ -10,6 +10,7 @@ set max_rows_to_read = 2, allow_experimental_projection_optimization = 1;
 select min(i), max(i), count() from d;
 select min(i), max(i), count() from d group by _partition_id order by _partition_id;
 select min(i), max(i), count() from d where _partition_value.1 = 0 group by _partition_id order by _partition_id;
+select min(i), max(i), count() from d where moduloLegacy(i, 2) = 0 group by _partition_id order by _partition_id;
 select min(i), max(i), count() from d where _partition_value.1 = 10 group by _partition_id order by _partition_id;
 
 -- fuzz crash
@@ -56,6 +57,9 @@ select min(dt), max(dt), count() from d where toDate(dt) >= '2021-10-25';
 -- fuzz crash
 select min(dt), max(dt), count(toDate(dt) >= '2021-10-25') from d where toDate(dt) >= '2021-10-25';
 select count() from d group by toDate(dt);
+
+-- fuzz crash
+SELECT min(dt), count(ignore(ignore(ignore(tupleElement(_partition_value, NULL) = NULL), NULL, NULL, NULL), 0, '10485.76', NULL)), max(dt), count(toDate(dt) >= '2021-10-25') FROM d WHERE toDate(dt) >= '2021-10-25';
 
 -- fuzz crash
 SELECT pointInEllipses(min(j), NULL), max(dt), count('0.0000000007') FROM d WHERE toDate(dt) >= '2021-10-25';
