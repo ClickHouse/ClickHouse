@@ -32,8 +32,8 @@ void DatabaseMemory::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    std::unique_lock lock{mutex};
-    attachTableUnlocked(table_name, table, lock);
+    std::lock_guard lock{mutex};
+    attachTableUnlocked(table_name, table);
 
     /// Clean the query from temporary flags.
     ASTPtr query_to_store = query;
@@ -52,23 +52,24 @@ void DatabaseMemory::createTable(
 void DatabaseMemory::dropTable(
     ContextPtr /*context*/,
     const String & table_name,
-    bool /*no_delay*/)
+    bool /*sync*/)
 {
-    std::unique_lock lock{mutex};
-    auto table = detachTableUnlocked(table_name, lock);
+    StoragePtr table;
+    {
+        std::lock_guard lock{mutex};
+        table = detachTableUnlocked(table_name);
+    }
     try
     {
         /// Remove table without lock since:
         /// - it does not require it
         /// - it may cause lock-order-inversion if underlying storage need to
         ///   resolve tables (like StorageLiveView)
-        SCOPE_EXIT(lock.lock());
-        lock.unlock();
         table->drop();
 
         if (table->storesDataOnDisk())
         {
-            assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
+            assert(getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE);
             fs::path table_data_dir{getTableDataPath(table_name)};
             if (fs::exists(table_data_dir))
                 fs::remove_all(table_data_dir);
@@ -76,10 +77,13 @@ void DatabaseMemory::dropTable(
     }
     catch (...)
     {
+        std::lock_guard lock{mutex};
         assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
-        attachTableUnlocked(table_name, table, lock);
+        attachTableUnlocked(table_name, table);
         throw;
     }
+
+    std::lock_guard lock{mutex};
     table->is_dropped = true;
     create_queries.erase(table_name);
     UUID table_uuid = table->getStorageID().uuid;

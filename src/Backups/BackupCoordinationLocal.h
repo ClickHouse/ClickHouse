@@ -2,6 +2,7 @@
 
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupCoordinationHelpers.h>
+#include <base/defines.h>
 #include <map>
 #include <mutex>
 
@@ -44,12 +45,12 @@ public:
 
 private:
     mutable std::mutex mutex;
-    BackupCoordinationReplicatedPartNames replicated_part_names;
-    std::unordered_map<String, Strings> replicated_data_paths;
-    std::map<String /* file_name */, SizeAndChecksum> file_names; /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
-    std::map<SizeAndChecksum, FileInfo> file_infos; /// Information about files. Without empty files.
-    Strings archive_suffixes;
-    size_t current_archive_suffix = 0;
+    BackupCoordinationReplicatedPartNames replicated_part_names TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, Strings> replicated_data_paths TSA_GUARDED_BY(mutex);
+    std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
+    std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    Strings archive_suffixes TSA_GUARDED_BY(mutex);
+    size_t current_archive_suffix TSA_GUARDED_BY(mutex) = 0;
 };
 
 

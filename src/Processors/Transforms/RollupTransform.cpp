@@ -8,18 +8,21 @@
 namespace DB
 {
 
-GroupByModifierTransform::GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_)
-    : IAccumulatingTransform(std::move(header), generateOutputHeader(params_->getHeader(), params_->params.keys, params_->use_nulls))
+GroupByModifierTransform::GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+    : IAccumulatingTransform(std::move(header), generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_))
     , params(std::move(params_))
-    , keys(params->params.keys)
+    , use_nulls(use_nulls_)
 {
+    keys.reserve(params->params.keys_size);
+    for (const auto & key : params->params.keys)
+        keys.emplace_back(input.getHeader().getPositionByName(key));
+
     intermediate_header = getOutputPort().getHeader();
-    if (params->use_nulls)
+    if (use_nulls)
     {
         auto output_aggregator_params = params->params;
         intermediate_header.erase(0);
-        output_aggregator_params.src_header = intermediate_header;
-        output_aggregator = std::make_unique<Aggregator>(output_aggregator_params);
+        output_aggregator = std::make_unique<Aggregator>(intermediate_header, output_aggregator_params);
     }
 }
 
@@ -37,7 +40,7 @@ void GroupByModifierTransform::mergeConsumed()
 
     size_t rows = current_chunk.getNumRows();
     auto columns = current_chunk.getColumns();
-    if (params->use_nulls)
+    if (use_nulls)
     {
         for (auto key : keys)
             columns[key] = makeNullable(columns[key]);
@@ -68,8 +71,8 @@ MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, siz
     return result_column;
 }
 
-RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_)
-    : GroupByModifierTransform(std::move(header), params_)
+RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+    : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {}
 
@@ -102,7 +105,7 @@ Chunk RollupTransform::generate()
 
         Chunks chunks;
         chunks.emplace_back(std::move(columns), num_rows);
-        current_chunk = merge(std::move(chunks), !params->use_nulls, false);
+        current_chunk = merge(std::move(chunks), !use_nulls, false);
     }
 
     finalizeChunk(gen_chunk, aggregates_mask);

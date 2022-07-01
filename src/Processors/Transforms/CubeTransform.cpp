@@ -10,8 +10,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_)
-    : GroupByModifierTransform(std::move(header), params_)
+CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+    : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
     if (keys.size() >= 8 * sizeof(mask))
@@ -50,7 +50,7 @@ Chunk CubeTransform::generate()
 
         Chunks chunks;
         chunks.emplace_back(std::move(columns), current_columns.front()->size());
-        current_chunk = merge(std::move(chunks), !params->use_nulls, false);
+        current_chunk = merge(std::move(chunks), !use_nulls, false);
     }
 
     finalizeChunk(gen_chunk, aggregates_mask);

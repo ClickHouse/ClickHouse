@@ -13,13 +13,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_PART_TYPE;
 }
 
-std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const DiskPtr & disk, const String & path_to_part)
+std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage)
 {
-    if (disk->exists(path_to_part))
+    if (data_part_storage->exists())
     {
-        for (DirectoryIteratorPtr it = disk->iterateDirectory(path_to_part); it->isValid(); it->next())
+        for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
         {
-            const auto & ext = fs::path(it->path()).extension();
+            const auto & ext = fs::path(it->name()).extension();
             if (ext == getNonAdaptiveMrkExtension()
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide)
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact))
@@ -46,9 +46,9 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
         setAdaptive(storage_settings->index_granularity_bytes);
 }
 
-void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const DiskPtr & disk, const String & path_to_part)
+void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage)
 {
-    auto mrk_ext = getMarksExtensionFromFilesystem(disk, path_to_part);
+    auto mrk_ext = getMarksExtensionFromFilesystem(data_part_storage);
     if (mrk_ext && *mrk_ext == getNonAdaptiveMrkExtension())
         setNonAdaptive();
 }
