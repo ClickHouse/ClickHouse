@@ -1,4 +1,4 @@
-macro(clickhouse_strip_binary)
+macro(clickhouse_split_debug_symbols)
    set(oneValueArgs TARGET DESTINATION_DIR BINARY_PATH)
 
    cmake_parse_arguments(STRIP "" "${oneValueArgs}" "" ${ARGN})
