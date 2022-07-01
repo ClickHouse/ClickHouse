@@ -87,13 +87,10 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
     allow_release = true;
 
     required_memory += amount;
-    auto wait_start_time = std::chrono::system_clock::now();
     bool timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
     {
         return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
     });
-    auto wait_end_time = std::chrono::system_clock::now();
-    ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
     LOG_DEBUG_SAFE(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""));
 
     required_memory -= amount;
