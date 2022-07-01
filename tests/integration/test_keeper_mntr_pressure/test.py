@@ -25,6 +25,7 @@ node3 = cluster.add_instance(
 
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
