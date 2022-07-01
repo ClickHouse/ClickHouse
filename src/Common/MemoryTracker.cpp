@@ -310,11 +310,8 @@ void MemoryTracker::free(Int64 size)
             accounted_size += new_amount;
         }
     }
-    if (!OvercommitTrackerBlockerInThread::isBlocked())
-    {
-        if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr)
-            overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
-    }
+    if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
+        overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
