@@ -207,6 +207,7 @@ public:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
+    friend class TableFunctionS3ClusterLocalShard;
 
     S3Configuration s3_configuration;
     std::vector<String> keys;

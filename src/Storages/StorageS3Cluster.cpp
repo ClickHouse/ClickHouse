@@ -1,6 +1,8 @@
 #include "Storages/StorageS3Cluster.h"
 
 #include <Common/config.h>
+#include "Parsers/ASTSelectQuery.h"
+#include "Parsers/IAST_fwd.h"
 
 #if USE_AWS_S3
 
@@ -23,14 +25,16 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
-#include "Processors/ISource.h"
+#include <Processors/ISource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/getVirtualsForStorage.h>
+#include <TableFunctions/TableFunctionS3Cluster.h>
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -45,6 +49,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 StorageS3Cluster::StorageS3Cluster(
     const String & filename_,
     const String & access_key_id_,
@@ -121,7 +129,7 @@ Pipe StorageS3Cluster::read(
     Pipes pipes;
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
-
+    String remote_query = queryToString(rewriteQuery(query_info.original_query));
     for (const auto & replicas : cluster->getShardsAddresses())
     {
         /// There will be only one replica, because we consider each replica as a shard
@@ -140,12 +148,12 @@ Pipe StorageS3Cluster::read(
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
-                queryToString(query_info.original_query),
+                remote_query,
                 header,
                 context,
                 /*throttler=*/nullptr,
                 scalars,
-                Tables(),
+                context->getExternalTables(),
                 processed_stage,
                 RemoteQueryExecutor::Extension{.task_iterator = callback});
 
@@ -169,6 +177,46 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
+ASTPtr StorageS3Cluster::rewriteQuery(const ASTPtr & query)
+{
+    auto select_query_ref = query->clone();
+    auto * select_query = select_query_ref->as<ASTSelectQuery>();
+    if (!select_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "An select query is expected, but what we get is {}", query->getID());
+
+    auto table_func = std::make_shared<ASTFunction>();
+    table_func->name = TableFunctionS3ClusterLocalShard::name;
+    table_func->arguments = std::make_shared<ASTExpressionList>();
+    table_func->children.push_back(table_func->arguments);
+    auto & func_args = table_func->arguments->children;
+
+    func_args.push_back(std::make_shared<ASTLiteral>(Field(filename)));
+    if (!s3_configuration.access_key_id.empty())
+        func_args.push_back(std::make_shared<ASTLiteral>(Field(s3_configuration.access_key_id)));
+    if (!s3_configuration.secret_access_key.empty())
+        func_args.push_back(std::make_shared<ASTLiteral>(Field(s3_configuration.secret_access_key)));
+    if (!format_name.empty())
+        func_args.push_back(std::make_shared<ASTLiteral>(Field(format_name)));
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    WriteBufferFromOwnString struct_buf;
+    int i = 0;
+    for (const auto & name_and_type : metadata_snapshot->getColumns().getAllPhysical())
+    {
+        if (i)
+            struct_buf << ",";
+        struct_buf << name_and_type.name << " " << name_and_type.type->getName();
+        i++;
+    }
+    func_args.push_back(std::make_shared<ASTLiteral>(Field(struct_buf.str())));
+
+    if (!compression_method.empty())
+        func_args.push_back(std::make_shared<ASTLiteral>(Field(compression_method)));
+
+    auto table_func_arg = table_func->clone();
+    select_query->addTableFunction(table_func_arg);
+    return select_query_ref;
+}
 
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {

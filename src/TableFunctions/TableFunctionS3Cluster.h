@@ -54,6 +54,39 @@ protected:
     ColumnsDescription structure_hint;
 };
 
+class TableFunctionS3ClusterLocalShard : public ITableFunction
+{
+public:
+    static constexpr auto name = "s3ClusterLocalShard";
+    std::string getName() const override
+    {
+        return name;
+    }
+
+    bool hasStaticStructure() const override { return configuration.structure != "auto"; }
+
+    bool needStructureHint() const override { return configuration.structure == "auto"; }
+
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+
+protected:
+    StoragePtr executeImpl(
+        const ASTPtr & ast_function,
+        ContextPtr context,
+        const std::string & table_name,
+        ColumnsDescription cached_columns) const override;
+
+    const char * getStorageTypeName() const override { return "S3Cluster"; }
+
+    AccessType getSourceAccessType() const override { return AccessType::S3; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr) const override;
+    void parseArguments(const ASTPtr &, ContextPtr) override;
+
+    StorageS3ClusterConfiguration configuration;
+    ColumnsDescription structure_hint;
+};
+
 }
 
 #endif

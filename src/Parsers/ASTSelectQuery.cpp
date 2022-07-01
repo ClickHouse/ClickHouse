@@ -405,7 +405,7 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
     table_expression->table_function = table_function_ptr->clone();
     table_expression->database_and_table_name = nullptr;
 
-    if (table_alias.empty())
+    if (!table_alias.empty())
         table_expression->table_function->setAlias(table_alias);
 }
 

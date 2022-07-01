@@ -32,6 +32,7 @@ public:
 
 protected:
     friend class TableFunctionS3Cluster;
+    friend class TableFunctionS3ClusterLocalShard;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,

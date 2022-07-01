@@ -34,6 +34,8 @@ public:
 
     std::string getName() const override { return "S3Cluster"; }
 
+    bool isRemote() const override { return true; }
+
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
         ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
 
@@ -51,6 +53,8 @@ private:
     String compression_method;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
+
+    ASTPtr rewriteQuery(const ASTPtr & query);
 };
 
 

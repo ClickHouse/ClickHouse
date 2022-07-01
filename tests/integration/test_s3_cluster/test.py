@@ -195,3 +195,43 @@ def test_ambiguous_join(started_cluster):
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
+
+
+def test_global_in_clause(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    result = node.query(
+        """
+    SELECT count(1) from s3Cluster(
+        'cluster_simple', 
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
+    WHERE name GLOBAL IN (
+        SELECT name FROM s3Cluster(
+            'cluster_simple', 
+            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
+        ) AS r
+    ) AS t_names
+    """
+    )
+    assert result.strip() == "25"
+
+
+def test_in_clause(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    result = node.query(
+        """
+    SELECT count(1) from s3Cluster(
+        'cluster_simple', 
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
+    WHERE name IN (
+        SELECT name FROM s3Cluster(
+            'cluster_simple', 
+            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
+        ) AS r
+    ) AS t_names
+    """
+    )
+    assert result.strip() == "25"

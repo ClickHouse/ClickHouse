@@ -25,6 +25,8 @@
 #include <memory>
 #include <thread>
 
+#include <Parsers/queryToString.h>
+
 
 namespace DB
 {
@@ -109,42 +111,108 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         columns = parseColumnsListFromString(configuration.structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
+    storage = std::make_shared<StorageS3Cluster>(
+        configuration.url,
+        configuration.auth_settings.access_key_id,
+        configuration.auth_settings.secret_access_key,
+        StorageID(getDatabaseName(), table_name),
+        configuration.cluster_name,
+        configuration.format,
+        columns,
+        ConstraintsDescription{},
+        context,
+        configuration.compression_method);
+    storage->startup();
 
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    return storage;
+}
+
+void TableFunctionS3ClusterLocalShard::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+{
+    /// Parse args
+    ASTs & args_func = ast_function->children;
+
+    if (args_func.size() != 1)
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    ASTs & args = args_func.at(0)->children;
+
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionAsLiteral(arg, context);
+
+    const auto message = fmt::format(
+        "The signature of table function {} could be the following:\n" \
+        " - url\n"
+        " - url, format\n" \
+        " - url, format, structure\n" \
+        " - url, access_key_id, secret_access_key\n" \
+        " - url, format, structure, compression_method\n" \
+        " - url, access_key_id, secret_access_key, format\n"
+        " - url, access_key_id, secret_access_key, format, structure\n" \
+        " - url, access_key_id, secret_access_key, format, structure, compression_method",
+        getName());
+
+    if (args.empty()|| args.size() > 6)
     {
-        /// On worker node this filename won't contains globs
-        Poco::URI uri (configuration.url);
-        S3::URI s3_uri (uri);
-        storage = std::make_shared<StorageS3>(
-            s3_uri,
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
-            StorageID(getDatabaseName(), table_name),
+        throw Exception(message + "ast_function = {}" + queryToString(ast_function), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
+    /// Just cut the first arg (cluster_name) and try to parse s3 table function arguments as is
+    ASTs clipped_args;
+    clipped_args.reserve(args.size());
+    std::copy(args.begin(), args.end(), std::back_inserter(clipped_args));
+
+    /// StorageS3ClusterConfiguration inherints from StorageS3Configuration, so it is safe to upcast it.
+    TableFunctionS3::parseArgumentsImpl(message, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));
+}
+
+
+ColumnsDescription TableFunctionS3ClusterLocalShard::getActualTableStructure(ContextPtr context) const
+{
+    if (configuration.structure == "auto")
+    {
+        return StorageS3::getTableStructureFromData(
             configuration.format,
-            configuration.rw_settings,
-            columns,
-            ConstraintsDescription{},
-            String{},
-            context,
-            // No format_settings for S3Cluster
-            std::nullopt,
-            configuration.compression_method,
-            /*distributed_processing=*/true);
-    }
-    else
-    {
-        storage = std::make_shared<StorageS3Cluster>(
-            configuration.url,
+            S3::URI(Poco::URI(configuration.url)),
             configuration.auth_settings.access_key_id,
             configuration.auth_settings.secret_access_key,
-            StorageID(getDatabaseName(), table_name),
-            configuration.cluster_name, configuration.format,
-            columns,
-            ConstraintsDescription{},
-            context,
-            configuration.compression_method);
+            configuration.compression_method,
+            false,
+            std::nullopt,
+            context);
     }
 
+    return parseColumnsListFromString(configuration.structure, context);
+}
+
+StoragePtr TableFunctionS3ClusterLocalShard::executeImpl(
+    const ASTPtr & /*function*/, ContextPtr context,
+    const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    StoragePtr storage;
+
+    ColumnsDescription columns;
+    if (configuration.structure != "auto")
+        columns = parseColumnsListFromString(configuration.structure, context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
+    Poco::URI uri(configuration.url);
+    S3::URI s3_uri(uri);
+    storage = std::make_shared<StorageS3>(
+        s3_uri,
+        configuration.auth_settings.access_key_id,
+        configuration.auth_settings.secret_access_key,
+        StorageID(getDatabaseName(), table_name),
+        configuration.format,
+        configuration.rw_settings,
+        columns,
+        ConstraintsDescription{},
+        String{},
+        context,
+        // No format_settings for S3Cluster
+        std::nullopt,
+        configuration.compression_method,
+        /*distributed_processing=*/true);
     storage->startup();
 
     return storage;
@@ -154,6 +222,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionS3Cluster>();
+    factory.registerFunction<TableFunctionS3ClusterLocalShard>();
 }
 
 
