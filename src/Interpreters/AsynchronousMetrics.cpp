@@ -670,21 +670,26 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
-            Int64 new_amount = data.resident;
+            Int64 rss = data.resident;
 
-            Int64 difference = new_amount - amount;
+            Int64 rss_drift = rss - amount;
+            Int64 difference = rss_drift - last_logged_rss_drift;
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
+            {
                 LOG_TRACE(log,
-                    "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                    "MemoryTracking: allocated {}, peak {}, RSS {}, difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
-                    ReadableSize(new_amount),
-                    ReadableSize(difference));
+                    ReadableSize(rss),
+                    ReadableSize(rss_drift));
 
-            total_memory_tracker.set(new_amount);
-            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
+                last_logged_rss_drift = rss_drift;
+            }
+
+            total_memory_tracker.setRSS(rss);
+            // CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
 #endif
