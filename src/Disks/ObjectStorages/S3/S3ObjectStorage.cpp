@@ -109,8 +109,7 @@ bool S3ObjectStorage::exists(const std::string & path) const
 
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
-    const std::string & common_path_prefix,
-    const BlobsPathToSize & blobs_to_read,
+    const PathsWithSize & paths_to_read,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
@@ -128,8 +127,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     auto settings_ptr = s3_settings.get();
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        client.get(), bucket, version_id, common_path_prefix, blobs_to_read,
-        settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
+        client.get(),
+        bucket,
+        version_id,
+        paths_to_read,
+        settings_ptr->s3_settings.max_single_read_retries,
+        disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
@@ -192,7 +195,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(finalize_callback), path);
 }
 
-void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
+void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
@@ -253,14 +256,14 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
     }
 }
 
-void S3ObjectStorage::removeObjectsImpl(const std::vector<std::string> & paths, bool if_exists)
+void S3ObjectStorage::removeObjectsImpl(const PathsWithSize & paths, bool if_exists)
 {
     if (paths.empty())
         return;
 
     if (!s3_capabilities.support_batch_delete)
     {
-        for (const auto & path : paths)
+        for (const auto & [path, _] : paths)
             removeObjectImpl(path, if_exists);
     }
     else
@@ -278,12 +281,12 @@ void S3ObjectStorage::removeObjectsImpl(const std::vector<std::string> & paths, 
             for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
             {
                 Aws::S3::Model::ObjectIdentifier obj;
-                obj.SetKey(paths[current_position]);
+                obj.SetKey(paths[current_position].path);
                 current_chunk.push_back(obj);
 
                 if (!keys.empty())
                     keys += ", ";
-                keys += paths[current_position];
+                keys += paths[current_position].path;
             }
 
             Aws::S3::Model::Delete delkeys;
@@ -308,12 +311,12 @@ void S3ObjectStorage::removeObjectIfExists(const std::string & path)
     removeObjectImpl(path, true);
 }
 
-void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
+void S3ObjectStorage::removeObjects(const PathsWithSize & paths)
 {
     removeObjectsImpl(paths, false);
 }
 
-void S3ObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
+void S3ObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
 {
     removeObjectsImpl(paths, true);
 }
