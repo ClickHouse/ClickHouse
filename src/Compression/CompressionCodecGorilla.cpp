@@ -11,7 +11,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
-#include <cstring>
+#include <string.h>
 #include <algorithm>
 #include <type_traits>
 
@@ -419,7 +419,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (UInt32(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
@@ -443,7 +443,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Gorilla);
+    UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
     factory.registerCompressionCodecWithType("Gorilla", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {

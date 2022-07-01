@@ -24,7 +24,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <algorithm>
 #include <string>
 #include <type_traits>
@@ -479,13 +479,6 @@ bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
             src_names.push_back(original);
             dst_columns.push_back({col.name, col.type});
         }
-        else
-        {
-            /// Can't extract column from dictionary table
-            /// TODO: Sometimes it should be possible to recunstruct required column,
-            /// e.g. if it's an expression depending on dictionary attributes
-            return false;
-        }
     }
     dictionary_reader = std::make_shared<DictionaryReader>(dict_name, src_names, dst_columns, context);
 
@@ -780,17 +773,6 @@ void TableJoin::resetToCross()
 {
     this->resetKeys();
     this->table_join.kind = ASTTableJoin::Kind::Cross;
-}
-
-bool TableJoin::allowParallelHashJoin() const
-{
-    if (dictionary_reader || join_algorithm != JoinAlgorithm::PARALLEL_HASH)
-        return false;
-    if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
-        return false;
-    if (isSpecialStorage() || !oneDisjunct())
-        return false;
-    return true;
 }
 
 }

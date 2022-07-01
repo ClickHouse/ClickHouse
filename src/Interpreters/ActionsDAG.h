@@ -214,7 +214,7 @@ public:
     ActionsDAGPtr clone() const;
 
     /// Execute actions for header. Input block must have empty columns.
-    /// Result should be equal to the execution of ExpressionActions built from this DAG.
+    /// Result should be equal to the execution of ExpressionActions build form this DAG.
     /// Actions are not changed, no expressions are compiled.
     ///
     /// In addition, check that result constants are constants according to DAG.

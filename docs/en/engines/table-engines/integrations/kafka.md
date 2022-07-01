@@ -3,7 +3,7 @@ sidebar_position: 8
 sidebar_label: Kafka
 ---
 
-# Kafka
+# Kafka {#kafka}
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -87,7 +87,7 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::warning    
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
@@ -168,7 +168,7 @@ For a list of possible configuration options, see the [librdkafka configuration 
 ### Kerberos support {#kafka-kerberos-support}
 
 To deal with Kerberos-aware Kafka, add `security_protocol` child element with `sasl_plaintext` value. It is enough if Kerberos ticket-granting ticket is obtained and cached by OS facilities.
-ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab` and `sasl_kerberos_principal` child elements.
+ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` and `sasl.kerberos.kinit.cmd` child elements.
 
 Example:
 
@@ -189,8 +189,6 @@ Example:
 -   `_timestamp` — Timestamp of the message.
 -   `_timestamp_ms` — Timestamp in milliseconds of the message.
 -   `_partition` — Partition of Kafka topic.
--   `_headers.name` — Array of message's headers keys.
--   `_headers.value` — Array of message's headers values.
 
 **See Also**
 

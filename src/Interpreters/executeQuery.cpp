@@ -33,7 +33,6 @@
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/toOneLineQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -42,19 +41,18 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterTransactionControlQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -69,7 +67,6 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
-#include <memory>
 #include <random>
 
 
@@ -82,7 +79,6 @@ namespace ProfileEvents
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
-    extern const Event OtherQueryTimeMicroseconds;
 }
 
 namespace DB
@@ -104,6 +100,38 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkDepth(settings.max_ast_depth);
     if (settings.max_ast_elements)
         ast.checkSize(settings.max_ast_elements);
+}
+
+
+static String joinLines(const String & query)
+{
+    /// Care should be taken. We don't join lines inside non-whitespace tokens (e.g. multiline string literals)
+    ///  and we don't join line after comment (because it can be single-line comment).
+    /// All other whitespaces replaced to a single whitespace.
+
+    String res;
+    const char * begin = query.data();
+    const char * end = begin + query.size();
+
+    Lexer lexer(begin, end);
+    Token token = lexer.nextToken();
+    for (; !token.isEnd(); token = lexer.nextToken())
+    {
+        if (token.type == TokenType::Whitespace)
+        {
+            res += ' ';
+        }
+        else if (token.type == TokenType::Comment)
+        {
+            res.append(token.begin, token.end);
+            if (token.end < end && *token.end == '\n')
+                res += '\n';
+        }
+        else
+            res.append(token.begin, token.end);
+    }
+
+    return res;
 }
 
 
@@ -129,11 +157,11 @@ static String prepareQueryForLogging(const String & query, ContextPtr context)
 
 
 /// Log query into text log (not into system table).
-static void logQuery(const String & query, ContextPtr context, bool internal, QueryProcessingStage::Enum stage)
+static void logQuery(const String & query, ContextPtr context, bool internal)
 {
     if (internal)
     {
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {}", joinLines(query));
     }
     else
     {
@@ -156,14 +184,13 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
-            toOneLineQuery(query),
-            QueryProcessingStage::toString(stage));
+            joinLines(query));
 
         if (client_info.client_trace_context.trace_id != UUID())
         {
@@ -208,7 +235,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            toOneLineQuery(elem.query));
+            joinLines(elem.query));
     else
         LOG_ERROR(
             &Poco::Logger::get("executeQuery"),
@@ -217,7 +244,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            toOneLineQuery(elem.query),
+            joinLines(elem.query),
             elem.stack_trace);
 }
 
@@ -415,12 +442,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (auto txn = context->getCurrentTransaction())
         {
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            assert(txn->getState() != MergeTreeTransaction::COMMITTED);
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(
-                    ErrorCodes::INVALID_TRANSACTION,
-                    "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
+                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
         }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
@@ -473,7 +497,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
 
         auto query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal, stage);
+        logQuery(query_for_logging, context, internal);
 
         if (!internal)
         {
@@ -502,7 +526,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
 
     String query_for_logging;
-    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
 
     try
     {
@@ -524,7 +547,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
         query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal, stage);
+        logQuery(query_for_logging, context, internal);
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
@@ -626,37 +649,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (!table_id.empty())
                 context->setInsertionTable(table_id);
 
-            if (context->getCurrentTransaction() && settings.throw_on_unsupported_query_inside_transaction)
+            if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
-            if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
         }
         else
         {
-            /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-            if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
-            {
-                try
-                {
-                    if (context->isGlobalContext())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
-
-                    /// If there is no session (which is the default for the HTTP Handler), set up one just for this as it is necessary
-                    /// to control the transaction lifetime
-                    if (!context->hasSessionContext())
-                        context->makeSessionContext();
-
-                    auto tc = std::make_shared<InterpreterTransactionControlQuery>(ast, context);
-                    tc->executeBegin(context->getSessionContext());
-                    implicit_txn_control = std::move(tc);
-                }
-                catch (Exception & e)
-                {
-                    e.addMessage("while starting a transaction with 'implicit_transaction'");
-                    throw;
-                }
-            }
-
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
             if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
@@ -804,10 +801,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, query_time);
                 }
-                else
-                {
-                    ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, query_time);
-                }
 
                 element.query_duration_ms = info.elapsed_seconds * 1000;
 
@@ -823,7 +816,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 element.profile_counters = info.profile_counters;
 
                 /// We need to refresh the access info since dependent views might have added extra information, either during
-                /// creation of the view (PushingToViews chain) or while executing its internal SELECT
+                /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT
                 const auto & access_info = context_ptr->getQueryAccessInfo();
                 element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
                 element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
@@ -844,16 +837,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem,
-                                    context,
-                                    ast,
-                                    log_queries,
-                                    log_queries_min_type = settings.log_queries_min_type,
-                                    log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                                    log_processors_profiles = settings.log_processors_profiles,
-                                    status_info_to_query_log,
-                                    implicit_txn_control,
-                                    pulling_pipeline = pipeline.pulling()](QueryPipeline & query_pipeline) mutable
+            auto finish_callback = [elem, context, ast,
+                 log_queries,
+                 log_queries_min_type = settings.log_queries_min_type,
+                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                 log_processors_profiles = settings.log_processors_profiles,
+                 status_info_to_query_log,
+                 pulling_pipeline = pipeline.pulling()
+            ]
+                (QueryPipeline & query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 
@@ -900,7 +892,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         ReadableSize(elem.read_bytes / elapsed_seconds));
                 }
 
-                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);
@@ -974,40 +966,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     opentelemetry_span_log->add(span);
                 }
-
-                if (implicit_txn_control)
-                {
-                    try
-                    {
-                        implicit_txn_control->executeCommit(context->getSessionContext());
-                        implicit_txn_control.reset();
-                    }
-                    catch (const Exception &)
-                    {
-                        /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
-                        /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
-                        implicit_txn_control.reset();
-                        throw;
-                    }
-                }
             };
 
-            auto exception_callback = [elem,
-                                       context,
-                                       ast,
-                                       log_queries,
-                                       log_queries_min_type = settings.log_queries_min_type,
-                                       log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                                       quota(quota),
-                                       status_info_to_query_log,
-                                       implicit_txn_control]() mutable
+            auto exception_callback = [elem, context, ast,
+                 log_queries,
+                 log_queries_min_type = settings.log_queries_min_type,
+                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                 quota(quota), status_info_to_query_log] () mutable
             {
-                if (implicit_txn_control)
-                {
-                    implicit_txn_control->executeRollback(context->getSessionContext());
-                    implicit_txn_control.reset();
-                }
-                else if (auto txn = context->getCurrentTransaction())
+                if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
                 if (quota)
@@ -1042,7 +1009,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logException(context, elem);
 
                 /// In case of exception we log internal queries also
-                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
                     if (auto query_log = context->getQueryLog())
                         query_log->add(elem);
@@ -1057,6 +1024,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
+
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -1065,15 +1033,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        if (implicit_txn_control)
-        {
-            implicit_txn_control->executeRollback(context->getSessionContext());
-            implicit_txn_control.reset();
-        }
-        else if (auto txn = context->getCurrentTransaction())
-        {
+        if (auto txn = context->getCurrentTransaction())
             txn->onException();
-        }
 
         if (!internal)
         {

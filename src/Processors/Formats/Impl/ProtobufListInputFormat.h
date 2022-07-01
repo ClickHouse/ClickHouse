@@ -24,12 +24,7 @@ class ReadBuffer;
 class ProtobufListInputFormat final : public IRowInputFormat
 {
 public:
-    ProtobufListInputFormat(
-        ReadBuffer & in_,
-        const Block & header_,
-        const Params & params_,
-        const FormatSchemaInfo & schema_info_,
-        bool flatten_google_wrappers_);
+    ProtobufListInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_);
 
     String getName() const override { return "ProtobufListInputFormat"; }
 

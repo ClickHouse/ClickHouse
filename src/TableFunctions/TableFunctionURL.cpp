@@ -2,14 +2,12 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageURL.h>
-#include <Storages/StorageExternalDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Storages/StorageExternalDistributed.h>
 #include <Formats/FormatFactory.h>
 
 
@@ -60,21 +58,6 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
     }
     else
     {
-        String bad_arguments_error_message = "Table function URL can have the following arguments: "
-            "url, name of used format (taken from file extension by default), "
-            "optional table structure, optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
-
-        auto & args = ast_function->children;
-        if (args.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, bad_arguments_error_message);
-
-        auto * url_function_args_expr = assert_cast<ASTExpressionList *>(args[0].get());
-        auto & url_function_args = url_function_args_expr->children;
-        auto headers_it = StorageURL::collectHeaders(url_function_args, configuration, context);
-        /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        if (headers_it != url_function_args.end())
-            url_function_args.erase(headers_it);
-
         ITableFunctionFileLike::parseArguments(ast_function, context);
     }
 }
@@ -83,7 +66,7 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
-    return std::make_shared<StorageURL>(
+    return StorageURL::create(
         source,
         StorageID(getDatabaseName(), table_name),
         format_,

@@ -785,7 +785,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
+        return metadata.columns.hasPhysical(column_name);
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;

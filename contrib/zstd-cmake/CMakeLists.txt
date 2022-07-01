@@ -50,7 +50,7 @@ GetLibraryVersion("${HEADER_CONTENT}" LIBVER_MAJOR LIBVER_MINOR LIBVER_RELEASE)
 MESSAGE(STATUS "ZSTD VERSION ${LIBVER_MAJOR}.${LIBVER_MINOR}.${LIBVER_RELEASE}")
 
 # cd contrib/zstd/lib
-# find . -name '*.c' -or -name '*.S' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'
+# find . -name '*.c' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'
 SET(Sources
         "${LIBRARY_DIR}/common/debug.c"
         "${LIBRARY_DIR}/common/entropy_common.c"
@@ -73,7 +73,6 @@ SET(Sources
         "${LIBRARY_DIR}/compress/zstd_ldm.c"
         "${LIBRARY_DIR}/compress/zstdmt_compress.c"
         "${LIBRARY_DIR}/compress/zstd_opt.c"
-        "${LIBRARY_DIR}/decompress/huf_decompress_amd64.S"
         "${LIBRARY_DIR}/decompress/huf_decompress.c"
         "${LIBRARY_DIR}/decompress/zstd_ddict.c"
         "${LIBRARY_DIR}/decompress/zstd_decompress_block.c"
@@ -86,7 +85,6 @@ SET(Sources
 # cd contrib/zstd/lib
 # find . -name '*.h' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'
 SET(Headers
-        "${LIBRARY_DIR}/common/bits.h"
         "${LIBRARY_DIR}/common/bitstream.h"
         "${LIBRARY_DIR}/common/compiler.h"
         "${LIBRARY_DIR}/common/cpu.h"
@@ -96,13 +94,11 @@ SET(Headers
         "${LIBRARY_DIR}/common/huf.h"
         "${LIBRARY_DIR}/common/mem.h"
         "${LIBRARY_DIR}/common/pool.h"
-        "${LIBRARY_DIR}/common/portability_macros.h"
         "${LIBRARY_DIR}/common/threading.h"
         "${LIBRARY_DIR}/common/xxhash.h"
         "${LIBRARY_DIR}/common/zstd_deps.h"
         "${LIBRARY_DIR}/common/zstd_internal.h"
         "${LIBRARY_DIR}/common/zstd_trace.h"
-        "${LIBRARY_DIR}/compress/clevels.h"
         "${LIBRARY_DIR}/compress/hist.h"
         "${LIBRARY_DIR}/compress/zstd_compress_internal.h"
         "${LIBRARY_DIR}/compress/zstd_compress_literals.h"

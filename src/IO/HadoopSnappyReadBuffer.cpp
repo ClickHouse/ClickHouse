@@ -5,7 +5,7 @@
 #include <sys/types.h>
 #include <memory>
 #include <string>
-#include <cstring>
+#include <string.h>
 
 #include <snappy-c.h>
 
@@ -26,7 +26,7 @@ inline bool HadoopSnappyDecoder::checkBufferLength(int max) const
 
 inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 {
-    return avail_in >= static_cast<size_t>(min);
+    return avail_in >= size_t(min);
 }
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
@@ -166,7 +166,8 @@ HadoopSnappyDecoder::Status HadoopSnappyDecoder::readBlock(size_t * avail_in, co
 }
 
 HadoopSnappyReadBuffer::HadoopSnappyReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
+    , in(std::move(in_))
     , decoder(std::make_unique<HadoopSnappyDecoder>())
     , in_available(0)
     , in_data(nullptr)

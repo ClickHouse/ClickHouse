@@ -60,6 +60,14 @@ target_compile_definitions (_avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
 target_include_directories (_avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
 target_link_libraries (_avrocpp PRIVATE ch_contrib::snappy)
 
+if (COMPILER_GCC)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor)
+elseif (COMPILER_CLANG)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor)
+endif ()
+
+target_compile_options(_avrocpp PRIVATE ${SUPPRESS_WARNINGS})
+
 # create a symlink to include headers with <avro/...>
 set(AVRO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
 ADD_CUSTOM_TARGET(avro_symlink_headers ALL

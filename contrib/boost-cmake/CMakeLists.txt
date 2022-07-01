@@ -114,7 +114,7 @@ if (SANITIZE AND (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "thread"))
             "${LIBRARY_DIR}/libs/context/src/continuation.cpp"
     )
 endif()
-if (ARCH_AARCH64)
+if (ARCH_ARM)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"

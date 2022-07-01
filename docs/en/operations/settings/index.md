@@ -1,10 +1,10 @@
 ---
 sidebar_label: Settings
-sidebar_position: 51
-slug: /en/operations/settings/
+sidebar_position: 52
+slug: index
 ---
 
-# Settings Overview
+# Settings 
 
 There are multiple ways to make all the settings described in this section of documentation.
 

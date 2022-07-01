@@ -82,7 +82,7 @@ public:
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
-    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropTable(ContextPtr context, const String & table_name, bool no_delay) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
@@ -109,15 +109,15 @@ private:
 
     void cleanOutdatedTables();
 
-    void fetchTablesIntoLocalCache(ContextPtr context) const TSA_REQUIRES(mutex);
+    void fetchTablesIntoLocalCache(ContextPtr context) const;
 
     std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
 
     std::map<String, ColumnsDescription> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr context) const;
 
-    void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const TSA_REQUIRES(mutex);
+    void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const;
 
-    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const TSA_REQUIRES(mutex);
+    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const;
 
     ThreadFromGlobalPool thread;
 };

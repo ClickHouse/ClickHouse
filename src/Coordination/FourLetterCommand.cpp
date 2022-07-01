@@ -2,7 +2,7 @@
 
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
 #include <Common/getCurrentProcessFDCount.h>
@@ -42,6 +42,11 @@ int32_t IFourLetterCommand::toCode(const String & name)
     int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return __builtin_bswap32(res);
+}
+
+bool IFourLetterCommand::serverIsActive() const
+{
+    return keeper_dispatcher.hasLeader();
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -129,9 +134,6 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr watch_command = std::make_shared<WatchCommand>(keeper_dispatcher);
         factory.registerCommand(watch_command);
 
-        FourLetterCommandPtr recovery_command = std::make_shared<RecoveryCommand>(keeper_dispatcher);
-        factory.registerCommand(recovery_command);
-
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -207,13 +209,13 @@ constexpr auto * SERVER_NOT_ACTIVE_MSG = "This instance is not currently serving
 
 String MonitorCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
-        return SERVER_NOT_ACTIVE_MSG;
-
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     const auto & state_machine = keeper_dispatcher.getStateMachine();
+
+    if (!keeper_info.has_leader)
+        return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer ret;
     print(ret, "version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
@@ -236,7 +238,7 @@ String MonitorCommand::run()
     print(ret, "key_arena_size", state_machine.getKeyArenaSize());
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(__linux__) || defined(__APPLE__)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
     print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
 #endif
@@ -252,7 +254,7 @@ String MonitorCommand::run()
 
 String StatResetCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     keeper_dispatcher.resetConnectionStats();
@@ -266,7 +268,7 @@ String NopCommand::run()
 
 String ConfCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -276,7 +278,7 @@ String ConfCommand::run()
 
 String ConsCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -286,7 +288,7 @@ String ConsCommand::run()
 
 String RestConnStatsCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     KeeperTCPHandler::resetConnsStats();
@@ -295,7 +297,7 @@ String RestConnStatsCommand::run()
 
 String ServerStatCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -330,7 +332,7 @@ String ServerStatCommand::run()
 
 String StatCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -363,7 +365,7 @@ String StatCommand::run()
 
 String BriefWatchCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -376,7 +378,7 @@ String BriefWatchCommand::run()
 
 String WatchCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -387,7 +389,7 @@ String WatchCommand::run()
 
 String WatchByPathCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -398,7 +400,7 @@ String WatchByPathCommand::run()
 
 String DataSizeCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -409,7 +411,7 @@ String DataSizeCommand::run()
 
 String DumpCommand::run()
 {
-    if (!keeper_dispatcher.isServerActive())
+    if (!serverIsActive())
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
@@ -455,12 +457,6 @@ String IsReadOnlyCommand::run()
         return "ro";
     else
         return "rw";
-}
-
-String RecoveryCommand::run()
-{
-    keeper_dispatcher.forceRecovery();
-    return "ok";
 }
 
 }

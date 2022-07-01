@@ -384,7 +384,7 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 -   Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
 
-## toStartOfFiveMinutes {#tostartoffiveminutes}
+## toStartOfFiveMinute {#tostartoffiveminute}
 
 Округляет дату-с-временем вниз до начала пятиминутного интервала.
 

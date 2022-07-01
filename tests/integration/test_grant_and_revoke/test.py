@@ -179,7 +179,7 @@ def test_grant_all_on_table():
     assert (
         instance.query("SHOW GRANTS FOR B")
         == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, "
-        "DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, "
+        "DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, "
         "SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, "
         "SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
     )
@@ -341,18 +341,6 @@ def test_implicit_create_view_grant():
     assert expected_error in instance.query_and_get_error(
         "CREATE VIEW test.view_1 AS SELECT 1", user="A"
     )
-
-    # check grant option
-    instance.query("CREATE USER B")
-    expected_error = "Not enough privileges"
-    assert expected_error in instance.query_and_get_error(
-        "GRANT CREATE VIEW ON test.* TO B", user="A"
-    )
-
-    instance.query("GRANT CREATE TABLE ON test.* TO A WITH GRANT OPTION")
-    instance.query("GRANT CREATE VIEW ON test.* TO B", user="A")
-    instance.query("CREATE VIEW test.view_2 AS SELECT 1", user="B")
-    assert instance.query("SELECT * FROM test.view_2") == "1\n"
 
 
 def test_implicit_create_temporary_table_grant():

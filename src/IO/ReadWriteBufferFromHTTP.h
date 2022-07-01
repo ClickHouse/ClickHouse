@@ -9,8 +9,7 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
-#include <IO/WithFileName.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
 #include <Poco/Any.h>
@@ -86,7 +85,7 @@ public:
 namespace detail
 {
     template <typename UpdatableSessionPtr>
-    class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
+    class ReadWriteBufferFromHTTPBase : public SeekableReadBufferWithSize
     {
     public:
         using HTTPHeaderEntry = std::tuple<std::string, std::string>;
@@ -199,7 +198,7 @@ namespace detail
             }
         }
 
-        size_t getFileSize() override
+        std::optional<size_t> getTotalSize() override
         {
             if (read_range.end)
                 return *read_range.end - getRangeBegin();
@@ -221,10 +220,8 @@ namespace detail
             if (response.hasContentLength())
                 read_range.end = getRangeBegin() + response.getContentLength();
 
-            return *read_range.end;
+            return read_range.end;
         }
-
-        String getFileName() const override { return uri.toString(); }
 
         enum class InitializeError
         {
@@ -270,7 +267,7 @@ namespace detail
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
             bool http_skip_not_found_url_ = false)
-            : SeekableReadBuffer(nullptr, 0)
+            : SeekableReadBufferWithSize(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session {session_}
@@ -677,7 +674,7 @@ public:
     }
 };
 
-class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
+class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory
 {
     using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
 
@@ -749,9 +746,7 @@ public:
         return off;
     }
 
-    size_t getFileSize() override { return total_object_size; }
-
-    String getFileName() const override { return uri.toString(); }
+    std::optional<size_t> getTotalSize() override { return total_object_size; }
 
 private:
     RangeGenerator range_generator;

@@ -1,4 +1,4 @@
-# processes
+# processes {#system_tables-processes}
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
 
@@ -13,8 +13,6 @@ Columns:
 -   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage) setting.
 -   `query` (String) – The query text. For `INSERT`, it does not include the data to insert.
 -   `query_id` (String) – Query ID, if defined.
--   `is_cancelled` (Int8) – Was query cancelled.
--   `is_all_data_sent` (Int8) – Was all data sent to the client (in other words query had been finished on the server).
 
 ```sql
 :) SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
@@ -45,7 +43,6 @@ http_user_agent:
 quota_key:
 elapsed:              0.000582537
 is_cancelled:         0
-is_all_data_sent:     0
 read_rows:            0
 read_bytes:           0
 total_rows_approx:    0

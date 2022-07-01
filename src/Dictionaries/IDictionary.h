@@ -24,9 +24,6 @@ namespace ErrorCodes
 class IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
-class DictionaryHierarchicalParentToChildIndex;
-using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHierarchicalParentToChildIndex>;
-
 /** DictionaryKeyType provides IDictionary client information about
   * which key type is supported by dictionary.
   *
@@ -63,7 +60,7 @@ public:
     std::string getFullName() const
     {
         std::lock_guard lock{name_mutex};
-        return dictionary_id.getNameForLogs();
+        return dictionary_id.getInternalDictionaryName();
     }
 
     StorageID getDictionaryID() const
@@ -79,7 +76,7 @@ public:
         dictionary_id = new_name;
     }
 
-    std::string getLoadableName() const final
+    std::string getLoadableName() const override final
     {
         std::lock_guard lock{name_mutex};
         return dictionary_id.getInternalDictionaryName();
@@ -231,23 +228,10 @@ public:
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getHierarchicalIndex is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
-    }
-
-    virtual size_t getHierarchicalIndexBytesAllocated() const
-    {
-        return 0;
-    }
-
     virtual ColumnPtr getDescendants(
         ColumnPtr key_column [[maybe_unused]],
         const DataTypePtr & key_type [[maybe_unused]],
-        size_t level [[maybe_unused]],
-        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+        size_t level [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method getDescendants is not supported for {} dictionary.",

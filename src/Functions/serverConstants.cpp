@@ -19,7 +19,7 @@ namespace DB
 namespace
 {
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
     /// buildId() - returns the compiler build id of the running binary.
     class FunctionBuildId : public FunctionConstantBase<FunctionBuildId, String, DataTypeString>
     {
@@ -114,7 +114,7 @@ namespace
 
 void registerFunctionBuildId([[maybe_unused]] FunctionFactory & factory)
 {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
     factory.registerFunction<FunctionBuildId>();
 #endif
 }
