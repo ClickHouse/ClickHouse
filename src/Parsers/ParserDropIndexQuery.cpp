@@ -39,13 +39,13 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
         return false;
 
      if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
-         return false;
+        return false;
 
     /// [ON cluster_name]
      if (s_on.ignore(pos, expected))
      {
-         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-             return false;
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
 
         query->cluster = std::move(cluster_str);
      }
