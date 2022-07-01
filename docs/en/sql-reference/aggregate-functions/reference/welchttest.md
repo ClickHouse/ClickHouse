@@ -3,7 +3,7 @@ sidebar_position: 301
 sidebar_label: welchTTest
 ---
 
-# welchTTest
+# welchTTest {#welchttest}
 
 Applies Welch's t-test to samples from two populations.
 

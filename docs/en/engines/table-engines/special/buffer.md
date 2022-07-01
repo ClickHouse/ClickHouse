@@ -3,7 +3,7 @@ sidebar_position: 120
 sidebar_label:  Buffer
 ---
 
-# Buffer Table Engine
+# Buffer Table Engine {#buffer}
 
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
@@ -11,45 +11,24 @@ Buffers the data to write in RAM, periodically flushing it to another table. Dur
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 ```
 
-### Engine parameters:
+Engine parameters:
 
-#### database
+-   `database` – Database name. You can use `currentDatabase()` or another constant expression that returns a string.
+-   `table` – Table to flush data to.
+-   `num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers. Recommended value: 16.
+-   `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes` – Conditions for flushing data from the buffer.
 
-`database` – Database name. You can use `currentDatabase()` or another constant expression that returns a string.
+Optional engine parameters:
 
-#### table
-
-`table` – Table to flush data to.
-
-#### num_layers
-
-`num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers. Recommended value: 16.
-
-#### min_time, max_time, min_rows, max_rows, min_bytes, and max_bytes
-
-Conditions for flushing data from the buffer.
-
-### Optional engine parameters:
-
-#### flush_time, flush_rows, and flush_bytes
-
-Conditions for flushing data from the buffer, that will happen only in background (omitted or zero means no `flush*` parameters).
+-   `flush_time`, `flush_rows`, `flush_bytes` – Conditions for flushing data from the buffer, that will happen only in background (omitted or zero means no `flush*` parameters).
 
 Data is flushed from the buffer and written to the destination table if all the `min*` conditions or at least one `max*` condition are met.
 
 Also, if at least one `flush*` condition are met flush initiated in background, this is different from `max*`, since `flush*` allows you to configure background flushes separately to avoid adding latency for `INSERT` (into `Buffer`) queries.
 
-#### min_time, max_time, and flush_time
-
-Condition for the time in seconds from the moment of the first write to the buffer.
-
-#### min_rows, max_rows, and flush_rows
-
-Condition for the number of rows in the buffer.
-
-#### min_bytes, max_bytes, and flush_bytes
-
-Condition for the number of bytes in the buffer.
+-   `min_time`, `max_time`, `flush_time` – Condition for the time in seconds from the moment of the first write to the buffer.
+-   `min_rows`, `max_rows`, `flush_rows` – Condition for the number of rows in the buffer.
+-   `min_bytes`, `max_bytes`, `flush_bytes` – Condition for the number of bytes in the buffer.
 
 During the write operation, data is inserted to a `num_layers` number of random buffers. Or, if the data part to insert is large enough (greater than `max_rows` or `max_bytes`), it is written directly to the destination table, omitting the buffer.
 
@@ -75,7 +54,7 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same thing happens if the subordinate table does not exist when the buffer is flushed.
 
-:::warning
+:::warning    
 Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. It is advisable to check that this error is fixed in your release before trying to run ALTER on the Buffer table.
 :::
 

@@ -2,7 +2,7 @@
 sidebar_position: 125
 ---
 
-# groupBitAnd
+# groupBitAnd {#groupbitand}
 
 Applies bitwise `AND` for series of numbers.
 

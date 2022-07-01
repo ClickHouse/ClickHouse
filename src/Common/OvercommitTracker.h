@@ -36,16 +36,6 @@ struct OvercommitRatio
 
 class MemoryTracker;
 
-enum class OvercommitResult
-{
-    NONE,
-    DISABLED,
-    MEMORY_FREED,
-    SELECTED,
-    TIMEOUTED,
-    NOT_ENOUGH_FREED,
-};
-
 enum class QueryCancellationState
 {
     NONE     = 0,  // Hard limit is not reached, there is no selected query to kill.
@@ -62,7 +52,9 @@ enum class QueryCancellationState
 // is killed to free memory.
 struct OvercommitTracker : boost::noncopyable
 {
-    OvercommitResult needToStopQuery(MemoryTracker * tracker, Int64 amount);
+    void setMaxWaitTime(UInt64 wait_time);
+
+    bool needToStopQuery(MemoryTracker * tracker, Int64 amount);
 
     void tryContinueQueryExecutionAfterFree(Int64 amount);
 
@@ -79,6 +71,8 @@ protected:
     // to picked_tracker and cancelation_state variables.
     std::mutex overcommit_m;
     std::condition_variable cv;
+
+    std::chrono::microseconds max_wait_time;
 
     // Specifies memory tracker of the chosen to stop query.
     // If soft limit is not set, all the queries which reach hard limit must stop.
@@ -104,16 +98,14 @@ private:
         picked_tracker = nullptr;
         cancellation_state = QueryCancellationState::NONE;
         freed_memory = 0;
-
-        next_id = 0;
-        id_to_release = 0;
-
         allow_release = true;
     }
 
     void releaseThreads();
 
     QueryCancellationState cancellation_state;
+
+    std::unordered_map<MemoryTracker *, Int64> required_per_thread;
 
     // Global mutex which is used in ProcessList to synchronize
     // insertion and deletion of queries.
@@ -123,9 +115,6 @@ private:
     std::mutex & global_mutex;
     Int64 freed_memory;
     Int64 required_memory;
-
-    size_t next_id; // Id provided to the next thread to come in OvercommitTracker
-    size_t id_to_release; // We can release all threads with id smaller than this
 
     bool allow_release;
 };

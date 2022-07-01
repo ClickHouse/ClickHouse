@@ -9,40 +9,45 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = MergeTree ORDER BY a"
+$CLICKHOUSE_CLIENT -nm -q "
+    DROP TABLE IF EXISTS alter_table;
+    CREATE TABLE alter_table (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = MergeTree ORDER BY a;
+"
 
 function thread1()
 {
     # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
-    while true; do $CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns UNION ALL SELECT name FROM system.columns FORMAT Null"; done
+    $CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns UNION ALL SELECT name FROM system.columns FORMAT Null"
 }
 
 function thread2()
 {
-    while true; do $CLICKHOUSE_CLIENT -n --query "ALTER TABLE alter_table ADD COLUMN h String; ALTER TABLE alter_table MODIFY COLUMN h UInt64; ALTER TABLE alter_table DROP COLUMN h;"; done
+    $CLICKHOUSE_CLIENT -n --query "
+        ALTER TABLE alter_table ADD COLUMN h String;
+        ALTER TABLE alter_table MODIFY COLUMN h UInt64;
+        ALTER TABLE alter_table DROP COLUMN h;
+    "
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f thread1;
-export -f thread2;
+export -f thread1
+export -f thread2
 
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread1 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
+clickhouse_client_loop_timeout 15 thread2 2> /dev/null &
 
 wait
 

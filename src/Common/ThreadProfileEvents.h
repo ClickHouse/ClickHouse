@@ -8,7 +8,7 @@
 #include <Common/logger_useful.h>
 
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 #include <linux/taskstats.h>
 #else
 struct taskstats {};
@@ -66,7 +66,7 @@ struct RUsageCounters
     static RUsageCounters current()
     {
         ::rusage rusage {};
-#if !defined(OS_DARWIN)
+#if !defined(__APPLE__)
 #if defined(OS_SUNOS)
         ::getrusage(RUSAGE_LWP, &rusage);
 #else
@@ -102,7 +102,7 @@ private:
     }
 };
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 struct PerfEventInfo
 {
@@ -171,7 +171,7 @@ extern PerfEventsCounters current_thread_counters;
 
 #endif
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 class TasksStatsCounters
 {

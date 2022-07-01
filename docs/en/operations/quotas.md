@@ -3,7 +3,7 @@ sidebar_position: 51
 sidebar_label: Quotas
 ---
 
-# Quotas
+# Quotas {#quotas}
 
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
 Quotas are set up in the user config, which is usually ‘users.xml’.

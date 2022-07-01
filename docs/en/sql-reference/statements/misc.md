@@ -3,7 +3,7 @@ toc_hidden: true
 sidebar_position: 70
 ---
 
-# Miscellaneous Statements
+# Miscellaneous Statements {#miscellaneous-queries}
 
 -   [ATTACH](../../sql-reference/statements/attach.md)
 -   [CHECK TABLE](../../sql-reference/statements/check-table.md)

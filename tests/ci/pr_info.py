@@ -186,7 +186,6 @@ class PRInfo:
                 else:
                     self.diff_url = pull_request["diff_url"]
         else:
-            print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
@@ -205,8 +204,8 @@ class PRInfo:
             self.fetch_changed_files()
 
     def fetch_changed_files(self):
-        if not getattr(self, "diff_url", False):
-            raise TypeError("The event does not have diff URL")
+        if not self.diff_url:
+            raise Exception("Diff URL cannot be find for event")
 
         response = get_with_retries(
             self.diff_url,
@@ -253,7 +252,7 @@ class PRInfo:
             return True
 
         for f in self.changed_files:
-            if "contrib/" in f:
+            if "contrib" in f:
                 return True
         return False
 

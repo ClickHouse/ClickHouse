@@ -3,9 +3,8 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
-#include <optional>
-
 #include <arrow/io/interfaces.h>
+#include <optional>
 
 #define ORC_MAGIC_BYTES "ORC"
 #define PARQUET_MAGIC_BYTES "PAR1"

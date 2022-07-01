@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan
-# FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
+# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

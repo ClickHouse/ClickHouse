@@ -13,7 +13,7 @@ ClickHouse also supports:
 -   [Combinators](../../sql-reference/aggregate-functions/combinators.md#aggregate_functions_combinators), which change the behavior of aggregate functions.
 
 
-## NULL Processing
+## NULL Processing {#null-processing}
 
 During aggregation, all `NULL`s are skipped.
 

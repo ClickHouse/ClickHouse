@@ -3,7 +3,7 @@ sidebar_position: 30
 sidebar_label: Replicated
 ---
 
-# [experimental] Replicated
+# [experimental] Replicated {#replicated}
 
 The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
@@ -20,7 +20,7 @@ One ClickHouse server can have multiple replicated databases running and updatin
 -   `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
 -   `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
 
-:::warning
+:::warning    
 For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 :::
 

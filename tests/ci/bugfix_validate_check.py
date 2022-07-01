@@ -6,6 +6,8 @@ import itertools
 import os
 import sys
 
+NO_CHANGES_MSG = "Nothing to run"
+
 
 def parse_args():
     parser = argparse.ArgumentParser()

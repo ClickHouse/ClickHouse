@@ -21,4 +21,4 @@ private:
     MeiliSearchConnection connection;
 };
 
-}
+};

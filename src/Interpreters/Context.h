@@ -291,43 +291,6 @@ private:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
-        QueryFactoriesInfo() = default;
-
-        QueryFactoriesInfo(const QueryFactoriesInfo & rhs)
-        {
-            std::lock_guard<std::mutex> lock(rhs.mutex);
-            aggregate_functions = rhs.aggregate_functions;
-            aggregate_function_combinators = rhs.aggregate_function_combinators;
-            database_engines = rhs.database_engines;
-            data_type_families = rhs.data_type_families;
-            dictionaries = rhs.dictionaries;
-            formats = rhs.formats;
-            functions = rhs.functions;
-            storages = rhs.storages;
-            table_functions = rhs.table_functions;
-        }
-
-        QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
-
-        QueryFactoriesInfo & operator=(QueryFactoriesInfo rhs)
-        {
-            swap(rhs);
-            return *this;
-        }
-
-        void swap(QueryFactoriesInfo & rhs)
-        {
-            std::swap(aggregate_functions, rhs.aggregate_functions);
-            std::swap(aggregate_function_combinators, rhs.aggregate_function_combinators);
-            std::swap(database_engines, rhs.database_engines);
-            std::swap(data_type_families, rhs.data_type_families);
-            std::swap(dictionaries, rhs.dictionaries);
-            std::swap(formats, rhs.formats);
-            std::swap(functions, rhs.functions);
-            std::swap(storages, rhs.storages);
-            std::swap(table_functions, rhs.table_functions);
-        }
-
         std::unordered_set<std::string> aggregate_functions;
         std::unordered_set<std::string> aggregate_function_combinators;
         std::unordered_set<std::string> database_engines;
@@ -337,11 +300,9 @@ private:
         std::unordered_set<std::string> functions;
         std::unordered_set<std::string> storages;
         std::unordered_set<std::string> table_functions;
-
-        mutable std::mutex mutex;
     };
 
-    /// Needs to be changed while having const context in factories methods
+    /// Needs to be chandged while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
     /// TODO: maybe replace with temporary tables?
@@ -424,7 +385,7 @@ public:
     void setUserScriptsPath(const String & path);
     void setUserDefinedPath(const String & path);
 
-    void addWarningMessage(const String & msg) const;
+    void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -917,7 +878,6 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
-        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;

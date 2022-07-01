@@ -84,13 +84,13 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Elf.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
 #include "config_core.h"
@@ -103,6 +103,7 @@
 #endif
 
 #if USE_SSL
+#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -545,9 +546,8 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
-        const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        if (readString(filename).find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
+        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded.");
     }
     catch (...)
     {
@@ -555,9 +555,8 @@ static void sanityChecks(Server & server)
 
     try
     {
-        const char * filename = "/proc/sys/vm/overcommit_memory";
-        if (readNumber(filename) == 2)
-            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
+        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
+            server.context()->addWarningMessage("Linux memory overcommit is disabled.");
     }
     catch (...)
     {
@@ -565,9 +564,8 @@ static void sanityChecks(Server & server)
 
     try
     {
-        const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readString(filename).find("[always]") != std::string::npos)
-            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
+        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\".");
     }
     catch (...)
     {
@@ -575,9 +573,8 @@ static void sanityChecks(Server & server)
 
     try
     {
-        const char * filename = "/proc/sys/kernel/pid_max";
-        if (readNumber(filename) < 30000)
-            server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
+        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
+            server.context()->addWarningMessage("Linux max PID is too low.");
     }
     catch (...)
     {
@@ -585,9 +582,8 @@ static void sanityChecks(Server & server)
 
     try
     {
-        const char * filename = "/proc/sys/kernel/threads-max";
-        if (readNumber(filename) < 30000)
-            server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
+        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
+            server.context()->addWarningMessage("Linux threads max count is too low.");
     }
     catch (...)
     {
@@ -595,7 +591,7 @@ static void sanityChecks(Server & server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
 #endif
 
     try
@@ -744,18 +740,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// But there are other sections of the binary (e.g. exception handling tables)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
-        /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
-
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
 
         if (stored_binary_hash.empty())
         {
-            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read."
-                " (calculated checksum: {})", calculated_binary_hash);
+            LOG_WARNING(log, "Calculated checksum of the binary: {}."
+                " There is no information about the reference checksum.", calculated_binary_hash);
         }
         else if (calculated_binary_hash == stored_binary_hash)
         {
-            LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
+            LOG_INFO(log, "Calculated checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
         }
         else
         {
@@ -771,14 +765,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             else
             {
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable {2} was changed just after startup;"
-                    " - the executable {2} was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
+                    "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                    " to the reference checksum stored in the binary ({1})."
+                    " It may indicate one of the following:"
+                    " - the file {2} was changed just after startup;"
+                    " - the file {2} is damaged on disk due to faulty hardware;"
+                    " - the loaded executable is damaged in memory due to faulty hardware;"
                     " - the file {2} was intentionally modified;"
-                    " - a logical error in the code."
+                    " - logical error in code."
                     , calculated_binary_hash, stored_binary_hash, executable_path);
             }
         }
@@ -1101,6 +1095,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
+            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 200);
+            global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
@@ -1318,7 +1314,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reload();
+        access_control.reloadUsersConfigs();
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -1355,8 +1351,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             settings.async_insert_max_data_size,
             AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
 
-    /// Size of cache for marks (index of MergeTree family of tables).
-    size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
+    /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
+    size_t mark_cache_size = config().getUInt64("mark_cache_size");
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -1372,7 +1368,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices).
+    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
+    /// Specify default value for index_mark_cache_size explicitly!
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
@@ -1399,11 +1396,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
-    {
-        size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
-    }
+    global_context->getMergeTreeSettings().sanityCheck(settings);
+    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -1412,7 +1406,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
         /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
         main_config_reloader.reset();
-        access_control.stopPeriodicReloading();
 
         async_metrics.stop();
 
@@ -1488,7 +1481,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
-        maybeConvertOrdinaryDatabaseToAtomic(global_context, DatabaseCatalog::instance().getSystemDatabase());
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1516,7 +1508,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_UNWIND && !WITH_COVERAGE
+#if USE_UNWIND && !WITH_COVERAGE && defined(__x86_64__)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1637,7 +1629,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
-        access_control.startPeriodicReloading();
+        access_control.startPeriodicReloadingUsersConfigs();
         if (dns_cache_updater)
             dns_cache_updater->start();
 

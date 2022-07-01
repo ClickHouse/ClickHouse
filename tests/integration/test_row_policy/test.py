@@ -87,11 +87,6 @@ def reset_policies():
         copy_policy_xml("normal_filters.xml")
         for current_node in nodes:
             current_node.query("DROP POLICY IF EXISTS pA, pB ON mydb.filtered_table1")
-            current_node.query("DROP POLICY IF EXISTS pC ON mydb.other_table")
-            current_node.query("DROP POLICY IF EXISTS all_data ON dist_tbl, local_tbl")
-            current_node.query(
-                "DROP POLICY IF EXISTS role1_data ON dist_tbl, local_tbl"
-            )
 
 
 def test_smoke():

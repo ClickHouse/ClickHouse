@@ -28,8 +28,6 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
 
-    void updateLeftStream(const DataStream & left_stream_);
-
 private:
     JoinPtr join;
     size_t max_block_size;
@@ -49,8 +47,6 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
-    void updateOutputStream() override;
-
     JoinPtr join;
     size_t max_block_size;
 };

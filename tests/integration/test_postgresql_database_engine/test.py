@@ -320,20 +320,6 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 
-def test_postgres_database_old_syntax(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
-    cursor = conn.cursor()
-
-    node1.query(
-        """
-        DROP DATABASE IF EXISTS test_database;
-        CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
-        """
-    )
-    create_postgres_table(cursor, "test_table")
-    assert "test_table" in node1.query("SHOW TABLES FROM test_database")
-
-
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -1,4 +1,4 @@
-# quota_usage
+# quota_usage {#system_tables-quota_usage}
 
 Quota usage by the current user: how much is used and how much is left.
 

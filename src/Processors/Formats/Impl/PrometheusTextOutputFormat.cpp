@@ -5,7 +5,6 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <base/sort.h>
 
 #include <Columns/ColumnMap.h>
 #include <Columns/IColumn.h>
@@ -108,25 +107,17 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
 {
     String bucket_label = metric.type == "histogram" ? "le" : "quantile";
 
-    ::sort(metric.values.begin(), metric.values.end(),
+    std::sort(metric.values.begin(), metric.values.end(),
         [&bucket_label](const auto & lhs, const auto & rhs)
         {
-            bool lhs_labels_contain_sum = lhs.labels.contains("sum");
-            bool lhs_labels_contain_count = lhs.labels.contains("count");
-            bool lhs_labels_contain_sum_or_count = lhs_labels_contain_sum || lhs_labels_contain_count;
-
-            bool rhs_labels_contain_sum = rhs.labels.contains("sum");
-            bool rhs_labels_contain_count = rhs.labels.contains("count");
-            bool rhs_labels_contain_sum_or_count = rhs_labels_contain_sum || rhs_labels_contain_count;
-
             /// rows with labels at the beginning and then `_sum` and `_count`
-            if (lhs_labels_contain_sum && rhs_labels_contain_count)
+            if (lhs.labels.contains("sum") && rhs.labels.contains("count"))
                 return true;
-            else if (lhs_labels_contain_count && rhs_labels_contain_sum)
+            if (lhs.labels.contains("count") && rhs.labels.contains("sum"))
                 return false;
-            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
+            if (rhs.labels.contains("sum") || rhs.labels.contains("count"))
                 return true;
-            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
+            if (lhs.labels.contains("sum") || lhs.labels.contains("count"))
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);

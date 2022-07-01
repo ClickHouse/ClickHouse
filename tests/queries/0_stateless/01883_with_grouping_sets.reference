@@ -13,8 +13,9 @@ ExpressionTransform
                 Copy 1 → 2
                   (Expression)
                   ExpressionTransform
-                    (ReadFromStorage)
-                    Memory 0 → 1
+                    (SettingQuotaAndLimits)
+                      (ReadFromStorage)
+                      Memory 0 → 1
 1	0	1	4500
 1	0	3	4700
 1	0	5	4900
@@ -105,8 +106,9 @@ ExpressionTransform
                   Copy × 3 1 → 2
                     (Expression)
                     ExpressionTransform × 3
-                      (ReadFromStorage)
-                      NumbersMt × 3 0 → 1
+                      (SettingQuotaAndLimits)
+                        (ReadFromStorage)
+                        NumbersMt × 3 0 → 1
 4999500000	10000
 4999510000	10000
 4999520000	10000

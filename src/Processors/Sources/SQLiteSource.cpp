@@ -27,7 +27,7 @@ SQLiteSource::SQLiteSource(
     const String & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
-    : ISource(sample_block.cloneEmpty())
+    : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
     , max_block_size(max_block_size_)
     , sqlite_db(std::move(sqlite_db_))

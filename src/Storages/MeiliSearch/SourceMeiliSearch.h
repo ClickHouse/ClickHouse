@@ -5,13 +5,13 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ExternalResultDescription.h>
 #include <Processors/Chunk.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
 #include <base/JSON.h>
 
 namespace DB
 {
-class MeiliSearchSource final : public ISource
+class MeiliSearchSource final : public SourceWithProgress
 {
 public:
     enum QueryRoute

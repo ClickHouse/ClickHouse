@@ -51,7 +51,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, bool id_mode, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -125,7 +125,7 @@ namespace
                     return false;
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
 
-                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
+                if (id_mode && expect_hash)
                 {
                     if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
                     {
@@ -452,7 +452,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            if (parseAuthenticationData(pos, expected, new_auth_data))
+            if (parseAuthenticationData(pos, expected, attach_mode, new_auth_data))
             {
                 auth_data = std::move(new_auth_data);
                 continue;
@@ -492,7 +492,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            String maybe_new_name;
             if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
                 continue;
 

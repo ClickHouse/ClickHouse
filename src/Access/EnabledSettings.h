@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/SettingsProfileElement.h>
-#include <base/defines.h>
 #include <Core/UUID.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
@@ -43,7 +42,7 @@ private:
     void setInfo(const std::shared_ptr<const SettingsProfilesInfo> & info_);
 
     const Params params;
-    std::shared_ptr<const SettingsProfilesInfo> info TSA_GUARDED_BY(mutex);
+    std::shared_ptr<const SettingsProfilesInfo> info;
     mutable std::mutex mutex;
 };
 }
