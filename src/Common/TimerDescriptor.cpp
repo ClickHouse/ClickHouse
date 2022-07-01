@@ -73,7 +73,7 @@ void TimerDescriptor::drain() const
             if (errno != EINTR)
                 throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
             else
-                LOG_DEBUG(&Poco::Logger::get("TimerDescriptor"), "EINTR");
+                LOG_TEST(&Poco::Logger::get("TimerDescriptor"), "EINTR");
         }
     }
 }
