@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+from typing import Set
 
 from unidiff import PatchSet  # type: ignore
 
@@ -81,7 +82,7 @@ class PRInfo:
             else:
                 github_event = PRInfo.default_event.copy()
         self.event = github_event
-        self.changed_files = set()
+        self.changed_files = set()  # type: Set[str]
         self.body = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
@@ -217,11 +218,11 @@ class PRInfo:
             diff = response.json()
 
             if "files" in diff:
-                self.changed_files = [f["filename"] for f in diff["files"]]
+                self.changed_files = {f["filename"] for f in diff["files"]}
         else:
             diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
-        print("Fetched info about %d changed files" % len(self.changed_files))
+        print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
         return {
