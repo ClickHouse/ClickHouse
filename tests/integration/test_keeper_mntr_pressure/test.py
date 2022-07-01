@@ -23,6 +23,7 @@ node3 = cluster.add_instance(
     "node3", main_configs=["config/enable_keeper3.xml"], stay_alive=True
 )
 
+NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -63,7 +64,7 @@ def send_4lw_cmd(node_name, cmd="ruok"):
 
 def test_aggressive_mntr(started_cluster):
     def go_mntr(node_name):
-        for i in range(100000):
+        for _ in range(100000):
             print(node_name, send_4lw_cmd(node_name, "mntr"))
 
     node1_thread = threading.Thread(target=lambda: go_mntr(node1.name))
@@ -75,6 +76,10 @@ def test_aggressive_mntr(started_cluster):
 
     node2.stop_clickhouse()
     node3.stop_clickhouse()
+
+    while send_4lw_cmd(node1.name, "mntr") != NOT_SERVING_REQUESTS_ERROR_MSG:
+        time.sleep(0.2)
+
     node1.stop_clickhouse()
     starters = []
     for node in [node1, node2, node3]:
