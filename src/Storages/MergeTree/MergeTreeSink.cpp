@@ -140,7 +140,7 @@ void MergeTreeSink::finishDelayedChunk()
         bool added = false;
 
         /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in desctructor and deadlock is possible.
+        /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
             auto lock = storage.lockParts();

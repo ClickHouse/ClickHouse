@@ -1541,7 +1541,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
         String old_name = renamed_parts.old_and_new_names[i].old_name;
         /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in desctructor and deadlock is possible.
+        /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
         {
             auto lock = lockParts();
@@ -1803,7 +1803,7 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
     for (auto part : parts)
     {
         /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in desctructor and deadlock is possible.
+        /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         {
             auto lock = lockParts();
