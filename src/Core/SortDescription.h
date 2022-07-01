@@ -87,6 +87,13 @@ struct SortColumnDescriptionWithColumnIndex
         : base(std::move(description_)), column_number(column_number_)
     {
     }
+
+    bool operator==(const SortColumnDescriptionWithColumnIndex & other) const
+    {
+        return base == other.base && column_number == other.column_number;
+    }
+
+    bool operator!=(const SortColumnDescriptionWithColumnIndex & other) const { return !(*this == other); }
 };
 
 class CompiledSortDescriptionFunctionHolder;
@@ -102,6 +109,21 @@ public:
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
+
+    bool operator==(const SortDescription & other) const
+    {
+        if (size() != other.size())
+            return false;
+
+        for (size_t i = 0; i < size(); ++i)
+        {
+            if ((*this)[i] != other[i])
+                return false;
+        }
+        return true;
+    }
+
+    bool operator!=(const SortDescription & other) const { return !(*this == other); }
 };
 
 /** Compile sort description for header_types.
