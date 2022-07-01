@@ -1312,8 +1312,9 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
 
-        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
-        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+        auto entry_buf = changelog.entry_at(i)->get_buf_ptr();
+        state_machine->pre_commit(i, *entry_buf);
+        state_machine->commit_ext(nuraft::state_machine::ext_op_params{i, entry_buf});
         bool snapshot_created = false;
         if (i % settings->snapshot_distance == 0)
         {
@@ -1357,8 +1358,9 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
     for (size_t i = restore_machine->last_commit_index() + 1; i < restore_changelog.next_slot(); ++i)
     {
-        restore_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
-        restore_machine->commit(i, changelog.entry_at(i)->get_buf());
+        auto entry = changelog.entry_at(i)->get_buf_ptr();
+        restore_machine->pre_commit(i, *entry);
+        restore_machine->commit_ext(nuraft::state_machine::ext_op_params{i, entry});
     }
 
     auto & source_storage = state_machine->getStorage();
@@ -1459,18 +1461,18 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
     request_c->path = "/hello";
     request_c->is_ephemeral = true;
-    auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c);
-    state_machine->pre_commit(1, entry_c->get_buf());
-    state_machine->commit(1, entry_c->get_buf());
+    auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c)->get_buf_ptr();
+    state_machine->pre_commit(1, *entry_c);
+    state_machine->commit_ext(nuraft::state_machine::ext_op_params{1, entry_c});
     const auto & storage = state_machine->getStorage();
 
     EXPECT_EQ(storage.ephemerals.size(), 1);
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
     request_d->path = "/hello";
     /// Delete from other session
-    auto entry_d = getLogEntryFromZKRequest(0, 2, state_machine->getNextZxid(), request_d);
-    state_machine->pre_commit(2, entry_d->get_buf());
-    state_machine->commit(2, entry_d->get_buf());
+    auto entry_d = getLogEntryFromZKRequest(0, 2, state_machine->getNextZxid(), request_d)->get_buf_ptr();
+    state_machine->pre_commit(2, *entry_d);
+    state_machine->commit_ext(nuraft::state_machine::ext_op_params{2, entry_d});
 
     EXPECT_EQ(storage.ephemerals.size(), 0);
 }
