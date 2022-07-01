@@ -82,7 +82,8 @@ DistinctStep::DistinctStep(
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns))
+    const auto & input_stream = input_streams.back();
+    if (checkColumnsAlreadyDistinct(columns, input_stream.distinct_columns))
         return;
 
     if (!pre_distinct)
@@ -90,7 +91,6 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
     if (optimize_distinct_in_order)
     {
-        const auto & input_stream = input_streams.back();
         SortDescription distinct_sort_desc = getSortDescription(input_stream.sort_description, columns);
         if (!distinct_sort_desc.empty())
         {
@@ -109,8 +109,10 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 return;
             }
             /// final distinct for sorted stream (sorting inside and among chunks)
-            if (input_stream.has_single_port)
+            if (input_stream.sort_mode == DataStream::SortMode::Stream)
             {
+                assert(input_stream.has_single_port);
+
                 pipeline.addSimpleTransform(
                     [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                     {

@@ -1,7 +1,7 @@
 <test>
     <!-- high cardinality -->
     <create_query>CREATE TABLE distinct_cardinality_high (high UInt64, medium UInt64, low UInt64) ENGINE MergeTree() ORDER BY (high, medium)</create_query>
-    <fill_query>INSERT INTO distinct_cardinality_high SELECT number % 10000, number % 1000, number % 100 FROM numbers_mt(1e8)</fill_query>
+    <fill_query>INSERT INTO distinct_cardinality_high SELECT number % 1e6, number % 1e4, number % 1e2 FROM numbers_mt(1e8)</fill_query>
 
     <query>SELECT DISTINCT high FROM distinct_cardinality_high FORMAT Null</query>
     <query>SELECT DISTINCT high, low FROM distinct_cardinality_high FORMAT Null</query>
@@ -17,7 +17,7 @@
 
     <!-- low cardinality -->
     <create_query>CREATE TABLE distinct_cardinality_low (low UInt64, medium UInt64, high UInt64) ENGINE MergeTree() ORDER BY (low, medium)</create_query>
-    <fill_query>INSERT INTO distinct_cardinality_low SELECT number % 100, number % 1000, number % 10000 FROM numbers_mt(1e8)</fill_query>
+    <fill_query>INSERT INTO distinct_cardinality_low SELECT number % 1e2, number % 1e4, number % 1e6 FROM numbers_mt(1e8)</fill_query>
 
     <query>SELECT DISTINCT low FROM distinct_cardinality_low FORMAT Null</query>
     <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low FORMAT Null</query>
