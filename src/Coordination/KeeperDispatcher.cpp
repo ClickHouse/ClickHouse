@@ -1,4 +1,5 @@
 #include <Coordination/KeeperDispatcher.h>
+#include <libnuraft/async.hxx>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <future>
@@ -25,6 +26,7 @@ namespace ErrorCodes
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
     , read_requests_queue(std::numeric_limits<size_t>::max())
+    , finalize_requests_queue(std::numeric_limits<size_t>::max())
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
@@ -37,6 +39,7 @@ void KeeperDispatcher::requestThread()
 
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
+    const auto previous_quorum_done = [&] { return !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK; };
 
     const auto needs_quorum = [](const auto & coordination_settings, const auto & request)
     {
@@ -132,7 +135,6 @@ void KeeperDispatcher::requestThread()
         {
             if (requests_queue->tryPop(request, max_wait))
             {
-
                 if (shutdown_called)
                     break;
 
@@ -147,15 +149,14 @@ void KeeperDispatcher::requestThread()
                 while (true)
                 {
                     if (quorum_requests.size() > max_batch_size)
-                    {
-                        process_quorum_requests();
                         break;
-                    }
 
                     if (read_requests.size() > max_batch_size)
                     {
                         process_read_requests(coordination_settings);
-                        break;
+
+                        if (previous_quorum_done())
+                            break;
                     }
 
                     /// Trying to get batch requests as fast as possible
@@ -171,7 +172,7 @@ void KeeperDispatcher::requestThread()
                         if (!read_requests.empty())
                             process_read_requests(coordination_settings);
 
-                        if (!prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK)
+                        if (previous_quorum_done())
                             break;
                     }
 
@@ -265,6 +266,30 @@ void KeeperDispatcher::readRequestThread()
                     addErrorResponses({request_info}, Coordination::Error::ZCONNECTIONLOSS);
             }
 
+            if (!finalize_requests_queue.push(std::move(requests)))
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void KeeperDispatcher::finalizeRequestsThread()
+{
+    setThreadName("KeeperFinalT");
+    while (!shutdown_called)
+    {
+        KeeperStorage::RequestsForSessions requests;
+        if (!finalize_requests_queue.pop(requests))
+            break;
+
+        if (shutdown_called)
+            break;
+
+        try
+        {
             finalizeRequests(requests);
         }
         catch (...)
@@ -379,6 +404,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
     read_request_thread = ThreadFromGlobalPool([this] { readRequestThread(); });
+    finalize_requests_thread= ThreadFromGlobalPool([this] { finalizeRequestsThread(); });
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, [this](const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx) { onRequestCommit(request_for_session, log_term, log_idx); });
 
@@ -447,6 +473,10 @@ void KeeperDispatcher::shutdown()
             read_requests_queue.finish();
             if (read_request_thread.joinable())
                 read_request_thread.join();
+
+            finalize_requests_queue.finish();
+            if (finalize_requests_thread.joinable())
+                finalize_requests_thread.join();
 
             update_configuration_queue.finish();
             if (update_configuration_thread.joinable())
@@ -748,7 +778,8 @@ void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestsForSessions
 
 void KeeperDispatcher::onRequestCommit(const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx)
 {
-    finalizeRequests({request_for_session});
+    if (!finalize_requests_queue.push({request_for_session}))
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
 
     KeeperStorage::RequestsForSessions requests;
     {

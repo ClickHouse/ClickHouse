@@ -36,6 +36,7 @@ private:
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
     ConcurrentBoundedQueue<KeeperStorage::RequestsForSessions> read_requests_queue;
+    ConcurrentBoundedQueue<KeeperStorage::RequestsForSessions> finalize_requests_queue;
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -66,6 +67,7 @@ private:
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
     ThreadFromGlobalPool read_request_thread;
+    ThreadFromGlobalPool finalize_requests_thread;
 
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
@@ -106,6 +108,8 @@ private:
     void updateConfigurationThread();
 
     void readRequestThread();
+
+    void finalizeRequestsThread();
 
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
