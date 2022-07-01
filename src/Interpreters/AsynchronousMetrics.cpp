@@ -1470,8 +1470,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 #if USE_NURAFT
     {
-        try {
-            auto keeper_dispatcher = getContext()->getKeeperDispatcher();
+        auto keeper_dispatcher = getContext()->getKeeperDispatcher();
+        if (keeper_dispatcher)
+        {
             size_t is_leader = 0;
             size_t is_follower = 0;
             size_t is_observer = 0;
@@ -1492,13 +1493,13 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             size_t snapshot_dir_size = 0;
             size_t log_dir_size = 0;
 
-            if (keeper_dispatcher && keeper_dispatcher->isServerActive())
+            if (keeper_dispatcher->isServerActive())
             {
                 auto keeper_4LW_info = keeper_dispatcher -> getKeeper4LWInfo();
-                is_standalone = static_cast<size_t>(keeper_4LW_info.is_standalone;
-                is_leader = static_cast<size_t>(keeper_4LW_info.is_leader;
-                is_observer = static_cast<size_t>(keeper_4LW_info.is_observer;
-                is_follower = static_cast<size_t>(keeper_4LW_info.is_follower;
+                is_standalone = static_cast<size_t>(keeper_4LW_info.is_standalone);
+                is_leader = static_cast<size_t>(keeper_4LW_info.is_leader);
+                is_observer = static_cast<size_t>(keeper_4LW_info.is_observer);
+                is_follower = static_cast<size_t>(keeper_4LW_info.is_follower);
 
                 zxid = keeper_4LW_info.last_zxid;
                 const auto & state_machine = keeper_dispatcher->getStateMachine();
@@ -1548,10 +1549,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             new_values["KeeperPathsWatched"] = paths_watched;
             new_values["KeeperSnapshotDirSize"] = snapshot_dir_size;
             new_values["KeeperLogDirSize"] = log_dir_size;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 #endif
