@@ -165,9 +165,8 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
 
     RaftAppendResult getLeaderInfo()
     {
-        nuraft::ptr<nuraft::req_msg> req = nuraft::cs_new<nuraft::req_msg>
-                           ( 0ull, nuraft::msg_type::leader_status_request, 0, 0,
-                             0ull, 0ull, 0ull ) ;
+        nuraft::ptr<nuraft::req_msg> req
+            = nuraft::cs_new<nuraft::req_msg>(0ull, nuraft::msg_type::leader_status_request, 0, 0, 0ull, 0ull, 0ull);
         return send_msg_to_leader(req);
     }
 

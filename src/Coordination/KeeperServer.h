@@ -136,8 +136,8 @@ public:
 };
 
 }
-namespace std {
-
+namespace std 
+{
   template <>
   struct hash<DB::KeeperServer::NodeInfo>
   {
@@ -149,5 +149,4 @@ namespace std {
         return hash_state.get64();
     }
   };
-
 }
