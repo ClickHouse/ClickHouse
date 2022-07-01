@@ -87,17 +87,18 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
-    SortDescription order_key_fixed_prefix_descr;
-    SortDescription order_key_prefix_descr;
+    SortDescription sort_description_for_merging;
+    size_t used_prefix_of_sorting_key_size;
+
     int direction;
     UInt64 limit;
 
     InputOrderInfo(
-        const SortDescription & order_key_fixed_prefix_descr_,
-        const SortDescription & order_key_prefix_descr_,
+        const SortDescription & sort_description_for_merging_,
+        size_t used_prefix_of_sorting_key_size_,
         int direction_, UInt64 limit_)
-        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
-        , order_key_prefix_descr(order_key_prefix_descr_)
+        : sort_description_for_merging(sort_description_for_merging_)
+        , used_prefix_of_sorting_key_size(used_prefix_of_sorting_key_size_)
         , direction(direction_), limit(limit_)
     {
     }
