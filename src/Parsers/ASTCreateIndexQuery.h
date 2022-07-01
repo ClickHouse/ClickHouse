@@ -14,12 +14,12 @@ namespace DB
 class ASTCreateIndexQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool if_not_exists{false};
-
     ASTPtr index_name;
 
     /// Stores the IndexDeclaration here.
     ASTPtr index_decl;
+
+    bool if_not_exists{false};
 
     String getID(char delim) const override;
 
@@ -30,7 +30,10 @@ public:
         return removeOnCluster<ASTCreateIndexQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
+
+    /// Convert ASTCreateIndexQuery to ASTAlterCommand
+    ASTPtr convertToASTAlterCommand() const;
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
