@@ -253,7 +253,20 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
         coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+
     params.leadership_expiry_ = getValueOrMaxInt32AndLogWarning(coordination_settings->leadership_expiry.totalMilliseconds(), "leadership_expiry", log);
+
+    if (coordination_settings->read_mode.toString() == "fastlinear")
+    {
+        if (params.leadership_expiry_ == 0)
+            params.leadership_expiry_ = params.election_timeout_lower_bound_;
+        else if (params.leadership_expiry_ > params.election_timeout_lower_bound_)
+        {
+            LOG_WARNING(log, "To use fast linearizable reads, leadership_expiry should be set to a value thath is less or equal to the election_timeout_upper_bound_ms. "
+                    "Based on current settings, there are no guarantees for linearizability of reads.");
+        }
+    }
+
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
