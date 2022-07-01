@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int KEEPER_EXCEPTION;
+    extern const int LOGICAL_ERROR;
 }
 
 void TinyContext::setConfig(const ConfigurationPtr & config_)
@@ -31,7 +31,7 @@ void TinyContext::initializeKeeperDispatcher([[maybe_unused]] bool start_async) 
     std::lock_guard lock(keeper_dispatcher_mutex);
 
     if (keeper_dispatcher)
-        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Trying to initialize Keeper multiple times");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     if (config_ref.has("keeper_server"))
     {
@@ -43,9 +43,6 @@ void TinyContext::initializeKeeperDispatcher([[maybe_unused]] bool start_async) 
 std::shared_ptr<KeeperDispatcher> TinyContext::getKeeperDispatcher() const
 {
     std::lock_guard lock(keeper_dispatcher_mutex);
-    if (!keeper_dispatcher)
-        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Keeper must be initialized before requests");
-
     return keeper_dispatcher;
 }
 
