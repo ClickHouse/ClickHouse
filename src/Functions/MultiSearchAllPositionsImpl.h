@@ -15,7 +15,7 @@ struct MultiSearchAllPositionsImpl
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<StringRef> & needles,
+        const std::vector<std::string_view> & needles,
         PaddedPODArray<UInt64> & res)
     {
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64

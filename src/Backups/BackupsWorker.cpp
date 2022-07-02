@@ -19,6 +19,8 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -53,12 +55,17 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
     auto backup_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto backup_settings = BackupSettings::fromBackupQuery(*backup_query);
     auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
-
     bool on_cluster = !backup_query->cluster.empty();
+
+    /// Prepare context to use.
     ContextPtr context_in_use = context;
     ContextMutablePtr mutable_context;
     if (on_cluster || backup_settings.async)
+    {
+        /// For ON CLUSTER queries we will need to change some settings.
+        /// For ASYNC queries we have to clone the context anyway.
         context_in_use = mutable_context = Context::createCopy(context);
+    }
 
     addInfo(backup_uuid, backup_info.toString(), BackupStatus::MAKING_BACKUP, backup_settings.internal);
 
@@ -69,10 +76,22 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                 backup_info,
                 on_cluster,
                 context_in_use,
-                mutable_context](bool in_separate_thread) mutable
+                thread_group = CurrentThread::getGroup(),
+                mutable_context](bool async) mutable
     {
+        SCOPE_EXIT_SAFE(
+            if (async)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
         try
         {
+            if (async && thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            if (async)
+                setThreadName("BackupWorker");
+
             /// Checks access rights if this is not ON CLUSTER query.
             /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
             auto required_access = getRequiredAccessToBackup(backup_query->elements);
@@ -143,17 +162,12 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
             }
             else
             {
-                std::optional<CurrentThread::QueryScope> query_scope;
-                if (in_separate_thread)
-                    query_scope.emplace(context_in_use);
-
                 backup_query->setCurrentDatabase(context_in_use->getCurrentDatabase());
 
                 BackupEntries backup_entries;
                 {
-                    auto timeout = std::chrono::seconds{context_in_use->getConfigRef().getInt("backups.backup_prepare_timeout", -1)};
-                    BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, context_in_use, timeout};
-                    backup_entries = backup_entries_collector.getBackupEntries();
+                    BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, context_in_use};
+                    backup_entries = backup_entries_collector.run();
                 }
 
                 writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
@@ -171,7 +185,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         catch (...)
         {
             setStatus(backup_uuid, BackupStatus::FAILED_TO_BACKUP);
-            if (!in_separate_thread)
+            if (!async)
                 throw;
         }
     };
@@ -191,11 +205,16 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
     auto restore_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
     auto backup_info = BackupInfo::fromAST(*restore_query->backup_name);
-
     bool on_cluster = !restore_query->cluster.empty();
+
+    /// Prepare context to use.
     ContextMutablePtr context_in_use = context;
     if (restore_settings.async || on_cluster)
+    {
+        /// For ON CLUSTER queries we will need to change some settings.
+        /// For ASYNC queries we have to clone the context anyway.
         context_in_use = Context::createCopy(context);
+    }
 
     addInfo(restore_uuid, backup_info.toString(), BackupStatus::RESTORING, restore_settings.internal);
 
@@ -205,10 +224,22 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 restore_settings,
                 backup_info,
                 on_cluster,
-                context_in_use](bool in_separate_thread) mutable
+                thread_group = CurrentThread::getGroup(),
+                context_in_use](bool async) mutable
     {
+        SCOPE_EXIT_SAFE(
+            if (async)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
         try
         {
+            if (async && thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            if (async)
+                setThreadName("RestoreWorker");
+
             /// Open the backup for reading.
             BackupFactory::CreateParams backup_open_params;
             backup_open_params.open_mode = IBackup::OpenMode::READ;
@@ -240,8 +271,8 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                     String addr_database = address->default_database.empty() ? current_database : address->default_database;
                     for (auto & element : restore_elements)
                         element.setCurrentDatabase(addr_database);
-                    RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context_in_use, {}};
-                    dummy_restorer.checkAccessOnly();
+                    RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context_in_use};
+                    dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
                 }
             }
 
@@ -289,19 +320,13 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
             }
             else
             {
-                std::optional<CurrentThread::QueryScope> query_scope;
-                if (in_separate_thread)
-                    query_scope.emplace(context_in_use);
-
                 restore_query->setCurrentDatabase(current_database);
 
                 DataRestoreTasks data_restore_tasks;
                 {
-                    auto timeout = std::chrono::seconds{context_in_use->getConfigRef().getInt("backups.restore_metadata_timeout", -1)};
                     RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                                backup, context_in_use, timeout};
-                    restorer.restoreMetadata();
-                    data_restore_tasks = restorer.getDataRestoreTasks();
+                                                backup, context_in_use};
+                    data_restore_tasks = restorer.run(RestorerFromBackup::RESTORE);
                 }
 
                 restoreTablesData(std::move(data_restore_tasks), restores_thread_pool);
@@ -312,7 +337,7 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
         catch (...)
         {
             setStatus(restore_uuid, BackupStatus::FAILED_TO_RESTORE);
-            if (!in_separate_thread)
+            if (!async)
                 throw;
         }
     };
@@ -345,28 +370,25 @@ void BackupsWorker::setStatus(const UUID & uuid, BackupStatus status)
     info.status = status;
     info.status_changed_time = time(nullptr);
 
-    if ((status == BackupStatus::FAILED_TO_BACKUP) || (status == BackupStatus::FAILED_TO_RESTORE))
+    if (status == BackupStatus::BACKUP_COMPLETE)
     {
+        LOG_INFO(log, "{} {} was created successfully", (info.internal ? "Internal backup" : "Backup"), info.backup_name);
+    }
+    else if (status == BackupStatus::RESTORED)
+    {
+        LOG_INFO(log, "Restored from {} {} successfully", (info.internal ? "internal backup" : "backup"), info.backup_name);
+    }
+    else if ((status == BackupStatus::FAILED_TO_BACKUP) || (status == BackupStatus::FAILED_TO_RESTORE))
+    {
+        String start_of_message;
+        if (status == BackupStatus::FAILED_TO_BACKUP)
+            start_of_message = fmt::format("Failed to create {} {}", (info.internal ? "internal backup" : "backup"), info.backup_name);
+        else
+            start_of_message = fmt::format("Failed to restore from {} {}", (info.internal ? "internal backup" : "backup"), info.backup_name);
+        tryLogCurrentException(log, start_of_message);
+
         info.error_message = getCurrentExceptionMessage(false);
         info.exception = std::current_exception();
-    }
-
-    switch (status)
-    {
-        case BackupStatus::BACKUP_COMPLETE:
-            LOG_INFO(log, "{} {} was created successfully", (info.internal ? "Internal backup" : "Backup"), info.backup_name);
-            break;
-        case BackupStatus::FAILED_TO_BACKUP:
-            LOG_ERROR(log, "Failed to create {} {}", (info.internal ? "internal backup" : "backup"), info.backup_name);
-            break;
-        case BackupStatus::RESTORED:
-            LOG_INFO(log, "Restored from {} {} successfully", (info.internal ? "internal backup" : "backup"), info.backup_name);
-            break;
-        case BackupStatus::FAILED_TO_RESTORE:
-            LOG_ERROR(log, "Failed to restore from {} {}", (info.internal ? "internal backup" : "backup"), info.backup_name);
-            break;
-        default:
-            break;
     }
 }
 

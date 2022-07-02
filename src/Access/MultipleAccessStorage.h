@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessStorage.h>
+#include <base/defines.h>
 #include <Common/LRUCache.h>
 #include <mutex>
 
@@ -44,8 +45,8 @@ public:
 
     bool isBackupAllowed() const override;
     bool isRestoreAllowed() const override;
-    std::vector<std::pair<UUID, AccessEntityPtr>> readAllForBackup(AccessEntityType type, const BackupSettings & backup_settings) const override;
-    void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
+    void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
@@ -61,8 +62,8 @@ private:
     using Storages = std::vector<StoragePtr>;
     std::shared_ptr<const Storages> getStoragesInternal() const;
 
-    std::shared_ptr<const Storages> nested_storages;
-    mutable LRUCache<UUID, Storage> ids_cache;
+    std::shared_ptr<const Storages> nested_storages TSA_GUARDED_BY(mutex);
+    mutable LRUCache<UUID, Storage> ids_cache TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 

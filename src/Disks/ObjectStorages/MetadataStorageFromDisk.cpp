@@ -32,337 +32,6 @@ std::string toString(MetadataFromDiskTransactionState state)
     __builtin_unreachable();
 }
 
-namespace
-{
-
-std::string getTempFileName(const std::string & dir)
-{
-    return fs::path(dir) / getRandomASCIIString();
-}
-
-class SetLastModifiedOperation final : public IMetadataOperation
-{
-    std::string path;
-    Poco::Timestamp new_timestamp;
-    Poco::Timestamp old_timestamp;
-    IDisk & disk;
-public:
-    SetLastModifiedOperation(const std::string & path_, Poco::Timestamp new_timestamp_, IDisk & disk_)
-        : path(path_)
-        , new_timestamp(new_timestamp_)
-        , disk(disk_)
-    {}
-
-    void execute() override
-    {
-        old_timestamp = disk.getLastModified(path);
-        disk.setLastModified(path, new_timestamp);
-    }
-
-    void undo() override
-    {
-        disk.setLastModified(path, old_timestamp);
-    }
-};
-
-class UnlinkFileOperation final : public IMetadataOperation
-{
-    std::string path;
-    IDisk & disk;
-    std::string prev_data;
-public:
-    UnlinkFileOperation(const std::string & path_, IDisk & disk_)
-        : path(path_)
-        , disk(disk_)
-    {
-    }
-
-    void execute() override
-    {
-        auto buf = disk.readFile(path);
-        readStringUntilEOF(prev_data, *buf);
-        disk.removeFile(path);
-    }
-
-    void undo() override
-    {
-        auto buf = disk.writeFile(path);
-        writeString(prev_data, *buf);
-        buf->finalize();
-    }
-};
-
-class CreateDirectoryOperation final : public IMetadataOperation
-{
-private:
-    std::string path;
-    IDisk & disk;
-public:
-    CreateDirectoryOperation(const std::string & path_, IDisk & disk_)
-        : path(path_)
-        , disk(disk_)
-    {
-    }
-
-    void execute() override
-    {
-        disk.createDirectory(path);
-    }
-
-    void undo() override
-    {
-        disk.removeDirectory(path);
-    }
-};
-
-class CreateDirectoryRecursiveOperation final : public IMetadataOperation
-{
-private:
-    std::string path;
-    std::vector<std::string> paths_created;
-    IDisk & disk;
-public:
-    CreateDirectoryRecursiveOperation(const std::string & path_, IDisk & disk_)
-        : path(path_)
-        , disk(disk_)
-    {
-    }
-
-    void execute() override
-    {
-        namespace fs = std::filesystem;
-        fs::path p(path);
-        while (!disk.exists(p))
-        {
-            paths_created.push_back(p);
-            if (!p.has_parent_path())
-                break;
-            p = p.parent_path();
-        }
-        for (const auto & path_to_create : paths_created | std::views::reverse)
-            disk.createDirectory(path_to_create);
-    }
-
-    void undo() override
-    {
-        for (const auto & path_created : paths_created)
-            disk.removeDirectory(path_created);
-    }
-};
-
-class RemoveDirectoryOperation final : public IMetadataOperation
-{
-private:
-    std::string path;
-    IDisk & disk;
-public:
-    RemoveDirectoryOperation(const std::string & path_, IDisk & disk_)
-        : path(path_)
-        , disk(disk_)
-    {}
-
-    void execute() override
-    {
-        disk.removeDirectory(path);
-    }
-
-    void undo() override
-    {
-        disk.createDirectory(path);
-    }
-};
-
-class RemoveRecursiveOperation final : public IMetadataOperation
-{
-    std::string path;
-    IDisk & disk;
-    std::string temp_path;
-public:
-    RemoveRecursiveOperation(const std::string & path_, IDisk & disk_)
-        : path(path_)
-        , disk(disk_)
-        , temp_path(getTempFileName(fs::path(path).parent_path()))
-    {
-    }
-
-    void execute() override
-    {
-        if (disk.isFile(path))
-            disk.moveFile(path, temp_path);
-        else if (disk.isDirectory(path))
-            disk.moveDirectory(path, temp_path);
-    }
-
-    void undo() override
-    {
-        if (disk.isFile(temp_path))
-            disk.moveFile(temp_path, path);
-        else if (disk.isDirectory(temp_path))
-            disk.moveDirectory(temp_path, path);
-    }
-
-    void finalize() override
-    {
-        if (disk.exists(temp_path))
-            disk.removeRecursive(temp_path);
-
-        if (disk.exists(path))
-            disk.removeRecursive(path);
-    }
-};
-
-
-class CreateHardlinkOperation final : public IMetadataOperation
-{
-private:
-    std::string path_from;
-    std::string path_to;
-    IDisk & disk;
-public:
-    CreateHardlinkOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
-        : path_from(path_from_)
-        , path_to(path_to_)
-        , disk(disk_)
-    {}
-
-    void execute() override
-    {
-        disk.createHardLink(path_from, path_to);
-    }
-
-    void undo() override
-    {
-        disk.removeFile(path_to);
-    }
-};
-
-class MoveFileOperation final : public IMetadataOperation
-{
-private:
-    std::string path_from;
-    std::string path_to;
-    IDisk & disk;
-public:
-    MoveFileOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
-        : path_from(path_from_)
-        , path_to(path_to_)
-        , disk(disk_)
-    {}
-
-    void execute() override
-    {
-        disk.moveFile(path_from, path_to);
-    }
-
-    void undo() override
-    {
-        disk.moveFile(path_to, path_from);
-    }
-};
-
-class MoveDirectoryOperation final : public IMetadataOperation
-{
-private:
-    std::string path_from;
-    std::string path_to;
-    IDisk & disk;
-public:
-    MoveDirectoryOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
-        : path_from(path_from_)
-        , path_to(path_to_)
-        , disk(disk_)
-    {}
-
-    void execute() override
-    {
-        disk.moveDirectory(path_from, path_to);
-    }
-
-    void undo() override
-    {
-        disk.moveDirectory(path_to, path_from);
-    }
-};
-
-
-class ReplaceFileOperation final : public IMetadataOperation
-{
-private:
-    std::string path_from;
-    std::string path_to;
-    IDisk & disk;
-    std::string temp_path_to;
-public:
-    ReplaceFileOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
-        : path_from(path_from_)
-        , path_to(path_to_)
-        , disk(disk_)
-        , temp_path_to(getTempFileName(fs::path(path_to).parent_path()))
-    {
-    }
-
-    void execute() override
-    {
-        if (disk.exists(path_to))
-            disk.moveFile(path_to, temp_path_to);
-
-        disk.replaceFile(path_from, path_to);
-    }
-
-    void undo() override
-    {
-        disk.moveFile(path_to, path_from);
-        disk.moveFile(temp_path_to, path_to);
-    }
-
-    void finalize() override
-    {
-        disk.removeFileIfExists(temp_path_to);
-    }
-};
-
-class WriteFileOperation final : public IMetadataOperation
-{
-private:
-    std::string path;
-    IDisk & disk;
-    std::string data;
-    bool existed = false;
-    std::string prev_data;
-public:
-    WriteFileOperation(const std::string & path_, IDisk & disk_, const std::string & data_)
-        : path(path_)
-        , disk(disk_)
-        , data(data_)
-    {}
-
-    void execute() override
-    {
-        if (disk.exists(path))
-        {
-            existed = true;
-            auto buf = disk.readFile(path);
-            readStringUntilEOF(prev_data, *buf);
-        }
-        auto buf = disk.writeFile(path);
-        writeString(data, *buf);
-        buf->finalize();
-    }
-
-    void undo() override
-    {
-        if (!existed)
-            disk.removeFileIfExists(path);
-        else
-        {
-            auto buf = disk.writeFile(path);
-            writeString(prev_data, *buf);
-        }
-    }
-};
-
-}
-
 void MetadataStorageFromDiskTransaction::writeStringToFile( /// NOLINT
      const std::string & path,
      const std::string & data)
@@ -387,7 +56,7 @@ void MetadataStorageFromDiskTransaction::commit()
                         toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
 
     {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
+        std::lock_guard lock(metadata_storage.metadata_mutex);
         for (size_t i = 0; i < operations.size(); ++i)
         {
             try
@@ -396,7 +65,7 @@ void MetadataStorageFromDiskTransaction::commit()
             }
             catch (Exception & ex)
             {
-                ex.addMessage(fmt::format("While committing operation #{}", i));
+                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
                 state = MetadataFromDiskTransactionState::FAILED;
                 rollback(i);
                 throw;
@@ -631,30 +300,27 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction() const
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
 }
 
-std::vector<std::string> MetadataStorageFromDisk::getRemotePaths(const std::string & path) const
+PathsWithSize MetadataStorageFromDisk::getObjectStoragePaths(const std::string & path) const
 {
     auto metadata = readMetadata(path);
 
-    std::vector<std::string> remote_paths;
-    auto blobs = metadata->getBlobs();
-    auto root_path = metadata->getBlobsCommonPrefix();
-    remote_paths.reserve(blobs.size());
-    for (const auto & [remote_path, _] : blobs)
-        remote_paths.push_back(fs::path(root_path) / remote_path);
+    auto object_storage_relative_paths = metadata->getBlobsRelativePaths(); /// Relative paths.
+    fs::path root_path = metadata->getBlobsCommonPrefix();
 
-    return remote_paths;
+    PathsWithSize object_storage_paths;
+    object_storage_paths.reserve(object_storage_relative_paths.size());
+
+    /// Relative paths -> absolute.
+    for (auto & [object_relative_path, size] : object_storage_relative_paths)
+        object_storage_paths.emplace_back(root_path / object_relative_path, size);
+
+    return object_storage_paths;
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
 {
     auto metadata = readMetadata(path);
     return metadata->getRefCount();
-}
-
-BlobsPathToSize MetadataStorageFromDisk::getBlobs(const std::string & path) const
-{
-    auto metadata = readMetadata(path);
-    return metadata->getBlobs();
 }
 
 void MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
