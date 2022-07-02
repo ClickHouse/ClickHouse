@@ -459,20 +459,9 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
     }
 }
 
-void AccessControl::backup(BackupEntriesCollector & backup_entries_collector, AccessEntityType type, const String & data_path_in_backup) const
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
 {
-    backupAccessEntities(backup_entries_collector, data_path_in_backup, *this, type);
-}
-
-void AccessControl::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
-{
-    /// The restorer must already know about `data_path_in_backup`, but let's check.
-    restorer.checkPathInBackupToRestoreAccess(data_path_in_backup);
-}
-
-void AccessControl::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)
-{
-    MultipleAccessStorage::insertFromBackup(entities_from_backup, restore_settings, restore_coordination);
+    MultipleAccessStorage::restoreFromBackup(restorer);
     changes_notifier->sendNotifications();
 }
 

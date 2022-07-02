@@ -474,6 +474,8 @@ void ReplicatedMergeTreeSink::commitPart(
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
 
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
 
