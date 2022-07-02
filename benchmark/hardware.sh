@@ -40,10 +40,16 @@ if [[ $(./clickhouse client --query "EXISTS hits") == '1' && $(./clickhouse clie
     echo "Dataset already downloaded"
 else
     echo "Will download the dataset"
+    if [ "`uname`" = "Darwin" ]
+    then
+    ./clickhouse client --receive_timeout 1000 --max_insert_threads $(sysctl -n hw.ncpu) --progress --query "
+        CREATE OR REPLACE TABLE hits ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+        AS SELECT * FROM url('https://datasets.clickhouse.com/hits/native/hits_100m_obfuscated_{0..255}.native.zst')"
+    else
     ./clickhouse client --receive_timeout 1000 --max_insert_threads $(nproc || 4) --progress --query "
         CREATE OR REPLACE TABLE hits ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
         AS SELECT * FROM url('https://datasets.clickhouse.com/hits/native/hits_100m_obfuscated_{0..255}.native.zst')"
-
+    fi
     ./clickhouse client --query "SELECT 'The dataset size is: ', count() FROM hits"
 fi
 
@@ -63,8 +69,8 @@ QUERY_NUM=1
 
 cat "$QUERIES_FILE" | sed "s/{table}/hits/g" | while read query; do
     sync
-    if [ "${OS}" = "Darwin" ] 
-    then 
+    if [ "`uname`" = "Darwin" ]
+    then
         sudo purge > /dev/null
     else
         echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
@@ -90,8 +96,8 @@ echo
 
 touch {cpu_model,cpu,df,memory,memory_total,blk,mdstat,instance}.txt
 
-if [ "${OS}" = "Darwin" ] 
-then 
+if [ "`uname`" = "Darwin" ]
+then
     echo '----Version, build id-----------'
     ./clickhouse local --query "SELECT format('Version: {}', version())"
     ./clickhouse local --query "SELECT format('The number of threads is: {}', value) FROM system.settings WHERE name = 'max_threads'" --output-format TSVRaw

@@ -1540,10 +1540,12 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         loaded_parts[i]->storeVersionMetadata();
 
         String old_name = renamed_parts.old_and_new_names[i].old_name;
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
+        MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
         {
             auto lock = lockParts();
             auto builder = loaded_parts[i]->data_part_storage->getBuilder();
-            MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
             fillNewPartName(loaded_parts[i], lock);
             renameTempPartAndAdd(loaded_parts[i], transaction, builder, lock);
             transaction.commit(&lock);
@@ -1801,14 +1803,19 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
 void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
+
     for (auto part : parts)
     {
-        auto lock = lockParts();
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        fillNewPartName(part, lock);
         auto builder = part->data_part_storage->getBuilder();
-        renameTempPartAndAdd(part, transaction, builder, lock);
-        transaction.commit(&lock);
+        {
+            auto lock = lockParts();
+            fillNewPartName(part, lock);
+            renameTempPartAndAdd(part, transaction, builder, lock);
+            transaction.commit(&lock);
+        }
     }
 }
 

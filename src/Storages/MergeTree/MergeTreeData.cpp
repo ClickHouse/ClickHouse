@@ -150,6 +150,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
@@ -4001,14 +4002,23 @@ BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const
 
     BackupEntries backup_entries;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
-    fs::path data_path_in_backup_fs = data_path_in_backup;
 
     for (const auto & part : data_parts)
-        part->data_part_storage->backup(temp_dirs, part->checksums, part->getFileNamesWithoutChecksums(), backup_entries);
+    {
+        part->data_part_storage->backup(
+            temp_dirs, part->checksums, part->getFileNamesWithoutChecksums(), data_path_in_backup, backup_entries);
 
-    /// TODO: try to write better code later.
-    for (auto & entry : backup_entries)
-        entry.first = data_path_in_backup_fs / entry.first;
+        auto projection_parts = part->getProjectionParts();
+        for (const auto & [projection_name, projection_part] : projection_parts)
+        {
+            projection_part->data_part_storage->backup(
+                temp_dirs,
+                projection_part->checksums,
+                projection_part->getFileNamesWithoutChecksums(),
+                fs::path{data_path_in_backup} / part->name,
+                backup_entries);
+        }
+    }
 
     return backup_entries;
 }
@@ -4091,7 +4101,10 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     {
         const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
         if (!part_info)
-            continue;
+        {
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File name {} doesn't look like the name of a part",
+                            getStorageID().getFullTableName(), String{data_path_in_backup_fs / part_name});
+        }
 
         if (partition_ids && !partition_ids->contains(part_info->partition_id))
             continue;
@@ -4124,27 +4137,39 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     auto disk = reservation->getDisk();
 
     String part_name = part_info.getPartName();
-    auto temp_part_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, relative_data_path + "restoring_" + part_name + "_");
-    String temp_part_dir = temp_part_dir_owner->getPath();
+    auto temp_part_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, fs::path{relative_data_path} / ("restoring_" + part_name + "_"));
+    fs::path temp_part_dir = temp_part_dir_owner->getPath();
     disk->createDirectories(temp_part_dir);
+    std::unordered_set<String> subdirs;
 
-    assert(temp_part_dir.starts_with(relative_data_path));
-    String relative_temp_part_dir = temp_part_dir.substr(relative_data_path.size());
+    /// temp_part_name = "restoring_<part_name>_<random_chars>", for example "restoring_0_1_1_0_1baaaaa"
+    String temp_part_name = temp_part_dir.filename();
 
     for (const String & filename : filenames)
     {
+        /// Needs to create subdirectories before copying the files. Subdirectories are used to represent projections.
+        auto separator_pos = filename.rfind('/');
+        if (separator_pos != String::npos)
+        {
+            String subdir = filename.substr(0, separator_pos);
+            if (subdirs.emplace(subdir).second)
+                disk->createDirectories(temp_part_dir / subdir);
+        }
+
+        /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
+        if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME))
+            continue;
+
         auto backup_entry = backup->readFile(part_path_in_backup_fs / filename);
         auto read_buffer = backup_entry->getReadBuffer();
-        auto write_buffer = disk->writeFile(fs::path(temp_part_dir) / filename);
+        auto write_buffer = disk->writeFile(temp_part_dir / filename);
         copyData(*read_buffer, *write_buffer);
         reservation->update(reservation->getSize() - backup_entry->getSize());
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, relative_temp_part_dir);
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, temp_part_name);
     auto part = createPart(part_name, part_info, data_part_storage);
-    /// TODO Transactions: Decide what to do with version metadata (if any). Let's just remove it for now.
-    disk->removeFileIfExists(fs::path(temp_part_dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
     part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     part->loadColumnsChecksumsIndexes(false, true);
 

@@ -90,6 +90,7 @@ public:
         TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
+        const String & path_in_backup,
         BackupEntries & backup_entries) const override;
 
     DataPartStoragePtr freeze(
