@@ -1,20 +1,10 @@
 This benchmark is not automated.
 
 Go to AWS Redshift service.
-Create a cluster. Note: this is a classic Redshift, not "serverless".
-
-Choose the node type and cluster size.
-I've selected 4 nodes of ra3.xplus 4vCPU to get 16vCPU in total.
-
-Set up some password for the admin user.
+Try Redshift Serverless. Use the default configuration.
 The cluster will take a few minutes to start.
+Go to "Query Editor". Establishing a connection takes around 10 seconds.
 
-We need to perform two modifications:
-1. Allow inbound access. Go to VPC and edit the security group. Modify inbound rules. Allow connections from any IPv4 to port 5439.
-2. Add IAM role. Just create something by default.
-
-To create a table, you can go to the Query Editor v2.
-Open the "dev" database.
 Run the CREATE TABLE statement you find in `create.sql`.
 
 Note: Redshift prefers VARCHAR(MAX) instead of TEXT.
@@ -29,7 +19,20 @@ FORMAT AS CSV DELIMITER ',' QUOTE '"'
 REGION AS 'eu-central-1'
 ```
 
-> Elapsed time: 35m 35.9s
+> Elapsed time: 32m 13.7s
+ 
+It also have run 2380 "queries" for this task. 
+
+Namespace configuration,
+General Information, Storage used:
+
+30.3 GB
+
+Change admin user password:
+dev, fGH4{dbas7
+
+It's very difficult to find how to connect to it:
+https://docs.aws.amazon.com/redshift/latest/mgmt/serverless-connecting.html
 
 We will run the queries from another server with `psql` client.
 
@@ -39,7 +42,7 @@ sudo apt-get install -y postgresql-client
 echo "*:*:*:*:your_password" > .pgpass
 chmod 400 .pgpass
 
-psql -h redshift-cluster-1.chedgchbam32.eu-central-1.redshift.amazonaws.com -U awsuser -d dev -p 5439
+psql -h default.111111111111.eu-central-1.redshift-serverless.amazonaws.com -U dev -d dev -p 5439
 ```
 
 Then run the benchmark:
@@ -50,7 +53,3 @@ export HOST=...
 cat log.txt | grep -oP 'Time: \d+\.\d+ ms|ERROR' | sed -r -e 's/Time: ([0-9]+\.[0-9]+) ms/\1/' |
   awk '{ if ($1 == "ERROR") { skip = 1 } else { if (i % 3 == 0) { printf "[" }; printf skip ? "null" : ($1 / 1000); if (i % 3 != 2) { printf "," } else { print "]," }; ++i; skip = 0; } }'
 ```
-
-`SELECT sum(used * 1048576) FROM stv_node_storage_capacity`
-
-> 30 794 579 968 
