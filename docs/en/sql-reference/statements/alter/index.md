@@ -15,6 +15,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 -   [INDEX](../../../sql-reference/statements/alter/index/index.md)
 -   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
+-   [STATISTIC](../../../sql-reference/statements/alter/statistic.md)
 
 :::note    
 Most `ALTER TABLE` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
