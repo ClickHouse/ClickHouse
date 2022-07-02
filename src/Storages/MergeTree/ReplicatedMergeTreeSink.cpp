@@ -254,7 +254,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id);
+            commitPart(zookeeper, part, partition.block_id, partition.temp_part.builder);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -289,7 +289,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "");
+        commitPart(zookeeper, part, "", part->data_part_storage->getBuilder());
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -301,7 +301,10 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
 
 void ReplicatedMergeTreeSink::commitPart(
-    zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
+    zkutil::ZooKeeperPtr & zookeeper,
+    MergeTreeData::MutableDataPartPtr & part,
+    const String & block_id,
+    DataPartStorageBuilderPtr builder)
 {
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
@@ -479,7 +482,7 @@ void ReplicatedMergeTreeSink::commitPart(
         try
         {
             auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, lock);
+            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
         }
         catch (const Exception & e)
         {
@@ -543,7 +546,8 @@ void ReplicatedMergeTreeSink::commitPart(
                 transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false);
+                part->renameTo(temporary_part_relative_path, false, builder);
+                builder->commit();
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
                 /// than it will be ignored on the next itration.

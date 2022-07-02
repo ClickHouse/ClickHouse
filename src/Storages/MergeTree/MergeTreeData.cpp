@@ -1318,7 +1318,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         loadDataPartsFromWAL(broken_parts_to_detach, duplicate_parts_to_remove, parts_from_wal, part_lock);
 
     for (auto & part : broken_parts_to_detach)
-        part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+    {
+        auto builder = part->data_part_storage->getBuilder();
+        part->renameToDetached("broken-on-start", builder); /// detached parts must not have '_' in prefixes
+        builder->commit();
+    }
 
     for (auto & part : duplicate_parts_to_remove)
         part->remove();
@@ -2796,11 +2800,12 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
+    DataPartStorageBuilderPtr builder,
     DataPartsLock & lock)
 {
     DataPartsVector covered_parts;
 
-    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts))
+    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, builder, &covered_parts))
         return false;
 
     if (!covered_parts.empty())
@@ -2834,22 +2839,22 @@ void MergeTreeData::checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPa
     }
 }
 
-void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename)
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartStorageBuilderPtr builder)
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
 
-    if (need_rename)
-        part->renameTo(part->name, true);
+    part->renameTo(part->name, true, builder);
 
     data_parts_indexes.insert(part);
-    out_transaction.precommitted_parts.insert(part);
+    out_transaction.addPart(part, builder);
 }
 
 bool MergeTreeData::renameTempPartAndReplaceImpl(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
+    DataPartStorageBuilderPtr builder,
     DataPartsVector * out_covered_parts)
 {
     LOG_TRACE(log, "Renaming temporary part {} to {}.", part->data_part_storage->getPartDirectory(), part->name);
@@ -2871,7 +2876,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, out_transaction, /* need_rename = */ true);
+    preparePartForCommit(part, out_transaction, builder);
 
     if (out_covered_parts)
     {
@@ -2887,20 +2892,21 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
+    DataPartStorageBuilderPtr builder,
     DataPartsLock & lock)
 {
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts);
-
+    renameTempPartAndReplaceImpl(part, out_transaction, lock, builder, &covered_parts);
     return covered_parts;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
-    Transaction & out_transaction)
+    Transaction & out_transaction,
+    DataPartStorageBuilderPtr builder)
 {
     auto part_lock = lockParts();
-    return renameTempPartAndReplaceUnlocked(part, out_transaction, part_lock);
+    return renameTempPartAndReplaceUnlocked(part, out_transaction, builder, part_lock);
 }
 
 void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock)
@@ -3105,7 +3111,9 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
 
     modifyPartState(it_part, DataPartState::Deleting);
 
-    part->renameToDetached(prefix);
+    auto builder = part->data_part_storage->getBuilder();
+    part->renameToDetached(prefix, builder);
+    builder->commit();
 
     data_parts_indexes.erase(it_part);
 
@@ -3450,7 +3458,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 
             if (original_active_part->data_part_storage->supportZeroCopyReplication() &&
                 part_copy->data_part_storage->supportZeroCopyReplication() &&
-                original_active_part->getUniqueId() == part_copy->getUniqueId())
+                original_active_part->data_part_storage->getUniqueId() == part_copy->data_part_storage->getUniqueId())
             {
                 /// May be when several volumes use the same S3/HDFS storage
                 original_active_part->force_keep_shared_data = true;
@@ -4857,6 +4865,12 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
     clear();
 }
 
+void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part, DataPartStorageBuilderPtr builder)
+{
+    precommitted_parts.insert(part);
+    part_builders.push_back(builder);
+}
+
 void MergeTreeData::Transaction::rollback()
 {
     if (!isEmpty())
@@ -4887,6 +4901,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
         auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
+        for (auto & builder : part_builders)
+            builder->commit();
 
         if (txn)
         {
