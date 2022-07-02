@@ -119,9 +119,10 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt ${1:-240} ]
+        if [ "$counter" -gt ${1:-120} ]
         then
             echo "Cannot start clickhouse-server"
+            echo -e "Cannot start clickhouse-server\tFAIL" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
@@ -295,6 +296,10 @@ then
 
     # Start server from previous release
     configure
+
+    # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
+    rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+
     start
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
