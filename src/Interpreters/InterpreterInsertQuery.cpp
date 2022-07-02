@@ -457,17 +457,12 @@ BlockIO InterpreterInsertQuery::execute()
         });
 
         size_t num_select_threads = pipeline.getNumThreads();
-        size_t num_insert_threads = std::max_element(out_chains.begin(), out_chains.end(), [&](const auto &a, const auto &b)
-        {
-            return a.getNumThreads() < b.getNumThreads();
-        })->getNumThreads();
 
         for (auto & chain : out_chains)
             resources = chain.detachResources();
 
         pipeline.addChains(std::move(out_chains));
 
-        pipeline.setMaxThreads(num_insert_threads);
         /// Don't use more threads for insert then for select to reduce memory consumption.
         if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
             pipeline.setMaxThreads(num_select_threads);
