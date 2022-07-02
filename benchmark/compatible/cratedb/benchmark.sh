@@ -24,12 +24,16 @@ psql -U crate -h localhost --no-password -t -c '\timing' -c "
   )
   RETURN SUMMARY;"
 
-# COPY 0
-# Time: 1004421.355 ms (16:44.421)
+# One record did not load:
+# 99997496
+# {"Missing closing quote for value\n at [Source: UNKNOWN; line: 1, column: 1069]":{"count":1,"line_numbers":[93557187]}}
+# Time: 10687056.069 ms (02:58:07.056)
 
 ./run.sh 2>&1 | tee log.txt
 
+# For some queries it gives "Data too large".
+
 du -bcs crate-*
 
-cat log.txt | grep -oP 'Time: \d+\.\d+ ms' | sed -r -e 's/Time: ([0-9]+\.[0-9]+) ms/\1/' |
-    awk '{ if (i % 3 == 0) { printf "[" }; printf $1 / 1000; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
+cat log.txt | grep -oP 'Time: \d+\.\d+ ms|ERROR' | sed -r -e 's/Time: ([0-9]+\.[0-9]+) ms/\1/' |
+  awk '{ if ($1 == "ERROR") { skip = 1 } else { if (i % 3 == 0) { printf "[" }; printf skip ? "null" : ($1 / 1000); if (i % 3 != 2) { printf "," } else { print "]," }; ++i; skip = 0; } }'

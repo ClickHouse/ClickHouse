@@ -19,7 +19,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Doris
 - [x] Druid
 - [ ] Pinot
-- [ ] CrateDB
+- [x] CrateDB
 - [ ] Spark SQL
 - [ ] Starrocks
 - [ ] ShitholeDB
@@ -58,3 +58,4 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Exasol
 - [ ] LocustDB
 - [ ] EventQL
+- [ ] Apache Drill
