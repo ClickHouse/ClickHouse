@@ -463,9 +463,20 @@ BlockIO InterpreterInsertQuery::execute()
 
         pipeline.addChains(std::move(out_chains));
 
-        /// Don't use more threads for insert then for select to reduce memory consumption.
-        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
+        if (!settings.parallel_view_processing)
+        {
+            /// Don't use more threads for INSERT than for SELECT to reduce memory consumption.
+            if (pipeline.getNumThreads() > num_select_threads)
+                pipeline.setMaxThreads(num_select_threads);
+        }
+        else if (pipeline.getNumThreads() < settings.max_threads)
+        {
+            /// It is possible for query to have max_threads=1, due to optimize_trivial_insert_select,
+            /// however in case of parallel_view_processing and multiple views, views can still be processed in parallel.
+            ///
+            /// Note, number of threads will be limited by buildPushingToViewsChain() to max_threads.
+            pipeline.setMaxThreads(settings.max_threads);
+        }
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {
