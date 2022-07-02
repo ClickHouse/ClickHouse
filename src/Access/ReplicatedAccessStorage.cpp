@@ -627,6 +627,9 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
     auto entities = readAllWithIDs(type);
     boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
 
+    if (entities.empty())
+        return;
+
     auto backup_entry_with_path = makeBackupEntryForAccess(
         entities,
         data_path_in_backup,
