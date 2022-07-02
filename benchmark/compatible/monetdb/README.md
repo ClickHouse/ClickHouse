@@ -1,1 +1,0 @@
-MonetDB failed to install.
