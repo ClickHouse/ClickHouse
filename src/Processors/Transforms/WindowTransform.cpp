@@ -2271,7 +2271,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
     }
 
 
-    DataTypePtr getReturnType() const override { return argument_types[0]; }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeFloat64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -2285,15 +2285,12 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
         auto interval_duration = interval_specified ? interval_length *
             (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0) : 1;
 
-        Float64 last_metric = state.previous_metric;
-        Float64 last_timestamp = state.previous_timestamp;
-
         Float64 curr_metric = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_METRIC, transform->current_row);
         Float64 curr_timestamp = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIMESTAMP, transform->current_row);
 
-        Float64 time_elapsed = curr_timestamp - last_timestamp;
-        Float64 metric_diff = curr_metric - last_metric;
-        Float64 result = (time_elapsed != 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
+        Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
+        Float64 metric_diff = curr_metric - state.previous_metric;
+        Float64 result = (time_elapsed > 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
 
         state.previous_metric = curr_metric;
         state.previous_timestamp = curr_timestamp;
