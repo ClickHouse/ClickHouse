@@ -217,4 +217,31 @@ TO benchmark;
 GRANT INSERT ON benchmark_runs TO benchmark;
 GRANT INSERT ON benchmark_results TO benchmark;
 
+Example query:
+
+SELECT
+    cpu_model,
+    threads,
+    instance,
+    k
+FROM
+(
+    SELECT
+        run_id,
+        exp(avg(log(adjusted_time / best_time))) AS k
+    FROM
+    (
+        WITH greatest(time, 0.01) AS adjusted_time
+        SELECT
+            run_id,
+            adjusted_time,
+            min(adjusted_time) OVER (PARTITION BY query_num, try_num) AS best_time
+        FROM benchmark_results
+        WHERE try_num > 1
+    )
+    GROUP BY run_id
+    ORDER BY k ASC
+) AS t
+INNER JOIN benchmark_runs USING (run_id)
+
 ////
