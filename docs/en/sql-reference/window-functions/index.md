@@ -70,10 +70,10 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
 ```text
 aggregate_function (column_name)
-  OVER ([[PARTITION BY groupping_column] [ORDER BY sorting_column] 
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name as ([[PARTITION BY groupping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
 - `PARTITION BY` - defines how to break a resultset into groups.
