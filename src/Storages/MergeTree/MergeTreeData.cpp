@@ -4094,8 +4094,8 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
         const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
         if (!part_info)
         {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File name {} doesn't look like the name of a part",
-                            getStorageID().getFullTableName(), String{data_path_in_backup_fs / part_name});
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} is not the name of a part",
+                            String{data_path_in_backup_fs / part_name});
         }
 
         if (partition_ids && !partition_ids->contains(part_info->partition_id))

@@ -513,10 +513,8 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     {
         String index_file_path = data_path_in_backup_fs / "index.mrk";
         if (!backup->fileExists(index_file_path))
-        {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
-                            getStorageID().getFullTableName(), index_file_path);
-        }
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
+
         auto backup_entry = backup->readFile(index_file_path);
         auto in = backup_entry->getReadBuffer();
         CompressedReadBuffer compressed_in{*in};
@@ -530,10 +528,8 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     {
         String data_file_path = data_path_in_backup_fs / "data.bin";
         if (!backup->fileExists(data_file_path))
-        {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
-                            getStorageID().getFullTableName(), data_file_path);
-        }
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file_path);
+
         auto backup_entry = backup->readFile(data_file_path);
         std::unique_ptr<ReadBuffer> in = backup_entry->getReadBuffer();
         std::optional<Poco::TemporaryFile> temp_data_copy;
