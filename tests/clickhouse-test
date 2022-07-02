@@ -526,7 +526,7 @@ class TestCase:
             # collisions.
             testcase_args.test_tmp_dir = os.path.join(suite_tmp_dir, database)
             os.mkdir(testcase_args.test_tmp_dir)
-            os.environ.setdefault("CLICKHOUSE_TMP", testcase_args.test_tmp_dir)
+            os.environ["CLICKHOUSE_TMP"] = testcase_args.test_tmp_dir
 
         testcase_args.testcase_database = database
 
