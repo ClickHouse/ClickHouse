@@ -63,7 +63,7 @@ CREATE TABLE hits
     IsParameter SMALLINT NOT NULL,
     DontCountHits SMALLINT NOT NULL,
     WithHash SMALLINT NOT NULL,
-    HitColor CHAR NOT NULL,
+    HitColor TEXT NOT NULL,
     LocalEventTime TIMESTAMP NOT NULL,
     Age SMALLINT NOT NULL,
     Sex SMALLINT NOT NULL,

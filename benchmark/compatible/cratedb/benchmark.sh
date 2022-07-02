@@ -7,13 +7,23 @@ sudo apt-get install -y postgresql-client
 
 psql -U crate -h localhost --no-password -t -c 'SELECT 1'
 
-wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.csv.gz'
-gzip -d hits.csv.gz
+wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+gzip -d hits.tsv.gz
 
 psql -U crate -h localhost --no-password -t < create.sql
-psql -U crate -h localhost --no-password -t -c '\timing' -c "COPY hits FROM 'file:///$(pwd)/hits.csv'"
 
-# It failed to load the data.
+psql -U crate -h localhost --no-password -t -c '\timing' -c "
+  COPY hits
+  FROM 'file://$(pwd)/hits.tsv'
+  WITH
+  (
+    "delimiter"=e'\t',
+    "format"='csv',
+    "header"=false,
+    "empty_string_as_null"=false
+  )
+  RETURN SUMMARY;"
+
 # COPY 0
 # Time: 1004421.355 ms (16:44.421)
 

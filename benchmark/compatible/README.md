@@ -7,7 +7,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [x] MariaDB ColumnStore
 - [x] MemSQL/SingleStore
 - [x] PostgreSQL
-- [ ] Greenplum
+- [x] Greenplum
 - [x] TimescaleDB
 - [x] Citus
 - [x] Vertica (without publishing)
@@ -17,7 +17,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [x] mapD/Omnisci/HeavyAI
 - [ ] Databend
 - [ ] Doris
-- [ ] Druid
+- [x] Druid
 - [ ] Pinot
 - [ ] CrateDB
 - [ ] Spark SQL
