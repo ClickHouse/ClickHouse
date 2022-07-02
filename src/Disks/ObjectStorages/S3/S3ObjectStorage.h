@@ -83,13 +83,18 @@ public:
     void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     /// Remove file. Throws exception if file doesn't exist or it's a directory.
+    /// Uses `DeleteObjectRequest`.
     void removeObject(const std::string & path) override;
 
-    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`.
+    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
+    /// `DeleteObjectsRequest` is not supported on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjects(const PathsWithSize & paths) override;
 
+    /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const std::string & path) override;
 
+    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
+    /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const PathsWithSize & paths) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
