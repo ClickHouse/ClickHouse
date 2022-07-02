@@ -42,6 +42,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] TiDB (TiFlash)
 - [ ] Amazon RDS
 - [ ] InfluxDB
+- [ ] VictoriaMetrics
 - [ ] TDEngine
 - [ ] MongoDB
 - [ ] Elasticsearch
@@ -55,3 +56,5 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] MS SQL Server with Column Store Index (without publishing)
 - [ ] Dremio (without publishing) 
 - [ ] Exasol
+- [ ] LocustDB
+- [ ] EventQL
