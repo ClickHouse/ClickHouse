@@ -39,6 +39,12 @@ struct L1Distance
     }
 
     template <typename ResultType>
+    static void combine(State<ResultType> & state, const State<ResultType> & other_state, const ConstParams &)
+    {
+        state.sum += other_state.sum;
+    }
+
+    template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
         return state.sum;
@@ -61,6 +67,12 @@ struct L2Distance
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
     {
         state.sum += (x - y) * (x - y);
+    }
+
+    template <typename ResultType>
+    static void combine(State<ResultType> & state, const State<ResultType> & other_state, const ConstParams &)
+    {
+        state.sum += other_state.sum;
     }
 
     template <typename ResultType>
@@ -104,6 +116,12 @@ struct LpDistance
     }
 
     template <typename ResultType>
+    static void combine(State<ResultType> & state, const State<ResultType> & other_state, const ConstParams &)
+    {
+        state.sum += other_state.sum;
+    }
+
+    template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
         return std::pow(state.sum, params.inverted_power);
@@ -126,6 +144,12 @@ struct LinfDistance
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
     {
         state.dist = fmax(state.dist, fabs(x - y));
+    }
+
+    template <typename ResultType>
+    static void combine(State<ResultType> & state, const State<ResultType> & other_state, const ConstParams &)
+    {
+        state.dist = fmax(state.dist, other_state.dist);
     }
 
     template <typename ResultType>
@@ -155,6 +179,14 @@ struct CosineDistance
         state.dot_prod += x * y;
         state.x_squared += x * x;
         state.y_squared += y * y;
+    }
+
+    template <typename ResultType>
+    static void combine(State<ResultType> & state, const State<ResultType> & other_state, const ConstParams &)
+    {
+        state.dot_prod += other_state.dot_prod;
+        state.x_squared += other_state.x_squared;
+        state.y_squared += other_state.y_squared;
     }
 
     template <typename ResultType>
@@ -339,10 +371,23 @@ private:
         size_t row = 0;
         for (auto off : offsets_x)
         {
-            typename Kernel::template State<Float64> state;
+            /// Process chunks in vectorized manner
+            static constexpr size_t VEC_SIZE = 4;
+            typename Kernel::template State<ResultType> states[VEC_SIZE];
+            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
+            {
+                for (size_t s = 0; s < VEC_SIZE; ++s)
+                    Kernel::template accumulate<ResultType>(states[s], data_x[prev+s], data_y[prev+s], kernel_params);
+            }
+
+            typename Kernel::template State<ResultType> state;
+            for (const auto & other_state : states)
+                Kernel::template combine<ResultType>(state, other_state, kernel_params);
+
+            /// Process the tail
             for (; prev < off; ++prev)
             {
-                Kernel::template accumulate<Float64>(state, data_x[prev], data_y[prev], kernel_params);
+                Kernel::template accumulate<ResultType>(state, data_x[prev], data_y[prev], kernel_params);
             }
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
@@ -392,10 +437,24 @@ private:
         size_t row = 0;
         for (auto off : offsets_y)
         {
-            typename Kernel::template State<Float64> state;
-            for (size_t i = 0; prev < off; ++i, ++prev)
+            /// Process chunks in vectorized manner
+            static constexpr size_t VEC_SIZE = 4;
+            typename Kernel::template State<ResultType> states[VEC_SIZE];
+            size_t i = 0;
+            for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
             {
-                Kernel::template accumulate<Float64>(state, data_x[i], data_y[prev], kernel_params);
+                for (size_t s = 0; s < VEC_SIZE; ++s)
+                    Kernel::template accumulate<ResultType>(states[s], data_x[i+s], data_y[prev+s], kernel_params);
+            }
+
+            typename Kernel::template State<ResultType> state;
+            for (const auto & other_state : states)
+                Kernel::template combine<ResultType>(state, other_state, kernel_params);
+
+            /// Process the tail
+            for (; prev < off; ++i, ++prev)
+            {
+                Kernel::template accumulate<ResultType>(state, data_x[i], data_y[prev], kernel_params);
             }
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
