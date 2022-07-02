@@ -76,7 +76,8 @@ def create_table(node, table_name, schema, attach=False, db_atomic=False, uuid="
         "CREATE DATABASE IF NOT EXISTS s3 {on_cluster} ENGINE = {engine}".format(
             engine="Atomic" if db_atomic else "Ordinary",
             on_cluster="ON CLUSTER '{cluster}'",
-        )
+        ),
+        settings={"allow_deprecated_database_ordinary": 1},
     )
 
     create_table_statement = """

@@ -2396,7 +2396,7 @@ class ClickHouseCluster:
                 logging.debug("Setup hive")
                 subprocess_check_call(self.base_hive_cmd + common_opts)
                 self.up_called = True
-                time.sleep(300)
+                time.sleep(30)
 
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs
@@ -3391,14 +3391,6 @@ class ClickHouseInstance:
             user="root",
         )
         self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse",
-            ],
-            user="root",
-        )
-        self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
         )
@@ -3411,7 +3403,11 @@ class ClickHouseInstance:
             self.wait_start(time_left)
 
     def restart_with_latest_version(
-        self, stop_start_wait_sec=300, callback_onstop=None, signal=15
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        fix_metadata=False,
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -3458,14 +3454,23 @@ class ClickHouseInstance:
                 "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version",
             ]
         )
-        self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse",
-            ],
-            user="root",
-        )
+        if fix_metadata:
+            # Versions older than 20.7 might not create .sql file for system and default database
+            # Create it manually if upgrading from older version
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
+                ],
+            )
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
+                ],
+            )
         self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),

@@ -43,8 +43,7 @@ function thread_select()
         SELECT throwIf((SELECT sum(n) FROM mt) != 0) FORMAT Null;
         SELECT throwIf((SELECT count() FROM mt) % 2 != 0) FORMAT Null;
         SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt;
-        COMMIT;" | uniq | wc -l | grep -v "^1$" && $CLICKHOUSE_CLIENT -q "SELECT * FROM system.parts
-                    WHERE database='$CLICKHOUSE_DATABASE' AND table='mt'" ||:;
+        COMMIT;" | uniq | wc -l | grep -v "^1$" ||:
     done
 }
 
