@@ -86,9 +86,9 @@ WINDOW window_name as ([[PARTITION BY groupping_column] [ORDER BY sorting_column
 These functions can be used only as a window function.
 
 `row_number()` -	Number the current row within its partition starting from 1.
-`first_value(x)` -	Return a value evaluated against the first row within its ordered frame.
-`last_value(x)` -	Return a value evaluated against the last row within its ordered frame.
-`nth_value(x, offset)` - Return a value evaluated against the nth row (offset) in an ordered frame.
+`first_value(x)` -	Return the first non-NULL value evaluated within its ordered frame.
+`last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
+`nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 `rank()` -	Rank the current row within its partition with gaps.
 `dense_rank()`	- Rank the current row within its partition without gaps.
 `lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
