@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 {
-    if(useRoaring())
+    if (useRoaring())
         return bmp.contains(row_id);
 
     auto it(std::find(lst.begin(), lst.begin()+lst_length, row_id));
@@ -35,7 +35,7 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 
 void GinIndexPostingsBuilder::add(UInt32 row_id)
 {
-    if(useRoaring())
+    if (useRoaring())
     {
         bmp.add(row_id);
         return;
@@ -43,9 +43,9 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
     assert(lst_length < MIN_SIZE_FOR_ROARING_ENCODING);
     lst[lst_length++] = row_id;
 
-    if(lst_length == MIN_SIZE_FOR_ROARING_ENCODING)
+    if (lst_length == MIN_SIZE_FOR_ROARING_ENCODING)
     {
-        for(size_t i = 0; i < lst_length; i++)
+        for (size_t i = 0; i < lst_length; i++)
             bmp.add(lst[i]);
 
         lst_length = 0xFF;
@@ -60,7 +60,7 @@ bool GinIndexPostingsBuilder::useRoaring() const
 UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer &buffer) const
 {
     UInt64 encoding_length = 0;
-    if(!useRoaring())
+    if (!useRoaring())
     {
         /// First byte is number of Row IDS to be encoded
         buffer.write(lst_length);
@@ -95,13 +95,13 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
     char postings_list_size{0};
     buffer.read(postings_list_size);
 
-    if(postings_list_size != 0)
+    if (postings_list_size != 0)
     {
         assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
         GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
         UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
 
-        for(auto i = 0; i < postings_list_size; ++i)
+        for (auto i = 0; i < postings_list_size; ++i)
         {
             readVarUInt(row_ids[i], buffer);
         }
@@ -199,15 +199,15 @@ UInt32 GinIndexStore::getSegmentNum()
     return result - 1;
 }
 
- bool GinIndexStore::needToWrite() const
- {
+bool GinIndexStore::needToWrite() const
+{
     assert(max_digestion_size > 0);
     return current_size > max_digestion_size;
- }
+}
 
 void GinIndexStore::finalize()
 {
-    if(current_postings.size() > 0)
+    if (current_postings.size() > 0)
     {
         writeSegment();
     }
@@ -236,11 +236,13 @@ void GinIndexStore::writeSegment()
     std::vector<std::pair<std::string_view, GinIndexPostingsBuilderPtr>> token_postings_list_pairs;
     token_postings_list_pairs.reserve(current_postings.size());
 
-    for (const auto& [token, postings_list] : current_postings) {
+    for (const auto& [token, postings_list] : current_postings)
+    {
         token_postings_list_pairs.push_back({std::string_view(token), postings_list});
     }
     std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),
-                    [](const std::pair<std::string_view, GinIndexPostingsBuilderPtr>& a, const std::pair<std::string_view, GinIndexPostingsBuilderPtr>& b) {
+                    [](const std::pair<std::string_view, GinIndexPostingsBuilderPtr>& a, const std::pair<std::string_view, GinIndexPostingsBuilderPtr>& b)
+                    {
                         return a.first < b.first;
                     });
 
@@ -424,7 +426,7 @@ void GinIndexStoreFactory::remove(const String& part_path)
     std::lock_guard lock(stores_mutex);
     for (auto it = stores.begin(); it != stores.end();)
     {
-        if(it->first.find(part_path) != String::npos)
+        if (it->first.find(part_path) != String::npos)
             it = stores.erase(it);
         else
             ++it;
@@ -435,7 +437,7 @@ void GinIndexStoreFactory::remove(const String& part_path)
 void GinIndexStoreFactory::dump()
 {
     printf("GinIndexStoreFactory----------dump start-------->>\n");
-    for(const auto & [key, store]: stores)
+    for (const auto & [key, store]: stores)
     {
         printf("%s\n", key.c_str());
     }

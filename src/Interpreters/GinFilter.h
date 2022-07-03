@@ -15,7 +15,7 @@ class DiskLocal;
 
 using RowIDRange = struct
 {
-    /// Segement ID of the row ID range
+    /// Segment ID of the row ID range
     UInt32 segment_id;
 
     /// First row ID in the range

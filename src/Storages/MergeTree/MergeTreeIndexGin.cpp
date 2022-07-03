@@ -112,16 +112,16 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGinFilter::getGranuleAndReset()
 
 void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char* data, size_t length, GinFilter& gin_filter)
 {
-	size_t cur = 0;
-	size_t token_start = 0;
-	size_t token_len = 0;
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
 
-	int offset = 0;
-	while (cur < length && token_extractor->nextInStringPadded(data, length, &cur, &token_start, &token_len))
-	{
-		gin_filter.add(data + token_start, token_len, rowID, store);
-		offset++;
-	}
+    int offset = 0;
+    while (cur < length && token_extractor->nextInStringPadded(data, length, &cur, &token_start, &token_len))
+    {
+        gin_filter.add(data + token_start, token_len, rowID, store);
+        offset++;
+    }
 }
 
 void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos, size_t limit)
@@ -736,7 +736,7 @@ MergeTreeIndexPtr ginIndexCreator(
         GinFilterParameters params(n);
 
         /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
-        if(n > 0)
+        if (n > 0)
         {
             auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
             return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
@@ -774,7 +774,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
             throw Exception("Gin filter index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
     }
 
-    if(index.type != GinFilter::getName())
+    if (index.type != GinFilter::getName())
         throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
     if (index.arguments.size() > 1)
