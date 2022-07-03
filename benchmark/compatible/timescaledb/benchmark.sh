@@ -3,12 +3,12 @@
 # Install
 
 sudo apt-get update
-sudo apt install gnupg postgresql-common apt-transport-https lsb-release wget
+sudo apt-get install -y gnupg postgresql-common apt-transport-https lsb-release wget
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
 sudo bash -c 'echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -c -s) main" > /etc/apt/sources.list.d/timescaledb.list'
 wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | sudo apt-key add -
 sudo apt-get update
-sudo apt install timescaledb-2-postgresql-14
+sudo apt-get install -y timescaledb-2-postgresql-14
 sudo bash -c "echo \"shared_preload_libraries = 'timescaledb'\" >> /etc/postgresql/14/main/postgresql.conf"
 sudo systemctl restart postgresql
 
@@ -30,6 +30,14 @@ sudo -u postgres psql test -c "SELECT add_compression_policy('hits', INTERVAL '1
 sudo -u postgres psql test -t -c '\timing' -c "\\copy hits FROM 'hits.tsv'"
 
 # 1619875.288 ms (26:59.875)
+
+# See https://github.com/timescale/timescaledb/issues/4473#issuecomment-1167095245
+# https://docs.timescale.com/timescaledb/latest/how-to-guides/compression/manually-compress-chunks/#compress-chunks-manually
+# Omit this step to proceed without compression.
+
+time sudo -u postgres psql test -c "SELECT compress_chunk(i, if_not_compressed => true) FROM show_chunks('hits') i"
+
+# 49m45.120s
 
 ./run.sh 2>&1 | tee log.txt
 
