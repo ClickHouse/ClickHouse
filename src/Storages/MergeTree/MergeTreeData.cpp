@@ -4041,12 +4041,20 @@ public:
         attachIfAllPartsRestored();
     }
 
-    void addPart(MutableDataPartPtr part, std::shared_ptr<TemporaryFileOnDisk> temp_part_dir_owner)
+    void addPart(MutableDataPartPtr part)
     {
         std::lock_guard lock{mutex};
         parts.emplace_back(part);
-        temp_part_dir_owners.emplace_back(temp_part_dir_owner);
         attachIfAllPartsRestored();
+    }
+
+    String getTemporaryDirectory(const DiskPtr & disk)
+    {
+        std::lock_guard lock{mutex};
+        auto it = temp_dirs.find(disk);
+        if (it == temp_dirs.end())
+            it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
+        return it->second->getPath();
     }
 
 private:
@@ -4063,7 +4071,7 @@ private:
 
         storage->attachRestoredParts(std::move(parts));
         parts.clear();
-        temp_part_dir_owners.clear();
+        temp_dirs.clear();
         num_parts = 0;
     }
 
@@ -4071,7 +4079,7 @@ private:
     BackupPtr backup;
     size_t num_parts = 0;
     MutableDataPartsVector parts;
-    std::vector<std::shared_ptr<TemporaryFileOnDisk>> temp_part_dir_owners;
+    std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     mutable std::mutex mutex;
 };
 
@@ -4117,6 +4125,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
 void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup)
 {
+    String part_name = part_info.getPartName();
     auto backup = restored_parts_holder->getBackup();
 
     UInt64 total_size_of_part = 0;
@@ -4128,14 +4137,18 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
     auto disk = reservation->getDisk();
 
-    String part_name = part_info.getPartName();
-    auto temp_part_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, fs::path{relative_data_path} / ("restoring_" + part_name + "_"));
-    fs::path temp_part_dir = temp_part_dir_owner->getPath();
+    fs::path temp_dir = restored_parts_holder->getTemporaryDirectory(disk);
+    fs::path temp_part_dir = temp_dir / part_path_in_backup_fs.relative_path();
     disk->createDirectories(temp_part_dir);
-    std::unordered_set<String> subdirs;
 
-    /// temp_part_name = "restoring_<part_name>_<random_chars>", for example "restoring_0_1_1_0_1baaaaa"
-    String temp_part_name = temp_part_dir.filename();
+    /// For example:
+    /// part_name = 0_1_1_0
+    /// part_path_in_backup = /data/test/table/0_1_1_0
+    /// tmp_dir = tmp/1aaaaaa
+    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0
+
+    /// Subdirectories in the part's directory. It's used to restore projections.
+    std::unordered_set<String> subdirs;
 
     for (const String & filename : filenames)
     {
@@ -4160,12 +4173,12 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, temp_part_name);
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, temp_part_dir.parent_path(), part_name);
     auto part = createPart(part_name, part_info, data_part_storage);
     part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     part->loadColumnsChecksumsIndexes(false, true);
 
-    restored_parts_holder->addPart(part, temp_part_dir_owner);
+    restored_parts_holder->addPart(part);
 }
 
 
