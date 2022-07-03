@@ -22,8 +22,8 @@ You can use the [short_circuit_function_evaluation](../../operations/settings/se
 **Arguments**
 
 -   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
--   `then` – The expression to return if condition is met.
--   `else` – The expression to return if condition is not met.
+-   `then` – The expression to return if condition is true.
+-   `else` – The expression to return if condition is false.
 
 **Returned values**
 
