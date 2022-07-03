@@ -793,6 +793,11 @@ public:
         const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
         bool copy_instead_of_hardlink);
 
+    MergeTreeData::MutableDataPartPtr cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
+        const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files);
+
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
     /// Returns true if table can create new parts with adaptive granularity

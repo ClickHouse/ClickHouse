@@ -5,36 +5,40 @@
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
-#include <Common/ThreadPool.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TransactionLog.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
-#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
-#include <Storages/MergeTree/PartitionPruner.h>
-#include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/Pipe.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/PartMinMaxPartitionIdCalculator.h>
+#include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/PartitionCommands.h>
+#include <base/sort.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
+#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 
 namespace DB
 {
@@ -1591,19 +1595,64 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
-    for (const DataPartPtr & src_part : src_parts)
+    auto query_to_string = [] (const ASTPtr & ast)
+    {
+        return ast ? queryToString(ast) : "";
+    };
+
+    for (DataPartPtr & src_part : src_parts)
     {
         if (!canReplacePartition(src_part))
             throw Exception(
                 "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        /// This will generate unique name in scope of current server process.
-        Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        if (query_to_string(my_metadata_snapshot->getPartitionKeyAST()) != query_to_string(source_metadata_snapshot->getPartitionKeyAST())) {
+            PartMinMaxPartitionIdCalculator min_max_partition_id_calculator;
 
-        auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
-        dst_parts.emplace_back(std::move(dst_part));
+            const auto [min_partition_id, max_partition_id] = min_max_partition_id_calculator.calculate(src_part, my_metadata_snapshot, getContext());
+
+            const bool was_data_split = min_partition_id != max_partition_id;
+
+            if (was_data_split) {
+                throw Exception("Tables have different partition key", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            /// This will generate unique name in scope of current server process.
+            Int64 temp_index = insert_increment.get();
+
+            auto new_partition_id = std::to_string(min_partition_id);
+
+            MergeTreePartInfo dst_part_info(new_partition_id, temp_index, temp_index, src_part->info.level);
+
+            auto dst_part = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {});
+//
+//            MergeTreeData::DataPart::Checksums checksums;
+//            MergeTreePartition pt;
+//
+//            IMergeTreeDataPart::MinMaxIndex min_max_index;
+//
+//            auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+//            auto block_with_min_max_values = min_max_index.loadIntoBlock(src_part->storage, metadata_manager);
+//
+//            pt.create(my_metadata_snapshot, block_with_min_max_values, 0, getContext());
+//
+//            auto volume = getStoragePolicy()->getVolume(0);
+//
+//            auto data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(volume, getRelativeDataPath(), "tmp_replace_from_" + dst_part->name);
+//
+//            auto x = pt.store(*this, data_part_storage_builder, checksums);
+
+            dst_parts.emplace_back(std::move(dst_part));
+
+        } else {
+            /// This will generate unique name in scope of current server process.
+            Int64 temp_index = insert_increment.get();
+            MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+
+            auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
+            dst_parts.emplace_back(std::move(dst_part));
+        }
     }
 
     /// ATTACH empty part set

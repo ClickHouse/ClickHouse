@@ -34,18 +34,18 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric PartsTemporary;
-    extern const Metric PartsPreCommitted;
-    extern const Metric PartsCommitted;
-    extern const Metric PartsPreActive;
-    extern const Metric PartsActive;
-    extern const Metric PartsOutdated;
-    extern const Metric PartsDeleting;
-    extern const Metric PartsDeleteOnDestroy;
+extern const Metric PartsTemporary;
+extern const Metric PartsPreCommitted;
+extern const Metric PartsCommitted;
+extern const Metric PartsPreActive;
+extern const Metric PartsActive;
+extern const Metric PartsOutdated;
+extern const Metric PartsDeleting;
+extern const Metric PartsDeleteOnDestroy;
 
-    extern const Metric PartsWide;
-    extern const Metric PartsCompact;
-    extern const Metric PartsInMemory;
+extern const Metric PartsWide;
+extern const Metric PartsCompact;
+extern const Metric PartsInMemory;
 }
 
 namespace DB
@@ -94,6 +94,48 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
     initialized = true;
+}
+
+Block IMergeTreeDataPart::MinMaxIndex::loadIntoBlock(const MergeTreeData & data, const PartMetadataManagerPtr & manager) {
+    Block block;
+
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
+    size_t minmax_idx_size = minmax_column_types.size();
+
+    for (size_t i = 0; i < minmax_idx_size; ++i)
+    {
+        auto data_type = minmax_column_types[i];
+        auto column_name = minmax_column_names[i];
+
+        String file_name = "minmax_" + escapeForFileName(column_name) + ".idx";
+        auto file = manager->read(file_name);
+        auto serialization = data_type->getDefaultSerialization();
+
+        Field min_val;
+        serialization->deserializeBinary(min_val, *file);
+        Field max_val;
+        serialization->deserializeBinary(max_val, *file);
+
+        // NULL_LAST
+        if (min_val.isNull())
+            min_val = POSITIVE_INFINITY;
+        if (max_val.isNull())
+            max_val = POSITIVE_INFINITY;
+
+        auto column = data_type->createColumn();
+        column->insert(min_val);
+        column->insert(max_val);
+
+        auto column_with_type_and_name = ColumnWithTypeAndName(column->getPtr(), data_type, column_name);
+
+        block.insert(column_with_type_and_name);
+    }
+
+    return block;
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
@@ -547,7 +589,7 @@ void IMergeTreeDataPart::assertOnDisk() const
 {
     if (!isStoredOnDisk())
         throw Exception("Data part '" + name + "' with type '"
-            + getType().toString() + "' is not stored on disk", ErrorCodes::LOGICAL_ERROR);
+                            + getType().toString() + "' is not stored on disk", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -753,8 +795,8 @@ void IMergeTreeDataPart::loadIndex()
             loaded_index[i]->protect();
             if (loaded_index[i]->size() != marks_count)
                 throw Exception("Cannot read all data from index file " + index_path
-                    + "(expected size: " + toString(marks_count) + ", read: " + toString(loaded_index[i]->size()) + ")",
-                    ErrorCodes::CANNOT_READ_ALL_DATA);
+                                    + "(expected size: " + toString(marks_count) + ", read: " + toString(loaded_index[i]->size()) + ")",
+                                ErrorCodes::CANNOT_READ_ALL_DATA);
         }
 
         if (!index_file->eof())
@@ -865,16 +907,16 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         {
             String path_to_data_file;
             getSerialization(part_column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-            {
-                if (path_to_data_file.empty())
-                {
-                    String candidate_path = /*fs::path(getRelativePath()) */ (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
+                                                            {
+                                                                if (path_to_data_file.empty())
+                                                                {
+                                                                    String candidate_path = /*fs::path(getRelativePath()) */ (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
 
-                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                    if (data_part_storage->exists(candidate_path) && data_part_storage->getFileSize(candidate_path) != 0)
-                        path_to_data_file = candidate_path;
-                }
-            });
+                                                                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                                                                    if (data_part_storage->exists(candidate_path) && data_part_storage->getFileSize(candidate_path) != 0)
+                                                                        path_to_data_file = candidate_path;
+                                                                }
+                                                            });
 
             if (path_to_data_file.empty())
             {
@@ -1042,7 +1084,7 @@ void IMergeTreeDataPart::loadRowsCount()
                 /// In last mark we actually written less or equal rows than stored in last mark of index granularity
                 if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
                 {
-                     throw Exception(
+                    throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Column {} has rows count {} in last mark according to size in memory "
                         "and size of single value, but index granularity in part {} in last mark has {} rows which is less than in column",
@@ -1077,7 +1119,7 @@ void IMergeTreeDataPart::loadRowsCount()
             {
                 throw Exception(
                     "Uncompressed size of column " + column.name + "(" + toString(column_size)
-                    + ") is not divisible by the size of value (" + toString(sizeof_field) + ")",
+                        + ") is not divisible by the size of value (" + toString(sizeof_field) + ")",
                     ErrorCodes::LOGICAL_ERROR);
             }
 
@@ -1086,7 +1128,7 @@ void IMergeTreeDataPart::loadRowsCount()
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
                 throw Exception(
                     "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows, expected "
-                    + toString(rows_approx) + "+-" + toString(last_mark_index_granularity) + " rows according to the index",
+                        + toString(rows_approx) + "+-" + toString(last_mark_index_granularity) + " rows according to the index",
                     ErrorCodes::LOGICAL_ERROR);
 
             return;
@@ -1165,7 +1207,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
             throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + data_part_storage->getDiskName(),
-                ErrorCodes::NO_FILE_IN_DATA_PART);
+                            ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
@@ -1191,10 +1233,10 @@ void IMergeTreeDataPart::loadColumns(bool require)
     }
 
     SerializationInfo::Settings settings =
-    {
-        .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
-        .choose_kind = false,
-    };
+        {
+            .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .choose_kind = false,
+        };
 
     SerializationInfoByName infos(loaded_columns, settings);
     exists =  metadata_manager->exists(SERIALIZATION_FILE_NAME);
@@ -1416,7 +1458,7 @@ void IMergeTreeDataPart::initializePartMetadataManager()
     else
         metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 #else
-        metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
+    metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 #endif
 }
 

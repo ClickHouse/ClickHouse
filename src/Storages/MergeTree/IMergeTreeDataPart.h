@@ -22,8 +22,8 @@
 
 namespace zkutil
 {
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+class ZooKeeper;
+using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
 }
 
 namespace DB
@@ -303,6 +303,7 @@ public:
         }
 
         void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        Block loadIntoBlock(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
