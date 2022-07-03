@@ -98,4 +98,6 @@ time curl -XPUT 'http://root:@127.0.0.1:8000/v1/streaming_load' -H 'insert_sql: 
 du -bcs _data
 # 38714978944
 
-./run.sh
+# It does not support ClickHouse protocol well (it hangs on some queries if they are too long).
+
+./run.sh 2>&1 | tee log.txt

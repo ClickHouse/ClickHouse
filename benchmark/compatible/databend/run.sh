@@ -8,7 +8,7 @@ cat queries.sql | while read query; do
 
     echo -n "["
     for i in $(seq 1 $TRIES); do
-        RES=$(clickhouse-client --time --format=Null --query="$query" 2>&1 ||:)
+        RES=$(curl -w 'Time: %{time_total}\n' http://default@localhost:8124/ -d "${query}" 2>&1 | grep -P '^Time: ' | sed 's/Time: //')
         [[ "$?" == "0" ]] && echo -n "${RES}" || echo -n "null"
         [[ "$i" != $TRIES ]] && echo -n ", "
 
