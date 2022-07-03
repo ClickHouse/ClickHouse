@@ -1,0 +1,21 @@
+### Сomplementary to PullRequestCI (pull_request.yml) - should pass
+name: PRPassCI
+on:
+  pull_request:
+    types:
+      - synchronize
+      - reopened
+      - opened
+    branches:
+      - master
+    # Сomplementary paths
+    paths:
+      - 'docker/docs/**'
+      - 'docs/**'
+      - 'website/**'
+jobs:
+  SimpleCheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pass
+        run: exit 0
