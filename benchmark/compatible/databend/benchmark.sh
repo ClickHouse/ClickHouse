@@ -90,4 +90,12 @@ gzip -d hits.csv.gz
 # the diagnostics is terrible.
 
 head -n 90000000 hits.tsv > hits90m.tsv
-curl -XPUT 'http://root:@127.0.0.1:8000/v1/streaming_load' -H 'insert_sql: insert into hits format TSV' -H 'skip_header: 0' -H 'field_delimiter: \t' -H 'record_delimiter: \n' -F 'upload=@"./hits90m.tsv"'
+time curl -XPUT 'http://root:@127.0.0.1:8000/v1/streaming_load' -H 'insert_sql: insert into hits format TSV' -H 'skip_header: 0' -H 'field_delimiter: \t' -H 'record_delimiter: \n' -F 'upload=@"./hits90m.tsv"'
+
+# {"id":"08f59e6c-2924-483e-bb96-cbcb458588f5","state":"SUCCESS","stats":{"rows":90000000,"bytes":73152552024},"error":null}
+# real    7m15.312s
+
+du -bcs _data
+# 38714978944
+
+./run.sh
