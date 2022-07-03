@@ -74,9 +74,11 @@ namespace
         }
 
         template <typename T, bool nullable>
-        bool executeNumber(
-            const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
+        bool NO_INLINE __attribute__((target("no-avx"))) executeNumber(
+            const IColumn & src_data,
+            const ColumnArray::Offsets & src_offsets,
+            IColumn & res_data_col,
+            ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -85,9 +87,16 @@ namespace
                 const PaddedPODArray<T> & src_data_vec = src_data_concrete->getData();
                 PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(res_data_col).getData();
 
+                const auto * src_offsets_raw = src_offsets.data();
+
+                size_t empty_arrays = 0;
+                for (size_t i = 1; i < src_offsets.size(); ++i)
+                    if (*(src_offsets_raw + i - 1) == *(src_offsets_raw + i))
+                        empty_arrays++;
+
                 size_t size = src_offsets.size();
                 res_offsets.resize(size);
-                res_data.reserve(src_data_vec.size());
+                res_data.resize(src_offsets.back() + empty_arrays + 1);
 
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
@@ -95,13 +104,16 @@ namespace
                 ColumnArray::Offset src_prev_offset = 0;
                 ColumnArray::Offset res_prev_offset = 0;
 
+                auto * res_data_raw = res_data.data();
+                auto * src_data_raw = src_data_vec.data();
+                auto * res_offsets_raw = res_offsets.data();
+
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (src_offsets[i] != src_prev_offset)
+                    if (*(src_offsets_raw + i) != src_prev_offset)
                     {
-                        size_t size_to_write = src_offsets[i] - src_prev_offset;
-                        res_data.resize(res_prev_offset + size_to_write);
-                        memcpy(&res_data[res_prev_offset], &src_data_vec[src_prev_offset], size_to_write * sizeof(T));
+                        size_t size_to_write = *(src_offsets_raw + i) - src_prev_offset;
+                        memcpy(res_data_raw + res_prev_offset, src_data_raw + src_prev_offset, size_to_write * sizeof(T));
 
                         if (nullable)
                         {
@@ -110,20 +122,22 @@ namespace
                         }
 
                         res_prev_offset += size_to_write;
-                        res_offsets[i] = res_prev_offset;
+                        *(res_offsets_raw + i) = res_prev_offset;
                     }
                     else
                     {
-                        res_data.push_back(T());
+                        *(res_data_raw + res_prev_offset) = T();
                         ++res_prev_offset;
-                        res_offsets[i] = res_prev_offset;
+                        *(res_offsets_raw + i) = res_prev_offset;
 
                         if (nullable)
                             res_null_map->push_back(1); /// Push NULL.
                     }
 
-                    src_prev_offset = src_offsets[i];
+                    src_prev_offset = *(src_offsets_raw + i);
                 }
+
+                res_data.resize(res_prev_offset);
 
                 return true;
             }

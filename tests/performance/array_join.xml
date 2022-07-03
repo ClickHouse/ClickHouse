@@ -1,11 +1,19 @@
 <test>
+  <create_query>CREATE TABLE array_join_s(a Array(String(10)), b Array(String(10))) engine=MergeTree order by tuple()</create_query>
+  <create_query>CREATE TABLE array_join_fs(a Array(FixedString(10)), b Array(FixedString(10))) engine=MergeTree order by tuple()</create_query>
 
+  <fill_query>INSERT INTO array_join_s SELECT [toString(number)], [toString(number * 2)] FROM numbers(50000000)</fill_query>
+  <fill_query>INSERT INTO array_join_fs SELECT [toFixedString(toString(number), 10)], [toFixedString(toString(number * 2), 10)] FROM numbers(50000000)</fill_query>
 
+  <query>SELECT count() FROM array_join_s ARRAY JOIN a, b</query>
+  <query>SELECT count() FROM array_join_fs ARRAY JOIN a, b</query>
+  <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b)</query>
+  <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b)</query>
+  <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
+  <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
+  <query>SELECT count() FROM (SELECT [number] a, [number * 2, number] b FROM numbers(10000000)) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
+  <query>SELECT count() FROM (SELECT [number] a, [number * 2, number] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
 
-    <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b)</query>
-    <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b)</query>
-    <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
-    <query>SELECT count() FROM (SELECT [number] a, [number * 2] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
-    <query>SELECT count() FROM (SELECT [number] a, [number * 2, number] b FROM numbers(10000000)) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
-    <query>SELECT count() FROM (SELECT [number] a, [number * 2, number] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
+  <drop_query>DROP TABLE array_join_s</drop_query>
+  <drop_query>DROP TABLE array_join_fs</drop_query>
 </test>
