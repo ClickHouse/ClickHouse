@@ -1240,8 +1240,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 if (expressions.has_order_by)
                     executeOrder(query_plan, input_order_info_for_order);
 
-                if (expressions.has_order_by && query.limitLength())
-                    executeDistinct(query_plan, false, expressions.selected_columns, true);
+                /// pre_distinct = false, because if we have limit and distinct,
+                /// we need to merge streams to one and calculate overall distinct.
+                /// Otherwise we can take several equal values from different streams
+                /// according to limit and skip some distinct values.
+                if (query.limitLength())
+                    executeDistinct(query_plan, false, expressions.selected_columns, false);
 
                 if (expressions.hasLimitBy())
                 {
