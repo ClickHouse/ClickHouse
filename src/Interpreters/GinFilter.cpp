@@ -147,7 +147,7 @@ bool GinFilter::matchInRange(const PostingsCachePtr& postings_cache, UInt32 segm
             return false;
         }
         auto min_in_container = container_it->second->minimum();
-        auto max_in_container = container_it->second->maximum();	
+        auto max_in_container = container_it->second->maximum();
         if (range_start > max_in_container ||  min_in_container > range_end)
         {
             return false;
@@ -180,7 +180,7 @@ bool GinFilter::match(const PostingsCachePtr& postings_cache) const
     for (const auto &rowid_range: rowid_range_container)
     {
         match_result |= matchInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end);
-    }			
+    }
 
     return match_result;
 }
