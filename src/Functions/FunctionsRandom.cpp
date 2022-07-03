@@ -34,7 +34,7 @@ namespace
             current = value;
         }
 
-        UInt32 next()
+        UInt32 __attribute__((target("no-avx"))) next()
         {
             current = current * a + c;
             return current >> 16;
@@ -68,8 +68,12 @@ namespace
 
 DECLARE_DEFAULT_CODE(
 
-void RandImpl::execute(char * output, size_t size)
+void __attribute__((target("no-avx"))) unalignedStore(char * out, UInt32 value)
 {
+    memcpy(out, &value, sizeof(UInt32));
+}
+
+void __attribute__((target("no-avx"))) RandImpl::execute(char * output, size_t size) {
     LinearCongruentialGenerator generator0;
     LinearCongruentialGenerator generator1;
     LinearCongruentialGenerator generator2;
@@ -84,13 +88,12 @@ void RandImpl::execute(char * output, size_t size)
 
     for (const char * end = output + size; output < end; output += 16)
     {
-        unalignedStore<UInt32>(output, generator0.next());
-        unalignedStore<UInt32>(output + 4, generator1.next());
-        unalignedStore<UInt32>(output + 8, generator2.next());
-        unalignedStore<UInt32>(output + 12, generator3.next());
+        unalignedStore(output, generator0.next());
+        unalignedStore(output + 4, generator1.next());
+        unalignedStore(output + 8, generator2.next());
+        unalignedStore(output + 12, generator3.next());
     }
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
-    // todo: adapt for avx
 }
 
 ) // DECLARE_DEFAULT_CODE
@@ -125,7 +128,7 @@ void RandImpl::execute(char * output, size_t size)
     char * end = output + size;
 
     constexpr int vec_size = 4;
-    constexpr int safe_overwrite = 15;
+    constexpr int safe_overwrite = 31;
     constexpr int bytes_per_write = 4 * sizeof(UInt64x4);
 
     UInt64 rand_seed = randomSeed();
