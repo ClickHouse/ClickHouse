@@ -11,12 +11,15 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 
 #include <base/getFQDNOrHostName.h>
+
 #include <Common/FileCacheFactory.h>
+#include <Common/logger_useful.h>
+
+#include <IO/S3Common.h>
 
 #include <Disks/DiskCacheWrapper.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
-
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
@@ -26,9 +29,8 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 
-#include <IO/S3Common.h>
-
 #include <Storages/StorageS3Settings.h>
+
 
 namespace DB
 {
@@ -129,6 +131,13 @@ void registerDiskS3(DiskFactory & factory)
             /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
             if (s3_capabilities.support_batch_delete && checkBatchRemoveIsMissing(*s3_storage, uri.key))
             {
+                LOG_WARNING(
+                    &Poco::Logger::get("registerDiskS3"),
+                    "Storage for disk {} does not support batch delete operations, "
+                    "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
+                    "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
+                    name
+                );
                 s3_storage->setCapabilitiesSupportBatchDelete(false);
             }
         }
