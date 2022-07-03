@@ -68,7 +68,9 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             }
 
             S3Settings::AuthSettings auth_settings{
-                    std::move(access_key_id), std::move(secret_access_key),
+                    std::move(access_key_id),
+                    std::move(secret_access_key),
+                    {},
                     std::move(region),
                     std::move(server_side_encryption_customer_key_base64),
                     std::move(headers),

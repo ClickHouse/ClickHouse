@@ -12,6 +12,11 @@
 #include <Storages/StorageS3.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
+
+#include <list>
+#include <map>
+#include <set>
+
 #include <filesystem>
 
 
@@ -35,49 +40,59 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
     }
     else
     {
-        if (args.empty() || args.size() > 6)
+        if (args.empty() || args.size() > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-        /// Size -> argument indexes
-        static auto size_to_args = std::map<size_t, std::map<String, size_t>>
+        /// parameter -> (can_be_skipped, is_valid)
+        static std::map<String, std::pair<bool, std::function<bool (const String & value)>>> parameters_info =
         {
-            {1, {{}}},
-            {2, {{"format", 1}}},
-            {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}}},
-            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
+            {"access_key_id", {true, [](const String &){ return true; }}},
+            {"secret_access_key", {true, [](const String &){ return true; }}},
+            {"session_token", {true, [](const String &){ return true; }}},
+            {"format", {false, [](const String & value){ return FormatFactory::instance().getAllFormats().contains(value); }}},
+            {"structure", {false, [](const String &){ return true; }}},
+            {"compression_method", {false, [](const String &){ return true; }}}
         };
 
-        std::map<String, size_t> args_to_idx;
-        /// For 4 arguments we support 2 possible variants:
-        /// s3(source, format, structure, compression_method) and s3(source, access_key_id, access_key_id, format)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
-        if (args.size() == 4)
-        {
-            auto second_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            if (FormatFactory::instance().getAllFormats().contains(second_arg))
-                args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
+        std::list<std::pair<String, size_t>> matches;
+        std::set<std::pair<String, size_t>> wrong_matches;
 
-            else
-                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
-        }
-        /// For 3 arguments we support 2 possible variants:
-        /// s3(source, format, structure) and s3(source, access_key_id, access_key_id)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
-        else if (args.size() == 3)
+        auto parameters_it = parameters_info.begin();
+        for (size_t index = 1; index < args.size(); )
         {
-            auto second_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            if (FormatFactory::instance().getAllFormats().contains(second_arg))
-                args_to_idx = {{"format", 1}, {"structure", 2}};
+            const auto & arg = args[index]->as<ASTLiteral &>().value.safeGet<String>();
+            if (wrong_matches.count({parameters_it->first, index}) == 0 && parameters_it->second.second(arg))
+            {
+                /// Valid.
+                matches.push_back({parameters_it->first, index});
+                ++index;
+                ++parameters_it;
+            }
+            else if (parameters_it->second.first && std::next(parameters_it) != parameters_info.end())
+            {
+                /// Invalid and can be skipped.
+                ++parameters_it;
+            }
+            else if (!matches.empty())
+            {
+                /// Invalid and can't be skipped.
+                auto [last_parameter, last_index] = matches.back();
+                parameters_it = parameters_info.find(last_parameter);
+                index = last_index;
+                wrong_matches.emplace(std::move(last_parameter), last_index);
+                matches.pop_back();
+            }
             else
-                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
+            {
+                /// No possible combinations left.
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
+            }
         }
-        else
-        {
-            args_to_idx = size_to_args[args.size()];
-        }
+
+        std::map<String, size_t> args_to_idx(matches.begin(), matches.end());
 
         /// This argument is always the first
         s3_configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
@@ -96,6 +111,9 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
 
         if (args_to_idx.contains("secret_access_key"))
             s3_configuration.auth_settings.secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+        if (args_to_idx.contains("session_token"))
+            s3_configuration.auth_settings.session_token = args[args_to_idx["session_token"]]->as<ASTLiteral &>().value.safeGet<String>();
     }
 
     if (s3_configuration.format == "auto")
@@ -108,15 +126,19 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     ASTs & args_func = ast_function->children;
 
     const auto message = fmt::format(
-        "The signature of table function {} could be the following:\n" \
-        " - url\n" \
-        " - url, format\n" \
-        " - url, format, structure\n" \
-        " - url, access_key_id, secret_access_key\n" \
-        " - url, format, structure, compression_method\n" \
-        " - url, access_key_id, secret_access_key, format\n" \
-        " - url, access_key_id, secret_access_key, format, structure\n" \
-        " - url, access_key_id, secret_access_key, format, structure, compression_method",
+        "The signature of table function {} could be the following:\n"
+        " - url\n"
+        " - url, format\n"
+        " - url, format, structure\n"
+        " - url, access_key_id, secret_access_key\n"
+        " - url, format, structure, compression_method\n"
+        " - url, access_key_id, secret_access_key, session_token\n"
+        " - url, access_key_id, secret_access_key, format\n"
+        " - url, access_key_id, secret_access_key, session_token, format\n"
+        " - url, access_key_id, secret_access_key, format, structure\n"
+        " - url, access_key_id, secret_access_key, session_token, format, structure\n"
+        " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
+        " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method",
         getName());
 
     if (args_func.size() != 1)

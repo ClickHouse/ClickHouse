@@ -79,6 +79,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     DB::S3::URI uri(Poco::URI(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt"));
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
+    String session_token = "SESSION_TOKEN";
     String region = "us-east-1";
     String version_id;
     UInt64 max_single_read_retries = 1;
@@ -103,6 +104,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
         uri.is_virtual_hosted_style,
         access_key_id,
         secret_access_key,
+        session_token,
         server_side_encryption_customer_key_base64,
         headers,
         use_environment_credentials,

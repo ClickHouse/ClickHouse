@@ -36,6 +36,7 @@ public:
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
+        const String & session_token,
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
         bool use_environment_credentials,

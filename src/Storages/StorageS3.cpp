@@ -1020,7 +1020,7 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
     HeaderCollection headers;
     if (upd.access_key_id.empty())
     {
-        credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
+        credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key, settings.auth_settings.session_token);
         headers = settings.auth_settings.headers;
     }
 
@@ -1037,6 +1037,7 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
         upd.uri.is_virtual_hosted_style,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
+        credentials.GetSessionToken(),
         settings.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
         settings.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),

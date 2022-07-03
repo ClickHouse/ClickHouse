@@ -142,6 +142,7 @@ std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
         uri.is_virtual_hosted_style,
         config.getString(config_prefix + ".access_key_id", ""),
         config.getString(config_prefix + ".secret_access_key", ""),
+        {},
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
         {},
         config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),

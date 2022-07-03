@@ -655,6 +655,7 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
+        const String & session_token,
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
         bool use_environment_credentials,
@@ -681,7 +682,7 @@ namespace S3
 
         client_configuration.extra_headers = std::move(headers);
 
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
         auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
                 client_configuration,
                 std::move(credentials),

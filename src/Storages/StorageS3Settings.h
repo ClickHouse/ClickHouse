@@ -33,6 +33,7 @@ struct S3Settings
     {
         String access_key_id;
         String secret_access_key;
+        String session_token;
         String region;
         String server_side_encryption_customer_key_base64;
 
