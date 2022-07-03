@@ -28,8 +28,8 @@ Find "Security", click on the group in "VPC security groups".
 Edit "Inbound rules". Add "Custom TCP", port 3306, from 0.0.0.0/0.
 
 ```
-export HOST="database-1.cluster-cnkeohbxcwr1.eu-central-1.rds.amazonaws.com"
-export PASSWORD="vci43A32#1"
+export HOST="database-1.cluster-....eu-central-1.rds.amazonaws.com"
+export PASSWORD="..."
 
 mysql -h "${HOST}" -u admin --password="${PASSWORD}" -e "CREATE DATABASE test"
 ```
@@ -60,3 +60,8 @@ cat log.txt |
   awk '{ if ($2) { print $1 * 60 + $2 } else { print $1 } }' |
   awk '{ if (i % 3 == 0) { printf "[" }; printf $1; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
 ```
+
+You will get
+> ERROR 1114 (HY000) at line 1: The table '/rdsdbdata/tmp/#sqlaff_e5_0' is full
+
+to some queries.
