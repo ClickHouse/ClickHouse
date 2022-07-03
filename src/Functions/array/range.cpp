@@ -22,6 +22,23 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template <typename T>
+void __attribute__((target("no-avx"))) NO_INLINE
+rangeMainLoop(const ColumnVector<T> & in, ColumnVector<T> & out, ColumnArray::ColumnOffsets & offsets)
+{
+    const auto * in_data = in.getData().data();
+    auto * out_data = out.getData().data();
+    auto * offsets_data = offsets.getData().data();
+    IColumn::Offset offset{};
+    for (size_t row_idx = 0, rows = in.size(); row_idx < rows; ++row_idx)
+    {
+        for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
+            out_data[offset + elem_idx] = elem_idx;
+
+        offset += in_data[row_idx];
+        offsets_data[row_idx] = offset;
+    }
+}
 
 /** Generates array
   * range(size): [0, size)
@@ -90,21 +107,7 @@ private:
             auto data_col = ColumnVector<T>::create(total_values);
             auto offsets_col = ColumnArray::ColumnOffsets::create(in->size());
 
-            auto & out_data = data_col->getData();
-            auto & out_offsets = offsets_col->getData();
-
-            IColumn::Offset offset{};
-            for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
-            {
-                #if defined(__clang__)
-                #pragma clang loop unroll_count(2)
-                #endif
-                for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
-                    out_data[offset + elem_idx] = elem_idx;
-
-                offset += in_data[row_idx];
-                out_offsets[row_idx] = offset;
-            }
+            rangeMainLoop(*in, *data_col, *offsets_col);
 
             return ColumnArray::create(std::move(data_col), std::move(offsets_col));
         }
