@@ -6,8 +6,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/Common/AccessFlags.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 #include <Interpreters/Context.h>
 
 
@@ -57,20 +55,6 @@ void StorageSystemRoles::fillData(MutableColumns & res_columns, ContextPtr conte
 
         add_row(role->getName(), id, storage->getStorageName());
     }
-}
-
-void StorageSystemRoles::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
-    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::ROLE);
-}
-
-void StorageSystemRoles::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
-{
-    auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
 }
 
 }

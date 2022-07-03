@@ -2,7 +2,7 @@
 sidebar_position: 145
 ---
 
-# sumKahan
+# sumKahan {#agg_function-sumKahan}
 
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm)
 Slower than [sum](./sum.md) function.

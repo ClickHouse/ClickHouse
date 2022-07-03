@@ -5,7 +5,7 @@
 
 namespace DB
 {
-IPartMetadataManager::IPartMetadataManager(const IMergeTreeDataPart * part_) : part(part_)
+IPartMetadataManager::IPartMetadataManager(const IMergeTreeDataPart * part_) : part(part_), disk(part->volume->getDisk())
 {
 }
 }

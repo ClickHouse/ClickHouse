@@ -3,7 +3,7 @@ sidebar_position: 47
 sidebar_label: ClickHouse Upgrade
 ---
 
-# ClickHouse Upgrade
+# ClickHouse Upgrade {#clickhouse-upgrade}
 
 If ClickHouse was installed from `deb` packages, execute the following commands on the server:
 
@@ -15,7 +15,7 @@ $ sudo service clickhouse-server restart
 
 If you installed ClickHouse using something other than the recommended `deb` packages, use the appropriate update method.
 
-:::note
+:::note    
 You can update multiple servers at once as soon as there is no moment when all replicas of one shard are offline.
 :::
 

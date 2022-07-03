@@ -3,7 +3,7 @@ sidebar_position: 4
 sidebar_label: MySQL
 ---
 
-# MySQL
+# MySQL {#mysql}
 
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 

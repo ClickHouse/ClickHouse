@@ -3,7 +3,7 @@ sidebar_position: 42
 sidebar_label: mysql
 ---
 
-# mysql
+# mysql {#mysql}
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote MySQL server.
 
@@ -111,3 +111,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 -   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
 -   [Using MySQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
+[Original article](https://clickhouse.com/docs/en/sql-reference/table_functions/mysql/) <!--hide-->

@@ -14,11 +14,9 @@
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <base/range.h>
 
 
@@ -31,7 +29,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-}
+};
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
@@ -111,7 +109,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     InterpreterSelectQuery select(
         result.query_ast, query_context, storage, {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizationsAlias());
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
@@ -223,7 +221,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     InterpreterSelectQuery select(
         result.query_ast, query_context, storage, {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizationsAlias());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
@@ -286,7 +284,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                                                                        : QueryProcessingStage::WithMergeableState})
                        .buildQueryPipeline();
     builder.resize(1);
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);

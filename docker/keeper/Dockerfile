@@ -67,7 +67,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
 
-EXPOSE 2181 10181 44444 9181
+EXPOSE 2181 10181 44444
 
 VOLUME /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 

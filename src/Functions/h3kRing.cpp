@@ -11,7 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/castColumn.h>
 
 #include <h3api.h>
 
@@ -52,10 +51,10 @@ public:
                 arg->getName(), 1, getName());
 
         arg = arguments[1].get();
-        if (!WhichDataType(arg).isNativeUInt())
+        if (!WhichDataType(arg).isUInt16())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be unsigned native integer.",
+                "Illegal type {} of argument {} of function {}. Must be UInt16",
                 arg->getName(),
                 2,
                 getName());
@@ -81,8 +80,7 @@ public:
         const auto & data_hindex = col_hindex->getData();
 
         /// ColumnUInt16 is sufficient as the max value of 2nd arg is checked (arg > 0 < 10000) in implementation below
-        auto cast_result = castColumnAccurate(non_const_arguments[1], std::make_shared<DataTypeUInt16>());
-        const auto * col_k = checkAndGetColumn<ColumnUInt16>(cast_result.get());
+        const auto * col_k = checkAndGetColumn<ColumnUInt16>(non_const_arguments[1].column.get());
         if (!col_k)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

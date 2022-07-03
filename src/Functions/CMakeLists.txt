@@ -13,7 +13,6 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        ch_contrib::wyhash
         ch_contrib::cityhash
         ch_contrib::farmhash
         clickhouse_dictionaries
@@ -23,7 +22,6 @@ target_link_libraries(clickhouse_functions
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
-        ch_contrib::hashidsxx
 
     PRIVATE
         ch_contrib::zlib
@@ -72,10 +70,6 @@ if (TARGET ch_contrib::llvm)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::llvm)
 endif ()
 
-if (TARGET ch_contrib::base-x)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base-x)
-endif()
-
 if (TARGET ch_contrib::base64)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base64)
 endif()
@@ -90,8 +84,8 @@ if (TARGET ch_contrib::h3)
     target_link_libraries (clickhouse_functions PRIVATE ch_contrib::h3)
 endif()
 
-if (TARGET ch_contrib::vectorscan)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::vectorscan)
+if (TARGET ch_contrib::hyperscan)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::hyperscan)
 endif()
 
 if (TARGET ch_contrib::simdjson)

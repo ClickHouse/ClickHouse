@@ -3,10 +3,10 @@
 #include <fcntl.h>
 #include <dlfcn.h>
 #include <unistd.h>
-#include <ctime>
+#include <time.h>
 #include <csignal>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
@@ -207,15 +207,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         /// Replace the file descriptors with the ends of our pipes.
         if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
-            _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN));
+            _exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
         if (!config.pipe_stdin_only)
         {
             if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT));
+                _exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
 
             if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
+                _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
         for (size_t i = 0; i < config.read_fds.size(); ++i)
@@ -224,7 +224,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.read_fds[i];
 
             if (fd != dup2(fds.fds_rw[1], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
+                _exit(int(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
         }
 
         for (size_t i = 0; i < config.write_fds.size(); ++i)
@@ -233,7 +233,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.write_fds[i];
 
             if (fd != dup2(fds.fds_rw[0], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+                _exit(int(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
         }
 
         // Reset the signal mask: it may be non-empty and will be inherited
@@ -246,7 +246,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
-        _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
+        _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(
@@ -356,17 +356,17 @@ void ShellCommand::wait()
     {
         switch (retcode)
         {
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN):
+            case int(ReturnCodes::CANNOT_DUP_STDIN):
                 throw Exception("Cannot dup2 stdin of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT):
+            case int(ReturnCodes::CANNOT_DUP_STDOUT):
                 throw Exception("Cannot dup2 stdout of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR):
+            case int(ReturnCodes::CANNOT_DUP_STDERR):
                 throw Exception("Cannot dup2 stderr of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_EXEC):
+            case int(ReturnCodes::CANNOT_EXEC):
                 throw Exception("Cannot execv in child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
+            case int(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
                 throw Exception("Cannot dup2 read descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
+            case int(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
                 throw Exception("Cannot dup2 write descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
             default:
                 throw Exception("Child process was exited with return code " + toString(retcode), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);

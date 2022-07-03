@@ -3,7 +3,7 @@ sidebar_position: 53
 sidebar_label: WATCH
 ---
 
-# WATCH Statement (Experimental)
+# WATCH Statement (Experimental) {#watch}
 
 :::warning    
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable live views and `WATCH` query using `set allow_experimental_live_view = 1`.
@@ -22,7 +22,7 @@ The `WATCH` query performs continuous data retrieval from a [LIVE VIEW](./create
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 ```
 
-## Virtual columns
+## Virtual columns {#watch-virtual-columns}
 
 The virtual `_version` column in the query result indicates the current result version.
 
@@ -54,7 +54,7 @@ By default, the requested data is returned to the client, while in conjunction w
 INSERT INTO [db.]table WATCH [db.]live_view ...
 ```
 
-## EVENTS Clause
+## EVENTS Clause {#events-clause}
 
 The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query result version.
 
@@ -79,7 +79,7 @@ WATCH lv EVENTS;
 ...
 ```
 
-## LIMIT Clause
+## LIMIT Clause {#limit-clause}
 
 The `LIMIT n` clause specifies the number of updates the `WATCH` query should wait for before terminating. By default there is no limit on the number of updates and therefore the query will not terminate. The value of `0` indicates that the `WATCH` query should not wait for any new query results and therefore will return immediately once query result is evaluated.
 
@@ -100,7 +100,7 @@ WATCH lv EVENTS LIMIT 1;
 └─────────┘
 ```
 
-## FORMAT Clause
+## FORMAT Clause {#format-clause}
 
 The `FORMAT` clause works the same way as for the [SELECT](../../sql-reference/statements/select/format.md#format-clause).
 

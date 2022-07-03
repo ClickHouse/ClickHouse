@@ -3,7 +3,7 @@ sidebar_position: 50
 sidebar_label: cluster
 ---
 
-# cluster, clusterAllReplicas
+# cluster, clusterAllReplicas {#cluster-clusterallreplicas}
 
 Allows to access all shards in an existing cluster which configured in `remote_servers` section without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. One replica of each shard is queried.
 

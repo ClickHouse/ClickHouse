@@ -16,7 +16,7 @@
 #include <Storages/Hive/StorageHive.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -70,7 +70,7 @@ namespace DB
             settings.max_query_size,
             settings.max_parser_depth);
         StoragePtr storage;
-        storage = std::make_shared<StorageHive>(
+        storage = StorageHive::create(
             hive_metastore_url,
             hive_database,
             hive_table,

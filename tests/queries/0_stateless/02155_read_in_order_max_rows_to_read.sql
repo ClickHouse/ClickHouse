@@ -7,7 +7,6 @@ SETTINGS index_granularity = 4;
 INSERT INTO t_max_rows_to_read SELECT number FROM numbers(100);
 
 SET max_threads = 1;
-SET optimize_read_in_order = 1;
 
 SELECT a FROM t_max_rows_to_read WHERE a = 10 SETTINGS max_rows_to_read = 4;
 

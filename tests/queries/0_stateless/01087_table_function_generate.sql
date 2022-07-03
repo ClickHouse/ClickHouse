@@ -42,20 +42,20 @@ LIMIT 10;
 SELECT '-';
 SELECT
 toTypeName(d), toTypeName(dt), toTypeName(dtm)
-FROM generateRandom('d Date, dt DateTime(\'UTC\'), dtm DateTime(\'UTC\')')
+FROM generateRandom('d Date, dt DateTime(\'Europe/Moscow\'), dtm DateTime(\'Europe/Moscow\')')
 LIMIT 1;
 SELECT
 d, dt, dtm
-FROM generateRandom('d Date, dt DateTime(\'UTC\'), dtm DateTime(\'UTC\')', 1, 10, 10)
+FROM generateRandom('d Date, dt DateTime(\'Europe/Moscow\'), dtm DateTime(\'Europe/Moscow\')', 1, 10, 10)
 LIMIT 10;
 SELECT '-';
 SELECT
 toTypeName(dt64), toTypeName(dts64), toTypeName(dtms64)
-FROM generateRandom('dt64 DateTime64(3, \'UTC\'), dts64 DateTime64(6, \'UTC\'), dtms64 DateTime64(6 ,\'UTC\')')
+FROM generateRandom('dt64 DateTime64(3, \'Europe/Moscow\'), dts64 DateTime64(6, \'Europe/Moscow\'), dtms64 DateTime64(6 ,\'Europe/Moscow\')')
 LIMIT 1;
 SELECT
 dt64, dts64, dtms64
-FROM generateRandom('dt64 DateTime64(3, \'UTC\'), dts64 DateTime64(6, \'UTC\'), dtms64 DateTime64(6 ,\'UTC\')', 1, 10, 10)
+FROM generateRandom('dt64 DateTime64(3, \'Europe/Moscow\'), dts64 DateTime64(6, \'Europe/Moscow\'), dtms64 DateTime64(6 ,\'Europe/Moscow\')', 1, 10, 10)
 LIMIT 10;
 SELECT
 toTypeName(d32)
@@ -176,8 +176,8 @@ FROM generateRandom('i String', 1, 10, 10)
 LIMIT 10;
 SELECT '-';
 DROP TABLE IF EXISTS test_table;
-CREATE TABLE test_table(a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3, 'UTC'), UUID)) ENGINE=Memory;
-INSERT INTO test_table SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3, \'UTC\'), UUID)', 1, 10, 2)
+CREATE TABLE test_table(a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3, 'Europe/Moscow'), UUID)) ENGINE=Memory;
+INSERT INTO test_table SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3, \'Europe/Moscow\'), UUID)', 1, 10, 2)
 LIMIT 10;
 
 SELECT * FROM test_table ORDER BY a, d, c;
@@ -187,11 +187,12 @@ DROP TABLE IF EXISTS test_table;
 SELECT '-';
 
 DROP TABLE IF EXISTS test_table_2;
-CREATE TABLE test_table_2(a Array(Int8), b UInt32, c Nullable(String), d Decimal32(4), e Nullable(Enum16('h' = 1, 'w' = 5 , 'o' = -200)), f Float64, g Tuple(Date, DateTime('UTC'), DateTime64(3, 'UTC'), UUID), h FixedString(2)) ENGINE=Memory;
-INSERT INTO test_table_2 SELECT * FROM generateRandom('a Array(Int8), b UInt32, c Nullable(String), d Decimal32(4), e Nullable(Enum16(\'h\' = 1, \'w\' = 5 , \'o\' = -200)), f Float64, g Tuple(Date, DateTime(\'UTC\'), DateTime64(3, \'UTC\'), UUID), h FixedString(2)', 10, 5, 3)
+CREATE TABLE test_table_2(a Array(Int8), b UInt32, c Nullable(String), d Decimal32(4), e Nullable(Enum16('h' = 1, 'w' = 5 , 'o' = -200)), f Float64, g Tuple(Date, DateTime('Europe/Moscow'), DateTime64(3, 'Europe/Moscow'), UUID), h FixedString(2)) ENGINE=Memory;
+INSERT INTO test_table_2 SELECT * FROM generateRandom('a Array(Int8), b UInt32, c Nullable(String), d Decimal32(4), e Nullable(Enum16(\'h\' = 1, \'w\' = 5 , \'o\' = -200)), f Float64, g Tuple(Date, DateTime(\'Europe/Moscow\'), DateTime64(3, \'Europe/Moscow\'), UUID), h FixedString(2)', 10, 5, 3)
 LIMIT 10;
 
 SELECT a, b, c, d, e, f, g, hex(h) FROM test_table_2 ORDER BY a, b, c, d, e, f, g, h;
 SELECT '-';
 
 DROP TABLE IF EXISTS test_table_2;
+

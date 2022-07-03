@@ -3,7 +3,7 @@ sidebar_position: 42
 sidebar_label: DESCRIBE
 ---
 
-# DESCRIBE TABLE
+# DESCRIBE TABLE {#misc-describe-table}
 
 Returns information about table columns.
 

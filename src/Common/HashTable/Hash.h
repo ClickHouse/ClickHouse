@@ -296,19 +296,6 @@ struct UInt128HashCRC32
     }
 };
 
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-
-struct UInt128HashCRC32
-{
-    size_t operator()(UInt128 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
-        return crc;
-    }
-};
-
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -348,21 +335,6 @@ struct UInt256HashCRC32
         crc = _mm_crc32_u64(crc, x.items[1]);
         crc = _mm_crc32_u64(crc, x.items[2]);
         crc = _mm_crc32_u64(crc, x.items[3]);
-        return crc;
-    }
-};
-
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-
-struct UInt256HashCRC32
-{
-    size_t operator()(UInt256 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
-        crc = __crc32cd(crc, x.items[2]);
-        crc = __crc32cd(crc, x.items[3]);
         return crc;
     }
 };

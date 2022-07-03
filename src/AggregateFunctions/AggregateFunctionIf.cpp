@@ -119,13 +119,7 @@ public:
         }
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t) const override
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const UInt8 * null_map = column->getNullMapData().data();
@@ -148,31 +142,25 @@ public:
         /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
         /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
 
-        auto final_nulls = std::make_unique<UInt8[]>(row_end);
+        auto final_nulls = std::make_unique<UInt8[]>(batch_size);
 
         if (filter_null_map)
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
                 final_nulls[i] = (!!null_map[i]) | (!filter_values[i]) | (!!filter_null_map[i]);
         else
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
                 final_nulls[i] = (!!null_map[i]) | (!filter_values[i]);
 
         if constexpr (result_is_nullable)
         {
-            if (!memoryIsByte(final_nulls.get(), row_begin, row_end, 1))
+            if (!memoryIsByte(final_nulls.get(), batch_size, 1))
                 this->setFlag(place);
             else
                 return; /// No work to do.
         }
 
         this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin,
-            row_end,
-            this->nestedPlace(place),
-            columns_param,
-            final_nulls.get(),
-            arena,
-            -1);
+            batch_size, this->nestedPlace(place), columns_param, final_nulls.get(), arena, -1);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -237,7 +225,7 @@ public:
             throw Exception("Logical error: single argument is passed to AggregateFunctionIfNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
         if (number_of_arguments > MAX_ARGS)
-            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(MAX_ARGS),
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
@@ -371,7 +359,7 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>;
 
-    static constexpr size_t MAX_ARGS = 8;
+    enum { MAX_ARGS = 8 };
     size_t number_of_arguments = 0;
     std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
 };

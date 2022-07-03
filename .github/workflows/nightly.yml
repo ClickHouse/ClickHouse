@@ -81,6 +81,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           BUILD_NAME=coverity
           CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           TEMP_PATH=${{runner.temp}}/build_check
@@ -98,15 +99,14 @@ jobs:
         id: coverity-checkout
         uses: actions/checkout@v2
         with:
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload Coverity Analysis
         if: ${{ success() || failure() }}
         run: |
@@ -119,8 +119,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"

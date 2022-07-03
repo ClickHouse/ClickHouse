@@ -1,4 +1,4 @@
-#include <cstdlib>
+#include <stdlib.h>
 #include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>

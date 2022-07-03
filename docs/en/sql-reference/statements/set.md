@@ -3,7 +3,7 @@ sidebar_position: 50
 sidebar_label: SET
 ---
 
-# SET Statement
+# SET Statement {#query-set}
 
 ``` sql
 SET param = value
