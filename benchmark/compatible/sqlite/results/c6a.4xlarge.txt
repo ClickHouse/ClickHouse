@@ -1,0 +1,2 @@
+Load time: 43m28.444s
+Data size: 75 776 589 824 bytes

@@ -88,3 +88,6 @@ gzip -d hits.csv.gz
 # and fails after 7 minutes 38 seconds without loading any data:
 # Code: 4000, displayText = invalid data (Expected to have terminated string literal.) (while in processor thread 5).
 # the diagnostics is terrible.
+
+head -n 90000000 hits.tsv > hits90m.tsv
+curl -XPUT 'http://root:@127.0.0.1:8000/v1/streaming_load' -H 'insert_sql: insert into hits format TSV' -H 'skip_header: 0' -H 'field_delimiter: \t' -H 'record_delimiter: \n' -F 'upload=@"./hits90m.tsv"'

@@ -26,10 +26,9 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Hive
 - [ ] Impala
 - [ ] Hyper
-- [ ] Umbra
 - [ ] SQLite
 - [x] Redshift
-- [ ] Redshift Serverless
+- [x] Redshift Serverless
 - [ ] Presto/Trino
 - [ ] Athena
 - [ ] Bigquery (without publishing)
