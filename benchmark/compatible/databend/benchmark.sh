@@ -101,3 +101,5 @@ du -bcs _data
 # It does not support ClickHouse protocol well (it hangs on some queries if they are too long).
 
 ./run.sh 2>&1 | tee log.txt
+
+# Note: divide every number by 0.9 as only 90% of the data was loaded successfully.
