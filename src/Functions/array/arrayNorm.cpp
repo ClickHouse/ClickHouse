@@ -162,11 +162,12 @@ public:
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
-            case TypeIndex::Float32:
             case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
+            case TypeIndex::Float32:
+                return std::make_shared<DataTypeFloat32>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -185,6 +186,9 @@ public:
 
         switch (result_type->getTypeId())
         {
+            case TypeIndex::Float32:
+                return executeWithResultType<Float32>(*arr, type, input_rows_count, arguments);
+                break;
             case TypeIndex::Float64:
                 return executeWithResultType<Float64>(*arr, type, input_rows_count, arguments);
                 break;
