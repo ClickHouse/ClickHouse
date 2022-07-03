@@ -3,7 +3,7 @@
 ClickHouse支持多配置文件管理。主配置文件是`/etc/clickhouse-server/config.xml`。其余文件须在目录`/etc/clickhouse-server/config.d`。
 
 !!! 注意：
-    所有配置文件必须是XML格式。此外，配置文件须有相同的根元素，通常是`<clickhouse>`。
+    所有配置文件必须是XML格式。此外，配置文件须有相同的跟元素，通常是`<clickhouse>`。
 
 主配置文件中的一些配置可以通过`replace`或`remove`属性被配置文件覆盖。
 

@@ -15,10 +15,10 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <cassert>
+#include <assert.h>
 
 
 namespace DB
@@ -120,7 +120,6 @@ namespace
 
         AccessRights res = access;
         res.modifyFlags(modifier);
-        res.modifyFlagsWithGrantOption(modifier);
 
         /// Anyone has access to the "system" and "information_schema" database.
         res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
@@ -149,21 +148,6 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
     : access_control(&access_control_)
     , params(params_)
 {
-}
-
-
-ContextAccess::~ContextAccess()
-{
-    enabled_settings.reset();
-    enabled_quota.reset();
-    enabled_row_policies.reset();
-    access_with_implicit.reset();
-    access.reset();
-    roles_info.reset();
-    subscription_for_roles_changes.reset();
-    enabled_roles.reset();
-    subscription_for_user_change.reset();
-    user.reset();
 }
 
 
@@ -392,7 +376,7 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
+bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const
 {
     auto access_granted = [&]
     {
@@ -411,9 +395,6 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
             throw Exception(getUserName() + ": " + error_msg, error_code);
         return false;
     };
-
-    if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
-        flags &= ~AccessType::CLUSTER;
 
     if (!flags || is_full_access)
         return access_granted();
@@ -463,11 +444,10 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
-        const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;

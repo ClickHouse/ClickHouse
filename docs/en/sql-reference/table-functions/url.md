@@ -1,9 +1,9 @@
 ---
-sidebar_position: 41
-sidebar_label: url
+toc_priority: 41
+toc_title: url
 ---
 
-# url
+# url {#url}
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 

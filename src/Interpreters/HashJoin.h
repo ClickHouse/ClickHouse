@@ -16,7 +16,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
-#include <Storages/TableLockHolder.h>
+#include <Common/RWLock.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -61,9 +61,6 @@ public:
 
     template <bool use_flags, bool multiple_disjuncts, typename T>
     void setUsed(const T & f);
-
-    template <bool use_flags, bool multiple_disjunct>
-    void setUsed(const Block * block, size_t row_num, size_t offset);
 
     template <bool use_flags, bool multiple_disjuncts, typename T>
     bool getUsed(const T & f);
@@ -339,7 +336,7 @@ public:
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(TableLockHolder rwlock_holder)
+    void setLock(RWLockImpl::LockHolder rwlock_holder)
     {
         storage_join_lock = rwlock_holder;
     }
@@ -394,7 +391,7 @@ private:
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
-    TableLockHolder storage_join_lock = nullptr;
+    RWLockImpl::LockHolder storage_join_lock = nullptr;
 
     void dataMapInit(MapsVariant &);
 

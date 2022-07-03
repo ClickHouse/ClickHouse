@@ -1,5 +1,3 @@
-SET max_threads = 1;
-
 DROP TABLE IF EXISTS with_fill_date;
 CREATE TABLE with_fill_date (d Date, d32 Date32) ENGINE = Memory;
 
@@ -81,6 +79,3 @@ d WITH FILL
 id WITH FILL FROM 1 TO 5;
 
 DROP TABLE with_fill_date;
-
-SELECT d FROM (SELECT toDate(1) AS d)
-ORDER BY d DESC WITH FILL FROM toDate(3) TO toDate(0) STEP INTERVAL -1 DAY;

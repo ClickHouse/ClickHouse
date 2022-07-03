@@ -1,6 +1,6 @@
 ---
-sidebar_position: 42
-sidebar_label: "Обновление словарей"
+toc_priority: 42
+toc_title: "Обновление словарей"
 ---
 
 # Обновление словарей {#obnovlenie-slovarei}

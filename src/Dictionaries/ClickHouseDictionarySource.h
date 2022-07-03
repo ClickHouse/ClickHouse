@@ -45,15 +45,15 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    QueryPipeline loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
+    Pipe loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
 
-    QueryPipeline loadAll() override;
+    Pipe loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
@@ -71,7 +71,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    QueryPipeline createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
+    Pipe createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
 
     std::string doInvalidateQuery(const std::string & request) const;
 

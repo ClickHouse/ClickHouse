@@ -10,5 +10,5 @@
 0
 0
 3
-CREATE TABLE default.constrained\n(\n    `URL` String,\n    CONSTRAINT is_censor CHECK domainWithoutWWW(URL) = \'censor.net\',\n    CONSTRAINT is_utf8 CHECK isValidUTF8(URL)\n)\nENGINE = Log
-CREATE TABLE default.constrained2\n(\n    `URL` String,\n    CONSTRAINT is_censor CHECK domainWithoutWWW(URL) = \'censor.net\',\n    CONSTRAINT is_utf8 CHECK isValidUTF8(URL)\n)\nENGINE = Log
+CREATE TABLE default.constrained\n(\n    `URL` String,\n    CONSTRAINT is_yandex CHECK domainWithoutWWW(URL) = \'yandex.ru\',\n    CONSTRAINT is_utf8 CHECK isValidUTF8(URL)\n)\nENGINE = Log
+CREATE TABLE default.constrained2\n(\n    `URL` String,\n    CONSTRAINT is_yandex CHECK domainWithoutWWW(URL) = \'yandex.ru\',\n    CONSTRAINT is_utf8 CHECK isValidUTF8(URL)\n)\nENGINE = Log

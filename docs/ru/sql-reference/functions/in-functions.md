@@ -1,6 +1,6 @@
 ---
-sidebar_position: 60
-sidebar_label: "Функции для реализации оператора IN"
+toc_priority: 60
+toc_title: "Функции для реализации оператора IN"
 ---
 
 # Функции для реализации оператора IN {#funktsii-dlia-realizatsii-operatora-in}

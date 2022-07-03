@@ -44,9 +44,9 @@ function check_replication_consistency()
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%'") -ne 1 ]]; do
         sleep 0.5;
-        num_tries=$((num_tries+1))
-        if [ $num_tries -eq 200 ]; then
-            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%' FORMAT Vertical"
+        num_tries=$((num_tries-1))
+        if [ $num_tries -eq 100 ]; then
+            $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%' FORMAT Vertical"
             break
         fi
     done

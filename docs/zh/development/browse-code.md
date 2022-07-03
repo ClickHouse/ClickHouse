@@ -1,6 +1,6 @@
 ---
-sidebar_position: 63
-sidebar_label: "\u6D4F\u89C8\u6E90\u4EE3\u7801"
+toc_priority: 63
+toc_title: "\u6D4F\u89C8\u6E90\u4EE3\u7801"
 ---
 
 # 浏览ClickHouse源代码 {#browse-clickhouse-source-code}

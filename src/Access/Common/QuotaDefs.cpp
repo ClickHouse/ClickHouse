@@ -107,11 +107,6 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
             static const auto info = make_info("EXECUTION_TIME", 1000000000 /* execution_time is stored in nanoseconds */);
             return info;
         }
-        case QuotaType::WRITTEN_BYTES:
-        {
-            static const auto info = make_info("WRITTEN_BYTES", 1);
-            return info;
-        }
         case QuotaType::MAX: break;
     }
     throw Exception("Unexpected quota type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);

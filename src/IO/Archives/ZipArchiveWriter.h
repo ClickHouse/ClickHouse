@@ -4,6 +4,7 @@
 
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveWriter.h>
+#include <base/shared_ptr_helper.h>
 #include <mutex>
 
 
@@ -13,15 +14,9 @@ class WriteBuffer;
 class WriteBufferFromFileBase;
 
 /// Implementation of IArchiveWriter for writing zip archives.
-class ZipArchiveWriter : public IArchiveWriter
+class ZipArchiveWriter : public shared_ptr_helper<ZipArchiveWriter>, public IArchiveWriter
 {
 public:
-    /// Constructs an archive that will be written as a file in the local filesystem.
-    explicit ZipArchiveWriter(const String & path_to_archive_);
-
-    /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
-    ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
-
     /// Destructors finalizes writing the archive.
     ~ZipArchiveWriter() override;
 
@@ -36,12 +31,16 @@ public:
     bool isWritingFile() const override;
 
     /// Supported compression methods.
-    static constexpr const char kStore[] = "store";
-    static constexpr const char kDeflate[] = "deflate";
-    static constexpr const char kBzip2[] = "bzip2";
-    static constexpr const char kLzma[] = "lzma";
-    static constexpr const char kZstd[] = "zstd";
-    static constexpr const char kXz[] = "xz";
+    enum class CompressionMethod
+    {
+        /// See mz.h
+        kStore = 0,
+        kDeflate = 8,
+        kBzip2 = 12,
+        kLzma = 14,
+        kZstd = 93,
+        kXz = 95,
+    };
 
     /// Some compression levels.
     enum class CompressionLevels
@@ -54,7 +53,7 @@ public:
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    void setCompression(const String & compression_method_, int compression_level_) override;
+    void setCompression(int compression_method_, int compression_level_) override;
 
     /// Sets password. Only contents of the files are encrypted,
     /// names of files are not encrypted.
@@ -62,12 +61,18 @@ public:
     void setPassword(const String & password_) override;
 
     /// Utility functions.
-    static int compressionMethodToInt(const String & compression_method_);
-    static String intToCompressionMethod(int compression_method_);
-    static void checkCompressionMethodIsEnabled(int compression_method_);
+    static CompressionMethod parseCompressionMethod(const String & str);
+    static void checkCompressionMethodIsEnabled(CompressionMethod method);
     static void checkEncryptionIsEnabled();
 
 private:
+    /// Constructs an archive that will be written as a file in the local filesystem.
+    explicit ZipArchiveWriter(const String & path_to_archive_);
+
+    /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
+    ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
+
+    friend struct shared_ptr_helper<ZipArchiveWriter>;
     class WriteBufferFromZipArchive;
     class HandleHolder;
     using RawHandle = void *;
@@ -80,7 +85,7 @@ private:
     [[noreturn]] void showError(const String & message) const;
 
     const String path_to_archive;
-    int compression_method; /// By default the compression method is "deflate".
+    int compression_method = static_cast<int>(CompressionMethod::kDeflate);
     int compression_level = kDefaultCompressionLevel;
     String password;
     RawHandle handle = nullptr;
