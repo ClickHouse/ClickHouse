@@ -1,7 +1,9 @@
 # https://clang.llvm.org/extra/clang-tidy/
 option (ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
+option (CLICKHOUSE_ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
+set_prefixed_option_if_needed(ENABLE_CLANG_TIDY OFF)
 
-if (ENABLE_CLANG_TIDY)
+if (CLICKHOUSE_ENABLE_CLANG_TIDY)
 
     find_program (CLANG_TIDY_PATH NAMES "clang-tidy" "clang-tidy-14" "clang-tidy-13" "clang-tidy-12")
 

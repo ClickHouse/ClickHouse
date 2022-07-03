@@ -1,6 +1,8 @@
 option (ENABLE_BASEX "Enable base-x" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_BASEX "Enable base-x" ${ENABLE_LIBRARIES})
+set_prefixed_option_if_needed(ENABLE_BASEX ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_BASEX)
+if (NOT CLICKHOUSE_ENABLE_BASEX)
     message(STATUS "Not using base-x")
     return()
 endif()

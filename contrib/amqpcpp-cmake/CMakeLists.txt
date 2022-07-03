@@ -1,6 +1,8 @@
 option(ENABLE_AMQPCPP "Enable AMQP-CPP" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_AMQPCPP "Enable AMQP-CPP" ${ENABLE_LIBRARIES})
+set_prefixed_option_if_needed(ENABLE_AMQPCPP ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_AMQPCPP)
+if (NOT CLICKHOUSE_ENABLE_AMQPCPP)
     message(STATUS "Not using AMQP-CPP")
     return()
 endif()

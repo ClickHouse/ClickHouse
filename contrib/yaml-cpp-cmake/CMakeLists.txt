@@ -1,6 +1,8 @@
 option(ENABLE_YAML_CPP "Enable yaml-cpp" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_YAML_CPP "Enable yaml-cpp" ${ENABLE_LIBRARIES})
+set_prefixed_option_if_needed(ENABLE_YAML_CPP ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_YAML_CPP)
+if (NOT CLICKHOUSE_ENABLE_YAML_CPP)
     message(STATUS "Not using yaml")
     return()
 endif()

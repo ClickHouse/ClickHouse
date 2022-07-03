@@ -1,6 +1,8 @@
 option(ENABLE_THRIFT "Enable Thrift" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_THRIFT "Enable thrift" ${ENABLE_LIBRARIES})
+set_prefixed_option_if_needed(ENABLE_THRIFT ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_THRIFT)
+if (NOT CLICKHOUSE_ENABLE_THRIFT)
     message (STATUS "Not using thrift")
     return()
 endif()
