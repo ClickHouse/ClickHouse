@@ -1,6 +1,8 @@
 Run all tests on c6a.4xlarge, 500 GB gp2.
 
 - [x] ClickHouse
+- [ ] ClickHouse operating like "Athena"
+- [ ] clickhouse-local without data loading
 - [x] MySQL InnoDB
 - [x] MySQL MyISAM
 - [ ] MariaDB
@@ -15,7 +17,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [x] DuckDB
 - [x] MonetDB
 - [x] mapD/Omnisci/HeavyAI
-- [ ] Databend
+- [x] Databend
 - [ ] Doris
 - [x] Druid
 - [ ] Pinot
@@ -30,7 +32,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [x] Redshift
 - [x] Redshift Serverless
 - [ ] Presto/Trino
-- [ ] Athena
+- [ ] Amazon Athena
 - [ ] Bigquery (without publishing)
 - [ ] Snowflake
 - [ ] Rockset
@@ -39,7 +41,8 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Databricks
 - [ ] Planetscale (without publishing)
 - [ ] TiDB (TiFlash)
-- [ ] Amazon RDS
+- [ ] Amazon RDS Aurora for MySQL
+- [ ] Amazon RDS Aurora for Postgres
 - [ ] InfluxDB
 - [ ] VictoriaMetrics
 - [ ] TDEngine
@@ -49,7 +52,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Infobright
 - [ ] Actian Vector
 - [ ] Manticore Search
-- [ ] Vertica (without publishing)
+- [x] Vertica (without publishing)
 - [ ] Azure Synapse
 - [ ] Starburst Galaxy
 - [ ] MS SQL Server with Column Store Index (without publishing)
