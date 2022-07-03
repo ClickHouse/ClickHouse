@@ -35,7 +35,7 @@ GinFilter::GinFilter(const GinFilterParameters & params)
 
 void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store)
 {
-    if(len > MAX_TERM_LENGTH)
+    if (len > MAX_TERM_LENGTH)
         return;
 
     string token(data, len);
@@ -57,10 +57,10 @@ void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr
 
 void GinFilter::addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd)
 {
-    if(rowid_range_container.size() > 0)
+    if (rowid_range_container.size() > 0)
     {
         /// Try to merge the rowID range with the last one in the container
-        if(rowid_range_container.back().segment_id == segmentID &&
+        if (rowid_range_container.back().segment_id == segmentID &&
             rowid_range_container.back().range_end+1 == rowIDStart)
         {
             rowid_range_container.back().range_end = rowIDEnd;
@@ -79,7 +79,7 @@ void GinFilter::clear()
 void GinFilter::dump() const
 {
     printf("filter : '%s', row ID range:\n", getMatchString().c_str());
-    for(const auto & rowid_range: rowid_range_container)
+    for (const auto & rowid_range: rowid_range_container)
     {
         printf("\t\t%d, %d, %d; ", rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end);
     }
@@ -110,7 +110,7 @@ void dumpPostingsCache(const PostingsCache& postings_cache)
 void dumpPostingsCacheForStore(const PostingsCacheForStore& cache_store)
 {
     printf("----cache---store---: %s\n", cache_store.store->getName().c_str());
-    for(const auto & query_string_postings_cache: cache_store.cache)
+    for (const auto & query_string_postings_cache: cache_store.cache)
     {
         printf("----cache_store----filter string:%s---\n", query_string_postings_cache.first.c_str());
         dumpPostingsCache(*query_string_postings_cache.second);
@@ -120,13 +120,13 @@ void dumpPostingsCacheForStore(const PostingsCacheForStore& cache_store)
 
 bool GinFilter::hasEmptyPostingsList(const PostingsCachePtr& postings_cache)
 {
-    if(postings_cache->size() == 0)
+    if (postings_cache->size() == 0)
         return true;
 
     for (const auto& term_postings : *postings_cache)
     {
         const SegmentedPostingsListContainer& container = term_postings.second;
-        if(container.size() == 0)
+        if (container.size() == 0)
             return true;
     }
     return false;
@@ -140,29 +140,29 @@ bool GinFilter::matchInRange(const PostingsCachePtr& postings_cache, UInt32 segm
 
     for (const auto& term_postings : *postings_cache)
     {
-		const SegmentedPostingsListContainer& container = term_postings.second;
-		auto container_it{ container.find(segment_id) };
-		if (container_it == container.cend())
-		{
-			return false;
-		}
-		auto min_in_container = container_it->second->minimum();
-		auto max_in_container = container_it->second->maximum();	
-		if(range_start > max_in_container ||  min_in_container > range_end)
-		{
-			return false;
-		}
+        const SegmentedPostingsListContainer& container = term_postings.second;
+        auto container_it{ container.find(segment_id) };
+        if (container_it == container.cend())
+        {
+            return false;
+        }
+        auto min_in_container = container_it->second->minimum();
+        auto max_in_container = container_it->second->maximum();	
+        if (range_start > max_in_container ||  min_in_container > range_end)
+        {
+            return false;
+        }
 
-		/// Delay initialization as late as possible
-		if(!intersection_result_init)
-		{
-			intersection_result_init = true;
-			intersection_result.addRange(range_start, range_end+1);
-		}
-		intersection_result &= *container_it->second;
-		if(intersection_result.cardinality() == 0)
-		{
-			return false;
+        /// Delay initialization as late as possible
+        if (!intersection_result_init)
+        {
+            intersection_result_init = true;
+            intersection_result.addRange(range_start, range_end+1);
+        }
+        intersection_result &= *container_it->second;
+        if (intersection_result.cardinality() == 0)
+        {
+            return false;
         }
     }
     return true;
@@ -170,29 +170,29 @@ bool GinFilter::matchInRange(const PostingsCachePtr& postings_cache, UInt32 segm
 
 bool GinFilter::match(const PostingsCachePtr& postings_cache) const
 {
-    if(hasEmptyPostingsList(postings_cache))
+    if (hasEmptyPostingsList(postings_cache))
     {
         return false;
     }
 
-	bool match_result = false;
-	/// Check for each row ID ranges
-	for (const auto &rowid_range: rowid_range_container)
-	{
-		match_result |= matchInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end);
-	}			
+    bool match_result = false;
+    /// Check for each row ID ranges
+    for (const auto &rowid_range: rowid_range_container)
+    {
+        match_result |= matchInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end);
+    }			
 
     return match_result;
 }
 
 bool GinFilter::needsFilter() const
 {
-    if(getTerms().size() == 0)
+    if (getTerms().size() == 0)
         return false;
 
-    for(const auto & term: getTerms())
+    for (const auto & term: getTerms())
     {
-        if(term.size() > MAX_TERM_LENGTH)
+        if (term.size() > MAX_TERM_LENGTH)
             return false;
     }
 
@@ -201,11 +201,11 @@ bool GinFilter::needsFilter() const
 
 bool GinFilter::contains(const GinFilter & af, PostingsCacheForStore &cache_store)
 {
-    if(!af.needsFilter())
+    if (!af.needsFilter())
         return true;
 
     PostingsCachePtr postings_cache = cache_store.getPostings(af.getMatchString());
-    if(postings_cache == nullptr)
+    if (postings_cache == nullptr)
     {
         GinIndexStoreReader reader(cache_store.store);
 

@@ -46,7 +46,7 @@ void ArcsBitmap::addArc(char label)
 }
 
 int ArcsBitmap::getIndex(char label) const
-{		
+{
     int bitCount = 0;
 
     uint8_t index = label;
@@ -73,7 +73,7 @@ int ArcsBitmap::getArcNum() const
     int bitCount = 0;
     for (size_t i = 0; i < 4; i++)
     {
-        if(data.items[i])
+        if (data.items[i])
             bitCount += PopCountImpl(data.items[i]);
     }
     return bitCount;
@@ -259,7 +259,7 @@ void FSTBuilder::minimizePreviousWordSuffix(int down_to)
             temp_states[i - 1]->id = next_id++;
 
         if (!found)
-        {				
+        {
             minimized_state->state_index = previous_state_index;
 
             previous_written_bytes = minimized_state->serialize(write_buffer);
@@ -380,7 +380,7 @@ std::pair<bool, UInt64> FST::getOutput(const String& term)
             UInt8 label_num{0};
             read_buffer.read(reinterpret_cast<char&>(label_num));
 
-            if(label_num == 0)
+            if (label_num == 0)
                 return { false, 0 };
 
             auto labels_position = read_buffer.getPosition();

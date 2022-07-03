@@ -144,7 +144,7 @@ public:
     /// Do last segment writing
     void finalize();
 
-    /// method for wrting segment data to Gin index files
+    /// method for writing segment data to Gin index files
     void writeSegment();
 
     String getName() const {return name;}
@@ -195,7 +195,9 @@ struct PostingsCacheForStore
         auto it {cache.find(query_string)};
 
         if(it == cache.cend())
+        {
             return nullptr;
+        }
         return it->second;
     }
 };

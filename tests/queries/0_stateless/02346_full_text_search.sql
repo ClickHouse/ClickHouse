@@ -17,9 +17,10 @@ SELECT * FROM simple1 WHERE s LIKE '%01%';
 SYSTEM FLUSH LOGS;
 -- check the query only read 2 granules (4 rows total; each granule has 2 rows)
 SELECT read_rows, result_rows from system.query_log 
-        where   query_kind ='Select' and 
-                endsWith(trimRight(query), 'SELECT * FROM simple1 WHERE s LIKE \'%01%\';') 
-                and result_rows==2 limit 1;
+        where query_kind ='Select'
+            and current_database = currentDatabase()
+            and endsWith(trimRight(query), 'SELECT * FROM simple1 WHERE s LIKE \'%01%\';') 
+            and result_rows==2 limit 1;
 
 -- create table for gin()
 DROP TABLE IF EXISTS simple2;
@@ -37,7 +38,8 @@ SELECT * FROM simple2 WHERE hasToken(s, 'Alick');
 SYSTEM FLUSH LOGS;
 -- check the query only read 4 granules (8 rows total; each granule has 2 rows)
 SELECT read_rows, result_rows from system.query_log 
-    where query_kind ='Select' 
+    where query_kind ='Select'
+        and current_database = currentDatabase()
         and endsWith(trimRight(query), 'SELECT * FROM simple2 WHERE hasToken(s, \'Alick\');') 
         and result_rows==4 limit 1;
 
@@ -58,6 +60,7 @@ SYSTEM FLUSH LOGS;
 -- check the query only read 3 granules (6 rows total; each granule has 2 rows)
 SELECT read_rows, result_rows from system.query_log 
     where query_kind ='Select' 
+        and current_database = currentDatabase()
         and endsWith(trimRight(query), 'SELECT * FROM simple3 WHERE s LIKE \'%01%\';') 
         and result_rows==3 limit 1;
 
@@ -73,7 +76,11 @@ SELECT name, type FROM system.data_skipping_indices where (table =='simple4') li
 SELECT * FROM simple4 WHERE s LIKE '%你好%';
 SYSTEM FLUSH LOGS;
 -- check the query only read 1 granule (2 rows total; each granule has 2 rows)
-SELECT read_rows, result_rows from system.query_log where query_kind ='Select' and endsWith(trimRight(query), 'SELECT * FROM simple4 WHERE s LIKE \'%你好%\';') and result_rows==1 limit 1;
+SELECT read_rows, result_rows from system.query_log 
+    where query_kind ='Select' 
+        and current_database = currentDatabase()    
+        and endsWith(trimRight(query), 'SELECT * FROM simple4 WHERE s LIKE \'%你好%\';') 
+        and result_rows==1 limit 1;
 
 -- create table with 1000000 rows
 DROP TABLE IF EXISTS hextable;
@@ -92,6 +99,7 @@ SELECT name, type FROM system.data_skipping_indices where (table =='hextable') l
 select * from hextable where hasToken(s, '2D2D2D2D2D2D1540');
 SYSTEM FLUSH LOGS;
 -- check the query only read 3 granules (6 rows total; each granule has 2 rows)
-SELECT read_rows, result_rows from system.query_log 
-    where query_kind ='Select' 
+SELECT read_rows, result_rows from system.query_log
+    where query_kind ='Select'
+        and current_database = currentDatabase()     
         and hasToken(query, 'hextable') and result_rows==1 limit 1;

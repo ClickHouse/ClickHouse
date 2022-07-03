@@ -214,7 +214,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if(dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
+        if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
         {
             store = std::make_shared<GinIndexStore>(stream_name, data_part->data_part_storage, data_part_storage_builder, storage.getSettings()->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
@@ -277,11 +277,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
         GinIndexStorePtr store = nullptr;
-        if(dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
+        if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
         {
             String stream_name = index_helper->getFileName();
             auto it = gin_index_stores.find(stream_name);
-            if(it == gin_index_stores.cend())
+            if (it == gin_index_stores.cend())
             {
                 throw Exception("Index '" + stream_name + "' does not exist", ErrorCodes::LOGICAL_ERROR);
             }

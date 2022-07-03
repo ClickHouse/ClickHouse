@@ -21,8 +21,8 @@ struct Arc
 {
     Arc() = default;
     Arc(Output output_, const StatePtr &target_): output{output_}, target{target_}{}
-    Output		output{0};
-    StatePtr	target;
+    Output output{0};
+    StatePtr target;
 
     UInt16 serialize(WriteBuffer& write_buffer);
 };
