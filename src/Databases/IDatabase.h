@@ -30,7 +30,6 @@ class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
-class IRestoreCoordination;
 
 namespace ErrorCodes
 {
@@ -147,7 +146,7 @@ public:
     {
     }
 
-    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
+    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
@@ -197,7 +196,7 @@ public:
     virtual void dropTable( /// NOLINT
         ContextPtr /*context*/,
         const String & /*name*/,
-        [[maybe_unused]] bool sync = false)
+        [[maybe_unused]] bool no_delay = false)
     {
         throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -332,11 +331,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
-    /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
-    virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
-
-    /// Creates a table restored from backup.
-    virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
+    /// Returns true if the backup of the database is hollow, which means it doesn't contain
+    /// any tables which can be stored to a backup.
+    virtual bool hasTablesToBackup() const { return false; }
 
     virtual ~IDatabase() = default;
 
@@ -349,8 +346,8 @@ protected:
     }
 
     mutable std::mutex mutex;
-    String database_name TSA_GUARDED_BY(mutex);
-    String comment TSA_GUARDED_BY(mutex);
+    String database_name;
+    String comment;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

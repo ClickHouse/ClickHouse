@@ -2,6 +2,7 @@
 
 #include <Common/config.h>
 
+#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 

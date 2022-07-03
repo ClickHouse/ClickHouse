@@ -64,7 +64,9 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
     auto input_format = context->getInputFormat(format, *read_buf, block, context->getSettingsRef().max_block_size);
-    auto pipeline = std::make_unique<QueryPipeline>(input_format);
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
+    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     std::vector<Block> blocks;

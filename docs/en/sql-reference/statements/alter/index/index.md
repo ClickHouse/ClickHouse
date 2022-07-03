@@ -4,7 +4,7 @@ sidebar_position: 42
 sidebar_label: INDEX
 ---
 
-# Manipulating Data Skipping Indices
+# Manipulating Data Skipping Indices {#manipulations-with-data-skipping-indices}
 
 The following operations are available:
 

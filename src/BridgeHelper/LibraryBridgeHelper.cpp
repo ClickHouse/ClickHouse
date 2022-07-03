@@ -200,25 +200,25 @@ bool LibraryBridgeHelper::supportsSelectiveLoad()
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadAll()
+Pipe LibraryBridgeHelper::loadAll()
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_ALL_METHOD);
-    return QueryPipeline(loadBase(uri));
+    return loadBase(uri);
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
+Pipe LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
     uri.addQueryParameter("ids_num", toString(ids.size())); /// Not used parameter, but helpful
     auto ids_string = getDictIdsString(ids);
-    return QueryPipeline(loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; }));
+    return loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; });
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadKeys(const Block & requested_block)
+Pipe LibraryBridgeHelper::loadKeys(const Block & requested_block)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_KEYS_METHOD);
@@ -230,7 +230,7 @@ QueryPipeline LibraryBridgeHelper::loadKeys(const Block & requested_block)
         auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
         formatBlock(output_format, requested_block);
     };
-    return QueryPipeline(loadBase(uri, out_stream_callback));
+    return loadBase(uri, out_stream_callback);
 }
 
 
@@ -248,7 +248,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
+Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
     auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
@@ -263,7 +263,7 @@ QueryPipeline LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBuff
 
     auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
     source->addBuffer(std::move(read_buf_ptr));
-    return QueryPipeline(std::move(source));
+    return Pipe(std::move(source));
 }
 
 

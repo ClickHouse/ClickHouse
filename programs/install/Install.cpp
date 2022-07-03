@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
     #include <syscall.h>
     #include <linux/capability.h>
 #endif
@@ -368,7 +368,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-extract-from-config",
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
-            "clickhouse-disks",
         };
 
         for (const auto & tool : tools)
@@ -790,7 +789,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
           *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
           */
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
             " && command -v capsh >/dev/null"
@@ -926,7 +925,24 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-            command = fmt::format("clickhouse su '{}' {}", user, command);
+        {
+#if defined(OS_FREEBSD)
+            command = fmt::format("su -m '{}' -c '{}'", user, command);
+#else
+            bool may_need_sudo = geteuid() != 0;
+            if (may_need_sudo)
+            {
+                struct passwd *p = getpwuid(geteuid());
+                // Only use sudo when we are not the given user
+                if (p == nullptr || std::string(p->pw_name) != user)
+                    command = fmt::format("sudo -u '{}' {}", user, command);
+            }
+            else
+            {
+                command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
+            }
+#endif
+        }
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);

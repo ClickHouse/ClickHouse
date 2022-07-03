@@ -201,7 +201,6 @@ class PRInfo:
                 else:
                     self.diff_urls.append(pull_request["diff_url"])
         else:
-            print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
@@ -269,7 +268,7 @@ class PRInfo:
             return True
 
         for f in self.changed_files:
-            if "contrib/" in f:
+            if "contrib" in f:
                 return True
         return False
 

@@ -324,7 +324,7 @@ def test_empty_put(started_cluster, auth):
 
     run_query(instance, put_query)
 
-    assert (
+    try:
         run_query(
             instance,
             "select count(*) from s3('http://{}:{}/{}/{}', {}'CSV', '{}')".format(
@@ -336,8 +336,10 @@ def test_empty_put(started_cluster, auth):
                 table_format,
             ),
         )
-        == "0\n"
-    )
+
+        assert False, "Query should be failed."
+    except helpers.client.QueryRuntimeException as e:
+        assert str(e).find("The specified key does not exist") != 0
 
 
 # Test put values in CSV format.

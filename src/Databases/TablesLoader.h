@@ -12,7 +12,7 @@
 
 namespace Poco
 {
-    class Logger; // NOLINT(cppcoreguidelines-virtual-class-destructor)
+    class Logger;
 }
 
 class AtomicStopwatch;
@@ -104,7 +104,7 @@ private:
 
     DependenciesInfosIter removeResolvedDependency(const DependenciesInfosIter & info_it, TableNames & independent_database_objects);
 
-    void startLoadingIndependentTables(ThreadPool & pool, size_t level, ContextMutablePtr load_context);
+    void startLoadingIndependentTables(ThreadPool & pool, size_t level);
 
     void checkCyclicDependencies() const;
 

@@ -17,7 +17,7 @@
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
-#include "ODBCPooledConnectionFactory.h"
+#include "ODBCConnectionFactory.h"
 
 #include <sql.h>
 #include <sqlext.h>
@@ -105,7 +105,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
-        auto connection_holder = ODBCPooledConnectionFactory::instance().get(
+        auto connection_holder = ODBCConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 

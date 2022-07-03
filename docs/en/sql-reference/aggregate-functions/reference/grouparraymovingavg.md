@@ -2,7 +2,7 @@
 sidebar_position: 114
 ---
 
-# groupArrayMovingAvg
+# groupArrayMovingAvg {#agg_function-grouparraymovingavg}
 
 Calculates the moving average of input values.
 

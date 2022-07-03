@@ -42,8 +42,7 @@ public:
     void checkTableCanBeDropped() const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

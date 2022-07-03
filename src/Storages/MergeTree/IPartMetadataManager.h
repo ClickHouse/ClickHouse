@@ -52,6 +52,7 @@ public:
 
 protected:
     const IMergeTreeDataPart * part;
+    const DiskPtr disk;
 };
 
 using PartMetadataManagerPtr = std::shared_ptr<IPartMetadataManager>;

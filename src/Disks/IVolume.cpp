@@ -7,23 +7,10 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
-
-
-VolumeLoadBalancing parseVolumeLoadBalancing(const String & config)
-{
-    if (config == "round_robin")
-        return VolumeLoadBalancing::ROUND_ROBIN;
-    if (config == "least_used")
-        return VolumeLoadBalancing::LEAST_USED;
-    throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'{}' is not valid load_balancing value", config);
-}
-
 
 IVolume::IVolume(
     String name_,
@@ -31,7 +18,6 @@ IVolume::IVolume(
     const String & config_prefix,
     DiskSelectorPtr disk_selector)
     : name(std::move(name_))
-    , load_balancing(parseVolumeLoadBalancing(config.getString(config_prefix + ".load_balancing", "round_robin")))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);

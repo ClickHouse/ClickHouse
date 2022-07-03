@@ -67,7 +67,7 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
     return impl->getInfoForLog();
 }
 
-size_t AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
+std::optional<size_t> AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -97,10 +97,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size)
+std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(impl);
+    request.descriptor = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>(impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
@@ -125,7 +125,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     /// Prefetch even in case hasPendingData() == true.
-    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
+    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -185,17 +185,14 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
 
         prefetch_buffer.swap(memory);
-
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-        pos = working_buffer.begin();
+        setWithBytesToIgnore(memory.data(), size, offset);
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
-        auto result = asyncReadInto(memory.data(), memory.size()).get();
+        auto result = readInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
 
@@ -205,9 +202,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-            pos = working_buffer.begin();
+            setWithBytesToIgnore(memory.data(), size, offset);
         }
     }
 
@@ -215,11 +210,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
-    /// In case of multiple files for the same file in clickhouse (i.e. log family)
-    /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
-    /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
-    assert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
-    assert(file_offset_of_buffer_end <= impl->getFileSize());
+    assert(file_offset_of_buffer_end == impl->getImplementationBufferOffset());
 
     prefetch_future = {};
     return size;

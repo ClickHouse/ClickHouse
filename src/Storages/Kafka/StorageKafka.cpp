@@ -17,8 +17,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Kafka/KafkaSink.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -45,9 +43,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#if USE_KRB5
-#include <Access/KerberosInit.h>
-#endif // USE_KRB5
+
 
 namespace CurrentMetrics
 {
@@ -519,33 +515,6 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     if (config.has(config_prefix))
         loadFromConfig(conf, config, config_prefix);
 
-    #if USE_KRB5
-    if (conf.has_property("sasl.kerberos.kinit.cmd"))
-        LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
-
-    conf.set("sasl.kerberos.kinit.cmd","");
-    conf.set("sasl.kerberos.min.time.before.relogin","0");
-
-    if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
-    {
-        String keytab = conf.get("sasl.kerberos.keytab");
-        String principal = conf.get("sasl.kerberos.principal");
-        LOG_DEBUG(log, "Running KerberosInit");
-        try
-        {
-            kerberosInit(keytab,principal);
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(log, "KerberosInit failure: {}", getExceptionMessage(e, false));
-        }
-        LOG_DEBUG(log, "Finished KerberosInit");
-    }
-    #else // USE_KRB5
-    if (conf.has_property("sasl.kerberos.keytab") || conf.has_property("sasl.kerberos.principal"))
-        LOG_WARNING(log, "Kerberos-related parameters are ignored because ClickHouse was built without support of krb5 library.");
-    #endif // USE_KRB5
-
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)
     {
@@ -710,11 +679,12 @@ bool StorageKafka::streamToViews()
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
 
-        Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
-                                          ? kafka_settings->kafka_flush_interval_ms
-                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
+        limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
+                                                 ? kafka_settings->kafka_flush_interval_ms
+                                                 : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-        source->setTimeLimit(max_execution_time);
+        limits.timeout_overflow_mode = OverflowMode::BREAK;
+        source->setLimits(limits);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
