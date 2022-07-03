@@ -11,9 +11,9 @@ TEST(FST, SimpleTest)
 {
     vector<pair<string, uint64_t>> data
     {
-        {"mop",	100},
+        {"mop", 100},
         {"moth", 91},
-        {"pop",	72},
+        {"pop", 72},
         {"star", 83},
         {"stop", 54},
         {"top", 55},

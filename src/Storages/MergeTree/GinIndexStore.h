@@ -113,7 +113,7 @@ public:
 
     bool load();
 
-    /// Check existance by checking the existence of file .gin_seg
+    /// Check existence by checking the existence of file .gin_seg
     bool exists() const;
 
     UInt32 getNextIDRange(const String &file_name, size_t n);
@@ -194,7 +194,7 @@ struct PostingsCacheForStore
     {
         auto it {cache.find(query_string)};
 
-        if(it == cache.cend())
+        if (it == cache.cend())
         {
             return nullptr;
         }
