@@ -185,10 +185,10 @@ jobs:
     if: ${{ always() }}
     steps:
       - name: Allow simple fail
-        if: ${{ contains(github.event.pull_request.labels.*.name, 'allow simple fail') }}
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'skip simple check') }}
         run: exit 0
       - name: Simple failed
-        if: ${{ (needs.StyleCheck.result != 'success' || needs.FastTest.result != 'success') && !contains(github.event.pull_request.labels.*.name, 'allow simple fail') }}
+        if: ${{ (needs.StyleCheck.result != 'success' || needs.FastTest.result != 'success') && !contains(github.event.pull_request.labels.*.name, 'skip simple check') }}
         run: exit 1
   CompatibilityCheck:
     needs: [BuilderDebRelease]
