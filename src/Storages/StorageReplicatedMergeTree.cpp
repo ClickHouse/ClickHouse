@@ -599,7 +599,6 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     auto zookeeper = getZooKeeper();
 
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
-    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/quorum/parallel", String(), zkutil::CreateMode::Persistent));
 
     /// These 4 nodes used to be created in createNewZookeeperNodes() and they were moved to createTable()
     /// This means that if the first replica creating the table metadata has an older version of CH (22.3 or previous)
