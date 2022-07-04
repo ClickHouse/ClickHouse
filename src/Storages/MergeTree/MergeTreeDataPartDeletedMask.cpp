@@ -31,7 +31,7 @@ private:
 
 public:
     HashValue() = default;
-    HashValue(SipHash & hasher)
+    explicit HashValue(SipHash & hasher)
     {
         hasher.get128(value);
 

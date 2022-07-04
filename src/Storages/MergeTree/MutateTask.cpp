@@ -626,7 +626,7 @@ struct MutationContext
     MergeTreeData::DataPartPtr source_part;
 
     StoragePtr storage_from_source_part;
-    bool is_lightweight_mutation{0};
+    bool is_lightweight_mutation{false};
 
     StorageMetadataPtr metadata_snapshot;
 
