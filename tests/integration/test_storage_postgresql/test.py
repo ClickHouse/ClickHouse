@@ -678,7 +678,7 @@ def test_auto_close_connection(started_cluster):
 
     count = int(
         node2.query(
-            f"SELECT numbackends FROM postrgesql(postgres1, database='{database_name}', table='pg_stat_database') WHERE datname = '{database_name}'"
+            f"SELECT numbackends FROM postgresql(postgres1, database='{database_name}', table='pg_stat_database') WHERE datname = '{database_name}'"
         )
     )
 
