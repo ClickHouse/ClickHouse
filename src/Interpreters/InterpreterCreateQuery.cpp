@@ -150,10 +150,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// When attaching old-style database during server startup, we must always use Ordinary engine
         if (create.attach)
             throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-        bool old_style_database = getContext()->getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
-        engine->name = old_style_database ? "Ordinary" : "Atomic";
+        engine->name = "Atomic";
         engine->no_empty_args = true;
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
@@ -196,8 +195,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (create_from_user)
         {
-            const auto & default_engine = getContext()->getSettingsRef().default_database_engine.value;
-            if (create.uuid == UUIDHelpers::Nil && default_engine == DefaultDatabaseEngine::Atomic)
+            if (create.uuid == UUIDHelpers::Nil)
                 create.uuid = UUIDHelpers::generateV4();    /// Will enable Atomic engine for nested database
         }
         else if (attach_from_user && create.uuid == UUIDHelpers::Nil)
@@ -249,12 +247,21 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
+    bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
+    bool need_lock_uuid = internal || need_write_metadata;
+
+    /// Lock uuid, so we will known it's already in use.
+    /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
+    TemporaryLockForUUIDDirectory uuid_lock;
+    if (need_lock_uuid)
+        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
+    else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
+
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
-
-    bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
 
     if (need_write_metadata)
     {
@@ -1031,6 +1038,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
+
+        /// Compatibility setting which should be enabled by default on attach
+        /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
+        getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
@@ -1163,70 +1174,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties)
 {
-    std::unique_ptr<DDLGuard> guard;
-
-    String data_path;
-    DatabasePtr database;
-
-    bool need_add_to_database = !create.temporary;
-    if (need_add_to_database)
-    {
-        /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
-          * If table doesn't exist, one thread is creating table, while others wait in DDLGuard.
-          */
-        guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
-
-        database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
-        assertOrSetUUID(create, database);
-
-        String storage_name = create.is_dictionary ? "Dictionary" : "Table";
-        auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
-
-        /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
-        if (database->isTableExist(create.getTable(), getContext()))
-        {
-            /// TODO Check structure of table
-            if (create.if_not_exists)
-                return false;
-            else if (create.replace_view)
-            {
-                /// when executing CREATE OR REPLACE VIEW, drop current existing view
-                auto drop_ast = std::make_shared<ASTDropQuery>();
-                drop_ast->setDatabase(create.getDatabase());
-                drop_ast->setTable(create.getTable());
-                drop_ast->no_ddl_lock = true;
-
-                auto drop_context = Context::createCopy(context);
-                InterpreterDropQuery interpreter(drop_ast, drop_context);
-                interpreter.execute();
-            }
-            else
-                throw Exception(storage_already_exists_error_code,
-                    "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
-        }
-        else if (!create.attach)
-        {
-            /// Checking that table may exists in detached/detached permanently state
-            try
-            {
-                database->checkMetadataFilenameAvailability(create.getTable());
-            }
-            catch (const Exception &)
-            {
-                if (create.if_not_exists)
-                    return false;
-                throw;
-            }
-        }
-
-
-        data_path = database->getTableDataPath(create);
-
-        if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-            throw Exception(storage_already_exists_error_code,
-                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
-    }
-    else
+    if (create.temporary)
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
@@ -1236,6 +1184,65 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
         return true;
     }
+
+    std::unique_ptr<DDLGuard> guard;
+
+    String data_path;
+    DatabasePtr database;
+
+    /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
+      * If table doesn't exist, one thread is creating table, while others wait in DDLGuard.
+      */
+    guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+
+    database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+    assertOrSetUUID(create, database);
+
+    String storage_name = create.is_dictionary ? "Dictionary" : "Table";
+    auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
+
+    /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
+    if (database->isTableExist(create.getTable(), getContext()))
+    {
+        /// TODO Check structure of table
+        if (create.if_not_exists)
+            return false;
+        else if (create.replace_view)
+        {
+            /// when executing CREATE OR REPLACE VIEW, drop current existing view
+            auto drop_ast = std::make_shared<ASTDropQuery>();
+            drop_ast->setDatabase(create.getDatabase());
+            drop_ast->setTable(create.getTable());
+            drop_ast->no_ddl_lock = true;
+
+            auto drop_context = Context::createCopy(context);
+            InterpreterDropQuery interpreter(drop_ast, drop_context);
+            interpreter.execute();
+        }
+        else
+            throw Exception(storage_already_exists_error_code,
+                "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+    }
+    else if (!create.attach)
+    {
+        /// Checking that table may exists in detached/detached permanently state
+        try
+        {
+            database->checkMetadataFilenameAvailability(create.getTable());
+        }
+        catch (const Exception &)
+        {
+            if (create.if_not_exists)
+                return false;
+            throw;
+        }
+    }
+
+    data_path = database->getTableDataPath(create);
+
+    if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
+        throw Exception(storage_already_exists_error_code,
+            "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
 
     bool from_path = create.attach_from_path.has_value();
     String actual_data_path = data_path;
@@ -1259,6 +1266,19 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             database->waitDetachedTableNotInUse(create.uuid);
         else
             database->checkDetachedTableNotInUse(create.uuid);
+    }
+
+    /// We should lock UUID on CREATE query (because for ATTACH it must be already locked previously).
+    /// But ATTACH without create.attach_short_syntax flag works like CREATE actually, that's why we check it.
+    bool need_lock_uuid = !create.attach_short_syntax;
+    TemporaryLockForUUIDDirectory uuid_lock;
+    if (need_lock_uuid)
+        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
+    else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
+    {
+        /// FIXME MaterializedPostgreSQL works with UUIDs incorrectly and breaks invariants
+        if (database->getEngineName() != "MaterializedPostgreSQL")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
     }
 
     StoragePtr res;

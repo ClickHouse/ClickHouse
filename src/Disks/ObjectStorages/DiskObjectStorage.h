@@ -37,6 +37,7 @@ public:
         bool send_metadata_,
         uint64_t thread_pool_size);
 
+    /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
     DiskType getType() const override { return disk_type; }
@@ -49,7 +50,7 @@ public:
 
     const String & getPath() const override { return metadata_storage->getPath(); }
 
-    std::vector<String> getRemotePaths(const String & local_path) const override;
+    PathsWithSize getObjectStoragePaths(const String & local_path) const override;
 
     void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
@@ -163,6 +164,11 @@ public:
 
     UInt64 getRevision() const override;
 private:
+
+    /// Create actual disk object storage transaction for operations
+    /// execution.
+    DiskTransactionPtr createObjectStorageTransaction();
+
     const String name;
     const String remote_fs_root_path;
     Poco::Logger * log;
