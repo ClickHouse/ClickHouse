@@ -41,8 +41,8 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Databricks
 - [ ] Planetscale (without publishing)
 - [ ] TiDB (TiFlash)
-- [ ] Amazon RDS Aurora for MySQL
-- [ ] Amazon RDS Aurora for Postgres
+- [x] Amazon RDS Aurora for MySQL
+- [x] Amazon RDS Aurora for Postgres
 - [ ] InfluxDB
 - [ ] VictoriaMetrics
 - [ ] TDEngine
