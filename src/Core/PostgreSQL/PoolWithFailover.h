@@ -32,7 +32,7 @@ public:
         size_t max_tries_,
         bool auto_close_connection_);
 
-    PoolWithFailover(
+    explicit PoolWithFailover(
         const DB::StoragePostgreSQLConfiguration & configuration,
         size_t pool_size,
         size_t pool_wait_timeout,
