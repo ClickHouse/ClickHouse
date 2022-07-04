@@ -37,14 +37,56 @@ SELECT cosineDistance([3, 2, 1], v) FROM vec1;
 SELECT LinfDistance(v, materialize([0, -2, 0])) FROM vec1;
 SELECT cosineDistance(v, materialize([1., 1., 1.])) FROM vec1;
 
-INSERT INTO vec2 VALUES (1, [100, 200, 0]), (2, [888, 777, 666]);
-SELECT v1.id, v2.id, L2Distance(v1.v, v2.v), L2SquaredDistance(v1.v, v2.v) as dist FROM vec1 v1, vec2 v2;
+INSERT INTO vec2 VALUES (1, [100, 200, 0]), (2, [888, 777, 666]), (3, range(1, 35, 1)), (4, range(3, 37, 1)), (5, range(1, 135, 1)), (6, range(3, 137, 1));
+SELECT
+    v1.id,
+    v2.id,
+    L1Distance(v1.v, v2.v),
+    LinfDistance(v1.v, v2.v),
+    LpDistance(v1.v, v2.v, 3.1),
+    L2Distance(v1.v, v2.v),
+    L2SquaredDistance(v1.v, v2.v),
+    cosineDistance(v1.v, v2.v)
+FROM vec2 v1, vec2 v2
+WHERE length(v1.v) == length(v2.v);
 
-INSERT INTO vec2f VALUES (1, [100, 200, 0]), (2, [888, 777, 666]);
-SELECT v1.id, v2.id, L2Distance(v1.v, v2.v), L2SquaredDistance(v1.v, v2.v) as dist FROM vec1 v1, vec2f v2;
+INSERT INTO vec2f VALUES (1, [100, 200, 0]), (2, [888, 777, 666]), (3, range(1, 35, 1)), (4, range(3, 37, 1)), (5, range(1, 135, 1)), (6, range(3, 137, 1));
+SELECT
+    v1.id,
+    v2.id,
+    L1Distance(v1.v, v2.v),
+    LinfDistance(v1.v, v2.v),
+    LpDistance(v1.v, v2.v, 3),
+    L2Distance(v1.v, v2.v),
+    L2SquaredDistance(v1.v, v2.v),
+    cosineDistance(v1.v, v2.v)
+FROM vec2f v1, vec2f v2
+WHERE length(v1.v) == length(v2.v);
 
-INSERT INTO vec2d VALUES (1, [100, 200, 0]), (2, [888, 777, 666]);
-SELECT v1.id, v2.id, L2Distance(v1.v, v2.v), L2SquaredDistance(v1.v, v2.v) as dist FROM vec1 v1, vec2d v2;
+INSERT INTO vec2d VALUES (1, [100, 200, 0]), (2, [888, 777, 666]), (3, range(1, 35, 1)), (4, range(3, 37, 1)), (5, range(1, 135, 1)), (6, range(3, 137, 1));
+SELECT
+    v1.id,
+    v2.id,
+    L1Distance(v1.v, v2.v),
+    LinfDistance(v1.v, v2.v),
+    LpDistance(v1.v, v2.v, 3),
+    L2Distance(v1.v, v2.v),
+    L2SquaredDistance(v1.v, v2.v),
+    cosineDistance(v1.v, v2.v)
+FROM vec2d v1, vec2d v2
+WHERE length(v1.v) == length(v2.v);
+
+SELECT
+    v1.id,
+    v2.id,
+    L1Distance(v1.v, v2.v),
+    LinfDistance(v1.v, v2.v),
+    LpDistance(v1.v, v2.v, 3),
+    L2Distance(v1.v, v2.v),
+    L2SquaredDistance(v1.v, v2.v),
+    cosineDistance(v1.v, v2.v)
+FROM vec2f v1, vec2d v2
+WHERE length(v1.v) == length(v2.v);
 
 SELECT L1Distance([0, 0], [1]); -- { serverError 190 }
 SELECT L2Distance([1, 2], (3,4)); -- { serverError 43 }
