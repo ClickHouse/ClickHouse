@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 select * from values('x UInt8 NOT NULL', 1);
 select * from values('x UInt8 NULL', NULL);
 insert into function file(data_02323.tsv) select number % 2 ? number : NULL from numbers(3) settings engine_file_truncate_on_insert=1;
