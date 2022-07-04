@@ -47,6 +47,8 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] VictoriaMetrics
 - [ ] TDEngine
 - [ ] MongoDB
+- [ ] Cassandra
+- [ ] ScyllaDB
 - [ ] Elasticsearch
 - [ ] Apache Ignite
 - [ ] Infobright
