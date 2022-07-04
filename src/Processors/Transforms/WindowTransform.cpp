@@ -2248,7 +2248,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
                             argument_types[ARGUMENT_TIMESTAMP]->getName());
         }
 
-        if (typeid_cast<const DataTypeDateTime64 *>(argument_types[ARGUMENT_TIMESTAMP].get()))
+        if (isDateTime64(argument_types[ARGUMENT_TIMESTAMP]))
         {
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*argument_types[ARGUMENT_TIMESTAMP]);
             ts_scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(datetime64_type.getScale());
