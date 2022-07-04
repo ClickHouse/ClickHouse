@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import re
 import os
 import logging
 
@@ -54,16 +53,16 @@ def download_packets(release, dest_path=PACKETS_DIR):
         return os.path.join(dest_path, pkg_name)
 
     for pkg in (
-            CLICKHOUSE_COMMON_STATIC_PACKET_NAME,
-            CLICKHOUSE_COMMON_STATIC_DBG_PACKET_NAME,
+        CLICKHOUSE_COMMON_STATIC_PACKET_NAME,
+        CLICKHOUSE_COMMON_STATIC_DBG_PACKET_NAME,
     ):
         url = (DOWNLOAD_PREFIX + pkg).format(version=release.version, type=release.type)
         pkg_name = get_dest_path(pkg.format(version=release.version))
         download_packet(url, pkg_name)
 
     for pkg, fallback in (
-            (CLICKHOUSE_SERVER_PACKET_NAME, CLICKHOUSE_SERVER_PACKET_FALLBACK),
-            (CLICKHOUSE_CLIENT_PACKET_NAME, CLICKHOUSE_CLIENT_PACKET_FALLBACK),
+        (CLICKHOUSE_SERVER_PACKET_NAME, CLICKHOUSE_SERVER_PACKET_FALLBACK),
+        (CLICKHOUSE_CLIENT_PACKET_NAME, CLICKHOUSE_CLIENT_PACKET_FALLBACK),
     ):
         url = (DOWNLOAD_PREFIX + pkg).format(version=release.version, type=release.type)
         pkg_name = get_dest_path(pkg.format(version=release.version))
@@ -75,7 +74,6 @@ def download_packets(release, dest_path=PACKETS_DIR):
             )
             pkg_name = get_dest_path(fallback.format(version=release.version))
             download_packet(url, pkg_name)
-
 
 
 def download_last_release(dest_path):
