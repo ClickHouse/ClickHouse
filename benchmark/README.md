@@ -18,7 +18,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [x] MonetDB
 - [x] mapD/Omnisci/HeavyAI
 - [x] Databend
-- [ ] Doris
+- [ ] Doris/PALO
 - [x] Druid
 - [ ] Pinot
 - [x] CrateDB
