@@ -57,10 +57,10 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             writeBinary(http_referer, out);
 
-        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
+        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HOST_IN_CLIENT_INFO)
             writeBinary(http_host, out);
 
-        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
+        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_TLS_SNI_IN_CLIENT_INFO)
             writeBinary(peer_address, out);
     }
 
@@ -156,10 +156,10 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             readBinary(http_referer, in);
 
-        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
+        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HOST_IN_CLIENT_INFO)
             readBinary(http_host, in);
 
-        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
+        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_TLS_SNI_IN_CLIENT_INFO)
             readBinary(peer_address, in);
     }
 

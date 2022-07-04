@@ -45,6 +45,10 @@
 
 #define DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION 54454
 
+#define DBMS_MIN_REVISION_WITH_HTTP_HOST_IN_CLIENT_INFO 54450
+
+#define DBMS_MIN_REVISION_WITH_TLS_SNI_IN_CLIENT_INFO 54455
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
