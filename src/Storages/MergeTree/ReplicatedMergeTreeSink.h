@@ -69,7 +69,11 @@ private:
     void checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
-    void commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id);
+    void commitPart(
+        zkutil::ZooKeeperPtr & zookeeper,
+        MergeTreeData::MutableDataPartPtr & part,
+        const String & block_id,
+        DataPartStorageBuilderPtr part_builder);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.

@@ -2745,7 +2745,40 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
             break
 
 
-if __name__ == "__main__":
-    cluster.start()
-    input("Cluster created, press any key to destroy...")
-    cluster.shutdown()
+def test_rabbitmq_msgpack(rabbitmq_cluster):
+
+    instance.query(
+        """
+        drop table if exists rabbit_in;
+        drop table if exists rabbit_out;
+        create table
+            rabbit_in (val String)
+            engine=RabbitMQ
+            settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'xhep',
+                     rabbitmq_format = 'MsgPack',
+                     rabbitmq_num_consumers = 1;
+        create table
+            rabbit_out (val String)
+            engine=RabbitMQ
+            settings rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'xhep',
+                     rabbitmq_format = 'MsgPack',
+                     rabbitmq_num_consumers = 1;
+        set stream_like_engine_allow_direct_select=1;
+        insert into rabbit_out select 'kek';
+        """
+    )
+
+    result = ""
+    try_no = 0
+    while True:
+        result = instance.query("select * from rabbit_in;")
+        if result.strip() == "kek":
+            break
+        else:
+            try_no = try_no + 1
+            if try_no == 20:
+                break
+        time.sleep(1)
+    assert result.strip() == "kek"

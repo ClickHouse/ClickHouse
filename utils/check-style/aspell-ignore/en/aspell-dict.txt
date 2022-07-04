@@ -121,6 +121,7 @@ SATA
 SERIALIZABLE
 SIMD
 SMALLINT
+SQLInsert
 SQLSTATE
 SSSE
 Schemas
@@ -411,6 +412,7 @@ simdjson
 skippingerrors
 sparsehash
 sql
+sqlinsert
 src
 stacktraces
 statbox
