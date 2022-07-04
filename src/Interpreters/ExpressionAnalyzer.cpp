@@ -1180,10 +1180,11 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
 
     String key_name = clauses[0].key_names_right[0];
     String original_key_name = analyzed_join->getOriginalName(key_name);
-    if (storage->getPrimaryKey() != original_key_name)
+    const auto & storage_primary_key = storage->getPrimaryKey();
+    if (storage_primary_key.size() != 1 || storage_primary_key[0] != original_key_name)
     {
         return error_or_null(fmt::format("key '{}'{} doesn't match storage '{}'",
-            key_name, (key_name != original_key_name ? " (aka '" + original_key_name + "')" : ""), storage->getPrimaryKey()));
+            key_name, (key_name != original_key_name ? " (aka '" + original_key_name + "')" : ""), fmt::join(storage_primary_key, ",")));
     }
 
     return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);

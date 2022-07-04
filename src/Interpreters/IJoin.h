@@ -39,8 +39,11 @@ public:
     virtual void setTotals(const Block & block) { totals = block; }
     virtual const Block & getTotals() const { return totals; }
 
+    /// Number of rows/bytes stored in memory
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
+
+    /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
 
     /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
