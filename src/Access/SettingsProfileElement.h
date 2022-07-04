@@ -20,6 +20,7 @@ class AccessControl;
 struct SettingsProfileElement
 {
     std::optional<UUID> parent_profile;
+
     String setting_name;
     Field value;
     Field min_value;
