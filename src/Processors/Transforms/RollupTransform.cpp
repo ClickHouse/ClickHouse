@@ -18,12 +18,14 @@ GroupByModifierTransform::GroupByModifierTransform(Block header, AggregatingTran
         keys.emplace_back(input.getHeader().getPositionByName(key));
 
     intermediate_header = getOutputPort().getHeader();
+    intermediate_header.erase(0);
+
     if (use_nulls)
     {
         auto output_aggregator_params = params->params;
-        intermediate_header.erase(0);
         output_aggregator = std::make_unique<Aggregator>(intermediate_header, output_aggregator_params);
     }
+    LOG_DEBUG(&Poco::Logger::get("GroupByModifierTransform"), "Intermediate header: {}", intermediate_header.dumpStructure());
 }
 
 void GroupByModifierTransform::consume(Chunk chunk)
