@@ -45,8 +45,8 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     /// Save initial positions, than sort indices according to the values.
     std::vector<size_t> indexes(size);
     std::iota(indexes.begin(), indexes.end(), 0);
-    ::sort(indexes.begin(), indexes.end(),
-                [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
+    std::sort(indexes.begin(), indexes.end(),
+        [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
 
     size_t left = 0;
     Float64 tie_numenator = 0;
@@ -88,12 +88,18 @@ struct StatisticalSample
 
     void addX(X value, Arena * arena)
     {
+        if (isNaN(value))
+            return;
+
         ++size_x;
         x.push_back(value, arena);
     }
 
     void addY(Y value, Arena * arena)
     {
+        if (isNaN(value))
+            return;
+
         ++size_y;
         y.push_back(value, arena);
     }
