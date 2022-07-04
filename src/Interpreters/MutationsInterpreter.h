@@ -88,7 +88,7 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    ASTPtr prepareInterpreterSelectQueryLightweight(std::vector<Stage> &prepared_stages, bool dry_run);
+    static ASTPtr prepareInterpreterSelectQueryLightweight(std::vector<Stage> &prepared_stages, bool dry_run);
 
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
