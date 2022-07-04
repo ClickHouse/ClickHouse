@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Lightweight (in terms of logic) stream for reading single part from MergeTree
-class MergeTreeSequentialSource : public SourceWithProgress
+class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(

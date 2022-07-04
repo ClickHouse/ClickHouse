@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
+    extern const int LOGICAL_ERROR;
 }
 
 /// zookeeper_path/file_names/file_name->checksum_and_size
@@ -25,6 +26,42 @@ namespace
 {
     using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
     using FileInfo = IBackupCoordination::FileInfo;
+    using PartNameAndChecksum = IBackupCoordination::PartNameAndChecksum;
+
+    struct ReplicatedPartNames
+    {
+        std::vector<PartNameAndChecksum> part_names_and_checksums;
+        String table_name_for_logs;
+
+        static String serialize(const std::vector<PartNameAndChecksum> & part_names_and_checksums_, const String & table_name_for_logs_)
+        {
+            WriteBufferFromOwnString out;
+            writeBinary(part_names_and_checksums_.size(), out);
+            for (const auto & part_name_and_checksum : part_names_and_checksums_)
+            {
+                writeBinary(part_name_and_checksum.part_name, out);
+                writeBinary(part_name_and_checksum.checksum, out);
+            }
+            writeBinary(table_name_for_logs_, out);
+            return out.str();
+        }
+
+        static ReplicatedPartNames deserialize(const String & str)
+        {
+            ReadBufferFromString in{str};
+            ReplicatedPartNames res;
+            size_t num;
+            readBinary(num, in);
+            res.part_names_and_checksums.resize(num);
+            for (size_t i = 0; i != num; ++i)
+            {
+                readBinary(res.part_names_and_checksums[i].part_name, in);
+                readBinary(res.part_names_and_checksums[i].checksum, in);
+            }
+            readBinary(res.table_name_for_logs, in);
+            return res;
+        }
+    };
 
     String serializeFileInfo(const FileInfo & info)
     {
@@ -92,7 +129,9 @@ namespace
 }
 
 BackupCoordinationDistributed::BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
-    : zookeeper_path(zookeeper_path_), get_zookeeper(get_zookeeper_)
+    : zookeeper_path(zookeeper_path_)
+    , get_zookeeper(get_zookeeper_)
+    , status_sync(zookeeper_path_ + "/status", get_zookeeper_, &Poco::Logger::get("BackupCoordination"))
 {
     createRootNodes();
 }
@@ -104,6 +143,10 @@ void BackupCoordinationDistributed::createRootNodes()
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_part_names", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_data_paths", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_access_host", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_access_paths", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_names", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_infos", "");
     zookeeper->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
@@ -114,6 +157,136 @@ void BackupCoordinationDistributed::removeAllNodes()
     auto zookeeper = get_zookeeper();
     zookeeper->removeRecursive(zookeeper_path);
 }
+
+
+void BackupCoordinationDistributed::setStatus(const String & current_host, const String & new_status, const String & message)
+{
+    status_sync.set(current_host, new_status, message);
+}
+
+Strings BackupCoordinationDistributed::setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
+{
+    return status_sync.setAndWait(current_host, new_status, message, all_hosts);
+}
+
+Strings BackupCoordinationDistributed::setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
+{
+    return status_sync.setAndWaitFor(current_host, new_status, message, all_hosts, timeout_ms);
+}
+
+
+void BackupCoordinationDistributed::addReplicatedPartNames(
+    const String & table_shared_id,
+    const String & table_name_for_logs,
+    const String & replica_name,
+    const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+{
+    {
+        std::lock_guard lock{mutex};
+        if (replicated_part_names)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after getPartNames()");
+    }
+
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_shared_id);
+    zookeeper->createIfNotExists(path, "");
+    path += "/" + escapeForFileName(replica_name);
+    zookeeper->create(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_name_for_logs), zkutil::CreateMode::Persistent);
+}
+
+Strings BackupCoordinationDistributed::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
+{
+    std::lock_guard lock{mutex};
+    prepareReplicatedPartNames();
+    return replicated_part_names->getPartNames(table_shared_id, replica_name);
+}
+
+
+void BackupCoordinationDistributed::addReplicatedDataPath(
+    const String & table_shared_id, const String & data_path)
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
+    zookeeper->createIfNotExists(path, "");
+    path += "/" + escapeForFileName(data_path);
+    zookeeper->createIfNotExists(path, "");
+}
+
+Strings BackupCoordinationDistributed::getReplicatedDataPaths(const String & table_shared_id) const
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
+    Strings children = zookeeper->getChildren(path);
+    Strings data_paths;
+    data_paths.reserve(children.size());
+    for (const String & child : children)
+        data_paths.push_back(unescapeForFileName(child));
+    return data_paths;
+}
+
+
+void BackupCoordinationDistributed::prepareReplicatedPartNames() const
+{
+    if (replicated_part_names)
+        return;
+
+    replicated_part_names.emplace();
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_part_names";
+    for (const String & escaped_table_zk_path : zookeeper->getChildren(path))
+    {
+        String table_zk_path = unescapeForFileName(escaped_table_zk_path);
+        String path2 = path + "/" + escaped_table_zk_path;
+        for (const String & escaped_replica_name : zookeeper->getChildren(path2))
+        {
+            String replica_name = unescapeForFileName(escaped_replica_name);
+            auto part_names = ReplicatedPartNames::deserialize(zookeeper->get(path2 + "/" + escaped_replica_name));
+            replicated_part_names->addPartNames(table_zk_path, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums);
+        }
+    }
+}
+
+
+void BackupCoordinationDistributed::addReplicatedAccessPath(const String & access_zk_path, const String & file_path)
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_paths/" + escapeForFileName(access_zk_path);
+    zookeeper->createIfNotExists(path, "");
+    path += "/" + escapeForFileName(file_path);
+    zookeeper->createIfNotExists(path, "");
+}
+
+Strings BackupCoordinationDistributed::getReplicatedAccessPaths(const String & access_zk_path) const
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_paths/" + escapeForFileName(access_zk_path);
+    Strings children = zookeeper->getChildren(path);
+    Strings file_paths;
+    file_paths.reserve(children.size());
+    for (const String & child : children)
+        file_paths.push_back(unescapeForFileName(child));
+    return file_paths;
+}
+
+void BackupCoordinationDistributed::setReplicatedAccessHost(const String & access_zk_path, const String & host_id)
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_host/" + escapeForFileName(access_zk_path);
+    auto code = zookeeper->tryCreate(path, host_id, zkutil::CreateMode::Persistent);
+    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+        throw zkutil::KeeperException(code, path);
+
+    if (code == Coordination::Error::ZNODEEXISTS)
+        zookeeper->set(path, host_id);
+}
+
+String BackupCoordinationDistributed::getReplicatedAccessHost(const String & access_zk_path) const
+{
+    auto zookeeper = get_zookeeper();
+    String path = zookeeper_path + "/repl_access_host/" + escapeForFileName(access_zk_path);
+    return zookeeper->get(path);
+}
+
 
 void BackupCoordinationDistributed::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
@@ -177,12 +350,19 @@ std::vector<FileInfo> BackupCoordinationDistributed::getAllFileInfos() const
     return file_infos;
 }
 
-Strings BackupCoordinationDistributed::listFiles(const String & prefix, const String & terminator) const
+Strings BackupCoordinationDistributed::listFiles(const String & directory, bool recursive) const
 {
     auto zookeeper = get_zookeeper();
     Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
 
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+    String terminator = recursive ? "" : "/";
+
     Strings elements;
+    std::unordered_set<std::string_view> unique_elements;
+
     for (const String & escaped_name : escaped_names)
     {
         String name = unescapeForFileName(escaped_name);
@@ -193,13 +373,33 @@ Strings BackupCoordinationDistributed::listFiles(const String & prefix, const St
         if (!terminator.empty())
             end_pos = name.find(terminator, start_pos);
         std::string_view new_element = std::string_view{name}.substr(start_pos, end_pos - start_pos);
-        if (!elements.empty() && (elements.back() == new_element))
+        if (unique_elements.contains(new_element))
             continue;
         elements.push_back(String{new_element});
+        unique_elements.emplace(new_element);
     }
 
-    std::sort(elements.begin(), elements.end());
+    ::sort(elements.begin(), elements.end());
     return elements;
+}
+
+bool BackupCoordinationDistributed::hasFiles(const String & directory) const
+{
+    auto zookeeper = get_zookeeper();
+    Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
+
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+
+    for (const String & escaped_name : escaped_names)
+    {
+        String name = unescapeForFileName(escaped_name);
+        if (name.starts_with(prefix))
+            return true;
+    }
+
+    return false;
 }
 
 std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const String & file_name) const

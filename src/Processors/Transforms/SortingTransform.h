@@ -24,21 +24,19 @@ private:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
+    SortQueueVariants queue_variants;
     size_t total_merged_rows = 0;
 
     SortCursorImpls cursors;
 
     bool has_collation = false;
 
-    SortingHeap<SortCursor> queue_without_collation;
-    SortingHeap<SimpleSortCursor> queue_simple;
-    SortingHeap<SortCursorWithCollation> queue_with_collation;
-
     /** Two different cursors are supported - with and without Collation.
-      *  Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
+      * Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
       */
-    template <typename TSortingHeap>
-    Chunk mergeImpl(TSortingHeap & queue);
+    template <typename TSortingQueue>
+    Chunk mergeBatchImpl(TSortingQueue & queue);
+
 };
 
 

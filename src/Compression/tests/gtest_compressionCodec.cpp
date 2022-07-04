@@ -22,7 +22,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include <string.h>
+#include <cstring>
 
 /// For the expansion of gtest macros.
 #if defined(__clang__)
@@ -790,7 +790,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     }
 
     return sequences;
-};
+}
 
 // helper macro to produce human-friendly sequence name from generator
 #define G(generator) generator, #generator

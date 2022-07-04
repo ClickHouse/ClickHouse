@@ -9,7 +9,6 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -23,6 +22,8 @@
 #include <Access/EnabledQuota.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace CurrentMetrics
@@ -214,7 +215,7 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         }
     }
 
-    std::unique_lock write_lock(rwlock);
+    std::lock_guard write_lock(rwlock);
     auto it = queue.emplace(key, std::make_shared<Container>()).first;
     pushImpl(std::move(entry), it);
 }
@@ -342,7 +343,7 @@ void AsynchronousInsertQueue::cleanup()
 
         if (!keys_to_remove.empty())
         {
-            std::unique_lock write_lock(rwlock);
+            std::lock_guard write_lock(rwlock);
             size_t total_removed = 0;
 
             for (const auto & key : keys_to_remove)

@@ -1,23 +1,21 @@
 #include "filesystemHelpers.h"
 
-#include <sys/stat.h>
-#if defined(__linux__)
-#    include <cstdio>
+#if defined(OS_LINUX)
 #    include <mntent.h>
-#    include <sys/stat.h>
 #    include <sys/sysmacros.h>
 #endif
 #include <cerrno>
-#include <Poco/Version.h>
 #include <Poco/Timestamp.h>
 #include <filesystem>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <utime.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Exception.h>
 
 namespace fs = std::filesystem;
 
@@ -30,6 +28,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_STAT;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_STATVFS;
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_CREATE_FILE;
@@ -63,12 +62,12 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
     return std::make_unique<TemporaryFile>(path);
 }
 
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getBlockDeviceId([[maybe_unused]] const String & path)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     struct stat sb;
     if (lstat(path.c_str(), &sb))
         throwFromErrnoWithPath("Cannot lstat " + path, path, ErrorCodes::CANNOT_STAT);
@@ -80,12 +79,12 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #endif
 }
 
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/rotational");
@@ -102,12 +101,12 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 #endif
 }
 
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/read_ahead_kb");
@@ -156,12 +155,12 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 }
 
 /// Returns name of filesystem mounted to mount_point
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
         throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
@@ -214,6 +213,20 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     auto filesystem_prefix_path = std::filesystem::path(prefix_path);
 
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
+}
+
+size_t getSizeFromFileDescriptor(int fd, const String & file_name)
+{
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+    {
+        throwFromErrnoWithPath(
+            "Cannot execute fstat" + (file_name.empty() ? "" : " file: " + file_name),
+            file_name,
+            ErrorCodes::CANNOT_FSTAT);
+    }
+    return buf.st_size;
 }
 
 }
@@ -281,7 +294,15 @@ time_t getModificationTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
-    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+}
+
+time_t getChangeTime(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+        return st.st_ctime;
+    DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)

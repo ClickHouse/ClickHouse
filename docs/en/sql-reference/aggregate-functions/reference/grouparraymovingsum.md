@@ -2,7 +2,7 @@
 sidebar_position: 113
 ---
 
-# groupArrayMovingSum {#agg_function-grouparraymovingsum}
+# groupArrayMovingSum
 
 Calculates the moving sum of input values.
 

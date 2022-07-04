@@ -3,7 +3,7 @@ sidebar_position: 30
 sidebar_label: Merge
 ---
 
-# Merge Table Engine {#merge}
+# Merge Table Engine
 
 The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 
@@ -15,14 +15,18 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-**Engine Parameters**
+## Engine Parameters
 
-- `db_name` — Possible values:
-    - database name, 
+### db_name
+
+`db_name` — Possible values:
+    - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-- `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
+### tables_regexp
+
+`tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 
 Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
@@ -49,11 +53,11 @@ CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
 Let's say you have an old table `WatchLog_old` and decided to change partitioning without moving data to a new table `WatchLog_new`, and you need to see data from both tables.
 
 ``` sql
-CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64) 
+CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree(date, (UserId, EventType), 8192);
 INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
 
-CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64) 
+CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
 INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
 
@@ -82,4 +86,3 @@ SELECT * FROM WatchLog;
 -   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 -   [merge](../../../sql-reference/table-functions/merge.md) table function
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/merge/) <!--hide-->
