@@ -34,7 +34,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Presto/Trino
 - [ ] Amazon Athena
 - [x] Bigquery (without publishing)
-- [ ] Snowflake
+- [x] Snowflake
 - [ ] Rockset
 - [ ] CockroachDB
 - [ ] CockroachDB Serverless
