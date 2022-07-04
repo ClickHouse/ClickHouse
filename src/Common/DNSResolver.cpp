@@ -147,12 +147,12 @@ static std::vector<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
 
     std::vector<std::string> ptr_records;
 
-    resolver.resolve_a4ptr(boost::asio::ip::address_v4::from_string(address.toString()), [&](int err, auto& hosts, auto&, auto&, uint) {
+    resolver.resolve_a4ptr(boost::asio::ip::address_v4::from_string(address.toString()), [&](int err, auto & hosts, auto &, auto &, uint) {
        if (err) {
            throw Exception("Cannot resolve: " + address.toString() + YukiWorkshop::DNSResolver::error_string(err), ErrorCodes::DNS_ERROR);
        }
 
-       for (auto &it : hosts) {
+       for (auto & it : hosts) {
            ptr_records.emplace_back(it);
        }
 
