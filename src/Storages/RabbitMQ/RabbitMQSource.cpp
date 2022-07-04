@@ -142,7 +142,7 @@ Chunk RabbitMQSource::generateImpl()
 
     while (true)
     {
-        if (buffer->eof())
+        if (buffer->queueEmpty())
             break;
 
         auto new_rows = executor.execute();
