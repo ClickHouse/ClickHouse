@@ -146,6 +146,8 @@ public:
         /// least common type and we count number of defaults in prefix,
         /// which will be converted to the default type of final common type.
         size_t num_of_defaults_in_prefix = 0;
+
+        size_t num_rows = 0;
     };
 
     using Subcolumns = SubcolumnsTree<Subcolumn>;
