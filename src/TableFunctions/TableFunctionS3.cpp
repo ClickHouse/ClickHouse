@@ -64,7 +64,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         for (size_t index = 1; index < args.size(); )
         {
             const auto & arg = args[index]->as<ASTLiteral &>().value.safeGet<String>();
-            if (wrong_matches.contains({parameters_it->first, index}) && parameters_it->second.second(arg))
+            if (!wrong_matches.contains({parameters_it->first, index}) && parameters_it->second.second(arg))
             {
                 /// Valid.
                 matches.push_back({parameters_it->first, index});
