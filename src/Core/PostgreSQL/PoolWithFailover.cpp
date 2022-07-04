@@ -103,9 +103,9 @@ ConnectionHolderPtr PoolWithFailover::get()
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
                     LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
-                    error_message << "Try " << try_idx + 1 << ". "
-                                  << "Connection to " << DB::backQuote(replica.connection_info.host_port)
-                                  << " failed with error: " << pqxx_error.what() << "\n";
+                    error_message << fmt::format(
+                        "Try {}. Connection to {} failed with error: {}\n",
+                        try_idx + 1, DB::backQuote(replica.connection_info.host_port), pqxx_error.what());
 
                     replica.pool->returnObject(std::move(connection));
                     continue;
