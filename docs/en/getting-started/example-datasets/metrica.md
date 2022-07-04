@@ -87,7 +87,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 The hits and visits dataset is used in the ClickHouse test
 routines, this is one of the queries from the test suite. The rest
-of the tests are refernced in the *Next Steps* section at the
+of the tests are referenced in the *Next Steps* section at the
 end of this page.
 
 ```sql

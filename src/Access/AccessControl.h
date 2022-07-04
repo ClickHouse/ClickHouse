@@ -42,8 +42,6 @@ class ClientInfo;
 class ExternalAuthenticators;
 class AccessChangesNotifier;
 struct Settings;
-class BackupEntriesCollector;
-class RestorerFromBackup;
 
 
 /// Manages access control entities.
@@ -121,8 +119,7 @@ public:
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
 
     /// Makes a backup of access entities.
-    void backup(BackupEntriesCollector & backup_entries_collector, AccessEntityType type, const String & data_path_in_backup) const;
-    static void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -197,8 +194,6 @@ public:
 
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
-
-    void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
 
 private:
     class ContextAccessCache;

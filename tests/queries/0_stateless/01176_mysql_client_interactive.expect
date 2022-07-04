@@ -2,6 +2,10 @@
 # Tags: no-fasttest
 # Tag no-fasttest: requires mysql client
 
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
 log_user 0
 set timeout 60
 match_max 100000
@@ -13,7 +17,6 @@ expect_after {
     timeout { exit 1 }
 }
 
-set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$MYSQL_CLIENT_BINARY \$MYSQL_CLIENT_OPT"
 expect -nocase -re "mysql.*> "
 
