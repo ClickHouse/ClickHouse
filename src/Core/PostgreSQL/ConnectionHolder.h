@@ -7,7 +7,6 @@
 #include <pqxx/pqxx>
 #include <Core/Types.h>
 #include <base/BorrowedObjectPool.h>
-#include <Common/logger_useful.h>
 #include "Connection.h"
 
 
