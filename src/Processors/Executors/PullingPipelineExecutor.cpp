@@ -2,6 +2,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
 
@@ -42,7 +43,10 @@ const Block & PullingPipelineExecutor::getHeader() const
 bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
+    {
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    }
 
     if (!executor->checkTimeLimitSoft())
         return false;
@@ -69,7 +73,6 @@ bool PullingPipelineExecutor::pull(Block & block)
     }
 
     block = pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
-
     if (auto chunk_info = chunk.getChunkInfo())
     {
         if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))

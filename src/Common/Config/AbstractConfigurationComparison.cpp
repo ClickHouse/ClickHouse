@@ -18,7 +18,7 @@ namespace
             result += '.';
         result += subkey;
         return result;
-    };
+    }
 }
 
 

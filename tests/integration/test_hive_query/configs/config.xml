@@ -13,7 +13,7 @@
 
     <local_cache_for_remote_fs>
         <enable>true</enable>
-        <root_dir>/tmp/clickhouse_local_cache</root_dir>
+        <root_dir>/tmp/clickhouse_local_cache,/tmp/clickhouse_local_cache1</root_dir>
         <limit_size>207374182400</limit_size>
         <bytes_read_befor_flush>1048576</bytes_read_befor_flush>
     </local_cache_for_remote_fs>

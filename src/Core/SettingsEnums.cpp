@@ -131,6 +131,11 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"async",          TransactionsWaitCSNMode::ASYNC},
+     {"wait",           TransactionsWaitCSNMode::WAIT},
+     {"wait_unknown",   TransactionsWaitCSNMode::WAIT_UNKNOWN}})
+
 IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
     {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
      {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},

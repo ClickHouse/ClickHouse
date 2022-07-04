@@ -2,15 +2,15 @@
 sidebar_position: 201
 ---
 
-# quantiles Functions {#quantiles-functions}
+# quantiles Functions
 
-## quantiles {#quantiles}
+## quantiles
 
 Syntax: `quantiles(level1, level2, …)(x)`
 
 All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`, `quantilesBFloat16`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
 
-## quantilesExactExclusive {#quantilesexactexclusive}
+## quantilesExactExclusive
 
 Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -62,7 +62,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesExactInclusive {#quantilesexactinclusive}
+## quantilesExactInclusive
 
 Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

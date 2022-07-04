@@ -1,6 +1,6 @@
 option(ENABLE_MINIZIP "Enable minizip-ng the zip manipulation library" ${ENABLE_LIBRARIES})
 if (NOT ENABLE_MINIZIP)
-    message (STATUS "minizip-ng disabled")
+    message (STATUS "Not using minizip-ng")
     return()
 endif()
 

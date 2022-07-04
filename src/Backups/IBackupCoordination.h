@@ -13,6 +13,45 @@ class IBackupCoordination
 public:
     virtual ~IBackupCoordination() = default;
 
+    /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
+    virtual void setStatus(const String & current_host, const String & new_status, const String & message) = 0;
+    virtual Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts) = 0;
+    virtual Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts, UInt64 timeout_ms) = 0;
+
+    struct PartNameAndChecksum
+    {
+        String part_name;
+        UInt128 checksum;
+    };
+
+    /// Adds part names which a specified replica of a replicated table is going to put to the backup.
+    /// Multiple replicas of the replicated table call this function and then the added part names can be returned by call of the function
+    /// getReplicatedPartNames().
+    /// Checksums are used only to control that parts under the same names on different replicas are the same.
+    virtual void addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name,
+                                        const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
+
+    /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
+    /// This is the same list as it was added by call of the function addReplicatedPartNames() but without duplications and without
+    /// parts covered by another parts.
+    virtual Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const = 0;
+
+    /// Adds a data path in backup for a replicated table.
+    /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
+    /// getReplicatedDataPaths().
+    virtual void addReplicatedDataPath(const String & table_shared_id, const String & data_path) = 0;
+
+    /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
+    virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
+
+    /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
+    virtual void addReplicatedAccessPath(const String & access_zk_path, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessPaths(const String & access_zk_path) const = 0;
+
+    /// Sets the host id of a host storing access entities of a ReplicatedAccessStorage to backup.
+    virtual void setReplicatedAccessHost(const String & access_zk_path, const String & host) = 0;
+    virtual String getReplicatedAccessHost(const String & access_zk_path) const = 0;
+
     struct FileInfo
     {
         String file_name;
@@ -48,7 +87,8 @@ public:
     virtual void updateFileInfo(const FileInfo & file_info) = 0;
 
     virtual std::vector<FileInfo> getAllFileInfos() const = 0;
-    virtual Strings listFiles(const String & prefix, const String & terminator) const = 0;
+    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
+    virtual bool hasFiles(const String & directory) const = 0;
 
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
 

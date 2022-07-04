@@ -21,6 +21,9 @@ jobs:
         EOF
     - name: Check out repository code
       uses: actions/checkout@v2
+      with:
+        # Always use the most recent script version
+        ref: master
     - name: Download packages and push to Artifactory
       run: |
         rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
@@ -58,6 +61,8 @@ jobs:
     - name: Cleanup
       if: always()
       run: |
-        docker kill "$(docker ps -q)" ||:
-        docker rm -f "$(docker ps -a -q)" ||:
+        # shellcheck disable=SC2046
+        docker kill $(docker ps -q) ||:
+        # shellcheck disable=SC2046
+        docker rm -f $(docker ps -a -q) ||:
         sudo rm -fr "$TEMP_PATH"
