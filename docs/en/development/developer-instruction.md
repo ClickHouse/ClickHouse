@@ -290,7 +290,9 @@ Note that the split build has several drawbacks:
 * You cannot run the integration tests since they only work a single complete binary.
 * You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
 
-If you are not interested in functionality provided by third-party libraries, you can speed up the build further using `cmake` options
+If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
 -DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
 ```
+
+In case of problems with any of the development options, you are on your own!
