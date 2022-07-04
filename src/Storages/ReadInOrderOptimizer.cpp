@@ -22,6 +22,8 @@ namespace ErrorCodes
 namespace
 {
 
+/// Finds expression like x = 'y' or f(x) = 'y',
+/// where `x` is identifier, 'y' is literal and `f` is injective functions.
 ASTPtr getFixedPoint(const ASTPtr & ast, const ContextPtr & context)
 {
     const auto * func = ast->as<ASTFunction>();
@@ -41,6 +43,7 @@ ASTPtr getFixedPoint(const ASTPtr & ast, const ContextPtr & context)
     if (lhs->as<ASTLiteral>() && rhs->as<ASTLiteral>())
         return nullptr;
 
+    /// If indetifier is wrapped into injective functions, remove them.
     auto argument = lhs->as<ASTLiteral>() ? rhs : lhs;
     while (const auto * arg_func = argument->as<ASTFunction>())
     {
@@ -51,7 +54,7 @@ ASTPtr getFixedPoint(const ASTPtr & ast, const ContextPtr & context)
         if (!func_resolver || !func_resolver->isInjective({}))
             return nullptr;
 
-        argument = func->arguments->children[0];
+        argument = arg_func->arguments->children[0];
     }
 
     return argument->as<ASTIdentifier>() ? argument : nullptr;
@@ -219,6 +222,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
 
         if (!is_matched)
         {
+            /// If one of the sorting columns is constant after filtering,
+            /// skip it, because it won't affect order anymore.
             if (fixed_sorting_columns.contains(sorting_key_columns[key_pos]))
             {
                 ++key_pos;
