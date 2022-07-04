@@ -65,12 +65,7 @@ def get_previous_release(server_version):
                 + " server version"
             )
 
-        releases = list(
-            map(
-                lambda x: ReleaseInfo(x),
-                releases_str,
-            )
-        )
+        releases = [ReleaseInfo(release) for release releases_str]
         found, previous_release = find_previous_release(server_version, releases)
         page += 1
 
