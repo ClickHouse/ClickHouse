@@ -5,10 +5,8 @@ import os
 import argparse
 import logging
 import sys
-from typing import List
 
 SCRIPT_PATH = os.path.realpath(__file__)
-IMAGE_TYPE = "binary"
 
 
 def check_image_exists_locally(image_name):
@@ -40,40 +38,8 @@ def build_image(image_name, filepath):
     )
 
 
-def pre_build(repo_path: str, env_variables: List[str]):
-    if "WITH_PERFORMANCE=1" in env_variables:
-        current_branch = subprocess.check_output(
-            "git branch --show-current", shell=True, encoding="utf-8"
-        ).strip()
-        is_shallow = (
-            subprocess.check_output(
-                "git rev-parse --is-shallow-repository", shell=True, encoding="utf-8"
-            )
-            == "true\n"
-        )
-        if is_shallow:
-            # I've spent quite some time on looking around the problem, and my
-            # conclusion is: in the current state the easiest way to go is to force
-            # unshallow repository for performance artifacts.
-            # To change it we need to rework our performance tests docker image
-            raise Exception("shallow repository is not suitable for performance builds")
-        if current_branch != "master":
-            cmd = (
-                f"git -C {repo_path} fetch --no-recurse-submodules "
-                "--no-tags origin master:master"
-            )
-            logging.info("Getting master branch for performance artifact: ''%s'", cmd)
-            subprocess.check_call(cmd, shell=True)
-
-
 def run_docker_image_with_env(
-    image_name,
-    as_root,
-    output,
-    env_variables,
-    ch_root,
-    ccache_dir,
-    docker_image_version,
+    image_name, output, env_variables, ch_root, ccache_dir, docker_image_version
 ):
     env_part = " -e ".join(env_variables)
     if env_part:
@@ -84,13 +50,8 @@ def run_docker_image_with_env(
     else:
         interactive = ""
 
-    if as_root:
-        user = "0:0"
-    else:
-        user = f"{os.geteuid()}:{os.getegid()}"
-
     cmd = (
-        f"docker run --network=host --user={user} --rm --volume={output}:/output "
+        f"docker run --network=host --rm --volume={output}:/output "
         f"--volume={ch_root}:/build --volume={ccache_dir}:/ccache {env_part} "
         f"{interactive} {image_name}:{docker_image_version}"
     )
@@ -114,6 +75,7 @@ def parse_env_variables(
     compiler,
     sanitizer,
     package_type,
+    image_type,
     cache,
     distcc_hosts,
     split_binary,
@@ -191,7 +153,7 @@ def parse_env_variables(
 
     cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
 
-    if package_type == "deb":
+    if image_type == "deb":
         result.append("MAKE_DEB=true")
         cmake_flags.append("-DENABLE_TESTS=0")
         cmake_flags.append("-DENABLE_UTILS=0")
@@ -202,8 +164,7 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
         if is_release_build(build_type, package_type, sanitizer, split_binary):
-            cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
-            result.append("WITH_PERFORMANCE=1")
+            cmake_flags.append("-DINSTALL_STRIPPED_BINARIES=ON")
             if is_cross_arm:
                 cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
             else:
@@ -215,7 +176,10 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
     # Create combined output archive for split build and for performance tests.
-    if package_type == "coverity":
+    if package_type == "performance":
+        result.append("COMBINED_OUTPUT=performance")
+        cmake_flags.append("-DENABLE_TESTS=0")
+    elif package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
     elif split_binary:
@@ -294,44 +258,50 @@ def parse_env_variables(
     return result
 
 
-def dir_name(name: str) -> str:
-    if not os.path.isabs(name):
-        name = os.path.abspath(os.path.join(os.getcwd(), name))
-    return name
-
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="ClickHouse building script using prebuilt Docker image",
     )
+    # 'performance' creates a combined .tgz with server
+    # and configs to be used for performance test.
     parser.add_argument(
         "--package-type",
-        choices=["deb", "binary", "coverity"],
+        choices=["deb", "binary", "performance", "coverity"],
         required=True,
     )
     parser.add_argument(
         "--clickhouse-repo-path",
-        default=os.path.join(os.path.dirname(SCRIPT_PATH), os.pardir, os.pardir),
-        type=dir_name,
+        default=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir
+        ),
         help="ClickHouse git repository",
     )
-    parser.add_argument("--output-dir", type=dir_name, required=True)
+    parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-14",
-            "clang-14-darwin",
-            "clang-14-darwin-aarch64",
-            "clang-14-aarch64",
-            "clang-14-ppc64le",
-            "clang-14-freebsd",
+            "clang-11",
+            "clang-11-darwin",
+            "clang-11-darwin-aarch64",
+            "clang-11-aarch64",
+            "clang-12",
+            "clang-12-darwin",
+            "clang-12-darwin-aarch64",
+            "clang-12-aarch64",
+            "clang-13",
+            "clang-13-darwin",
+            "clang-13-darwin-aarch64",
+            "clang-13-aarch64",
+            "clang-13-ppc64le",
+            "clang-11-freebsd",
+            "clang-12-freebsd",
+            "clang-13-freebsd",
             "gcc-11",
         ),
-        default="clang-14",
+        default="clang-13",
         help="a compiler to use",
     )
     parser.add_argument(
@@ -339,14 +309,12 @@ if __name__ == "__main__":
         choices=("address", "thread", "memory", "undefined", ""),
         default="",
     )
-
     parser.add_argument("--split-binary", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
         "--ccache_dir",
         default=os.getenv("HOME", "") + "/.ccache",
-        type=dir_name,
         help="a directory with ccache",
     )
     parser.add_argument("--distcc-hosts", nargs="+")
@@ -362,28 +330,39 @@ if __name__ == "__main__":
     parser.add_argument(
         "--docker-image-version", default="latest", help="docker image tag to use"
     )
-    parser.add_argument(
-        "--as-root", action="store_true", help="if the container should run as root"
-    )
 
     args = parser.parse_args()
+    if not os.path.isabs(args.output_dir):
+        args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_name = f"clickhouse/{IMAGE_TYPE}-builder"
+    image_type = (
+        "binary"
+        if args.package_type in ("performance", "coverity")
+        else args.package_type
+    )
+    image_name = "clickhouse/binary-builder"
 
-    ch_root = args.clickhouse_repo_path
+    if not os.path.isabs(args.clickhouse_repo_path):
+        ch_root = os.path.abspath(os.path.join(os.getcwd(), args.clickhouse_repo_path))
+    else:
+        ch_root = args.clickhouse_repo_path
 
-    if args.additional_pkgs and args.package_type != "deb":
+    if args.additional_pkgs and image_type != "deb":
         raise Exception("Can build additional packages only in deb build")
 
-    if args.with_binaries != "" and args.package_type != "deb":
+    if args.with_binaries != "" and image_type != "deb":
         raise Exception("Can add additional binaries only in deb build")
 
-    if args.with_binaries != "" and args.package_type == "deb":
+    if args.with_binaries != "" and image_type == "deb":
         logging.info("Should place %s to output", args.with_binaries)
 
-    dockerfile = os.path.join(ch_root, "docker/packager", IMAGE_TYPE, "Dockerfile")
+    dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
     image_with_version = image_name + ":" + args.docker_image_version
-    if not check_image_exists_locally(image_name) or args.force_build_image:
+    if (
+        image_type != "freebsd"
+        and not check_image_exists_locally(image_name)
+        or args.force_build_image
+    ):
         if not pull_image(image_with_version) or args.force_build_image:
             build_image(image_with_version, dockerfile)
     env_prepared = parse_env_variables(
@@ -391,6 +370,7 @@ if __name__ == "__main__":
         args.compiler,
         args.sanitizer,
         args.package_type,
+        image_type,
         args.cache,
         args.distcc_hosts,
         args.split_binary,
@@ -403,10 +383,8 @@ if __name__ == "__main__":
         args.with_binaries,
     )
 
-    pre_build(args.clickhouse_repo_path, env_prepared)
     run_docker_image_with_env(
         image_name,
-        args.as_root,
         args.output_dir,
         env_prepared,
         ch_root,

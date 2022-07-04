@@ -19,26 +19,24 @@ $CLICKHOUSE_CLIENT --insert_distributed_sync=0 --network_compression_method='zst
 
 function select_thread()
 {
-    while true; do
-        $CLICKHOUSE_CLIENT --insert_distributed_sync=0 --network_compression_method='zstd' --query "SELECT count() FROM local" >/dev/null
-        $CLICKHOUSE_CLIENT --insert_distributed_sync=0 --network_compression_method='zstd' --query "SELECT count() FROM distributed" >/dev/null
-    done
+    $CLICKHOUSE_CLIENT --insert_distributed_sync=0 --network_compression_method='zstd' --query "SELECT count() FROM local" >/dev/null
+    $CLICKHOUSE_CLIENT --insert_distributed_sync=0 --network_compression_method='zstd' --query "SELECT count() FROM distributed" >/dev/null
 }
 
-export -f select_thread;
+export -f select_thread
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
-timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT select_thread 2> /dev/null &
 
 wait
 

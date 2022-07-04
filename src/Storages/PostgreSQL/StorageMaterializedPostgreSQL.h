@@ -84,14 +84,13 @@ public:
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
-    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
+    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
 
     NamesAndTypesList getVirtuals() const override;
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

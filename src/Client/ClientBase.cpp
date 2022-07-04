@@ -57,10 +57,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -122,17 +118,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
-{
-    if (query_kind == "initial_query")
-        return ClientInfo::QueryKind::INITIAL_QUERY;
-    if (query_kind == "secondary_query")
-        return ClientInfo::QueryKind::SECONDARY_QUERY;
-    if (query_kind == "no_query")
-        return ClientInfo::QueryKind::NO_QUERY;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown query kind {}", query_kind);
-}
 
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
@@ -289,11 +274,11 @@ void ClientBase::setupSignalHandler()
     sigemptyset(&new_act.sa_mask);
 #else
     if (sigemptyset(&new_act.sa_mask))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
 }
 
 
@@ -496,8 +481,7 @@ try
         String pager = config().getString("pager", "");
         if (!pager.empty())
         {
-            if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
-                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+            signal(SIGPIPE, SIG_IGN);
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -950,17 +934,18 @@ void ClientBase::onProfileEvents(Block & block)
                 progress_indication.addThreadIdToList(host_name, thread_id);
             auto event_name = names.getDataAt(i);
             auto value = array_values[i];
-
-            /// Ignore negative time delta or memory usage just in case.
-            if (value < 0)
-                continue;
-
             if (event_name == user_time_name)
+            {
                 thread_times[host_name][thread_id].user_ms = value;
+            }
             else if (event_name == system_time_name)
+            {
                 thread_times[host_name][thread_id].system_ms = value;
+            }
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+            {
                 thread_times[host_name][thread_id].memory_usage = value;
+            }
         }
         auto elapsed_time = profile_events.watch.elapsedMicroseconds();
         progress_indication.updateThreadEventData(thread_times, elapsed_time);
@@ -1125,7 +1110,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (need_render_progress && have_data_in_stdin)
     {
         /// Set total_bytes_to_read for current fd.
-        FileProgress file_progress(0, std_in.getFileSize());
+        FileProgress file_progress(0, std_in.size());
         progress_indication.updateProgress(Progress(file_progress));
 
         /// Set callback to be called on file progress.
@@ -1169,26 +1154,16 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         try
         {
             auto metadata = storage->getInMemoryMetadataPtr();
-            QueryPlan plan;
-            storage->read(
-                    plan,
-                    sample.getNames(),
-                    storage->getStorageSnapshot(metadata, global_context),
-                    query_info,
-                    global_context,
-                    {},
-                    global_context->getSettingsRef().max_block_size,
-                    getNumberOfPhysicalCPUCores());
-
-            auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(global_context),
-                BuildQueryPipelineSettings::fromContext(global_context));
-
-            QueryPlanResourceHolder resources;
-            auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
-
             sendDataFromPipe(
-                std::move(pipe),
+                storage->read(
+                        sample.getNames(),
+                        storage->getStorageSnapshot(metadata, global_context),
+                        query_info,
+                        global_context,
+                        {},
+                        global_context->getSettingsRef().max_block_size,
+                        getNumberOfPhysicalCPUCores()
+                    ),
                 parsed_query,
                 have_data_in_stdin
             );
@@ -1275,7 +1250,7 @@ try
         }
 
         /// Check if server send Log packet
-        receiveLogsAndProfileEvents(parsed_query);
+        receiveLogs(parsed_query);
 
         /// Check if server send Exception packet
         auto packet_type = connection->checkPacket(0);
@@ -1328,11 +1303,11 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
 
 
 /// Process Log packets, used when inserting data by blocks
-void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
+void ClientBase::receiveLogs(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
-    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents))
+    while (packet_type && *packet_type == Protocol::Server::Log)
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -2150,7 +2125,6 @@ void ClientBase::init(int argc, char ** argv)
 
         ("query,q", po::value<std::string>(), "query")
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
-        ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
         ("progress", "print progress of queries execution")
 
@@ -2281,7 +2255,6 @@ void ClientBase::init(int argc, char ** argv)
         server_logs_file = options["server_logs_file"].as<std::string>();
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
-    query_kind = parseQueryKind(options["query_kind"].as<std::string>());
     profile_events.print = options.count("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 

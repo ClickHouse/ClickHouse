@@ -2,13 +2,13 @@
 sidebar_label: Geohash
 ---
 
-# Functions for Working with Geohash
+# Functions for Working with Geohash {#geohash}
 
 [Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location.
 
 If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
 
-## geohashEncode
+## geohashEncode {#geohashencode}
 
 Encodes latitude and longitude as a [geohash](#geohash)-string.
 
@@ -38,7 +38,7 @@ SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 └──────────────┘
 ```
 
-## geohashDecode
+## geohashDecode {#geohashdecode}
 
 Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
 
@@ -62,7 +62,7 @@ SELECT geohashDecode('ezs42') AS res;
 └─────────────────────────────────┘
 ```
 
-## geohashesInBox
+## geohashesInBox {#geohashesinbox}
 
 Returns an array of [geohash](#geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
 

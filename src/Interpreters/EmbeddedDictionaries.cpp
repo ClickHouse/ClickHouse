@@ -60,7 +60,7 @@ bool EmbeddedDictionaries::reloadDictionary(
 
 bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool force_reload)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
     /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
       * If there are no old correct directories, then when using functions that depend on them,

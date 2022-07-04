@@ -3,7 +3,7 @@ sidebar_position: 48
 sidebar_label: SETTINGS PROFILE
 ---
 
-## ALTER SETTINGS PROFILE
+## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
 
 Changes settings profiles.
 

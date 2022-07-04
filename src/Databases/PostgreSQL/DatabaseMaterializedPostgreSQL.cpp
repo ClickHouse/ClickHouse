@@ -63,9 +63,9 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         return;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
-            /* replication_identifier */ TSA_SUPPRESS_WARNING_FOR_READ(database_name),    /// FIXME
+            /* replication_identifier */database_name,
             remote_database_name,
-            TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
+            database_name,
             connection_info,
             getContext(),
             is_attach,
@@ -99,8 +99,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         else
         {
             /// Nested table does not exist and will be created by replication thread.
-            /// FIXME TSA
-            storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
+            storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
         }
 
         /// Cache MaterializedPostgreSQL wrapper over nested table.
@@ -211,8 +210,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 
     std::lock_guard lock(handler_mutex);
 
-    /// FIXME TSA
-    auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
+    auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
     auto ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
     assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
     return ast_storage;
@@ -236,7 +234,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
     auto * alter = query->as<ASTAlterQuery>();
 
     alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
-    alter->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));     /// FIXME
+    alter->setDatabase(database_name);
     alter->set(alter->command_list, command_list);
 
     return query;
@@ -261,7 +259,6 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
     auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
     create_query->attach = false;
     create_query->attach_short_syntax = false;
-    DatabaseCatalog::instance().addUUIDMapping(create->uuid);
     DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
 
     /// Attach MaterializedPostgreSQL table.
@@ -392,10 +389,10 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 }
 
 
-void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool sync)
+void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
     /// Modify context into nested_context and pass query to Atomic database.
-    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, sync);
+    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
 }
 
 

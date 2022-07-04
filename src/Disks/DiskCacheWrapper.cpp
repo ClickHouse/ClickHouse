@@ -90,7 +90,7 @@ DiskCacheWrapper::DiskCacheWrapper(
 
 std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(const String & path) const
 {
-    std::lock_guard lock{mutex};
+    std::unique_lock<std::mutex> lock{mutex};
 
     auto it = file_downloads.find(path);
     if (it != file_downloads.end())
@@ -101,7 +101,7 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
         new FileDownloadMetadata,
         [this, path] (FileDownloadMetadata * p)
         {
-            std::lock_guard erase_lock{mutex};
+            std::unique_lock<std::mutex> erase_lock{mutex};
             file_downloads.erase(path);
             delete p;
         });

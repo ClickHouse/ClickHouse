@@ -20,7 +20,7 @@ endif()
 option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 
 if (NOT ENABLE_PARQUET)
-    message(STATUS "Not using parquet")
+    message(STATUS "Building without Parquet support")
     return()
 endif()
 

@@ -140,7 +140,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         chooseCompressionMethod(uri, compression_method));
 }
 
-bool StorageXDBC::supportsSubsetOfColumns() const
+bool StorageXDBC::isColumnOriented() const
 {
     return true;
 }

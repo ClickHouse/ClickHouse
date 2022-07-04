@@ -51,7 +51,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     String build_id_hex;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
     build_id_hex = SymbolIndex::instance()->getBuildIDHex();
 #endif
     columns[i++]->insert(build_id_hex);

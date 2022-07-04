@@ -16,6 +16,12 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
+from cassandra.policies import RoundRobinPolicy
+import cassandra.cluster
+import psycopg2
+import pymongo
+import meilisearch
+import pymysql
 import requests
 
 try:
@@ -28,7 +34,6 @@ try:
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
-    import meilisearch
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -2396,7 +2401,7 @@ class ClickHouseCluster:
                 logging.debug("Setup hive")
                 subprocess_check_call(self.base_hive_cmd + common_opts)
                 self.up_called = True
-                time.sleep(30)
+                time.sleep(300)
 
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs
@@ -2876,7 +2881,6 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
-        host=None,
         ignore_error=False,
         query_id=None,
     ):
@@ -2891,7 +2895,6 @@ class ClickHouseInstance:
             database=database,
             ignore_error=ignore_error,
             query_id=query_id,
-            host=host,
         )
 
     def query_with_retry(
@@ -2903,7 +2906,6 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
-        host=None,
         ignore_error=False,
         retry_count=20,
         sleep_time=0.5,
@@ -2921,7 +2923,6 @@ class ClickHouseInstance:
                     user=user,
                     password=password,
                     database=database,
-                    host=host,
                     ignore_error=ignore_error,
                 )
                 if check_callback(result):
@@ -2989,7 +2990,6 @@ class ClickHouseInstance:
         self,
         sql,
         data=None,
-        method=None,
         params=None,
         user=None,
         password=None,
@@ -3021,11 +3021,10 @@ class ClickHouseInstance:
             requester = requests.Session()
             requester.mount("https://", adapter)
             requester.mount("http://", adapter)
-
-        if method is None:
-            method = "POST" if data else "GET"
-
-        r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        if data:
+            r = requester.post(url, data, auth=auth, timeout=timeout)
+        else:
+            r = requester.get(url, auth=auth, timeout=timeout)
 
         def http_code_and_message():
             code = r.status_code
@@ -3391,6 +3390,14 @@ class ClickHouseInstance:
             user="root",
         )
         self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse",
+            ],
+            user="root",
+        )
+        self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
         )
@@ -3403,11 +3410,7 @@ class ClickHouseInstance:
             self.wait_start(time_left)
 
     def restart_with_latest_version(
-        self,
-        stop_start_wait_sec=300,
-        callback_onstop=None,
-        signal=15,
-        fix_metadata=False,
+        self, stop_start_wait_sec=300, callback_onstop=None, signal=15
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -3454,23 +3457,14 @@ class ClickHouseInstance:
                 "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version",
             ]
         )
-        if fix_metadata:
-            # Versions older than 20.7 might not create .sql file for system and default database
-            # Create it manually if upgrading from older version
-            self.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
-                ],
-            )
-            self.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
-                ],
-            )
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse",
+            ],
+            user="root",
+        )
         self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),

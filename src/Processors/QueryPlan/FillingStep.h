@@ -22,8 +22,6 @@ public:
     const SortDescription & getSortDescription() const { return sort_description; }
 
 private:
-    void updateOutputStream() override;
-
     SortDescription sort_description;
     InterpolateDescriptionPtr interpolate_description;
 };

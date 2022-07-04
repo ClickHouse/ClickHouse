@@ -14,13 +14,9 @@ class Context;
 class StorageSystemZooKeeper final : public IStorageSystemOneBlock<StorageSystemZooKeeper>
 {
 public:
-    explicit StorageSystemZooKeeper(const StorageID & table_id_);
-
     std::string getName() const override { return "SystemZooKeeper"; }
 
     static NamesAndTypesList getNamesAndTypes();
-
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override;
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

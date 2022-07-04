@@ -200,6 +200,14 @@ cmake -DUSE_DEBUG_HELPERS=1 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 
 
 В процессе сборки могут появится сообщения `libprotobuf WARNING` про protobuf файлы в библиотеке libhdfs2. Это не имеет значения.
 
+В случае получения ошибок вида `error: variable 'y' set but not used [-Werror,-Wunused-but-set-variable]` ножно попробовать использовать другую версию компилятора сlang. Например, на момент написания данного текста описанная выше команда по установке clang для Ubuntu 20.04 по-умолчанию устанавливает clang-13, с которым возникает эта ошибка. Для решения проблемы можно установить clang-12 с помощью команд:
+```bash
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 12
+```
+И далее использовать именно его, указав соответствующую версию при установке переменных окружения CC и CXX перед вызовом cmake.
+
 При успешной сборке, вы получите готовый исполняемый файл `ClickHouse/build/programs/clickhouse`:
 
     ls -l programs/clickhouse

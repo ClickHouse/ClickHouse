@@ -3,7 +3,7 @@ sidebar_position: 303
 sidebar_label: meanZTest
 ---
 
-# meanZTest
+# meanZTest {#meanztest}
 
 Applies mean z-test to samples from two populations.
 
@@ -66,3 +66,5 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/meanZTest/) <!--hide-->

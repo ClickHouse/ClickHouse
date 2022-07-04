@@ -3,6 +3,7 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
+#include <Common/ProgressIndication.h>
 #include <Common/StatusFile.h>
 #include <Common/InterruptListener.h>
 #include <Loggers/Loggers.h>

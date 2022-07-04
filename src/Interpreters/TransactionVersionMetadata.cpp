@@ -88,15 +88,19 @@ void VersionMetadata::lockRemovalTID(const TransactionID & tid, const Transactio
 
 bool VersionMetadata::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
-    chassert(!tid.isEmpty());
-    chassert(!creation_tid.isEmpty());
+    assert(!tid.isEmpty());
+    assert(!creation_tid.isEmpty());
     TIDHash removal_lock_value = tid.getHash();
     TIDHash expected_removal_lock_value = 0;
     bool locked = removal_tid_lock.compare_exchange_strong(expected_removal_lock_value, removal_lock_value);
     if (!locked)
     {
-        if (expected_removal_lock_value == removal_lock_value)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to lock part {} for removal second time by {}", context.part_name, tid);
+        if (tid == Tx::PrehistoricTID && expected_removal_lock_value == Tx::PrehistoricTID.getHash())
+        {
+            /// Don't need to lock part for queries without transaction
+            LOG_TEST(log, "Assuming removal_tid is locked by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
+            return true;
+        }
 
         if (locked_by_id)
             *locked_by_id = expected_removal_lock_value;
@@ -111,7 +115,7 @@ bool VersionMetadata::tryLockRemovalTID(const TransactionID & tid, const Transac
 void VersionMetadata::unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
     LOG_TEST(log, "Unlocking removal_tid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
-    chassert(!tid.isEmpty());
+    assert(!tid.isEmpty());
     TIDHash removal_lock_value = tid.getHash();
     TIDHash locked_by = removal_tid_lock.load();
 
@@ -141,7 +145,7 @@ bool VersionMetadata::isRemovalTIDLocked() const
 void VersionMetadata::setCreationTID(const TransactionID & tid, TransactionInfoContext * context)
 {
     /// NOTE ReplicatedMergeTreeSink may add one part multiple times
-    chassert(creation_tid.isEmpty() || creation_tid == tid);
+    assert(creation_tid.isEmpty() || creation_tid == tid);
     creation_tid = tid;
     if (context)
         tryWriteEventToSystemLog(log, TransactionsInfoLogElement::ADD_PART, tid, *context);
@@ -154,7 +158,7 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 
 bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 {
-    chassert(!creation_tid.isEmpty());
+    assert(!creation_tid.isEmpty());
     CSN creation = creation_csn.load(std::memory_order_relaxed);
     TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
     CSN removal = removal_csn.load(std::memory_order_relaxed);
@@ -162,10 +166,10 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     [[maybe_unused]] bool had_creation_csn = creation;
     [[maybe_unused]] bool had_removal_tid = removal_lock;
     [[maybe_unused]] bool had_removal_csn = removal;
-    chassert(!had_removal_csn || had_removal_tid);
-    chassert(!had_removal_csn || had_creation_csn);
-    chassert(creation == Tx::UnknownCSN || creation == Tx::PrehistoricCSN || Tx::MaxReservedCSN < creation);
-    chassert(removal == Tx::UnknownCSN || removal == Tx::PrehistoricCSN || Tx::MaxReservedCSN < removal);
+    assert(!had_removal_csn || had_removal_tid);
+    assert(!had_removal_csn || had_creation_csn);
+    assert(creation == Tx::UnknownCSN || creation == Tx::PrehistoricCSN || Tx::MaxReservedCSN < creation);
+    assert(removal == Tx::UnknownCSN || removal == Tx::PrehistoricCSN || Tx::MaxReservedCSN < removal);
 
     /// Special snapshot for introspection purposes
     if (unlikely(snapshot_version == Tx::EverythingVisibleCSN))
@@ -200,8 +204,8 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     /// Data part has creation_tid/removal_tid, but does not have creation_csn/removal_csn.
     /// It means that some transaction is creating/removing the part right now or has done it recently
     /// and we don't know if it was already committed or not.
-    chassert(!had_creation_csn || (had_removal_tid && !had_removal_csn));
-    chassert(current_tid.isEmpty() || (creation_tid != current_tid && removal_lock != current_tid.getHash()));
+    assert(!had_creation_csn || (had_removal_tid && !had_removal_csn));
+    assert(current_tid.isEmpty() || (creation_tid != current_tid && removal_lock != current_tid.getHash()));
 
     /// Before doing CSN lookup, let's check some extra conditions.
     /// If snapshot_version <= some_tid.start_csn, then changes of the transaction with some_tid
@@ -343,8 +347,8 @@ void VersionMetadata::write(WriteBuffer & buf) const
 
     if (removal_tid_lock)
     {
-        chassert(!removal_tid.isEmpty());
-        chassert(removal_tid.getHash() == removal_tid_lock);
+        assert(!removal_tid.isEmpty());
+        assert(removal_tid.getHash() == removal_tid_lock);
         writeRemovalTID(buf);
         writeCSN(buf, REMOVAL, /* internal */ true);
     }
@@ -380,23 +384,21 @@ void VersionMetadata::read(ReadBuffer & buf)
 
         if (name == CREATION_CSN_STR)
         {
-            chassert(!creation_csn);
+            assert(!creation_csn);
             creation_csn = read_csn();
         }
         else if (name == REMOVAL_TID_STR)
         {
             /// NOTE Metadata file may actually contain multiple creation TIDs, we need the last one.
             removal_tid = TransactionID::read(buf);
-            if (removal_tid.isEmpty())
-                removal_tid_lock = 0;
-            else
+            if (!removal_tid.isEmpty())
                 removal_tid_lock = removal_tid.getHash();
         }
         else if (name == REMOVAL_CSN_STR)
         {
             if (removal_tid.isEmpty())
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Found removal_csn in metadata file, but removal_tid is {}", removal_tid);
-            chassert(!removal_csn);
+            assert(!removal_csn);
             removal_csn = read_csn();
         }
         else

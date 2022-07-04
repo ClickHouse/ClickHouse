@@ -16,7 +16,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
 
 

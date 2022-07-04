@@ -49,15 +49,7 @@ ParallelReadBuffer::ParallelReadBuffer(
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
 {
-    try
-    {
-        addReaders();
-    }
-    catch (const Exception &)
-    {
-        finishAndWait();
-        throw;
-    }
+    addReaders();
 }
 
 bool ParallelReadBuffer::addReaderToPool()
@@ -150,7 +142,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     return offset;
 }
 
-size_t ParallelReadBuffer::getFileSize()
+std::optional<size_t> ParallelReadBuffer::getFileSize()
 {
     return reader_factory->getFileSize();
 }

@@ -3,7 +3,6 @@
 #include <mutex>
 
 #include <Poco/Util/Application.h>
-#include <base/defines.h>
 
 namespace DB
 {
@@ -25,9 +24,9 @@ public:
 
 private:
     mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 
-    ConfigurationPtr config TSA_GUARDED_BY(keeper_dispatcher_mutex);
+    ConfigurationPtr config;
 };
 
 }
