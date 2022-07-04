@@ -2096,6 +2096,15 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
+
+    return shared->keeper_dispatcher;
+}
+
+std::shared_ptr<KeeperDispatcher> & Context::tryGetKeeperDispatcher() const
+{
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
     return shared->keeper_dispatcher;
 }
 #endif
