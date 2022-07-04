@@ -480,6 +480,8 @@ For example:
     -   `NOT startsWith(s, 'test')`
 :::
 
+In addition to skip indices, there are also [Approximate Nearest Neighbor Search Indexes](../../../engines/table-engines/mergetree-family/replication.md).
+
 ## Projections {#projections}
 Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
@@ -1032,73 +1034,3 @@ Examples of working configurations can be found in integration tests directory (
 -   `_partition_value` — Values (a tuple) of a `partition by` expression.
 -   `_sample_factor` — Sample factor (from the query).
 
-# ANN Skip Index [experimental] {#table_engines-ANNIndex}
-
-`ANNIndexes` are designed to speed up two types of queries:
-
-- ######  Type 1: Where 
-   ``` sql 
-   SELECT * FROM table_name WHERE 
-   DistanceFunction(Column, TargetVector) < Value 
-   LIMIT N
-   ```
-- ###### Type 2: OrderBy
-  ``` sql
-  SELECT * FROM table_name [WHERE ...] OrderBy
-  DistanceFunction(Column, TargetVector) 
-  LIMIT N
-  ```
-
-In these queries, `DistanceFunction` is selected from tuples of distance functions. `TargetVector` is a known embedding (something like `(0.1, 0.1, ... )`). `Value` - a float value that will bound the neighbourhood.
-
-!!! note "Note"
-    ANNIndex can't speed up query that satisfies both types and they work only for Tuples. All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
-
-Both types of queries are handled the same way. The indexes get `n` neighbors (where `n` is taken from the `LIMIT` section) and work with them. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
-
-###### Create table with ANNIndex
-```
-CREATE TABLE t
-(
-  `id` Int64,
-  `number` Tuple(Float32, Float32, Float32),
-  INDEX x number TYPE annoy GRANULARITY N
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-!!! note "Note"
-    ANNIndexes work only when setting `index_granularity=8192`.
-    
-Number of granules in granularity should be large. With greater `GRANULARITY` indexes remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
-
-As the indexes are built only during insertions into table, `INSERT` and `OPTIMIZE` queries are slower than for ordinary table. OAt this stage indexes remember all the information about the given data. ANNIndexes should be used if you have immutable or rarely changed data and many read requests.
-    
-You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
-
-##### Index list
-- Annoy
-
-# Annoy {#annoy}
-Implementation of the algorithm was taken from [this repository](https://github.com/spotify/annoy).
-
-Short description of the algorithm:
-The algorithm recursively divides in half all space by random linear surfaces (lines in 2D, planes in 3D e.t.c.). Thus it makes tree of polyhedrons and points that they contains. Repeating the operation several times for greater accuracy it creates a forest.
-To find K Nearest Neighbours it goes down through the trees and fills the buffer of closest points using the priority queue of polyhedrons. Next, it sorts buffer and return the nearest K points.
-
-__Example__:
-```sql
-CREATE TABLE t
-(
-  id Int64,
-  number Tuple(Float32, Float32, Float32),
-  INDEX x number TYPE annoy(T) GRANULARITY N
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-Parameter `T` is the number of trees which algorithm will create. The bigger it is, the slower (approximately linear) it works (in both `CREATE` and `SELECT` requests), but the better accuracy you get (adjusted for randomness).
-
-In the `SELECT` in the settings (`ann_index_params`) you can specify the size of the internal buffer (more details in the description above or in the [original repository](https://github.com/spotify/annoy)).
-This parameter may help you to adjust the trade-off between query speed and accuracy.

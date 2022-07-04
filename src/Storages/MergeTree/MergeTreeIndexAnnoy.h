@@ -7,7 +7,7 @@
 #include <annoylib.h>
 #include <kissrandom.h>
 
-
+///TODO:Arrays
 namespace DB
 {
 
@@ -27,7 +27,7 @@ namespace Annoy
         explicit AnnoyIndexSerialize(const int dim) : Base::AnnoyIndex(dim) {}
         void serialize(WriteBuffer& ostr) const;
         void deserialize(ReadBuffer& istr);
-        float getSpaceDim() const;
+        float getNumOfDimensions() const;
     };
 }
 
@@ -74,7 +74,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionAnnoy final : public ANNCondition::IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionAnnoy final : public ANN::IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionAnnoy(
@@ -91,14 +91,14 @@ public:
     ~MergeTreeIndexConditionAnnoy() override = default;
 
 private:
-    ANNCondition::ANNCondition condition;
+    ANN::ANNCondition condition;
 };
 
 
 class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexAnnoy(const IndexDescription & index_, int index_param_)
+    MergeTreeIndexAnnoy(const IndexDescription & index_, int index_param_)
         : IMergeTreeIndex(index_)
         , index_param(index_param_)
     {}
@@ -114,10 +114,10 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return true; }
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
-    MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override;
+    MergeTreeIndexFormat getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & path_prefix) const override;
 
 private:
-    int index_param;
+    const int index_param;
 };
 
 

@@ -17,10 +17,7 @@ namespace Annoy
 template<typename Dist>
 void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
 {
-    if (!Base::_built)
-    {
-        throw Exception("Annoy Index should be built before serialization", ErrorCodes::LOGICAL_ERROR);
-    }
+    assert(Base::_built);
     writeIntBinary(Base::_s, ostr);
     writeIntBinary(Base::_n_items, ostr);
     writeIntBinary(Base::_n_nodes, ostr);
@@ -53,7 +50,7 @@ void AnnoyIndexSerialize<Dist>::deserialize(ReadBuffer& istr)
 }
 
 template<typename Dist>
-float AnnoyIndexSerialize<Dist>::getSpaceDim() const
+float AnnoyIndexSerialize<Dist>::getNumOfDimensions() const
 {
     return Base::get_f();
 }
@@ -89,7 +86,7 @@ bool MergeTreeIndexGranuleAnnoy::empty() const
 
 void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(index_base->getSpaceDim(), ostr); // write dimension
+    writeIntBinary(index_base->getNumOfDimensions(), ostr); // write dimension
     index_base->serialize(ostr);
 }
 
@@ -102,9 +99,10 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
 }
 
 
-MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(const String & index_name_,
-                                                                const Block & index_sample_block_,
-                                                                int index_param_)
+MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(
+    const String & index_name_,
+    const Block & index_sample_block_,
+    int index_param_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_param(index_param_)
@@ -127,8 +125,9 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 {
     if (*pos >= block.rows())
         throw Exception(
-                "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+            ErrorCodes::LOGICAL_ERROR,
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.", 
+            toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -187,7 +186,11 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
 {
     UInt64 limit = condition.getLimitCount();
     std::optional<float> comp_dist
-        = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistance()) : std::nullopt;
+        = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
+
+    if (comp_dist && comp_dist.value() < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to optimize query with where without distance");
+    
     std::vector<float> target_vec = condition.getTargetVector();
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
@@ -197,10 +200,10 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
     }
     auto annoy = granule->index_base;
 
-    if (condition.getSpaceDim() != annoy->getSpaceDim())
+    if (condition.getNumOfDimensions() != annoy->getNumOfDimensions())
     {
-        throw Exception("The dimension of the space in the request (" + toString(condition.getSpaceDim()) + ") "
-            + "does not match with the dimension in the index (" + toString(annoy->getSpaceDim()) + ")", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("The dimension of the space in the request (" + toString(condition.getNumOfDimensions()) + ") "
+            + "does not match with the dimension in the index (" + toString(annoy->getNumOfDimensions()) + ")", ErrorCodes::INCORRECT_QUERY);
     }
 
     std::vector<int32_t> items;
@@ -209,12 +212,12 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
     dist.reserve(limit);
 
     int k_search = -1;
-    auto settings_str = condition.getSettingsStr();
-    if (!settings_str.empty())
+    auto params_str = condition.getParamsStr();
+    if (!params_str.empty())
     {
         try
         {
-            k_search = std::stoi(settings_str);
+            k_search = std::stoi(params_str);
         }
         catch (...)
         {
@@ -259,11 +262,11 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context);
 };
 
-MergeTreeIndexFormat MergeTreeIndexAnnoy::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexAnnoy::getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & relative_path_prefix) const
 {
-    if (disk->exists(relative_path_prefix + ".idx2"))
+    if (data_part_storage->exists(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
-    else if (disk->exists(relative_path_prefix + ".idx"))
+    else if (data_part_storage->exists(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /* unknown */, ""};
 }

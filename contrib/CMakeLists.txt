@@ -159,14 +159,9 @@ add_contrib (base-x-cmake base-x)
 
 set (ENABLE_ANNOY_DEFAULT ${ENABLE_LIBRARIES})
 option(ENABLE_ANNOY "Enable Annoy index support" ${ENABLE_ANNOY_DEFAULT})
-if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    message (WARNING "Annoy disabled. Doesn't support Darwin.")
-    set (ENABLE_ANNOY OFF PARENT_SCOPE)
-    set (ENABLE_ANNOY OFF)
-endif ()
 if (ENABLE_ANNOY)
-    add_contrib (spotify-annoy-cmake spotify-annoy)
-    target_compile_definitions(_spotify_annoy PUBLIC ENABLE_ANNOY)
+    add_contrib(annoy-cmake annoy)
+    target_compile_definitions(_annoy PUBLIC ENABLE_ANNOY)
 endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
