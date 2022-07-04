@@ -87,6 +87,9 @@ class IMetadataStorage : private boost::noncopyable
 {
 friend class MetadataStorageFromDiskTransaction;
 
+protected:
+    mutable std::shared_mutex metadata_mutex;
+
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
@@ -118,17 +121,17 @@ public:
 
     /// ==== More specefic methods. Previous were almost general purpose. ====
 
+    virtual DiskPtr getDisk() const = 0;
+
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
 
-    /// Return [(object_storage_path, size_in_bytes), ...] for metadata path
-    /// object_storage_path is a full path to the blob.
-    virtual PathsWithSize getObjectStoragePaths(const std::string & path) const = 0;
+    /// Return [(object_storage_path, size_in_bytes), ...] for metadata path.
+    /// object_storage_path is absolute.
+    virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
-    virtual DiskPtr getDisk() const = 0;
-
-protected:
-    mutable std::shared_mutex metadata_mutex;
+    /// Creates StoredObject object by blob_name.
+    virtual StoredObject createStorageObject(const std::string & blob_name) const = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

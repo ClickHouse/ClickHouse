@@ -53,7 +53,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
             object_relative_path = object_relative_path.substr(object_storage_root_path.size());
         }
         assertChar('\n', buf);
-        storage_objects[i].path = object_relative_path;
+        storage_objects[i].relative_path = object_relative_path;
         storage_objects[i].bytes_size = object_size;
     }
 
@@ -122,7 +122,7 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
-    if (!remote_fs_root_path.empty() && path.starts_with(remote_fs_root_path))
+    if (!object_storage_root_path.empty() && path.starts_with(object_storage_root_path))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected relative path");
 
     total_size += size;

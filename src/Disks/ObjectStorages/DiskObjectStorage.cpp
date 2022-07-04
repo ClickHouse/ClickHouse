@@ -85,7 +85,6 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
     return std::make_shared<DiskObjectStorageTransaction>(
         *object_storage,
         *metadata_storage,
-        object_storage_root_path,
         send_metadata ? metadata_helper.get() : nullptr);
 }
 
@@ -101,7 +100,7 @@ DiskObjectStorage::DiskObjectStorage(
     : IDisk(std::make_unique<AsyncThreadPoolExecutor>(log_name, thread_pool_size))
     , name(name_)
     , object_storage_root_path(object_storage_root_path_)
-    , log (&Poco::Logger::get(log_name))
+    , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
     , disk_type(disk_type_)
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
@@ -109,9 +108,9 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
-PathsWithSize DiskObjectStorage::getObjectStoragePaths(const String & local_path) const
+StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
 {
-    return metadata_storage->getObjectStoragePaths(local_path);
+    return metadata_storage->getStorageObjects(local_path);
 }
 
 void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
@@ -121,7 +120,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, getObjectStoragePaths(local_path));
+            paths_map.emplace_back(local_path, getStorageObjects(local_path));
         }
         catch (const Exception & e)
         {
@@ -245,7 +244,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 {
     LOG_TRACE(log, "Remote path: {}, Path: {}", object_storage_root_path, path);
     String id;
-    auto blobs_paths = metadata_storage->getObjectStoragePaths(path);
+    auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
         id = blobs_paths[0].path;
     return id;
@@ -256,7 +255,7 @@ bool DiskObjectStorage::checkObjectExists(const String & path) const
     if (!path.starts_with(object_storage_root_path))
         return false;
 
-    return object_storage->exists(path);
+    return object_storage->exists(StoredObject{path, 0});
 }
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
@@ -471,8 +470,13 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    auto objects = metadata_storage->getStorageObjects(path);
+    String r;
+    for (const auto & object : objects)
+        r += object.path + ", ";
+    LOG_TEST(log, "Read: {}, objects: {} ({})", path, objects.size(), r);
     return object_storage->readObjects(
-        metadata_storage->getObjectStoragePaths(path),
+        metadata_storage->getStorageObjects(path),
         updateSettingsForReadWrite(path, settings),
         read_hint,
         file_size);
@@ -484,6 +488,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     WriteMode mode,
     const WriteSettings & settings)
 {
+    LOG_TEST(log, "Write file: {}", path);
+
     auto transaction = createTransaction();
     auto result = transaction->writeFile(
         path,

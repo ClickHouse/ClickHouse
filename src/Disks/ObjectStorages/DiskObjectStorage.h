@@ -50,7 +50,7 @@ public:
 
     const String & getPath() const override { return metadata_storage->getPath(); }
 
-    PathsWithSize getObjectStoragePaths(const String & local_path) const override;
+    StoredObjects getStorageObjects(const String & local_path) const override;
 
     void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 

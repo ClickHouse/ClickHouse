@@ -30,29 +30,31 @@ LocalObjectStorage::LocalObjectStorage()
 {
 }
 
-bool LocalObjectStorage::exists(const std::string & path) const
+bool LocalObjectStorage::exists(const StoredObject & object) const
 {
-    return fs::exists(path);
+    return fs::exists(object.path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
-    const PathsWithSize & paths_to_read,
+    const StoredObjects & objects,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    if (paths_to_read.size() != 1)
+    if (objects.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LocalObjectStorage support read only from single object");
 
-    return readObject(paths_to_read[0].path, read_settings, read_hint, file_size);
+    return readObject(objects[0], read_settings, read_hint, file_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
-    const std::string & path,
+    const StoredObject & object,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    const auto & path = object.path;
+
     if (!file_size.has_value())
         file_size = getFileSizeIfPossible(path);
 
@@ -64,48 +66,53 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
-    const std::string & path,
+    const StoredObject & object,
     WriteMode mode, // Local doesn't support append, only rewrite
     std::optional<ObjectAttributes> /* attributes */,
     FinalizeCallback && /* finalize_callback */,
     size_t buf_size,
     const WriteSettings & /* write_settings */)
 {
+    const auto & path = object.path;
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     LOG_TEST(log, "Write object: {}", path);
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
 }
 
-void LocalObjectStorage::listPrefix(const std::string & path, PathsWithSize & children) const
+void LocalObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     fs::directory_iterator end_it;
     for (auto it = fs::directory_iterator(path); it != end_it; ++it)
         children.emplace_back(it->path().filename(), it->file_size());
 }
 
-void LocalObjectStorage::removeObject(const std::string & path)
+void LocalObjectStorage::removeObject(const StoredObject & object)
 {
-    auto fs_path = fs::path(path) / path;
+    /// For local object storage files are actually removed when "metadata" is removed.
+    if (!exists(object))
+        return;
+
+    auto fs_path = fs::path(object.path) / object.path;
     if (0 != unlink(fs_path.c_str()))
         throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
-void LocalObjectStorage::removeObjects(const PathsWithSize & paths)
+void LocalObjectStorage::removeObjects(const StoredObjects & objects)
 {
-    for (const auto & [path, _] : paths)
-        removeObject(path);
+    for (const auto & object : objects)
+        removeObject(object);
 }
 
-void LocalObjectStorage::removeObjectIfExists(const std::string & path)
+void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    if (exists(path))
-        removeObject(path);
+    if (exists(object))
+        removeObject(object);
 }
 
-void LocalObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
+void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
-    for (const auto & [path, _] : paths)
-        removeObjectIfExists(path);
+    for (const auto & object : objects)
+        removeObjectIfExists(object);
 }
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path */) const
@@ -113,22 +120,13 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for LocalObjectStorage");
 }
 
-void LocalObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
-    const std::string & /* object_from */,
-    const std::string & /* object_to */,
-    IObjectStorage & /* object_storage_to */,
-    std::optional<ObjectAttributes> /* object_to_attributes */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for LocalObjectStorage");
-}
-
 void LocalObjectStorage::copyObject( // NOLINT
-    const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
+    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    fs::path to = object_to;
-    fs::path from = object_from;
+    fs::path to = object_to.path;
+    fs::path from = object_from.path;
 
-    if (object_from.ends_with('/'))
+    if (object_from.path.ends_with('/'))
         from = from.parent_path();
     if (fs::is_directory(from))
         to /= from.filename();
