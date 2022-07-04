@@ -20,14 +20,10 @@ class NotJoinedBlocks;
 class DirectKeyValueJoin : public IJoin
 {
 public:
-    DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, std::shared_ptr<IKeyValueStorage> storage_)
-        : table_join(table_join_)
-        , storage(storage_)
-        , right_sample_block(right_sample_block_)
-        , log(&Poco::Logger::get("DirectKeyValueJoin"))
-    {
-        LOG_TRACE(log, "Using direct join");
-    }
+    DirectKeyValueJoin(
+        std::shared_ptr<TableJoin> table_join_,
+        const Block & right_sample_block_,
+        std::shared_ptr<IKeyValueStorage> storage_);
 
     virtual const TableJoin & getTableJoin() const override { return *table_join; }
 

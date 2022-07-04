@@ -51,14 +51,12 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ROCKSDB_ERROR;
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
 using RocksDBOptions = std::unordered_map<std::string, std::string>;
-
 
 static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & path)
 {
@@ -75,7 +73,6 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
 
     return options;
 }
-
 
 // returns keys may be filter by condition
 static bool traverseASTFilter(
@@ -165,7 +162,6 @@ static bool traverseASTFilter(
     return false;
 }
 
-
 /** Retrieve from the query a condition of the form `key = 'key'`, `key in ('xxx_'), from conjunctions in the WHERE clause.
   * TODO support key like search
   */
@@ -193,54 +189,59 @@ static void fillColumns(const K & key, const V & value, size_t key_pos, const Bl
     }
 }
 
-
-static std::vector<rocksdb::Slice> getSlicedKeys(
+static std::vector<std::string> serializeKeysToRawString(
     FieldVector::const_iterator & it,
     FieldVector::const_iterator end,
     DataTypePtr key_column_type,
-    size_t max_block_size,
-    std::vector<std::string> & holder)
+    size_t max_block_size)
 {
     size_t num_keys = end - it;
-    holder.reserve(num_keys);
-    std::vector<rocksdb::Slice> slices_keys(num_keys);
+
+    std::vector<std::string> result;
+    result.reserve(num_keys);
 
     size_t rows_processed = 0;
     while (it < end && (max_block_size == 0 || rows_processed < max_block_size))
     {
-        std::string & serialized_key = holder.emplace_back();
+        std::string & serialized_key = result.emplace_back();
         WriteBufferFromString wb(serialized_key);
         key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
         wb.finalize();
-        slices_keys[rows_processed] = serialized_key;
 
         ++it;
         ++rows_processed;
     }
-    return slices_keys;
+    return result;
 }
 
-static std::vector<rocksdb::Slice> getSlicedKeys(const ColumnWithTypeAndName & col, std::vector<std::string> & holder)
+static std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys)
 {
-    if (!col.column)
+    if (!keys.column)
         return {};
 
-    size_t num_keys = col.column->size();
-    holder.reserve(num_keys);
+    size_t num_keys = keys.column->size();
+    std::vector<std::string> result;
+    result.reserve(num_keys);
 
-    std::vector<rocksdb::Slice> slices_keys(num_keys);
     for (size_t i = 0; i < num_keys; ++i)
     {
-        std::string & serialized_key = holder.emplace_back();
+        std::string & serialized_key = result.emplace_back();
         WriteBufferFromString wb(serialized_key);
         Field field;
-        col.column->get(i, field);
+        keys.column->get(i, field);
         /// TODO(@vdimir): use serializeBinaryBulk
-        col.type->getDefaultSerialization()->serializeBinary(field, wb);
+        keys.type->getDefaultSerialization()->serializeBinary(field, wb);
         wb.finalize();
-        slices_keys[i] = serialized_key;
     }
-    return slices_keys;
+    return result;
+}
+
+/// In current implementation rocks db can have key with only one column.
+static size_t getPrimaryKeyPos(const Block & header, const Names & primary_key)
+{
+    if (primary_key.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB: only one primary key is supported");
+    return header.getPositionByName(primary_key[0]);
 }
 
 class EmbeddedRocksDBSource : public ISource
@@ -255,7 +256,7 @@ public:
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -271,7 +272,7 @@ public:
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
         , iterator(std::move(iterator_))
         , max_block_size(max_block_size_)
     {
@@ -295,10 +296,9 @@ public:
             return {};
         }
 
-        const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey()).type;
-        std::vector<std::string> holder;
-        auto slices_keys = getSlicedKeys(it, end, key_column_type, max_block_size, holder);
-        return storage.getByKeysImpl(slices_keys, sample_block, nullptr);
+        const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey().at(0)).type;
+        auto raw_keys = serializeKeysToRawString(it, end, key_column_type, max_block_size);
+        return storage.getBySerializedKeys(raw_keys, nullptr);
     }
 
     Chunk generateFullScan()
@@ -453,6 +453,7 @@ void StorageEmbeddedRocksDB::initDB()
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
             rocksdb_dir, status.ToString());
     }
+    /// It's ok just to wrap db with unique_ptr, from rdb documentation: "when you are done with a database, just delete the database object"
     rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
 }
 
@@ -554,66 +555,45 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
 }
 
 Chunk StorageEmbeddedRocksDB::getByKeys(
-    const ColumnWithTypeAndName & col,
-    const Block & sample_block,
-    PaddedPODArray<UInt8> * null_map) const
+    const ColumnsWithTypeAndName & keys,
+    PaddedPODArray<UInt8> & null_map) const
 {
-    std::vector<std::string> holder;
-    auto sliced_keys = getSlicedKeys(col, holder);
+    if (keys.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageEmbeddedRocksDB supports only one key, got: {}", keys.size());
 
-    if (sliced_keys.size() != col.column->size())
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", sliced_keys.size(), col.column->size());
+    auto raw_keys = serializeKeysToRawString(keys[0]);
 
-    return getByKeysImpl(sliced_keys, sample_block, null_map);
+    if (raw_keys.size() != keys[0].column->size())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
+
+    return getBySerializedKeys(raw_keys, &null_map);
 }
 
-static MutableColumns getColumnsFromBlock(
-    const Block & sample_block, MutableColumns && columns, const Block & output_sample_block, PaddedPODArray<UInt8> * null_map)
-{
-    MutableColumns result_columns;
-    for (const auto & out_sample_col : output_sample_block)
-    {
-        auto i = sample_block.getPositionByName(out_sample_col.name);
-        if (columns[i] == nullptr)
-        {
-            throw DB::Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Can't find column '{}'", out_sample_col.name);
-        }
-
-        ColumnWithTypeAndName col = sample_block.getByPosition(i);
-        if (!col.type->equals(*out_sample_col.type))
-        {
-            col.column = std::move(columns[i]);
-            result_columns.push_back(IColumn::mutate(castColumnAccurate(col, out_sample_col.type)));
-        }
-        else
-        {
-            result_columns.push_back(std::move(columns[i]));
-        }
-        columns[i] = nullptr;
-
-        if (null_map && result_columns.back()->isNullable())
-        {
-            assert_cast<ColumnNullable *>(result_columns.back().get())->applyNegatedNullMap(*null_map);
-        }
-    }
-    return result_columns;
-}
-
-Chunk StorageEmbeddedRocksDB::getByKeysImpl(
-    const std::vector<rocksdb::Slice> & slices_keys,
-    const Block & output_sample_block,
+Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
+    const std::vector<std::string> & keys,
     PaddedPODArray<UInt8> * null_map) const
 {
-    if (!output_sample_block)
-        return {};
-
     std::vector<String> values;
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
 
-    size_t primary_key_pos = sample_block.getPositionByName(getPrimaryKey());
+    size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
+
+    /// Convert from vector of string to vector of string refs (rocksdb::Slice), because multiGet api expects them.
+    std::vector<rocksdb::Slice> slices_keys;
+    slices_keys.reserve(keys.size());
+    for (const auto & key : keys)
+        slices_keys.emplace_back(key);
+
+
     auto statuses = multiGet(slices_keys, values);
+    if (null_map)
+    {
+        null_map->clear();
+        null_map->resize_fill(statuses.size(), 1);
+    }
+
     for (size_t i = 0; i < statuses.size(); ++i)
     {
         if (statuses[i].ok())
@@ -638,10 +618,7 @@ Chunk StorageEmbeddedRocksDB::getByKeysImpl(
     }
 
     size_t num_rows = columns.at(0)->size();
-    /// The `output_sample_block` may be different from `sample_block`.
-    /// It may contains subset of columns and types can be different (but should be convertible)
-    auto result_columns = getColumnsFromBlock(sample_block, std::move(columns), output_sample_block, null_map);
-    return Chunk(std::move(result_columns), num_rows);
+    return Chunk(std::move(columns), num_rows);
 }
 
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)

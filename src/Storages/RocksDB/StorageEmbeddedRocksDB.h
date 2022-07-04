@@ -19,6 +19,10 @@ namespace DB
 
 class Context;
 
+/// Wrapper for rocksdb storage.
+/// Operates with rocksdb data structures via rocksdb API (holds pointer to rocksdb::DB inside for that).
+/// Storage have one primary key.
+/// Values are serialized into raw strings to store in rocksdb.
 class StorageEmbeddedRocksDB final : public IKeyValueStorage, WithContext
 {
     friend class EmbeddedRocksDBSink;
@@ -57,18 +61,16 @@ public:
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
-    const String & getPrimaryKey() const override { return primary_key; }
+    Names getPrimaryKey() const override { return {primary_key}; }
 
-    Chunk getByKeys(
-        const ColumnWithTypeAndName & col,
-        const Block & sample_block,
-        PaddedPODArray<UInt8> * null_map) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const override;
 
-    Chunk getByKeysImpl(
-        const std::vector<rocksdb::Slice> & slices_keys,
-        const Block & sample_block,
-        PaddedPODArray<UInt8> * null_map) const;
-
+    /// Return chunk with data for given serialized keys.
+    /// If out_null_map is passed, fill it with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
+    /// If out_null_map is not passed. Not found rows excluded from result chunk.
+    Chunk getBySerializedKeys(
+        const std::vector<std::string> & keys,
+        PaddedPODArray<UInt8> * out_null_map) const;
 
 private:
     const String primary_key;
