@@ -1,10 +1,10 @@
 #include <Parsers/ParserCreateIndexQuery.h>
 
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDataType.h>
@@ -43,7 +43,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
-    index->from_create_index = true;
+    index->part_of_create_index_query = true;
     index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
@@ -86,18 +86,21 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     if (!s_on.ignore(pos, expected))
         return false;
 
-     if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
-         return false;
+    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        return false;
 
     /// [ON cluster_name]
-     if (s_on.ignore(pos, expected))
-     {
-         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-             return false;
-     }
+    if (s_on.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
+    }
 
     if (!parser_create_idx_decl.parse(pos, index_decl, expected))
         return false;
+
+    auto & ast_index_decl = index_decl->as<ASTIndexDeclaration &>();
+    ast_index_decl.name = index_name->as<ASTIdentifier &>().name();
 
     query->index_name = index_name;
     query->children.push_back(index_name);
