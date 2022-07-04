@@ -32,7 +32,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [x] Redshift
 - [x] Redshift Serverless
 - [ ] Presto/Trino
-- [ ] Amazon Athena
+- [x] Amazon Athena
 - [x] Bigquery (without publishing)
 - [x] Snowflake
 - [ ] Rockset
