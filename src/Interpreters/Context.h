@@ -365,7 +365,7 @@ public:
     OpenTelemetryTraceContext query_trace_context;
 
     /// Some counters for current query execution.
-    /// Most of them is workarounds and should be removed in the future.
+    /// Most of them are workarounds and should be removed in the future.
     struct KitchenSink
     {
         size_t analyze_counter = 0;
