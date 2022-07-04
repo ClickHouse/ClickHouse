@@ -676,14 +676,21 @@ def test_auto_close_connection(started_cluster):
 
     result = node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
 
+    node2.query(
+        f"""
+        CREATE TABLE test.stat (numbackends UInt32, datname String)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='pg_stat_database')
+    """
+    )
+
     count = int(
         node2.query(
-            f"SELECT numbackends FROM postgresql(postgres1, database='{database_name}', table='pg_stat_database') WHERE datname = '{database_name}'"
+            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
         )
     )
 
-    # Connection from python
-    assert count == 1
+    # Connection from python + pg_stat table also has a connection at the moment of current query
+    assert count == 2
 
 
 if __name__ == "__main__":
