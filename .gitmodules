@@ -276,7 +276,7 @@
 	url = https://github.com/ClickHouse/base-x.git
 [submodule "contrib/udns"]
 	path = contrib/udns
-	url = https://github.com/arthurpassos/udns.git
+	url = https://github.com/ClickHouse/udns
 [submodule "contrib/cpp-dns"]
 	path = contrib/cpp-dns
-	url = https://github.com/YukiWorkshop/cpp-dns.git
+	url = https://github.com/ClickHouse/cpp-dns
