@@ -344,6 +344,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 group_by_kind = GroupByKind::GROUPING_SETS;
             else
                 group_by_kind = GroupByKind::ORDINARY;
+            bool use_nulls = group_by_kind != GroupByKind::ORDINARY && getContext()->getSettingsRef().group_by_use_nulls;
 
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
             /// With set number, which is used as an additional key at the stage of merging aggregating data.
@@ -398,7 +399,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             }
                         }
 
-                        NameAndTypePair key{column_name, makeNullable(node->result_type)};
+                        NameAndTypePair key{column_name, use_nulls ? makeNullable(node->result_type) : node->result_type };
 
                         grouping_set_list.push_back(key);
 
@@ -452,7 +453,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         }
                     }
 
-                    NameAndTypePair key = select_query->group_by_with_rollup || select_query->group_by_with_cube ? NameAndTypePair{ column_name, makeNullable(node->result_type) } : NameAndTypePair{column_name, node->result_type};
+                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullable(node->result_type) : node->result_type };
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
@@ -1903,7 +1904,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             before_aggregation = chain.getLastActions();
 
             before_aggregation_with_nullable = chain.getLastActions();
-            query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
+            if (settings.group_by_use_nulls)
+                query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
 
             finalize_chain(chain);
 
