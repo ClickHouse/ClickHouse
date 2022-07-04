@@ -12,7 +12,10 @@ class MetadataStorageFromLocalDisk : public IMetadataStorage
 {
 
 public:
-    explicit MetadataStorageFromLocalDisk(DiskPtr disk_, ObjectStoragePtr object_storage_);
+    explicit MetadataStorageFromLocalDisk(
+        DiskPtr disk_,
+        ObjectStoragePtr object_storage_,
+        const std::string & object_storage_root_path_);
 
     MetadataTransactionPtr createTransaction() const override;
 
@@ -38,15 +41,18 @@ public:
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
-    PathsWithSize getObjectStoragePaths(const std::string & path) const override;
-
     uint32_t getHardlinkCount(const std::string & path) const override;
 
     DiskPtr getDisk() const override { return disk; }
 
+    StoredObjects getStorageObjects(const std::string & path) const override;
+
+    StoredObject createStorageObject(const std::string & blob_name) const override;
+
 private:
     DiskPtr disk;
     ObjectStoragePtr object_storage;
+    std::string object_storage_root_path;
 };
 
 class MetadataStorageFromLocalDiskTransaction final : public MetadataStorageFromDiskTransaction

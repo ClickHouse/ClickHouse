@@ -16,12 +16,12 @@ private:
     friend class MetadataStorageFromRemoteDiskTransaction;
 
     DiskPtr disk;
-    std::string root_path_for_remote_metadata;
+    std::string object_storage_root_path;
 
 public:
-    MetadataStorageFromRemoteDisk(DiskPtr disk_, const std::string & root_path_for_remote_metadata_)
+    MetadataStorageFromRemoteDisk(DiskPtr disk_, const std::string & object_storage_root_path_)
         : disk(disk_)
-        , root_path_for_remote_metadata(root_path_for_remote_metadata_)
+        , object_storage_root_path(object_storage_root_path_)
     {
     }
 
@@ -49,13 +49,15 @@ public:
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
-    PathsWithSize getObjectStoragePaths(const std::string & path) const override;
-
     uint32_t getHardlinkCount(const std::string & path) const override;
 
-    std::string getMetadataPath() const { return root_path_for_remote_metadata; }
+    std::string getMetadataPath() const { return object_storage_root_path; }
 
     DiskPtr getDisk() const override { return disk; }
+
+    StoredObjects getStorageObjects(const std::string & path) const override;
+
+    StoredObject createStorageObject(const std::string & blob_name) const override;
 
 private:
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;

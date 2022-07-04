@@ -130,7 +130,7 @@ MetadataStoragePtr IDisk::getMetadataStorage()
     else
     {
         auto object_storage = std::make_shared<LocalObjectStorage>();
-        return std::make_shared<MetadataStorageFromLocalDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), object_storage);
+        return std::make_shared<MetadataStorageFromLocalDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
     }
 }
 

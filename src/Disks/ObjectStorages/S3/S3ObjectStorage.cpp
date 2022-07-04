@@ -27,6 +27,7 @@
 #include <Common/IFileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -100,9 +101,9 @@ Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const s
     return client_ptr->HeadObject(request);
 }
 
-bool S3ObjectStorage::exists(const std::string & path) const
+bool S3ObjectStorage::exists(const StoredObject & object) const
 {
-    auto object_head = requestObjectHeadData(bucket, path);
+    auto object_head = requestObjectHeadData(bucket, object.path);
     if (!object_head.IsSuccess())
     {
         if (object_head.GetError().GetErrorType() == Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
@@ -115,7 +116,7 @@ bool S3ObjectStorage::exists(const std::string & path) const
 
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
-    const PathsWithSize & paths_to_read,
+    const StoredObjects & objects,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
@@ -126,7 +127,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
         client.get(),
         bucket,
         version_id,
-        paths_to_read,
+        objects,
         settings_ptr->s3_settings.max_single_read_retries,
         read_settings);
 
@@ -143,21 +144,19 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
-    const std::string & path,
+    const StoredObject & object,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
-    ///TODO: KSSENII
-    ReadSettings disk_read_settings{read_settings};
     return std::make_unique<ReadBufferFromS3>(
-        client.get(), bucket, path, version_id, settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
+        client.get(), bucket, object.path, version_id, settings_ptr->s3_settings.max_single_read_retries, read_settings);
 }
 
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
-    const std::string & path,
+    const StoredObject & object,
     WriteMode mode, // S3 doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
@@ -171,12 +170,12 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
         bucket,
-        path,
+        object.path,
         settings_ptr->s3_settings,
         attributes,
         buf_size, threadPoolCallbackRunner(getThreadPoolWriter()));
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(finalize_callback), path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(finalize_callback), object.path);
 }
 
 void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
@@ -208,7 +207,7 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     } while (outcome.GetResult().GetIsTruncated());
 }
 
-void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
+void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto client_ptr = client.get();
 
@@ -218,7 +217,7 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
     {
         Aws::S3::Model::DeleteObjectRequest request;
         request.SetBucket(bucket);
-        request.SetKey(path);
+        request.SetKey(object.path);
         auto outcome = client_ptr->DeleteObject(request);
 
         throwIfUnexpectedError(outcome, if_exists);
@@ -228,7 +227,7 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
         /// TODO: For AWS we prefer to use multiobject operation even for single object
         /// maybe we shouldn't?
         Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(path);
+        obj.SetKey(object.path);
         Aws::S3::Model::Delete delkeys;
         delkeys.SetObjects({obj});
         Aws::S3::Model::DeleteObjectsRequest request;
@@ -240,15 +239,15 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
     }
 }
 
-void S3ObjectStorage::removeObjectsImpl(const PathsWithSize & paths, bool if_exists)
+void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
 {
-    if (paths.empty())
+    if (objects.empty())
         return;
 
     if (!s3_capabilities.support_batch_delete)
     {
-        for (const auto & [path, _] : paths)
-            removeObjectImpl(path, if_exists);
+        for (const auto & object : objects)
+            removeObjectImpl(object, if_exists);
     }
     else
     {
@@ -258,19 +257,19 @@ void S3ObjectStorage::removeObjectsImpl(const PathsWithSize & paths, bool if_exi
         size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
         size_t current_position = 0;
 
-        while (current_position < paths.size())
+        while (current_position < objects.size())
         {
             std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
             String keys;
-            for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+            for (; current_position < objects.size() && current_chunk.size() < chunk_size_limit; ++current_position)
             {
                 Aws::S3::Model::ObjectIdentifier obj;
-                obj.SetKey(paths[current_position].path);
+                obj.SetKey(objects[current_position].path);
                 current_chunk.push_back(obj);
 
                 if (!keys.empty())
                     keys += ", ";
-                keys += paths[current_position].path;
+                keys += objects[current_position].path;
             }
 
             Aws::S3::Model::Delete delkeys;
@@ -285,24 +284,24 @@ void S3ObjectStorage::removeObjectsImpl(const PathsWithSize & paths, bool if_exi
     }
 }
 
-void S3ObjectStorage::removeObject(const std::string & path)
+void S3ObjectStorage::removeObject(const StoredObject & object)
 {
-    removeObjectImpl(path, false);
+    removeObjectImpl(object, false);
 }
 
-void S3ObjectStorage::removeObjectIfExists(const std::string & path)
+void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeObjectImpl(path, true);
+    removeObjectImpl(object, true);
 }
 
-void S3ObjectStorage::removeObjects(const PathsWithSize & paths)
+void S3ObjectStorage::removeObjects(const StoredObjects & objects)
 {
-    removeObjectsImpl(paths, false);
+    removeObjectsImpl(objects, false);
 }
 
-void S3ObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
+void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
-    removeObjectsImpl(paths, true);
+    removeObjectsImpl(objects, true);
 }
 
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
@@ -320,16 +319,24 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
     return result;
 }
 
-void S3ObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
+void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    IObjectStorage & object_storage_to,
+    std::optional<ObjectAttributes> object_to_attributes)
 {
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
-        copyObjectImpl(bucket, object_from, dest_s3->bucket, object_to, {}, object_to_attributes);
+        copyObjectImpl(bucket, object_from.path, dest_s3->bucket, object_to.path, {}, object_to_attributes);
     else
         IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
 }
 
-void S3ObjectStorage::copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+void S3ObjectStorage::copyObjectImpl(
+    const String & src_bucket,
+    const String & src_key,
+    const String & dst_bucket,
+    const String & dst_key,
     std::optional<Aws::S3::Model::HeadObjectResult> head,
     std::optional<ObjectAttributes> metadata) const
 {
@@ -432,13 +439,14 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
     }
 }
 
-void S3ObjectStorage::copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
+void S3ObjectStorage::copyObject( // NOLINT
+    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto head = requestObjectHeadData(bucket, object_from).GetResult();
+    auto head = requestObjectHeadData(bucket, object_from.path).GetResult();
     if (head.GetContentLength() >= static_cast<int64_t>(5UL * 1024 * 1024 * 1024))
-        copyObjectMultipartImpl(bucket, object_from, bucket, object_to, head, object_to_attributes);
+        copyObjectMultipartImpl(bucket, object_from.path, bucket, object_to.path, head, object_to_attributes);
     else
-        copyObjectImpl(bucket, object_from, bucket, object_to, head, object_to_attributes);
+        copyObjectImpl(bucket, object_from.path, bucket, object_to.path, head, object_to_attributes);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)

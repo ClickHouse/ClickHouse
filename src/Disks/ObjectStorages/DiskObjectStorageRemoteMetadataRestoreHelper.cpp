@@ -24,10 +24,12 @@ static String revisionToString(UInt64 revision)
     return std::bitset<64>(revision).to_string();
 }
 
-void DiskObjectStorageRemoteMetadataRestoreHelper::createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
+void DiskObjectStorageRemoteMetadataRestoreHelper::createFileOperationObject(
+    const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
 {
-    const String path = disk->object_storage_root_path + "operations/r" + revisionToString(revision) + operation_log_suffix + "-" + operation_name;
-    auto buf = disk->object_storage->writeObject(path, WriteMode::Rewrite, metadata);
+    const String relative_path = "operations/r" + revisionToString(revision) + operation_log_suffix + "-" + operation_name;
+    auto object = disk->metadata_storage->createStorageObject(relative_path);
+    auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite, metadata);
     buf->write('0');
     buf->finalize();
 }
@@ -43,9 +45,12 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::findLastRevision()
 
         LOG_TRACE(disk->log, "Check object exists with revision prefix {}", revision_prefix);
 
+        const auto & object_storage = disk->object_storage;
+        StoredObject revision_object{disk->object_storage_root_path + "r" + revision_prefix};
+        StoredObject revision_operation_object{disk->object_storage_root_path + "operations/r" + revision_prefix};
+
         /// Check file or operation with such revision prefix exists.
-        if (disk->object_storage->exists(disk->object_storage_root_path + "r" + revision_prefix)
-            || disk->object_storage->exists(disk->object_storage_root_path + "operations/r" + revision_prefix))
+        if (object_storage->exists(revision_object) || object_storage->exists(revision_operation_object))
             revision += "1";
         else
             revision += "0";
@@ -69,9 +74,10 @@ int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStora
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int & version) const
 {
-    auto path = disk->object_storage_root_path + SCHEMA_VERSION_OBJECT;
+    auto path = fs::path(disk->object_storage_root_path) / SCHEMA_VERSION_OBJECT;
+    StoredObject object{path};
 
-    auto buf = disk->object_storage->writeObject(path, WriteMode::Rewrite);
+    auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite);
     writeIntText(version, *buf);
     buf->finalize();
 
@@ -86,13 +92,13 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
 {
     LOG_TRACE(disk->log, "Migrate file {} to restorable schema", disk->metadata_storage->getPath() + path);
 
-    auto objects = disk->metadata_storage->getObjectStoragePaths(path);
-    for (const auto & [object_path, _] : objects)
+    auto objects = disk->metadata_storage->getStorageObjects(path);
+    for (const auto & object : objects)
     {
         ObjectAttributes metadata {
             {"path", path}
         };
-        updateObjectMetadata(object_path, metadata);
+        updateObjectMetadata(object.path, metadata);
     }
 }
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
@@ -350,24 +356,24 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
     std::vector<std::future<void>> results;
-    auto restore_files = [this, &source_object_storage, &restore_information, &results](const PathsWithSize & keys)
+    auto restore_files = [this, &source_object_storage, &restore_information, &results](const RelativePathsWithSize & objects)
     {
         std::vector<String> keys_names;
-        for (const auto & [key, size] : keys)
+        for (const auto & object : objects)
         {
 
-            LOG_INFO(disk->log, "Calling restore for key for disk {}", key);
+            LOG_INFO(disk->log, "Calling restore for key for disk {}", object.relative_path);
 
             /// Skip file operations objects. They will be processed separately.
-            if (key.find("/operations/") != String::npos)
+            if (object.relative_path.find("/operations/") != String::npos)
                 continue;
 
-            const auto [revision, _] = extractRevisionAndOperationFromKey(key);
+            const auto [revision, _] = extractRevisionAndOperationFromKey(object.relative_path);
             /// Filter early if it's possible to get revision from key.
             if (revision > restore_information.revision)
                 continue;
 
-            keys_names.push_back(key);
+            keys_names.push_back(object.relative_path);
         }
 
         if (!keys_names.empty())
@@ -424,10 +430,12 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
 
         disk->createDirectories(directoryPath(path));
         auto relative_key = shrinkKey(source_path, key);
+        auto full_path = fs::path(disk->object_storage_root_path) / relative_key;
+        StoredObject object{full_path};
 
         /// Copy object if we restore to different bucket / path.
         if (source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->object_storage_root_path != source_path)
-            source_object_storage->copyObjectToAnotherObjectStorage(key, disk->object_storage_root_path + relative_key, *disk->object_storage);
+            source_object_storage->copyObjectToAnotherObjectStorage(key, object, *disk->object_storage);
 
         auto tx = disk->metadata_storage->createTransaction();
         tx->addBlobToMetadata(path, relative_key, meta.size_bytes);
@@ -462,17 +470,17 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         || disk->object_storage_root_path != restore_information.source_path;
 
     std::set<String> renames;
-    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const PathsWithSize & keys)
+    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const RelativePathsWithSize & objects)
     {
         const String rename = "rename";
         const String hardlink = "hardlink";
 
-        for (const auto & [key, _]: keys)
+        for (const auto & object : objects)
         {
-            const auto [revision, operation] = extractRevisionAndOperationFromKey(key);
+            const auto [revision, operation] = extractRevisionAndOperationFromKey(object.relative_path);
             if (revision == UNKNOWN_REVISION)
             {
-                LOG_WARNING(disk->log, "Skip key {} with unknown revision", key);
+                LOG_WARNING(disk->log, "Skip key {} with unknown revision", object.relative_path);
                 continue;
             }
 
@@ -485,7 +493,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
             if (send_metadata)
                 revision_counter = revision - 1;
 
-            auto object_attributes = *(source_object_storage->getObjectMetadata(key).attributes);
+            auto object_attributes = *(source_object_storage->getObjectMetadata(object.relative_path).attributes);
             if (operation == rename)
             {
                 auto from_path = object_attributes["from_path"];

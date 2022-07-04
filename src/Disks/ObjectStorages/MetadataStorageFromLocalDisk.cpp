@@ -1,6 +1,7 @@
 #include "MetadataStorageFromLocalDisk.h"
 #include <Disks/IDisk.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -12,9 +13,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-MetadataStorageFromLocalDisk::MetadataStorageFromLocalDisk(DiskPtr disk_, ObjectStoragePtr object_storage_)
+MetadataStorageFromLocalDisk::MetadataStorageFromLocalDisk(
+    DiskPtr disk_,
+    ObjectStoragePtr object_storage_,
+    const std::string & object_storage_root_path_)
     : disk(disk_)
     , object_storage(object_storage_)
+    , object_storage_root_path(object_storage_root_path_)
 {
 }
 
@@ -85,10 +90,48 @@ std::unordered_map<String, String> MetadataStorageFromLocalDisk::getSerializedMe
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getSerializedMetadata is not implemented for MetadataStorageFromLocalDisk");
 }
 
-PathsWithSize MetadataStorageFromLocalDisk::getObjectStoragePaths(const std::string & path) const
+StoredObjects MetadataStorageFromLocalDisk::getStorageObjects(const std::string & path) const
 {
-    auto full_path = fs::path(getPath()) / path;
-    return {PathWithSize{toString(getINodeNumberFromPath(full_path)), getFileSize(full_path)}};
+    auto blob_name = object_storage->generateBlobNameForPath(path);
+    auto object = createStorageObject(path);
+    return {std::move(object)};
+}
+
+StoredObject MetadataStorageFromLocalDisk::createStorageObject(const std::string & blob_name) const
+{
+    auto blob_path = fs::path(object_storage_root_path) / blob_name;
+    StoredObject::CacheHintCreator cache_hint_creator;
+    size_t object_size = 0;
+
+    if (exists(blob_path))
+    {
+        object_size = getFileSize(blob_path);
+        cache_hint_creator = [cache_hint = toString(getINodeNumberFromPath(blob_path))](const String &)
+        {
+            return cache_hint;
+        };
+    }
+    else
+    {
+        cache_hint_creator = [](const String & blob_path_) -> String
+        {
+            try
+            {
+                return toString(getINodeNumberFromPath(blob_path_));
+            }
+            catch (...)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("MetadataStorageFromLocalDisk"),
+                    "Object does not exist while getting cache path hint (object path: {})",
+                    blob_path_);
+
+                return "";
+            }
+        };
+    }
+
+    return {blob_path, object_size, std::move(cache_hint_creator)};
 }
 
 uint32_t MetadataStorageFromLocalDisk::getHardlinkCount(const std::string & path) const

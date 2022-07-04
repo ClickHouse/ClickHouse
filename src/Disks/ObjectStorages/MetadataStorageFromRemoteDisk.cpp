@@ -71,7 +71,7 @@ std::string MetadataStorageFromRemoteDisk::readFileToString(const std::string & 
 
 DiskObjectStorageMetadataPtr MetadataStorageFromRemoteDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> &) const
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
     auto str = readFileToString(path);
     metadata->deserializeFromString(str);
     return metadata;
@@ -116,18 +116,30 @@ MetadataTransactionPtr MetadataStorageFromRemoteDisk::createTransaction() const
     return std::make_shared<MetadataStorageFromRemoteDiskTransaction>(*this);
 }
 
-PathsWithSize MetadataStorageFromRemoteDisk::getObjectStoragePaths(const std::string & path) const
+StoredObjects MetadataStorageFromRemoteDisk::getStorageObjects(const std::string & path) const
 {
     auto metadata = readMetadata(path);
 
-    PathsWithSize object_storage_paths = metadata->getBlobs(); /// Relative paths.
-    auto root_path = metadata->getBlobsCommonPrefix();
+    auto object_storage_relative_paths = metadata->getBlobsRelativePaths(); /// Relative paths.
+
+    StoredObjects object_storage_paths;
+    object_storage_paths.reserve(object_storage_relative_paths.size());
 
     /// Relative paths -> absolute.
-    for (auto & [object_path, _] : object_storage_paths)
-        object_path = fs::path(root_path) / object_path;
+    for (auto & [object_relative_path, size] : object_storage_relative_paths)
+    {
+        auto object_path = fs::path(metadata->getBlobsCommonPrefix()) / object_relative_path;
+        StoredObject object{ object_path, size, [](const String & path_){ return path_; }};
+        object_storage_paths.push_back(object);
+    }
 
     return object_storage_paths;
+}
+
+StoredObject MetadataStorageFromRemoteDisk::createStorageObject(const std::string & blob_name) const
+{
+    auto object_path = fs::path(object_storage_root_path) / blob_name;
+    return { object_path, 0, [](const String & path){ return path; }};
 }
 
 uint32_t MetadataStorageFromRemoteDisk::getHardlinkCount(const std::string & path) const

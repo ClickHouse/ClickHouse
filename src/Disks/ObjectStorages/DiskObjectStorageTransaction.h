@@ -54,7 +54,6 @@ private:
     IMetadataStorage & metadata_storage;
     MetadataTransactionPtr metadata_transaction;
     /// TODO we can get rid of this params
-    const std::string & remote_fs_root_path;
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
 
     DiskObjectStorageOperations operations_to_execute;
@@ -62,7 +61,6 @@ public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        const std::string & remote_fs_root_path_,
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void commit() override;

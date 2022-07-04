@@ -27,7 +27,11 @@ ThreadPool & IObjectStorage::getThreadPoolWriter()
     return writer;
 }
 
-void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
+void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    IObjectStorage & object_storage_to,
+    std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
         copyObject(object_from, object_to, object_to_attributes);
@@ -41,6 +45,22 @@ void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object
 const std::string & IObjectStorage::getCacheBasePath() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
+}
+
+StoredObject::StoredObject(
+    const std::string & path_,
+    uint64_t bytes_size_,
+    std::function<String(const String &)> && cache_hint_creator_)
+    : path(path_)
+    , bytes_size(bytes_size_)
+    , cache_hint_creator(std::move(cache_hint_creator_))
+{}
+
+std::string StoredObject::getCacheHint() const
+{
+    if (cache_hint_creator)
+        return cache_hint_creator(path);
+    return "";
 }
 
 }
