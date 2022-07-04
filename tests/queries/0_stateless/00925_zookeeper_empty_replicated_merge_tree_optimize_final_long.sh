@@ -8,8 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replicated_optimize1;"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replicated_optimize2;"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE replicated_optimize1 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00925/optimize', 'r1', d, k, 8192);"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE replicated_optimize2 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00925/optimize', 'r2', d, k, 8192);"
+$CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 -q "CREATE TABLE replicated_optimize1 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00925/optimize', 'r1', d, k, 8192);"
+$CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 -q "CREATE TABLE replicated_optimize2 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00925/optimize', 'r2', d, k, 8192);"
 
 num_tries=0
 while [[ $($CLICKHOUSE_CLIENT -q "SELECT is_leader FROM system.replicas WHERE database=currentDatabase() AND table='replicated_optimize1'") -ne 1 ]]; do

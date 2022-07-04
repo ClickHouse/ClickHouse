@@ -38,6 +38,7 @@ public:
         bool send_metadata_,
         uint64_t thread_pool_size);
 
+    /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
     DiskType getType() const override { return disk_type; }
@@ -173,6 +174,11 @@ public:
     const std::unordered_set<String> & getCacheLayersNames() const override { return cache_layers; }
 
 private:
+
+    /// Create actual disk object storage transaction for operations
+    /// execution.
+    DiskTransactionPtr createObjectStorageTransaction();
+
     const String name;
     const String object_storage_root_path;
     Poco::Logger * log;
