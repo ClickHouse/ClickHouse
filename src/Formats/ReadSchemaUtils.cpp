@@ -100,18 +100,21 @@ ColumnsDescription readSchemaFromFormat(
             catch (...)
             {
                 auto exception_message = getCurrentExceptionMessage(false);
-                size_t rows_read = schema_reader->getNumRowsRead();
-                assert(rows_read <= max_rows_to_read);
-                max_rows_to_read -= schema_reader->getNumRowsRead();
-                if (rows_read != 0 && max_rows_to_read == 0)
+                if (schema_reader)
                 {
-                    exception_message += "\nTo increase the maximum number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference";
-                    if (iterations > 1)
+                    size_t rows_read = schema_reader->getNumRowsRead();
+                    assert(rows_read <= max_rows_to_read);
+                    max_rows_to_read -= schema_reader->getNumRowsRead();
+                    if (rows_read != 0 && max_rows_to_read == 0)
                     {
-                        exception_messages += "\n" + exception_message;
-                        break;
+                        exception_message += "\nTo increase the maximum number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference";
+                        if (iterations > 1)
+                        {
+                            exception_messages += "\n" + exception_message;
+                            break;
+                        }
+                        retry = false;
                     }
-                    retry = false;
                 }
 
                 if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))

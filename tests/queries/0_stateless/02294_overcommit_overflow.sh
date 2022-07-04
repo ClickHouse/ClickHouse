@@ -11,14 +11,18 @@ $CLICKHOUSE_CLIENT -q 'GRANT ALL ON *.* TO u02294'
 
 function query()
 {
+  while true; do
     $CLICKHOUSE_CLIENT -u u02294 -q 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS max_memory_usage_for_user=5000000,memory_overcommit_ratio_denominator=2000000000000000000,memory_usage_overcommit_max_wait_microseconds=500' >/dev/null 2>/dev/null
+  done
 }
 
 export -f query
 
+TIMEOUT=10
+
 for _ in {1..10};
 do
-    clickhouse_client_loop_timeout 10 query &
+    timeout $TIMEOUT bash -c query &
 done
 
 wait

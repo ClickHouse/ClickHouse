@@ -3,7 +3,7 @@ sidebar_position: 29
 sidebar_label: Proxies
 ---
 
-# Proxy Servers from Third-party Developers {#proxy-servers-from-third-party-developers}
+# Proxy Servers from Third-party Developers
 
 ## chproxy {#chproxy}
 

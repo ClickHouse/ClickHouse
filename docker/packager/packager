@@ -202,7 +202,7 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
         if is_release_build(build_type, package_type, sanitizer, split_binary):
-            cmake_flags.append("-DINSTALL_STRIPPED_BINARIES=ON")
+            cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
                 cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
@@ -319,28 +319,19 @@ if __name__ == "__main__":
     )
     parser.add_argument("--output-dir", type=dir_name, required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
+
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-11",
-            "clang-11-darwin",
-            "clang-11-darwin-aarch64",
-            "clang-11-aarch64",
-            "clang-12",
-            "clang-12-darwin",
-            "clang-12-darwin-aarch64",
-            "clang-12-aarch64",
-            "clang-13",
-            "clang-13-darwin",
-            "clang-13-darwin-aarch64",
-            "clang-13-aarch64",
-            "clang-13-ppc64le",
-            "clang-11-freebsd",
-            "clang-12-freebsd",
-            "clang-13-freebsd",
+            "clang-14",
+            "clang-14-darwin",
+            "clang-14-darwin-aarch64",
+            "clang-14-aarch64",
+            "clang-14-ppc64le",
+            "clang-14-freebsd",
             "gcc-11",
         ),
-        default="clang-13",
+        default="clang-14",
         help="a compiler to use",
     )
     parser.add_argument(
@@ -348,6 +339,7 @@ if __name__ == "__main__":
         choices=("address", "thread", "memory", "undefined", ""),
         default="",
     )
+
     parser.add_argument("--split-binary", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")

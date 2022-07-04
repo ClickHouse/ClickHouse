@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTimeWindow.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -41,7 +42,6 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -60,6 +60,7 @@
 #include <Storages/WindowView/WindowViewSource.h>
 
 #include <QueryPipeline/printPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -81,20 +82,18 @@ namespace ErrorCodes
 namespace
 {
     /// Fetch all window info and replace tumble or hop node names with windowID
-    struct FetchQueryInfoMatcher
+    struct WindowFunctionMatcher
     {
-        using Visitor = InDepthNodeVisitor<FetchQueryInfoMatcher, true>;
+        using Visitor = InDepthNodeVisitor<WindowFunctionMatcher, true>;
         using TypeToVisit = ASTFunction;
 
         struct Data
         {
             ASTPtr window_function;
-            String window_id_name;
-            String window_id_alias;
             String serialized_window_function;
-            String timestamp_column_name;
             bool is_tumble = false;
             bool is_hop = false;
+            bool check_duplicate_window = false;
         };
 
         static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
@@ -111,18 +110,17 @@ namespace
                     temp_node->setAlias("");
                     if (!data.window_function)
                     {
-                        data.serialized_window_function = serializeAST(*temp_node);
+                        if (data.check_duplicate_window)
+                            data.serialized_window_function = serializeAST(*temp_node);
                         t->name = "windowID";
-                        data.window_id_name = t->getColumnName();
-                        data.window_id_alias = t->alias;
                         data.window_function = t->clone();
                         data.window_function->setAlias("");
-                        data.timestamp_column_name = t->arguments->children[0]->getColumnName();
                     }
                     else
                     {
-                        if (serializeAST(*temp_node) != data.serialized_window_function)
-                            throw Exception("WINDOW VIEW only support ONE TIME WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                        if (data.check_duplicate_window && serializeAST(*temp_node) != data.serialized_window_function)
+                            throw Exception(
+                                "WINDOW VIEW only support ONE TIME WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                         t->name = "windowID";
                     }
                 }
@@ -190,24 +188,6 @@ namespace
 
     using ReplaceFunctionNowVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowData>, true>;
 
-    struct ReplaceFunctionWindowMatcher
-    {
-        using Visitor = InDepthNodeVisitor<ReplaceFunctionWindowMatcher, true>;
-
-        struct Data{};
-
-        static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
-
-        static void visit(ASTPtr & ast, Data &)
-        {
-            if (auto * t = ast->as<ASTFunction>())
-            {
-                if (t->name == "hop" || t->name == "tumble")
-                    t->name = "windowID";
-            }
-        }
-    };
-
     class ToIdentifierMatcher
     {
     public:
@@ -267,7 +247,7 @@ namespace
         {
             if (auto * t = ast->as<ASTIdentifier>())
             {
-                ast = std::make_shared<ASTIdentifier>(t->shortName());
+                t->setShortName(t->shortName());
             }
         }
     };
@@ -420,7 +400,7 @@ ASTPtr StorageWindowView::getCleanupQuery()
     ASTPtr function_less;
     function_less= makeASTFunction(
         "less",
-        std::make_shared<ASTIdentifier>(inner_window_id_column_name),
+        std::make_shared<ASTIdentifier>(window_id_name),
         std::make_shared<ASTLiteral>(getCleanupBound()));
 
     auto alter_query = std::make_shared<ASTAlterQuery>();
@@ -479,10 +459,12 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
-    dropInnerTableIfAny(true, local_context);
+    output_header.clear();
+
+    InterpreterDropQuery::executeDropQuery(
+    ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, true);
 
     /// create inner table
-    std::exchange(has_inner_table, true);
     auto create_context = Context::createCopy(local_context);
     auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
@@ -535,7 +517,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         /// SELECT * FROM inner_table WHERE window_id_name == w_end
         /// (because we fire at the end of windows)
-        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(inner_window_id_column_name), std::make_shared<ASTLiteral>(watermark));
+        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
     }
     else
     {
@@ -554,7 +536,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
             func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
             w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
         }
-        filter_function = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(inner_window_id_column_name));
+        filter_function = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
     }
 
     auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
@@ -569,7 +551,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     /// Adding window column
     DataTypes window_column_type{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()};
     ColumnWithTypeAndName column;
-    column.name = inner_window_column_name;
+    column.name = window_column_name;
     column.type = std::make_shared<DataTypeTuple>(std::move(window_column_type));
     column.column = column.type->createColumnConst(0, Tuple{w_start, watermark});
     auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -582,7 +564,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     /// Removing window id column
     auto new_header = builder.getHeader();
-    new_header.erase(inner_window_id_column_name);
+    new_header.erase(window_id_name);
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         builder.getHeader().getColumnsWithTypeAndName(),
         new_header.getColumnsWithTypeAndName(),
@@ -600,7 +582,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     });
 
     Pipes pipes;
-    auto pipe = QueryPipelineBuilder::getPipe(std::move(builder));
+    QueryPlanResourceHolder resources;
+    auto pipe = QueryPipelineBuilder::getPipe(std::move(builder), resources);
     pipes.emplace_back(std::move(pipe));
 
     auto creator = [&](const StorageID & blocks_id_global)
@@ -661,15 +644,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
     BlocksPtr blocks;
     Block header;
-    try
-    {
-        std::lock_guard lock(mutex);
-        std::tie(blocks, header) = getNewBlocks(watermark);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    std::lock_guard lock(mutex);
+    std::tie(blocks, header) = getNewBlocks(watermark);
 
     if (!blocks || blocks->empty())
         return;
@@ -693,6 +670,19 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto block_io = interpreter.execute();
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
+
+        auto adding_missing_defaults_dag = addMissingDefaults(
+            pipe.getHeader(),
+            block_io.pipeline.getHeader().getNamesAndTypesList(),
+            getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
+            getContext(),
+            getContext()->getSettingsRef().insert_null_as_default);
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+        pipe.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
+        });
+
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
@@ -736,15 +726,14 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     {
         auto query = select_query->clone();
         DropTableIdentifierMatcher::Data drop_table_identifier_data;
-        DropTableIdentifierMatcher::Visitor drop_table_identifier_visitor(drop_table_identifier_data);
-        drop_table_identifier_visitor.visit(query);
+        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query);
 
-        FetchQueryInfoMatcher::Data query_info_data;
-        FetchQueryInfoMatcher::Visitor(query_info_data).visit(query);
+        WindowFunctionMatcher::Data query_info_data;
+        WindowFunctionMatcher::Visitor(query_info_data).visit(query);
 
         auto order_by = std::make_shared<ASTExpressionList>();
         auto order_by_elem = std::make_shared<ASTOrderByElement>();
-        order_by_elem->children.push_back(std::make_shared<ASTIdentifier>(query_info_data.timestamp_column_name));
+        order_by_elem->children.push_back(std::make_shared<ASTIdentifier>(timestamp_column_name));
         order_by_elem->direction = 1;
         order_by->children.push_back(order_by_elem);
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
@@ -778,7 +767,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
         = InterpreterSelectQuery(inner_select_query, getContext(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
               .getSampleBlock();
 
-    auto columns_list = std::make_shared<ASTExpressionList>();
+    ASTPtr columns_list = InterpreterCreateQuery::formatColumns(t_sample_block.getNamesAndTypesList());
 
     if (is_time_column_func_now)
     {
@@ -786,30 +775,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
         column_window->name = window_id_name;
         column_window->type = std::make_shared<ASTIdentifier>("UInt32");
         columns_list->children.push_back(column_window);
-        inner_window_id_column_name = window_id_name;
     }
-
-    for (const auto & column : t_sample_block.getColumnsWithTypeAndName())
-    {
-        ParserIdentifierWithOptionalParameters parser;
-        String sql = column.type->getName();
-        ASTPtr ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        auto column_dec = std::make_shared<ASTColumnDeclaration>();
-        column_dec->name = column.name;
-        column_dec->type = ast;
-        columns_list->children.push_back(column_dec);
-        if (!is_time_column_func_now && inner_window_id_column_name.empty() && startsWith(column.name, "windowID"))
-        {
-            inner_window_id_column_name = column.name;
-        }
-    }
-
-    if (inner_window_id_column_name.empty())
-        throw Exception(
-            "The first argument of time window function should not be a constant value.",
-            ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
-
-    inner_window_column_name = std::regex_replace(inner_window_id_column_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
 
     ToIdentifierMatcher::Data query_data;
     query_data.window_id_name = window_id_name;
@@ -818,8 +784,8 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
 
     ReplaceFunctionNowData time_now_data;
     ReplaceFunctionNowVisitor time_now_visitor(time_now_data);
-    ReplaceFunctionWindowMatcher::Data func_hop_data;
-    ReplaceFunctionWindowMatcher::Visitor func_window_visitor(func_hop_data);
+    WindowFunctionMatcher::Data window_data;
+    WindowFunctionMatcher::Visitor window_visitor(window_data);
 
     DropTableIdentifierMatcher::Data drop_table_identifier_data;
     DropTableIdentifierMatcher::Visitor drop_table_identifier_visitor(drop_table_identifier_data);
@@ -836,7 +802,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
         }
         drop_table_identifier_visitor.visit(node);
         /// tumble/hop -> windowID
-        func_window_visitor.visit(node);
+        window_visitor.visit(node);
         to_identifier_visitor.visit(node);
         node->setAlias("");
         return node;
@@ -965,7 +931,7 @@ void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
     std::lock_guard lock(fire_signal_mutex);
     for (const auto & signal : signals)
         fire_signal.push_back(signal);
-    fire_signal_condition.notify_all();
+    fire_task->schedule();
 }
 
 void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
@@ -977,6 +943,12 @@ void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 
 void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 {
+    if (is_proctime)
+    {
+        max_watermark = watermark;
+        return;
+    }
+
     std::lock_guard lock(fire_signal_mutex);
 
     bool updated;
@@ -1002,10 +974,10 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
     }
 
     if (updated)
-        fire_signal_condition.notify_all();
+        fire_task->schedule();
 }
 
-inline void StorageWindowView::cleanup()
+void StorageWindowView::cleanup()
 {
     std::lock_guard fire_signal_lock(fire_signal_mutex);
     std::lock_guard mutex_lock(mutex);
@@ -1023,18 +995,21 @@ inline void StorageWindowView::cleanup()
 
 void StorageWindowView::threadFuncCleanup()
 {
-    try
-    {
-        if (!shutdown_called)
-            cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (shutdown_called)
+        return;
 
-    if (!shutdown_called)
-        clean_cache_task->scheduleAfter(clean_interval_ms);
+    if ((Poco::Timestamp().epochMicroseconds() - last_clean_timestamp_usec) > clean_interval_usec)
+    {
+        try
+        {
+            cleanup();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        last_clean_timestamp_usec = Poco::Timestamp().epochMicroseconds();
+    }
 }
 
 void StorageWindowView::threadFuncFireProc()
@@ -1042,14 +1017,15 @@ void StorageWindowView::threadFuncFireProc()
     if (shutdown_called)
         return;
 
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
     while (next_fire_signal <= timestamp_now)
     {
         try
         {
-            fire(next_fire_signal);
+            if (max_watermark >= timestamp_now)
+                fire(next_fire_signal);
         }
         catch (...)
         {
@@ -1063,46 +1039,35 @@ void StorageWindowView::threadFuncFireProc()
         next_fire_signal += slide_interval;
     }
 
+    if (max_watermark >= timestamp_now)
+        clean_cache_task->schedule();
+
     UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000;
     if (!shutdown_called)
-        fire_task->scheduleAfter(std::max(
-            UInt64(0),
-            static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
+        fire_task->scheduleAfter(std::max(UInt64(0), static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
 }
 
 void StorageWindowView::threadFuncFireEvent()
 {
-    std::unique_lock lock(fire_signal_mutex);
-    while (!shutdown_called)
+    std::lock_guard lock(fire_signal_mutex);
+
+    LOG_TRACE(log, "Fire events: {}", fire_signal.size());
+
+    while (!shutdown_called && !fire_signal.empty())
     {
-        bool signaled = std::cv_status::no_timeout == fire_signal_condition.wait_for(lock, std::chrono::seconds(fire_signal_timeout_s));
-        if (!signaled)
-            continue;
-
-        LOG_TRACE(log, "Fire events: {}", fire_signal.size());
-
-        while (!fire_signal.empty())
+        try
         {
             fire(fire_signal.front());
-            max_fired_watermark = fire_signal.front();
-            fire_signal.pop_front();
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        max_fired_watermark = fire_signal.front();
+        fire_signal.pop_front();
     }
-}
 
-Pipe StorageWindowView::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
+    clean_cache_task->schedule();
 }
 
 void StorageWindowView::read(
@@ -1142,21 +1107,8 @@ void StorageWindowView::read(
             query_plan.addStep(std::move(converting_step));
         }
 
-        StreamLocalLimits limits;
-        SizeLimits leaf_limits;
-
-        /// Add table lock for target table.
-        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                query_plan.getCurrentDataStream(),
-                storage,
-                std::move(lock),
-                limits,
-                leaf_limits,
-                nullptr,
-                nullptr);
-
-        adding_limits_and_quota->setStepDescription("Lock target table for WindowView");
-        query_plan.addStep(std::move(adding_limits_and_quota));
+        query_plan.addStorageHolder(storage);
+        query_plan.addTableLock(std::move(lock));
     }
 }
 
@@ -1203,7 +1155,7 @@ StorageWindowView::StorageWindowView(
     , WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
-    , clean_interval_ms(context_->getSettingsRef().window_view_clean_interval.totalMilliseconds())
+    , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -1212,12 +1164,9 @@ StorageWindowView::StorageWindowView(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    if (!query.select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
-
     /// If the target table is not set, use inner target table
-    inner_target_table = query.to_table_id.empty();
-    if (inner_target_table && !query.storage)
+    has_inner_target_table = query.to_table_id.empty();
+    if (has_inner_target_table && !query.storage)
         throw Exception(
             "You must specify where to save results of a WindowView query: either ENGINE or an existing table in a TO clause",
             ErrorCodes::INCORRECT_QUERY);
@@ -1230,14 +1179,14 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    target_table_id = query.to_table_id;
-
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
     if (query.inner_storage)
         inner_table_engine = query.inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);
+
+    target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
         next_fire_signal = getWindowUpperBound(std::time(nullptr));
@@ -1250,7 +1199,7 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        if (inner_target_table)
+        if (has_inner_target_table)
         {
             /// create inner target table
             auto create_context = Context::createCopy(context_);
@@ -1267,14 +1216,8 @@ StorageWindowView::StorageWindowView(
             InterpreterCreateQuery create_interpreter(target_create_query, create_context);
             create_interpreter.setInternal(true);
             create_interpreter.execute();
-
-            target_table_id = StorageID(target_create_query->getDatabase(), target_create_query->getTable());
         }
-        else
-            target_table_id = query.to_table_id;
     }
-
-    inner_fetch_query = generateInnerFetchQuery(inner_table_id);
 
     clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
@@ -1286,7 +1229,6 @@ StorageWindowView::StorageWindowView(
 ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_)
 {
     select_query = query.clone();
-    input_header.clear();
     output_header.clear();
 
     String select_database_name = getContext()->getCurrentDatabase();
@@ -1315,6 +1257,8 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
+    window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
+
     /// Parse final query (same as mergeable query but has tumble/hop instead of windowID)
     final_query = mergeable_query->clone();
     ReplaceWindowIdMatcher::Data final_query_data;
@@ -1331,16 +1275,15 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
 
     // Parse stage mergeable
     ASTPtr result = query.clone();
-    FetchQueryInfoMatcher::Data query_info_data;
-    FetchQueryInfoMatcher::Visitor(query_info_data).visit(result);
+
+    WindowFunctionMatcher::Data query_info_data;
+    query_info_data.check_duplicate_window = true;
+    WindowFunctionMatcher::Visitor(query_info_data).visit(result);
 
     if (!query_info_data.is_tumble && !query_info_data.is_hop)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                         "TIME WINDOW FUNCTION is not specified for {}", getName());
 
-    window_id_name = query_info_data.window_id_name;
-    window_id_alias = query_info_data.window_id_alias;
-    timestamp_column_name = query_info_data.timestamp_column_name;
     is_tumble = query_info_data.is_tumble;
 
     // Parse time window function
@@ -1349,6 +1292,14 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     extractWindowArgument(
         arguments.at(1), window_kind, window_num_units,
         "Illegal type of second argument of function " + window_function.name + " should be Interval");
+
+    window_id_alias = window_function.alias;
+    if (auto * node = arguments[0]->as<ASTIdentifier>())
+        timestamp_column_name = node->shortName();
+
+    DropTableIdentifierMatcher::Data drop_identifier_data;
+    DropTableIdentifierMatcher::Visitor(drop_identifier_data).visit(query_info_data.window_function);
+    window_id_name = window_function.getColumnName();
 
     slide_kind = window_kind;
     slide_num_units = window_num_units;
@@ -1565,23 +1516,23 @@ void StorageWindowView::writeIntoWindowView(
 
         if (block_max_timestamp)
             window_view.updateMaxTimestamp(block_max_timestamp);
-
-        UInt32 lateness_upper_bound = 0;
-        if (window_view.allowed_lateness && t_max_fired_watermark)
-            lateness_upper_bound = t_max_fired_watermark;
-
-        /// On each chunk check window end for each row in a window column, calculating max.
-        /// Update max watermark (latest seen window end) if needed.
-        /// If lateness is allowed, add lateness signals.
-        builder.addSimpleTransform([&](const Block & current_header)
-        {
-            return std::make_shared<WatermarkTransform>(
-                current_header,
-                window_view,
-                window_view.window_id_name,
-                lateness_upper_bound);
-        });
     }
+
+    UInt32 lateness_upper_bound = 0;
+    if (!window_view.is_proctime && window_view.allowed_lateness && t_max_fired_watermark)
+        lateness_upper_bound = t_max_fired_watermark;
+
+    /// On each chunk check window end for each row in a window column, calculating max.
+    /// Update max watermark (latest seen window end) if needed.
+    /// If lateness is allowed, add lateness signals.
+    builder.addSimpleTransform([&](const Block & current_header)
+    {
+        return std::make_shared<WatermarkTransform>(
+            current_header,
+            window_view,
+            window_view.window_id_name,
+            lateness_upper_bound);
+    });
 
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(
@@ -1614,36 +1565,14 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
-    if (is_time_column_func_now)
-        inner_window_id_column_name = window_id_name;
-    else
-    {
-        Aliases aliases;
-        QueryAliasesVisitor(aliases).visit(mergeable_query);
-        auto inner_query_normalized = mergeable_query->clone();
-        QueryNormalizer::Data normalizer_data(aliases, {}, false, getContext()->getSettingsRef(), false);
-        QueryNormalizer(normalizer_data).visit(inner_query_normalized);
-        auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
-        auto t_sample_block
-            = InterpreterSelectQuery(inner_select_query, getContext(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
-                    .getSampleBlock();
-        for (const auto & column : t_sample_block.getColumnsWithTypeAndName())
-        {
-            if (startsWith(column.name, "windowID"))
-            {
-                inner_window_id_column_name = column.name;
-                break;
-            }
-        }
-    }
-
-    inner_window_column_name = std::regex_replace(inner_window_id_column_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
-
     DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 
-    // Start the working thread
-    clean_cache_task->activateAndSchedule();
-    fire_task->activateAndSchedule();
+    fire_task->activate();
+    clean_cache_task->activate();
+
+    /// Start the working thread
+    if (is_proctime)
+        fire_task->schedule();
 }
 
 void StorageWindowView::shutdown()
@@ -1651,7 +1580,6 @@ void StorageWindowView::shutdown()
     shutdown_called = true;
 
     fire_condition.notify_all();
-    fire_signal_condition.notify_all();
 
     clean_cache_task->deactivate();
     fire_task->deactivate();
@@ -1678,7 +1606,7 @@ void StorageWindowView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (!std::exchange(has_inner_table, false))
         return;
@@ -1686,10 +1614,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     try
     {
         InterpreterDropQuery::executeDropQuery(
-            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
+            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
 
-        if (inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+        if (has_inner_target_table)
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
     }
     catch (...)
     {
@@ -1697,15 +1625,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     }
 }
 
-const Block & StorageWindowView::getInputHeader() const
+Block StorageWindowView::getInputHeader() const
 {
-    std::lock_guard lock(sample_block_lock);
-    if (!input_header)
-    {
-        input_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns))
-                           .getSampleBlock();
-    }
-    return input_header;
+    auto metadata = getSourceTable()->getInMemoryMetadataPtr();
+    return metadata->getSampleBlockNonMaterialized();
 }
 
 const Block & StorageWindowView::getOutputHeader() const

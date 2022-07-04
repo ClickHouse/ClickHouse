@@ -65,6 +65,7 @@ public:
         size_t size() const;
         size_t byteSize() const;
         size_t allocatedBytes() const;
+        void get(size_t n, Field & res) const;
 
         bool isFinalized() const;
         const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
@@ -84,12 +85,16 @@ public:
         void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
         void popBack(size_t n);
 
+        Subcolumn cut(size_t start, size_t length) const;
+
         /// Converts all column's parts to the common type and
         /// creates a single column that stores all values.
         void finalize();
 
         /// Returns last inserted field.
         Field getLastField() const;
+
+        FieldInfo getFieldInfo() const;
 
         /// Recreates subcolumn with default scalar values and keeps sizes of arrays.
         /// Used to create columns of type Nested with consistent array sizes.
@@ -101,13 +106,16 @@ public:
         const IColumn & getFinalizedColumn() const;
         const ColumnPtr & getFinalizedColumnPtr() const;
 
+        const std::vector<WrappedPtr> & getData() const { return data; }
+        size_t getNumberOfDefaultsInPrefix() const { return num_of_defaults_in_prefix; }
+
         friend class ColumnObject;
 
     private:
         class LeastCommonType
         {
         public:
-            LeastCommonType() = default;
+            LeastCommonType();
             explicit LeastCommonType(DataTypePtr type_);
 
             const DataTypePtr & get() const { return type; }
@@ -138,6 +146,8 @@ public:
         /// least common type and we count number of defaults in prefix,
         /// which will be converted to the default type of final common type.
         size_t num_of_defaults_in_prefix = 0;
+
+        size_t num_rows = 0;
     };
 
     using Subcolumns = SubcolumnsTree<Subcolumn>;
@@ -175,6 +185,11 @@ public:
     /// It cares about consistency of sizes of Nested arrays.
     void addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size);
 
+    /// Finds a subcolumn from the same Nested type as @entry and inserts
+    /// an array with default values with consistent sizes as in Nested type.
+    bool tryInsertDefaultFromNested(const Subcolumns::NodePtr & entry) const;
+    bool tryInsertManyDefaultsFromNested(const Subcolumns::NodePtr & entry) const;
+
     const Subcolumns & getSubcolumns() const { return subcolumns; }
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
@@ -189,7 +204,6 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Object; }
 
     size_t size() const override;
-    MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
@@ -197,13 +211,14 @@ public:
     void insertDefault() override;
     void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    ColumnPtr replicate(const Offsets & offsets) const override;
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
+    MutableColumnPtr cloneResized(size_t new_size) const override;
 
     /// All other methods throw exception.
 
@@ -236,7 +251,11 @@ private:
     }
 
     template <typename Func>
-    ColumnPtr applyForSubcolumns(Func && func, std::string_view func_name) const;
+    MutableColumnPtr applyForSubcolumns(Func && func) const;
+
+    /// For given subcolumn return subcolumn from the same Nested type.
+    /// It's used to get shared sized of Nested to insert correct default values.
+    const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
 };
 
 }

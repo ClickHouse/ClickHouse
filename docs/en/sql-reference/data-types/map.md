@@ -3,14 +3,14 @@ sidebar_position: 65
 sidebar_label: Map(key, value)
 ---
 
-# Map(key, value) {#data_type-map}
+# Map(key, value)
 
 `Map(key, value)` data type stores `key:value` pairs.
 
 **Parameters**
 
--   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), or [FixedString](../../sql-reference/data-types/fixedstring.md).
--   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [Array](../../sql-reference/data-types/array.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md).
+-   `value` — The value part of the pair. Arbitrary type, including [Map](../../sql-reference/data-types/map.md) and [Array](../../sql-reference/data-types/array.md).
 
 To get the value from an `a Map('key', 'value')` column, use `a['key']` syntax. This lookup works now with a linear complexity.
 
@@ -59,7 +59,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## Convert Tuple to Map Type {#map-and-tuple}
+## Convert Tuple to Map Type
 
 You can cast `Tuple()` as `Map()` using [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function:
 
@@ -73,7 +73,7 @@ SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map
 └───────────────────────────────┘
 ```
 
-## Map.keys and Map.values Subcolumns {#map-subcolumns}
+## Map.keys and Map.values Subcolumns
 
 To optimize `Map` column processing, in some cases you can use the `keys` and `values` subcolumns instead of reading the whole column.
 
@@ -108,4 +108,3 @@ Result:
 -   [map()](../../sql-reference/functions/tuple-map-functions.md#function-map) function
 -   [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
 
-[Original article](https://clickhouse.com/docs/en/data-types/map/) <!--hide-->

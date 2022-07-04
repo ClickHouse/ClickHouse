@@ -3,9 +3,9 @@ sidebar_position: 58
 sidebar_label: Usage Recommendations
 ---
 
-# Usage Recommendations {#usage-recommendations}
+# Usage Recommendations
 
-## CPU Scaling Governor {#cpu-scaling-governor}
+## CPU Scaling Governor
 
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
@@ -33,7 +33,7 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-:::warning    
+:::warning
 If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
 :::
 
@@ -70,7 +70,7 @@ Regardless of RAID use, always use replication for data security.
 Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
 For HDD, enable the write cache.
 
-Make sure that [fstrim](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
+Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
 
 ## File System {#file-system}
 
@@ -94,7 +94,7 @@ Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be m
 
 ## Huge Pages {#huge-pages}
 
-If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocator, which leads to significant performance degradation.
 On newer Linux kernels transparent huge pages are alright.
 
 ``` bash
@@ -107,7 +107,7 @@ If you are using OpenStack, set
 ```
 cpu_mode=host-passthrough
 ```
-in nova.conf.
+in `nova.conf`.
 
 If you are using libvirt, set
 ```
@@ -128,7 +128,8 @@ You should never use manually written scripts to transfer data between different
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
-You can run ClickHouse Keeper on the same server as ClickHouse, but do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
+You can run ClickHouse Keeper on the same server as ClickHouse in test environments, or in environments with low ingestion rate. 
+For production environments we suggest to use separate servers for ClickHouse and ZooKeeper/Keeper, or place ClickHouse files and Keeper files on to separate disks. Because ZooKeeper/Keeper are very sensitive for disk latency and ClickHouse may utilize all available system resources.
 
 You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
 
@@ -136,7 +137,7 @@ Do not change `minSessionTimeout` setting, large values may affect ClickHouse re
 
 With the default settings, ZooKeeper is a time bomb:
 
-> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
+> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see `autopurge`), and this is the responsibility of the operator.
 
 This bomb must be defused.
 
@@ -241,7 +242,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
     -XX:MaxGCPauseMillis=50"
 ```
 
-Salt init:
+Salt initialization:
 
 ``` text
 description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
@@ -274,6 +275,6 @@ end script
 
 ## Antivirus software {#antivirus-software}
 
-If you use antivirus software configure it to skip folders with Clickhouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
+If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
 [Original article](https://clickhouse.com/docs/en/operations/tips/)

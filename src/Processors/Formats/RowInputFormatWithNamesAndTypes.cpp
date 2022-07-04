@@ -17,6 +17,7 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     const Block & header_,
     ReadBuffer & in_,
     const Params & params_,
+    bool is_binary_,
     bool with_names_,
     bool with_types_,
     const FormatSettings & format_settings_,
@@ -24,6 +25,7 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , format_settings(format_settings_)
     , data_types(header_.getDataTypes())
+    , is_binary(is_binary_)
     , with_names(with_names_)
     , with_types(with_types_)
     , format_reader(std::move(format_reader_))
@@ -38,10 +40,11 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     if (getCurrentUnitNumber() != 0)
         return;
 
-    if (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8())
+    /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
+    /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
+    /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
+    if (!is_binary && (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8()))
     {
-        /// We assume that column name or type cannot contain BOM, so, if format has header,
-        /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
         skipBOMIfExists(*in);
     }
 

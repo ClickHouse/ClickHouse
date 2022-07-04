@@ -41,8 +41,11 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
 -   Ruby
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
+-   Rust
+    -   [clickhouse.rs](https://github.com/loyd/clickhouse.rs)
+    -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
+    -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
-    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)

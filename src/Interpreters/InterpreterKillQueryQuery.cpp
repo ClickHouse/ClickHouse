@@ -18,8 +18,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 #include <thread>
@@ -125,12 +126,12 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-class SyncKillQuerySource : public SourceWithProgress
+class SyncKillQuerySource : public ISource
 {
 public:
     SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
                              const Block & res_sample_block_)
-        : SourceWithProgress(res_sample_block_)
+        : ISource(res_sample_block_)
         , process_list(process_list_)
         , processes_to_stop(std::move(processes_to_stop_))
         , processes_block(std::move(processes_block_))
