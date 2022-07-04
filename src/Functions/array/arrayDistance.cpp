@@ -70,6 +70,17 @@ struct L2Distance
     }
 };
 
+struct L2SquaredDistance : L2Distance
+{
+    static inline String name = "L2Squared";
+
+    template <typename ResultType>
+    static ResultType finalize(const State<ResultType> & state, const ConstParams &)
+    {
+        return state.sum;
+    }
+};
+
 struct LpDistance
 {
     static inline String name = "Lp";
@@ -195,12 +206,12 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
                     "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    getName(), common_type->getName());
+                    getName(),
+                    common_type->getName());
         }
     }
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         switch (result_type->getTypeId())
         {
@@ -248,7 +259,8 @@ private:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
                     "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    getName(), type_x->getName());
+                    getName(),
+                    type_x->getName());
         }
     }
 
@@ -273,7 +285,8 @@ private:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
                     "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    getName(), type_y->getName());
+                    getName(),
+                    type_y->getName());
         }
     }
 
@@ -310,7 +323,9 @@ private:
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
-                    getName(), offsets_x[row] - prev_offset, offsets_y[row] - prev_offset);
+                    getName(),
+                    offsets_x[row] - prev_offset,
+                    offsets_y[row] - prev_offset);
             }
         }
 
@@ -360,7 +375,9 @@ private:
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
-                    getName(), offsets_x[0], offsets_y[row] - prev_offset);
+                    getName(),
+                    offsets_x[0],
+                    offsets_y[row] - prev_offset);
             }
             prev_offset = offsets_y[row];
         }
@@ -430,8 +447,8 @@ LpDistance::ConstParams FunctionArrayDistance<LpDistance>::initConstParams(const
 /// These functions are used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL1Distance(ContextPtr context_) { return FunctionArrayDistance<L1Distance>::create(context_); }
 FunctionPtr createFunctionArrayL2Distance(ContextPtr context_) { return FunctionArrayDistance<L2Distance>::create(context_); }
+FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_) { return FunctionArrayDistance<L2SquaredDistance>::create(context_); }
 FunctionPtr createFunctionArrayLpDistance(ContextPtr context_) { return FunctionArrayDistance<LpDistance>::create(context_); }
 FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_) { return FunctionArrayDistance<LinfDistance>::create(context_); }
 FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_) { return FunctionArrayDistance<CosineDistance>::create(context_); }
-
 }

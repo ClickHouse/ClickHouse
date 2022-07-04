@@ -410,15 +410,17 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
         if (new_data_part->data_part_storage->exists())
         {
-            LOG_WARNING(log, "Removing old temporary directory {}", new_data_part->data_part_storage->getFullPath());
-            data_part_volume->getDisk()->removeRecursive(full_path);
+            LOG_WARNING(log, "Removing old temporary directory {}", full_path);
+            data_part_storage_builder->removeRecursive();
         }
 
-        const auto disk = data_part_volume->getDisk();
-        disk->createDirectories(full_path);
+        data_part_storage_builder->createDirectories();
 
         if (data.getSettings()->fsync_part_directory)
+        {
+            const auto disk = data_part_volume->getDisk();
             sync_guard = disk->getDirectorySyncGuard(full_path);
+        }
     }
 
     if (metadata_snapshot->hasRowsTTL())
@@ -457,6 +459,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         {
             auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, data_part_storage_builder, new_data_part.get());
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
+            proj_temp_part.builder->commit();
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
         }
@@ -469,6 +472,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         context->getWriteSettings());
 
     temp_part.part = new_data_part;
+    temp_part.builder = data_part_storage_builder;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
@@ -585,9 +589,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);
     temp_part.part = new_data_part;
+    temp_part.builder = projection_part_storage_builder;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
-
-    // out.finish(new_data_part, std::move(written_files), false);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, block.bytes());

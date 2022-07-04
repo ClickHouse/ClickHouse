@@ -4,6 +4,8 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -37,7 +39,7 @@ DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & e
                 const String & new_table_name = element.new_table_name;
                 assert(!table_name.empty());
                 assert(!new_table_name.empty());
-                map.setNewTemporaryTableName(table_name, new_table_name);
+                map.setNewTableName({DatabaseCatalog::TEMPORARY_DATABASE, table_name}, {DatabaseCatalog::TEMPORARY_DATABASE, new_table_name});
                 break;
             }
 
@@ -66,6 +68,7 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
     std::exception_ptr exception;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
+    auto thread_group = CurrentThread::getGroup();
 
     for (auto & name_and_entry : backup_entries)
     {
@@ -79,22 +82,30 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
             ++num_active_jobs;
         }
 
-        auto job = [&]()
+        auto job = [&](bool async)
         {
-            SCOPE_EXIT({
+            SCOPE_EXIT_SAFE(
                 std::lock_guard lock{mutex};
                 if (!--num_active_jobs)
                     event.notify_all();
-            });
-
-            {
-                std::lock_guard lock{mutex};
-                if (exception)
-                    return;
-            }
+                if (async)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
 
             try
             {
+                if (async && thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                if (async)
+                    setThreadName("BackupWorker");
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (exception)
+                        return;
+                }
+
                 backup->writeFile(name, std::move(entry));
             }
             catch (...)
@@ -105,22 +116,15 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
             }
         };
 
-        if (always_single_threaded || !thread_pool.trySchedule(job))
-            job();
+        if (always_single_threaded || !thread_pool.trySchedule([job] { job(true); }))
+            job(false);
     }
 
     {
         std::unique_lock lock{mutex};
         event.wait(lock, [&] { return !num_active_jobs; });
-    }
-
-    backup_entries.clear();
-
-    if (exception)
-    {
-        /// We don't call finalizeWriting() if an error occurs.
-        /// And IBackup's implementation should remove the backup in its destructor if finalizeWriting() hasn't called before.
-        std::rethrow_exception(exception);
+        if (exception)
+            std::rethrow_exception(exception);
     }
 }
 
@@ -132,6 +136,8 @@ void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
     std::condition_variable event;
     std::exception_ptr exception;
 
+    auto thread_group = CurrentThread::getGroup();
+
     for (auto & task : tasks)
     {
         {
@@ -141,22 +147,30 @@ void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
             ++num_active_jobs;
         }
 
-        auto job = [&]()
+        auto job = [&](bool async)
         {
-            SCOPE_EXIT({
+            SCOPE_EXIT_SAFE(
                 std::lock_guard lock{mutex};
                 if (!--num_active_jobs)
                     event.notify_all();
-            });
-
-            {
-                std::lock_guard lock{mutex};
-                if (exception)
-                    return;
-            }
+                if (async)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
 
             try
             {
+                if (async && thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                if (async)
+                    setThreadName("RestoreWorker");
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (exception)
+                        return;
+                }
+
                 std::move(task)();
             }
             catch (...)
@@ -167,22 +181,15 @@ void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
             }
         };
 
-        if (!thread_pool.trySchedule(job))
-            job();
+        if (!thread_pool.trySchedule([job] { job(true); }))
+            job(false);
     }
 
     {
         std::unique_lock lock{mutex};
         event.wait(lock, [&] { return !num_active_jobs; });
-    }
-
-    tasks.clear();
-
-    if (exception)
-    {
-        /// We don't call finalizeWriting() if an error occurs.
-        /// And IBackup's implementation should remove the backup in its destructor if finalizeWriting() hasn't called before.
-        std::rethrow_exception(exception);
+        if (exception)
+            std::rethrow_exception(exception);
     }
 }
 
