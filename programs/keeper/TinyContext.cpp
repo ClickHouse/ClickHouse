@@ -43,6 +43,15 @@ void TinyContext::initializeKeeperDispatcher([[maybe_unused]] bool start_async) 
 std::shared_ptr<KeeperDispatcher> TinyContext::getKeeperDispatcher() const
 {
     std::lock_guard lock(keeper_dispatcher_mutex);
+    if (!keeper_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
+
+    return keeper_dispatcher;
+}
+
+std::shared_ptr<KeeperDispatcher> TinyContext::tryGetKeeperDispatcher() const
+{
+    std::lock_guard lock(keeper_dispatcher_mutex);
     return keeper_dispatcher;
 }
 

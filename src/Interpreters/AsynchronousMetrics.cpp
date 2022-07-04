@@ -1470,7 +1470,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 #if USE_NURAFT
     {
-        auto keeper_dispatcher = getContext()->getKeeperDispatcher();
+        auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
         if (keeper_dispatcher)
         {
             size_t is_leader = 0;
