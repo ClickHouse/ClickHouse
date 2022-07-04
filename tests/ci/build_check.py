@@ -231,7 +231,7 @@ def upload_master_static_binaries(
         return
 
     s3_path = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
-    binary = os.path.join(build_output_path, "self-extracting", "clickhouse")
+    binary = os.path.join(build_output_path, "clickhouse")
     url = s3_helper.upload_build_file_to_s3(binary, s3_path)
     print(f"::notice ::Binary static URL: {url}")
 
