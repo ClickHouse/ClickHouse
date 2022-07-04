@@ -2272,7 +2272,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
                     "The INTERVAL must be a week or shorter, '{}' given",
                     argument_types[ARGUMENT_INTERVAL]->getName());
             }
-            interval_length = interval_datatype->getKind().toAvgSeconds();
+            interval_length = interval_datatype->getKind().toSeconds();
             interval_specified = true;
         }
     }
