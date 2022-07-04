@@ -19,4 +19,4 @@ clickhouse-client --time --query "INSERT INTO hits FORMAT TSV" < hits.tsv
 
 ./run.sh
 
-du -bcs /var/lib/clickhouse
+clickhouse-client --query "SELECT total_bytes FROM system.tables WHERE name = 'hits' AND database = 'default'"

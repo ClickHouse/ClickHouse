@@ -28,7 +28,7 @@ Find "Security", click on the group in "VPC security groups".
 Edit "Inbound rules". Add "Custom TCP", port 3306, from 0.0.0.0/0.
 
 ```
-export HOST="database-1.cluster-....eu-central-1.rds.amazonaws.com"
+export HOST="database-1.cluster-cnkeohbxcwr1.eu-central-1.rds.amazonaws.com"
 export PASSWORD="..."
 
 mysql -h "${HOST}" -u admin --password="${PASSWORD}" -e "CREATE DATABASE test"
@@ -47,7 +47,7 @@ time mysql --local-infile=1 -h "${HOST}" -u admin --password="${PASSWORD}" test 
 
 > 128m7.318s
 
-Go to "Monitoring", find "\[Billed\] Volume Bytes Used".
+Go to "Monitoring", find "[Billed] Volume Bytes Used".
 
 > 83.46 GiB
 
