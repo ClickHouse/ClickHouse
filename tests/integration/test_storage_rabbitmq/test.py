@@ -2788,6 +2788,9 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
         time.sleep(1)
     assert result.strip() == "kek"
 
+    instance.query("drop table rabbit_in sync")
+    instance.query("drop table rabbit_out sync")
+
 
 def test_rabbitmq_address(rabbitmq_cluster):
 
@@ -2825,3 +2828,6 @@ def test_rabbitmq_address(rabbitmq_cluster):
                 break
         time.sleep(1)
     assert result.strip() == "kek"
+
+    instance.query("drop table rabbit_in sync")
+    instance.query("drop table rabbit_out sync")
