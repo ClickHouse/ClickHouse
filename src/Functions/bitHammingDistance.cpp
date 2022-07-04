@@ -28,7 +28,7 @@ struct NameBitHammingDistance
 };
 using FunctionBitHammingDistance = BinaryArithmeticOverloadResolver<BitHammingDistanceImpl, NameBitHammingDistance>;
 
-void registerFunctionBitHammingDistance(FunctionFactory & factory)
+REGISTER_FUNCTION(BitHammingDistance)
 {
     factory.registerFunction<FunctionBitHammingDistance>();
 }
