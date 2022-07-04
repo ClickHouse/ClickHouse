@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Storages/WindowView/StorageWindowView.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 
 namespace DB
 {
 
-class WindowViewSource : public SourceWithProgress
+class WindowViewSource : public ISource
 {
 public:
     WindowViewSource(
@@ -17,7 +17,7 @@ public:
         const bool has_limit_,
         const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : SourceWithProgress(
+        : ISource(
             is_events_ ? Block(
                 {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")})
                        : storage_->getOutputHeader())

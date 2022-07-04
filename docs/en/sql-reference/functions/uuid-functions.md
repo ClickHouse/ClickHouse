@@ -3,11 +3,11 @@ sidebar_position: 53
 sidebar_label: UUID
 ---
 
-# Functions for Working with UUID {#functions-for-working-with-uuid}
+# Functions for Working with UUID
 
 The functions for working with UUID are listed below.
 
-## generateUUIDv4 {#uuid-function-generate}
+## generateUUIDv4
 
 Generates the [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
@@ -52,7 +52,7 @@ SELECT generateUUIDv4(1), generateUUIDv4(2)
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## empty {#empty}
+## empty
 
 Checks whether the input UUID is empty.
 
@@ -94,7 +94,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## notEmpty {#notempty}
+## notEmpty
 
 Checks whether the input UUID is non-empty.
 
@@ -136,7 +136,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## toUUID (x) {#touuid-x}
+## toUUID (x)
 
 Converts String type value to UUID type.
 
@@ -160,7 +160,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 └──────────────────────────────────────┘
 ```
 
-## toUUIDOrNull (x) {#touuidornull-x}
+## toUUIDOrNull (x)
 
 It takes an argument of type String and tries to parse it into UUID. If failed, returns NULL.
 
@@ -184,7 +184,7 @@ SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 └──────┘
 ```
 
-## toUUIDOrZero (x) {#touuidorzero-x}
+## toUUIDOrZero (x)
 
 It takes an argument of type String and tries to parse it into UUID. If failed, returns zero UUID.
 
@@ -208,7 +208,7 @@ SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 └──────────────────────────────────────┘
 ```
 
-## UUIDStringToNum {#uuidstringtonum}
+## UUIDStringToNum
 
 Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns it as a set of bytes in a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
@@ -234,7 +234,7 @@ SELECT
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-## UUIDNumToString {#uuidnumtostring}
+## UUIDNumToString
 
 Accepts a [FixedString(16)](../../sql-reference/data-types/fixedstring.md) value, and returns a string containing 36 characters in text format.
 
@@ -260,7 +260,7 @@ SELECT
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-## serverUUID() {#server-uuid}
+## serverUUID()
 
 Returns the random and unique UUID, which is generated when the server is first started and stored forever. The result writes to the file `uuid` created in the ClickHouse server directory `/var/lib/clickhouse/`. 
 
@@ -276,6 +276,6 @@ serverUUID()
 
 Type: [UUID](../data-types/uuid.md).
 
-## See Also {#see-also}
+## See Also
 
 -   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)

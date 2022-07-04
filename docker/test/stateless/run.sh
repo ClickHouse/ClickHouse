@@ -18,7 +18,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-./setup_minio.sh
+./setup_minio.sh stateless
+./setup_hdfs_minicluster.sh
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -40,15 +41,18 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
+    mkdir -p /var/run/clickhouse-server
     # simpliest way to forward env variables to server
-    sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
+    sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 else
     sudo clickhouse start
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-
+    mkdir -p /var/run/clickhouse-server1
+    sudo chown clickhouse:clickhouse /var/run/clickhouse-server1
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
+    --pid-file /var/run/clickhouse-server1/clickhouse-server.pid \
     -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
     --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
@@ -56,7 +60,10 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
     --macros.replica r2   # It doesn't work :(
 
+    mkdir -p /var/run/clickhouse-server2
+    sudo chown clickhouse:clickhouse /var/run/clickhouse-server2
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server2/config.xml --daemon \
+    --pid-file /var/run/clickhouse-server2/clickhouse-server.pid \
     -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
     --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
@@ -92,8 +99,6 @@ function run_tests()
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
-        # Cannot be used with replicated database, due to distributed_ddl_output_mode=none
-        ADDITIONAL_OPTIONS+=('--no-left-queries-check')
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('2')
     else
@@ -108,6 +113,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
         ADDITIONAL_OPTIONS+=('--run-by-hash-total')
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
+    fi
+
+    if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
 
     set +e
@@ -134,18 +143,10 @@ clickhouse-client -q "system flush logs" ||:
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
 # Because it's the simplest way to read it when server has crashed.
-if [ "$NUM_TRIES" -gt "1" ]; then
-    clickhouse-client -q "system shutdown" ||:
-    sleep 10
-else
-    sudo clickhouse stop ||:
-fi
-
-
+sudo clickhouse stop ||:
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    clickhouse-client --port 19000 -q "system shutdown" ||:
-    clickhouse-client --port 29000 -q "system shutdown" ||:
-    sleep 10
+    sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
+    sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:

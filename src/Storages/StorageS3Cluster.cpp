@@ -23,7 +23,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
-#include "Processors/Sources/SourceWithProgress.h"
+#include "Processors/ISource.h"
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>

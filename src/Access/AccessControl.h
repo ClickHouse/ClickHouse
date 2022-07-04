@@ -60,37 +60,31 @@ public:
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_);
 
     /// Adds UsersConfigAccessStorage.
-    void addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_);
-
     void addUsersConfigStorage(const String & storage_name_,
-                               const Poco::Util::AbstractConfiguration & users_config_);
-
-    void addUsersConfigStorage(const String & users_config_path_,
-                               const String & include_from_path_,
-                               const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+                               const Poco::Util::AbstractConfiguration & users_config_,
+                               bool allow_backup_);
 
     void addUsersConfigStorage(const String & storage_name_,
                                const String & users_config_path_,
                                const String & include_from_path_,
                                const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+                               const zkutil::GetZooKeeper & get_zookeeper_function_,
+                               bool allow_backup_);
 
     /// Loads access entities from the directory on the local disk.
     /// Use that directory to keep created users/roles/etc.
-    void addDiskStorage(const String & directory_, bool readonly_ = false);
-    void addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_ = false);
+    void addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_, bool allow_backup_);
 
     /// Adds MemoryAccessStorage which keeps access entities in memory.
-    void addMemoryStorage();
-    void addMemoryStorage(const String & storage_name_);
+    void addMemoryStorage(const String & storage_name_, bool allow_backup_);
 
     /// Adds LDAPAccessStorage which allows querying remote LDAP server for user info.
     void addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_);
 
     void addReplicatedStorage(const String & storage_name,
                               const String & zookeeper_path,
-                              const zkutil::GetZooKeeper & get_zookeeper_function);
+                              const zkutil::GetZooKeeper & get_zookeeper_function,
+                              bool allow_backup);
 
     /// Adds storages from <users_directories> config.
     void addStoragesFromUserDirectoriesConfig(const Poco::Util::AbstractConfiguration & config,
@@ -123,6 +117,10 @@ public:
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+
+    /// Makes a backup of access entities.
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
+
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     /// Sets the default profile's name.

@@ -376,11 +376,11 @@ ColumnPtr fillColumnWithRandomData(
 }
 
 
-class GenerateSource : public SourceWithProgress
+class GenerateSource : public ISource
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
+        : ISource(Nested::flatten(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 

@@ -1,4 +1,4 @@
-# opentelemetry_span_log {#system_tables-opentelemetry_span_log}
+# opentelemetry_span_log
 
 Contains information about [trace spans](https://opentracing.io/docs/overview/spans/) for executed queries.
 
@@ -50,4 +50,3 @@ attribute.values: []
 
 -   [OpenTelemetry](../../operations/opentelemetry.md)
 
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/opentelemetry_span_log) <!--hide-->
