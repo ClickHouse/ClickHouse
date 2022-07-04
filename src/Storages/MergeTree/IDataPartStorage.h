@@ -53,6 +53,9 @@ struct WriteSettings;
 
 class TemporaryFileOnDisk;
 
+class IDataPartStorageBuilder;
+using DataPartStorageBuilderPtr = std::shared_ptr<IDataPartStorageBuilder>;
+
 /// This is an abstraction of storage for data part files.
 /// Ideally, it is assumed to contains read-only methods from IDisk.
 /// It is not fulfilled now, but let's try our best.
@@ -122,6 +125,7 @@ public:
     /// Reset part directory, used for im-memory parts.
     /// TODO: remove it.
     virtual void setRelativePath(const std::string & path) = 0;
+    virtual void onRename(const std::string & new_root_path, const std::string & new_part_dir) = 0;
 
     /// Some methods from IDisk. Needed to avoid getting internal IDisk interface.
     virtual std::string getDiskName() const = 0;
@@ -173,6 +177,7 @@ public:
         TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
+        const String & path_in_backup,
         BackupEntries & backup_entries) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
@@ -191,20 +196,14 @@ public:
         const DiskPtr & disk,
         Poco::Logger * log) const = 0;
 
-    /// Rename part.
-    /// Ideally, new_root_path should be the same as current root (but it is not true).
-    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
-    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
-    virtual void rename(
-        const std::string & new_root_path,
-        const std::string & new_part_dir,
-        Poco::Logger * log,
-        bool remove_new_dir_if_exists,
-        bool fsync_part_dir) = 0;
-
     /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
     virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
+
+    /// Leak of abstraction as well. We should use builder as one-time object which allow
+    /// us to build parts, while storage should be read-only method to access part properties
+    /// related to disk. However our code is really tricky and sometimes we need ad-hoc builders.
+    virtual DataPartStorageBuilderPtr getBuilder() const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
@@ -223,20 +222,14 @@ public:
     virtual std::string getRelativePath() const = 0;
 
     virtual bool exists() const = 0;
-    virtual bool exists(const std::string & name) const = 0;
 
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
 
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const = 0;
-
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & name, size_t buf_size, const WriteSettings & settings) = 0;
 
     virtual void removeFile(const String & name) = 0;
+    virtual void removeFileIfExists(const String & name) = 0;
     virtual void removeRecursive() = 0;
     virtual void removeSharedRecursive(bool keep_in_remote_fs) = 0;
 
@@ -249,8 +242,21 @@ public:
     virtual std::shared_ptr<IDataPartStorageBuilder> getProjection(const std::string & name) const = 0;
 
     virtual DataPartStoragePtr getStorage() const = 0;
-};
 
-using DataPartStorageBuilderPtr = std::shared_ptr<IDataPartStorageBuilder>;
+    /// Rename part.
+    /// Ideally, new_root_path should be the same as current root (but it is not true).
+    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
+    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    ///
+    /// To notify storage also call onRename for it with first two args
+    virtual void rename(
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
+        Poco::Logger * log,
+        bool remove_new_dir_if_exists,
+        bool fsync_part_dir) = 0;
+
+    virtual void commit() = 0;
+};
 
 }

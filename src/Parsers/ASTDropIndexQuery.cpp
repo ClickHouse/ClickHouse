@@ -20,6 +20,8 @@ ASTPtr ASTDropIndexQuery::clone() const
     res->index_name = index_name->clone();
     res->children.push_back(res->index_name);
 
+    cloneTableOptions(*res);
+
     return res;
 }
 
@@ -53,9 +55,9 @@ void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatS
 ASTPtr ASTDropIndexQuery::convertToASTAlterCommand() const
 {
     auto command = std::make_shared<ASTAlterCommand>();
+    command->type = ASTAlterCommand::DROP_INDEX;
     command->index = index_name->clone();
     command->if_exists = if_exists;
-    command->type = ASTAlterCommand::DROP_INDEX;
 
     return command;
 }
