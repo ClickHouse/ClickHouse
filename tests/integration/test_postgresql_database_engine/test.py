@@ -345,7 +345,7 @@ def test_postgres_database_old_syntax(started_cluster):
     )
     create_postgres_table(cursor, "test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
-    cursor.execute(f"DROP TABLE test_table ")
+    cursor.execute(f"DROP TABLE test_table")
     node1.query("DROP DATABASE IF EXISTS postgres_database;")
 
 
