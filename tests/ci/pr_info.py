@@ -141,6 +141,13 @@ class PRInfo:
                     self.user_orgs = set(org["id"] for org in response_json)
 
             self.diff_urls.append(github_event["pull_request"]["diff_url"])
+            if "release" in self.labels:
+                # For release PRs we must get not only files changed in the PR
+                # itself, but as well files changed since we branched out
+                self.diff_urls.append(
+                    f"https://github.com/{GITHUB_REPOSITORY}/"
+                    f"compare/{self.head_ref}...master.diff"
+                )
         elif "commits" in github_event:
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
