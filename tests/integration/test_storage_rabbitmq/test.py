@@ -2829,5 +2829,5 @@ def test_rabbitmq_address(rabbitmq_cluster):
         time.sleep(1)
     assert result.strip() == "kek"
 
-    instance.query("drop table rabbit_in sync")
-    instance.query("drop table rabbit_out sync")
+    instance2.query("drop table rabbit_in sync")
+    instance2.query("drop table rabbit_out sync")
