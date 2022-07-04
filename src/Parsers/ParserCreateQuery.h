@@ -345,9 +345,9 @@ protected:
     const char * getName() const override { return "column declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
-    const bool require_type = true;
-    const bool allow_null_modifiers = false;
-    const bool check_keywords_after_name = false;
+    const bool require_type;
+    const bool allow_null_modifiers;
+    const bool check_keywords_after_name;
 };
 
 
