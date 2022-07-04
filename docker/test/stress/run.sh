@@ -110,7 +110,8 @@ function stop()
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
-    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" ||:
+    echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
+    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 }
 
