@@ -273,7 +273,7 @@ previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previo
 echo $previous_release_tag
 
 echo "Clone previous release repository"
-git clone git@github.com:ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
+git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
 echo "Download previous release server"
 mkdir previous_release_package_folder
