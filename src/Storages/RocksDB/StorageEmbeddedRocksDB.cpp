@@ -243,7 +243,7 @@ static std::vector<rocksdb::Slice> getSlicedKeys(const ColumnWithTypeAndName & c
     return slices_keys;
 }
 
-class EmbeddedRocksDBSource : public SourceWithProgress
+class EmbeddedRocksDBSource : public ISource
 {
 public:
     EmbeddedRocksDBSource(

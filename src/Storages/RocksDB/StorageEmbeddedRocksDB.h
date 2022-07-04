@@ -69,13 +69,6 @@ public:
         const Block & sample_block,
         PaddedPODArray<UInt8> * null_map) const;
 
-protected:
-    StorageEmbeddedRocksDB(const StorageID & table_id_,
-        const String & relative_data_path_,
-        const StorageInMemoryMetadata & metadata,
-        bool attach,
-        ContextPtr context_,
-        const String & primary_key_);
 
 private:
     const String primary_key;

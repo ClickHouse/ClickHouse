@@ -206,6 +206,7 @@ public:
             || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::HASH)
             || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARALLEL_HASH);
     }
+    bool allowParallelHashJoin() const;
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }

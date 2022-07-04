@@ -17,6 +17,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Storages/TableLockHolder.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
