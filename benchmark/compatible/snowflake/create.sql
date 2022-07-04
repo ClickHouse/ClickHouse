@@ -1,4 +1,4 @@
-CREATE TABLE hits
+CREATE TABLE hits2
 (
     WatchID BIGINT NOT NULL,
     JavaEnable SMALLINT NOT NULL,

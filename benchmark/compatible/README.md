@@ -2,7 +2,7 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 
 - [x] ClickHouse
 - [ ] ClickHouse operating like "Athena"
-- [ ] clickhouse-local without data loading
+- [x] clickhouse-local without data loading
 - [x] MySQL InnoDB
 - [x] MySQL MyISAM
 - [ ] MariaDB
@@ -28,12 +28,12 @@ Run all tests on c6a.4xlarge, 500 GB gp2.
 - [ ] Hive
 - [ ] Impala
 - [ ] Hyper
-- [ ] SQLite
+- [x] SQLite
 - [x] Redshift
 - [x] Redshift Serverless
 - [ ] Presto/Trino
 - [ ] Amazon Athena
-- [ ] Bigquery (without publishing)
+- [x] Bigquery (without publishing)
 - [ ] Snowflake
 - [ ] Rockset
 - [ ] CockroachDB
