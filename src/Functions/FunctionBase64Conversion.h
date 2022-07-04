@@ -85,7 +85,7 @@ public:
     {
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of 1st argument of function " + getName() + ". Must be String.",
+                "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -98,7 +98,7 @@ public:
 
         if (!input)
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName() + ", must be of type String",
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();

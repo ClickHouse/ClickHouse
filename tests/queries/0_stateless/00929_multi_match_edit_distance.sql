@@ -1,4 +1,4 @@
--- Tags: no-fasttest, use-vectorscan
+-- Tags: no-fasttest, use-hyperscan
 
 SET send_logs_level = 'fatal';
 

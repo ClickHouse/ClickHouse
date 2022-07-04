@@ -433,7 +433,6 @@ def test_datetime_with_timezone(started_cluster):
 
 def test_postgres_ndim(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-
     cursor.execute("DROP TABLE IF EXISTS arr1, arr2")
 
     cursor.execute("CREATE TABLE arr1 (a Integer[])")
@@ -452,20 +451,6 @@ def test_postgres_ndim(started_cluster):
     )
     assert result.strip() == "Array(Array(Nullable(Int32)))"
     cursor.execute("DROP TABLE arr1, arr2")
-
-    cursor.execute("DROP SCHEMA IF EXISTS ndim_schema CASCADE")
-    cursor.execute("CREATE SCHEMA ndim_schema")
-    cursor.execute("CREATE TABLE ndim_schema.arr1 (a integer[])")
-    cursor.execute("INSERT INTO ndim_schema.arr1 SELECT '{{1}, {2}}'")
-    # The point is in creating a table via 'as select *', in postgres att_ndim will not be correct in this case.
-    cursor.execute("CREATE TABLE ndim_schema.arr2 AS SELECT * FROM ndim_schema.arr1")
-    result = node1.query(
-        """SELECT toTypeName(a) FROM postgresql(postgres1, schema='ndim_schema', table='arr2')"""
-    )
-    assert result.strip() == "Array(Array(Nullable(Int32)))"
-
-    cursor.execute("DROP TABLE ndim_schema.arr1, ndim_schema.arr2")
-    cursor.execute("DROP SCHEMA ndim_schema CASCADE")
 
 
 def test_postgres_on_conflict(started_cluster):
@@ -625,19 +610,6 @@ def test_datetime64(started_cluster):
 
     result = node1.query("select * from postgresql(postgres1, table='test')")
     assert result.strip() == "1960-01-01 20:00:00.000000"
-
-
-def test_uuid(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("drop table if exists test")
-    cursor.execute("create table test (u uuid)")
-    cursor.execute("""CREATE EXTENSION IF NOT EXISTS "uuid-ossp";""")
-    cursor.execute("insert into test select uuid_generate_v1();")
-
-    result = node1.query(
-        "select toTypeName(u) from postgresql(postgres1, table='test')"
-    )
-    assert result.strip() == "Nullable(UUID)"
 
 
 if __name__ == "__main__":

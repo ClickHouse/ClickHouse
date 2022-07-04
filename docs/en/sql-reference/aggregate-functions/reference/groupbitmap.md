@@ -1,8 +1,8 @@
 ---
-sidebar_position: 128
+toc_priority: 128
 ---
 
-# groupBitmap
+# groupBitmap {#groupbitmap}
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
 

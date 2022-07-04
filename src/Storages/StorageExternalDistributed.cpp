@@ -5,20 +5,17 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Common/logger_useful.h>
-#include <Processors/QueryPlan/UnionStep.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -71,7 +68,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     configuration.username,
                     configuration.password);
 
-                shard = std::make_shared<StorageMySQL>(
+                shard = StorageMySQL::create(
                     table_id_,
                     std::move(pool),
                     configuration.database,
@@ -100,7 +97,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
+                shard = StoragePostgreSQL::create(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
                 break;
             }
 #endif
@@ -173,8 +170,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 }
 
 
-void StorageExternalDistributed::read(
-    QueryPlan & query_plan,
+Pipe StorageExternalDistributed::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -183,12 +179,10 @@ void StorageExternalDistributed::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    Pipes pipes;
     for (const auto & shard : shards)
     {
-        plans.emplace_back(std::make_unique<QueryPlan>());
-        shard->read(
-            *plans.back(),
+        pipes.emplace_back(shard->read(
             column_names,
             storage_snapshot,
             query_info,
@@ -196,28 +190,10 @@ void StorageExternalDistributed::read(
             processed_stage,
             max_block_size,
             num_streams
-        );
+        ));
     }
 
-    if (plans.empty())
-    {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
-    }
-
-    if (plans.size() == 1)
-    {
-        query_plan = std::move(*plans.front());
-        return;
-    }
-
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
-    for (auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
-
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -281,7 +257,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 
-            return std::make_shared<StorageExternalDistributed>(
+            return StorageExternalDistributed::create(
                 cluster_description,
                 args.table_id,
                 configuration.format,
@@ -328,7 +304,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             }
 
 
-            return std::make_shared<StorageExternalDistributed>(
+            return StorageExternalDistributed::create(
                 args.table_id,
                 table_engine,
                 cluster_description,

@@ -2,9 +2,9 @@
 
 #include <sys/file.h>
 #include <fcntl.h>
-#include <cerrno>
+#include <errno.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>

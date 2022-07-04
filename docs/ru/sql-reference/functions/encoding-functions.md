@@ -1,6 +1,6 @@
 ---
-sidebar_position: 52
-sidebar_label: "Функции кодирования"
+toc_priority: 52
+toc_title: "Функции кодирования"
 ---
 
 # Функции кодирования {#funktsii-kodirovaniia}
@@ -151,11 +151,11 @@ SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2);
 
 Выполняет операцию, обратную [hex](#hex). Функция интерпретирует каждую пару шестнадцатеричных цифр аргумента как число и преобразует его в символ. Возвращаемое значение представляет собой двоичную строку (BLOB).
 
-Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions).
+Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions).
 
-    :::note "Примечание"
+!!! note "Примечание"
     Если `unhex` вызывается из `clickhouse-client`, двоичные строки отображаются с использованием UTF-8.
-    :::
+
 Синоним: `UNHEX`.
 
 **Синтаксис**
@@ -292,11 +292,11 @@ unbin(arg)
 
 Синоним: `UNBIN`.
 
-Для числового аргумента `unbin()` не возвращает значение, обратное результату `bin()`. Чтобы преобразовать результат в число, используйте функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264).
+Для числового аргумента `unbin()` не возвращает значение, обратное результату `bin()`. Чтобы преобразовать результат в число, используйте функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264).
 
-    :::note "Примечание"
+!!! note "Примечание"
     Если `unbin` вызывается из клиента `clickhouse-client`, бинарная строка возвращается в кодировке UTF-8.
-    :::
+
 Поддерживает двоичные цифры `0` и `1`. Количество двоичных цифр не обязательно должно быть кратно восьми. Если строка аргумента содержит что-либо, кроме двоичных цифр, возвращается некоторый результат, определенный реализацией (ошибки не возникает). 
 
 **Аргументы**

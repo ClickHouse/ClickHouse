@@ -20,8 +20,6 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// array(..., Nothing, ...) -> Array(..., Nothing, ...)
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isVariadic() const override { return true; }

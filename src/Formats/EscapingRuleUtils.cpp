@@ -1,21 +1,16 @@
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONUtils.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeMap.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
+#include <Poco/JSON/Parser.h>
 #include <Parsers/TokenIterator.h>
-
+#include <Parsers/ExpressionListParsers.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 namespace DB
 {
@@ -23,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
@@ -71,7 +67,7 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
-    NullOutput out;
+    String tmp;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
     switch (escaping_rule)
@@ -80,19 +76,19 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             /// Empty field, just skip spaces
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedStringInto(out, buf);
+            readEscapedString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
-            readQuotedFieldInto(out, buf);
+            readQuotedFieldIntoString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::CSV:
-            readCSVStringInto(out, buf, format_settings.csv);
+            readCSVString(tmp, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
             skipJSONField(buf, StringRef(field_name, field_name_len));
             break;
         case FormatSettings::EscapingRule::Raw:
-            readStringInto(out, buf);
+            readString(tmp, buf);
             break;
         default:
             __builtin_unreachable();
@@ -142,8 +138,7 @@ bool deserializeFieldByEscapingRule(
                 serialization->deserializeTextRaw(column, buf, format_settings);
             break;
         default:
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Escaping rule {} is not suitable for deserialization", escapingRuleToString(escaping_rule));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Escaping rule {} is not suitable for deserialization", escapingRuleToString(escaping_rule));
     }
     return read;
 }
@@ -181,8 +176,7 @@ void serializeFieldByEscapingRule(
     }
 }
 
-void writeStringByEscapingRule(
-    const String & value, WriteBuffer & out, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
+void writeStringByEscapingRule(const String & value, WriteBuffer & out, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
     switch (escaping_rule)
     {
@@ -219,13 +213,13 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             if constexpr (read_string)
                 readQuotedString(result, buf);
             else
-                readQuotedField(result, buf);
+                readQuotedFieldIntoString(result, buf);
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
                 readJSONString(result, buf);
             else
-                readJSONField(result, buf);
+                readJSONFieldIntoString(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -255,269 +249,85 @@ String readStringByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule e
     return readByEscapingRule<true>(buf, escaping_rule, format_settings);
 }
 
-static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
+static bool evaluateConstantExpressionFromString(const StringRef & field, DataTypePtr & type, ContextPtr context)
 {
-    if (buf.eof())
-        return nullptr;
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "You must provide context to evaluate constant expression");
 
-    /// Array
-    if (checkChar('[', buf))
+    ParserExpression parser;
+    Expected expected;
+    Tokens tokens(field.data, field.data + field.size);
+    IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
+    ASTPtr ast;
+
+    /// FIXME: Our parser cannot parse maps in the form of '{key : value}' that is used in text formats.
+    bool parsed = parser.parse(token_iterator, ast, expected);
+    if (!parsed || !token_iterator->isEnd())
+        return false;
+
+    try
     {
-        skipWhitespaceIfAny(buf);
-
-        DataTypes nested_types;
-        bool first = true;
-        while (!buf.eof() && *buf.position() != ']')
-        {
-            if (!first)
-            {
-                skipWhitespaceIfAny(buf);
-                if (!checkChar(',', buf))
-                    return nullptr;
-                skipWhitespaceIfAny(buf);
-            }
-            else
-                first = false;
-
-            auto nested_type = determineDataTypeForSingleFieldImpl(buf);
-            if (!nested_type)
-                return nullptr;
-
-            nested_types.push_back(nested_type);
-        }
-
-        if (buf.eof())
-            return nullptr;
-
-        ++buf.position();
-
-        if (nested_types.empty())
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
-
-        auto least_supertype = tryGetLeastSupertype(nested_types);
-        if (!least_supertype)
-            return nullptr;
-
-        return std::make_shared<DataTypeArray>(least_supertype);
+        std::pair<Field, DataTypePtr> result = evaluateConstantExpression(ast, context);
+        type = generalizeDataType(result.second);
+        return true;
     }
-
-    /// Tuple
-    if (checkChar('(', buf))
+    catch (...)
     {
-        skipWhitespaceIfAny(buf);
-
-        DataTypes nested_types;
-        bool first = true;
-        while (!buf.eof() && *buf.position() != ')')
-        {
-            if (!first)
-            {
-                skipWhitespaceIfAny(buf);
-                if (!checkChar(',', buf))
-                    return nullptr;
-                skipWhitespaceIfAny(buf);
-            }
-            else
-                first = false;
-
-            auto nested_type = determineDataTypeForSingleFieldImpl(buf);
-            if (!nested_type)
-                return nullptr;
-
-            nested_types.push_back(nested_type);
-        }
-
-        if (buf.eof() || nested_types.empty())
-            return nullptr;
-
-        ++buf.position();
-
-        return std::make_shared<DataTypeTuple>(nested_types);
+        return false;
     }
-
-    /// Map
-    if (checkChar('{', buf))
-    {
-        skipWhitespaceIfAny(buf);
-
-        DataTypes key_types;
-        DataTypes value_types;
-        bool first = true;
-        while (!buf.eof() && *buf.position() != '}')
-        {
-            if (!first)
-            {
-                skipWhitespaceIfAny(buf);
-                if (!checkChar(',', buf))
-                    return nullptr;
-                skipWhitespaceIfAny(buf);
-            }
-            else
-                first = false;
-
-            auto key_type = determineDataTypeForSingleFieldImpl(buf);
-            if (!key_type)
-                return nullptr;
-
-            key_types.push_back(key_type);
-
-            skipWhitespaceIfAny(buf);
-            if (!checkChar(':', buf))
-                return nullptr;
-            skipWhitespaceIfAny(buf);
-
-            auto value_type = determineDataTypeForSingleFieldImpl(buf);
-            if (!value_type)
-                return nullptr;
-
-            value_types.push_back(value_type);
-        }
-
-        if (buf.eof())
-            return nullptr;
-
-        ++buf.position();
-        skipWhitespaceIfAny(buf);
-
-        if (key_types.empty())
-            return std::make_shared<DataTypeMap>(std::make_shared<DataTypeNothing>(), std::make_shared<DataTypeNothing>());
-
-        auto key_least_supertype = tryGetLeastSupertype(key_types);
-
-        auto value_least_supertype = tryGetLeastSupertype(value_types);
-        if (!key_least_supertype || !value_least_supertype)
-            return nullptr;
-
-        if (!DataTypeMap::checkKeyType(key_least_supertype))
-            return nullptr;
-
-        return std::make_shared<DataTypeMap>(key_least_supertype, value_least_supertype);
-    }
-
-    /// String
-    if (*buf.position() == '\'')
-    {
-        ++buf.position();
-        while (!buf.eof())
-        {
-            char * next_pos = find_first_symbols<'\\', '\''>(buf.position(), buf.buffer().end());
-            buf.position() = next_pos;
-
-            if (!buf.hasPendingData())
-                continue;
-
-            if (*buf.position() == '\'')
-                break;
-
-            if (*buf.position() == '\\')
-                ++buf.position();
-        }
-
-        if (buf.eof())
-            return nullptr;
-
-        ++buf.position();
-        return std::make_shared<DataTypeString>();
-    }
-
-    /// Bool
-    if (checkStringCaseInsensitive("true", buf) || checkStringCaseInsensitive("false", buf))
-        return DataTypeFactory::instance().get("Bool");
-
-    /// Null
-    if (checkStringCaseInsensitive("NULL", buf))
-        return std::make_shared<DataTypeNothing>();
-
-    /// Number
-    Float64 tmp;
-    if (tryReadFloatText(tmp, buf))
-        return std::make_shared<DataTypeFloat64>();
-
-    return nullptr;
 }
 
-static DataTypePtr determineDataTypeForSingleField(ReadBuffer & buf)
-{
-    return makeNullableRecursivelyAndCheckForNothing(determineDataTypeForSingleFieldImpl(buf));
-}
-
-DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule)
+DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, ContextPtr context)
 {
     switch (escaping_rule)
     {
         case FormatSettings::EscapingRule::Quoted:
         {
-            ReadBufferFromString buf(field);
-            auto type = determineDataTypeForSingleField(buf);
-            return buf.eof() ? type : nullptr;
+            DataTypePtr type;
+            bool parsed = evaluateConstantExpressionFromString(field, type, context);
+            return parsed ? type : nullptr;
         }
         case FormatSettings::EscapingRule::JSON:
-            return JSONUtils::getDataTypeFromField(field);
+            return getDataTypeFromJSONField(field);
         case FormatSettings::EscapingRule::CSV:
         {
-            if (!format_settings.csv.input_format_use_best_effort_in_schema_inference)
-                return makeNullable(std::make_shared<DataTypeString>());
-
             if (field.empty() || field == format_settings.csv.null_representation)
                 return nullptr;
 
             if (field == format_settings.bool_false_representation || field == format_settings.bool_true_representation)
-                return DataTypeFactory::instance().get("Nullable(Bool)");
+                return std::make_shared<DataTypeUInt8>();
 
-            if (field.size() > 1 && ((field.front() == '\'' && field.back() == '\'') || (field.front() == '"' && field.back() == '"')))
+            DataTypePtr type;
+            bool parsed;
+            if (field[0] == '\'' || field[0] == '"')
             {
-                ReadBufferFromString buf(std::string_view(field.data() + 1, field.size() - 2));
-                /// Try to determine the type of value inside quotes
-                auto type = determineDataTypeForSingleField(buf);
-
-                if (!type)
-                    return nullptr;
-
-                /// If it's a number or tuple in quotes or there is some unread data in buffer, we determine it as a string.
-                if (isNumber(removeNullable(type)) || isTuple(type) || !buf.eof())
+                /// Try to evaluate expression inside quotes.
+                parsed = evaluateConstantExpressionFromString(StringRef(field.data() + 1, field.size() - 2), type, context);
+                /// If it's a number in quotes we determine it as a string.
+                if (parsed && type && isNumber(removeNullable(type)))
                     return makeNullable(std::make_shared<DataTypeString>());
-
-                return type;
             }
+            else
+                parsed = evaluateConstantExpressionFromString(field, type, context);
 
-            /// Case when CSV value is not in quotes. Check if it's a number, and if not, determine it's as a string.
-            ReadBufferFromString buf(field);
-            Float64 tmp;
-            if (tryReadFloatText(tmp, buf) && buf.eof())
-                return makeNullable(std::make_shared<DataTypeFloat64>());
-
-            return makeNullable(std::make_shared<DataTypeString>());
+            /// If we couldn't parse an expression, determine it as a string.
+            return parsed ? type : makeNullable(std::make_shared<DataTypeString>());
         }
         case FormatSettings::EscapingRule::Raw: [[fallthrough]];
         case FormatSettings::EscapingRule::Escaped:
-        {
-            if (!format_settings.tsv.input_format_use_best_effort_in_schema_inference)
-                return makeNullable(std::make_shared<DataTypeString>());
-
-            if (field.empty() || field == format_settings.tsv.null_representation)
-                return nullptr;
-
-            if (field == format_settings.bool_false_representation || field == format_settings.bool_true_representation)
-                return DataTypeFactory::instance().get("Nullable(Bool)");
-
-            ReadBufferFromString buf(field);
-            auto type = determineDataTypeForSingleField(buf);
-            if (!buf.eof())
-                return makeNullable(std::make_shared<DataTypeString>());
-
-            return type;
-        }
+            /// TODO: Try to use some heuristics here to determine the type of data.
+            return field.empty() ? nullptr : makeNullable(std::make_shared<DataTypeString>());
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the type for value with {} escaping rule", escapingRuleToString(escaping_rule));
     }
 }
 
-DataTypes determineDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule)
+DataTypes determineDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, ContextPtr context)
 {
     DataTypes data_types;
     data_types.reserve(fields.size());
     for (const auto & field : fields)
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, escaping_rule));
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, escaping_rule, context));
     return data_types;
 }
 
@@ -525,21 +335,13 @@ DataTypePtr getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule escap
 {
     switch (escaping_rule)
     {
-        case FormatSettings::EscapingRule::CSV:
-        case FormatSettings::EscapingRule::Escaped:
+        case FormatSettings::EscapingRule::CSV: [[fallthrough]];
+        case FormatSettings::EscapingRule::Escaped: [[fallthrough]];
         case FormatSettings::EscapingRule::Raw:
             return makeNullable(std::make_shared<DataTypeString>());
         default:
             return nullptr;
     }
-}
-
-DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::EscapingRule> & escaping_rules)
-{
-    DataTypes data_types;
-    for (const auto & rule : escaping_rules)
-        data_types.push_back(getDefaultDataTypeForEscapingRule(rule));
-    return data_types;
 }
 
 }

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 68
-sidebar_label: "Хранение данных на внешних дисках"
+toc_priority: 68
+toc_title: "Хранение данных на внешних дисках"
 ---
 
 # Хранение данных на внешних дисках {#external-disks}

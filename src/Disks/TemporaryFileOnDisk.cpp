@@ -18,14 +18,10 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
 
 TemporaryFileOnDisk::~TemporaryFileOnDisk()
 {
-    try
-    {
-        if (disk && !filepath.empty() && disk->exists(filepath))
-            disk->removeRecursive(filepath);
-    }
-    catch (...)
-    {
-    }
+#if 1
+    if (disk && !filepath.empty())
+        disk->removeRecursive(filepath);
+#endif
 }
 
 }

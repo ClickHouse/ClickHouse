@@ -22,7 +22,7 @@ extern const int CANNOT_COMPILE_REGEXP;
 extern const int NO_ELEMENTS_IN_CONFIG;
 extern const int INVALID_CONFIG_PARAMETER;
 }
-}
+};
 
 
 TEST(Common, SensitiveDataMasker)

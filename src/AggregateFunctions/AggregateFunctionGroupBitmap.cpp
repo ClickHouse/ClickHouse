@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
     template <template <typename, typename> class AggregateFunctionTemplate, template <typename> typename Data, typename... TArgs>
-    IAggregateFunction * createWithIntegerType(const IDataType & argument_type, TArgs &&... args)
+    static IAggregateFunction * createWithIntegerType(const IDataType & argument_type, TArgs &&... args)
     {
         WhichDataType which(argument_type);
         if (which.idx == TypeIndex::UInt8) return new AggregateFunctionTemplate<UInt8, Data<UInt8>>(std::forward<TArgs>(args)...);

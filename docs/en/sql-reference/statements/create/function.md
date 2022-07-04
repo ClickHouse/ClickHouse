@@ -1,9 +1,9 @@
 ---
-sidebar_position: 38
-sidebar_label: FUNCTION
+toc_priority: 38
+toc_title: FUNCTION
 ---
 
-# CREATE FUNCTION
+# CREATE FUNCTION {#create-function}
 
 Creates a user defined function from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
 

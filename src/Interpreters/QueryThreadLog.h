@@ -54,7 +54,6 @@ struct QueryThreadLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 
@@ -65,3 +64,5 @@ class QueryThreadLog : public SystemLog<QueryThreadLogElement>
 
 
 }
+
+
