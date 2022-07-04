@@ -5,7 +5,7 @@
 #include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -33,8 +33,6 @@ public:
     Poco::Net::SocketAddress resolveAddress(const std::string & host_and_port);
 
     Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
-
-    std::vector<Poco::Net::SocketAddress> resolveAddressList(const std::string & host, UInt16 port);
 
     /// Accepts host IP and resolves its host name
     String reverseResolve(const Poco::Net::IPAddress & address);

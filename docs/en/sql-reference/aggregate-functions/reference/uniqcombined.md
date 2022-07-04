@@ -2,7 +2,7 @@
 sidebar_position: 192
 ---
 
-# uniqCombined
+# uniqCombined {#agg_function-uniqcombined}
 
 Calculates the approximate number of different argument values.
 

@@ -3,7 +3,7 @@ sidebar_position: 80
 sidebar_label:  VersionedCollapsingMergeTree
 ---
 
-# VersionedCollapsingMergeTree
+# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 This engine:
 
@@ -31,25 +31,21 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
-### Engine Parameters
+**Engine Parameters**
 
 ``` sql
 VersionedCollapsingMergeTree(sign, version)
 ```
 
-#### sign
-
-`sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
     The column data type should be `Int8`.
 
-#### version
-
-`version` — Name of the column with the version of the object state.
+-   `version` — Name of the column with the version of the object state.
 
     The column data type should be `UInt*`.
 
-### Query Clauses
+**Query Clauses**
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
@@ -57,7 +53,7 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../.
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::warning    
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 

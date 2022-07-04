@@ -214,9 +214,8 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     # Wait for merges and old parts deletion
     for attempt in range(0, 10):
         parts_count = node.query(
-            "SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' and active = 1 FORMAT Values"
+            "SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' FORMAT Values"
         )
-
         if parts_count == "(1)":
             break
 
@@ -229,9 +228,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     assert (
         node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
     )
-    wait_for_delete_s3_objects(
-        cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD, timeout=45
-    )
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -518,38 +515,6 @@ def test_freeze_unfreeze(cluster, node_name):
     )
     # Unfreeze all partitions from backup2.
     node.query("ALTER TABLE s3_test UNFREEZE WITH NAME 'backup2'")
-
-    # Data should be removed from S3.
-    assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/"))) == FILES_OVERHEAD
-    )
-
-
-@pytest.mark.parametrize("node_name", ["node"])
-def test_freeze_system_unfreeze(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
-    create_table(node, "s3_test_removed")
-    minio = cluster.minio_client
-
-    node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096))
-    )
-    node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096))
-    )
-    node.query("ALTER TABLE s3_test FREEZE WITH NAME 'backup3'")
-    node.query("ALTER TABLE s3_test_removed FREEZE WITH NAME 'backup3'")
-
-    node.query("TRUNCATE TABLE s3_test")
-    node.query("DROP TABLE s3_test_removed NO DELAY")
-    assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/")))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
-
-    # Unfreeze all data from backup3.
-    node.query("SYSTEM UNFREEZE WITH NAME 'backup3'")
 
     # Data should be removed from S3.
     assert (

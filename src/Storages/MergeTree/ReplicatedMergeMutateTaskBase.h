@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>

@@ -18,7 +18,6 @@ BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Param
         header,
         in_,
         params_,
-        true,
         with_names_,
         with_types_,
         format_settings_,

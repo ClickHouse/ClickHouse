@@ -1,4 +1,4 @@
-# errors
+# errors {#system_tables-errors}
 
 Contains error codes with the number of times they have been triggered.
 

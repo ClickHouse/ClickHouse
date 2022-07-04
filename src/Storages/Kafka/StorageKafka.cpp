@@ -17,17 +17,15 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/Kafka/KafkaSink.h>
+#include <Storages/Kafka/KafkaBlockOutputStream.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -45,9 +43,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#if USE_KRB5
-#include <Access/KerberosInit.h>
-#endif // USE_KRB5
+
 
 namespace CurrentMetrics
 {
@@ -422,6 +418,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 {
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
+    conf.set("group.id", group);
     conf.set("client.id", client_id);
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
@@ -518,33 +515,6 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     auto config_prefix = getConfigPrefix();
     if (config.has(config_prefix))
         loadFromConfig(conf, config, config_prefix);
-
-    #if USE_KRB5
-    if (conf.has_property("sasl.kerberos.kinit.cmd"))
-        LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
-
-    conf.set("sasl.kerberos.kinit.cmd","");
-    conf.set("sasl.kerberos.min.time.before.relogin","0");
-
-    if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
-    {
-        String keytab = conf.get("sasl.kerberos.keytab");
-        String principal = conf.get("sasl.kerberos.principal");
-        LOG_DEBUG(log, "Running KerberosInit");
-        try
-        {
-            kerberosInit(keytab,principal);
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(log, "KerberosInit failure: {}", getExceptionMessage(e, false));
-        }
-        LOG_DEBUG(log, "Finished KerberosInit");
-    }
-    #else // USE_KRB5
-    if (conf.has_property("sasl.kerberos.keytab") || conf.has_property("sasl.kerberos.principal"))
-        LOG_WARNING(log, "Kerberos-related parameters are ignored because ClickHouse was built without support of krb5 library.");
-    #endif // USE_KRB5
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)
@@ -710,11 +680,12 @@ bool StorageKafka::streamToViews()
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
 
-        Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
-                                          ? kafka_settings->kafka_flush_interval_ms
-                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
+        limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
+                                                 ? kafka_settings->kafka_flush_interval_ms
+                                                 : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-        source->setTimeLimit(max_execution_time);
+        limits.timeout_overflow_mode = OverflowMode::BREAK;
+        source->setLimits(limits);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -871,7 +842,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

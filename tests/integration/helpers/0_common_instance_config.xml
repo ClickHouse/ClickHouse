@@ -18,8 +18,4 @@
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
         <rotateOnOpen>true</rotateOnOpen>
     </logger>
-
-    <access_control_improvements>
-        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
-    </access_control_improvements>
 </clickhouse>

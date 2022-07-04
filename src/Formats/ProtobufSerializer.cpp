@@ -45,7 +45,7 @@
 #   include <boost/numeric/conversion/cast.hpp>
 #   include <boost/range/algorithm.hpp>
 #   include <boost/range/algorithm_ext/erase.hpp>
-#   include <Common/logger_useful.h>
+#   include <base/logger_useful.h>
 
 namespace DB
 {
@@ -102,42 +102,13 @@ namespace
         }
     };
 
-    bool isGoogleWrapperMessage(const MessageDescriptor & message_descriptor)
-    {
-        auto message_type = message_descriptor.well_known_type();
-        return (message_type >= google::protobuf::Descriptor::WELLKNOWNTYPE_DOUBLEVALUE)
-            && (message_type <= google::protobuf::Descriptor::WELLKNOWNTYPE_BOOLVALUE);
-    }
-
-    bool isGoogleWrapperField(const FieldDescriptor & field_descriptor)
-    {
-        const auto * message_descriptor = field_descriptor.message_type();
-        if (message_descriptor == nullptr)
-            return false;
-        return isGoogleWrapperMessage(*message_descriptor);
-    }
-
-    bool isGoogleWrapperField(const FieldDescriptor * field_descriptor)
-    {
-        if (field_descriptor == nullptr)
-            return false;
-        return isGoogleWrapperField(*field_descriptor);
-    }
-
-    std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
-    {
-        assert(isGoogleWrapperField(field_descriptor));
-        return field_descriptor.message_type()->field(0)->name();
-    }
 
     // Should we omit null values (zero for numbers / empty string for strings) while storing them.
-    bool shouldSkipZeroOrEmpty(const FieldDescriptor & field_descriptor, bool google_wrappers_special_treatment = false)
+    bool shouldSkipZeroOrEmpty(const FieldDescriptor & field_descriptor)
     {
         if (!field_descriptor.is_optional())
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
-            return false;
-        if (google_wrappers_special_treatment && isGoogleWrapperField(field_descriptor))
             return false;
         return field_descriptor.message_type() || (field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
     }
@@ -171,6 +142,7 @@ namespace
             return field_descriptor.options().packed();
         return field_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
     }
+
 
     WriteBuffer & writeIndent(WriteBuffer & out, size_t size) { return out << String(size * 4, ' '); }
 
@@ -1811,15 +1783,6 @@ namespace
             column_nullable.insertDefault();
         }
 
-        void insertNestedDefaults(size_t row_num)
-        {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
-            if (row_num < column_nullable.size())
-                return;
-            column_nullable.getNestedColumn().insertDefault();
-            column_nullable.getNullMapData().push_back(0);
-        }
-
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerNullable ->\n";
@@ -2188,15 +2151,12 @@ namespace
             std::vector<FieldDesc> && field_descs_,
             const FieldDescriptor * parent_field_descriptor_,
             bool with_length_delimiter_,
-            bool google_wrappers_special_treatment_,
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : parent_field_descriptor(parent_field_descriptor_)
             , with_length_delimiter(with_length_delimiter_)
-            , google_wrappers_special_treatment(google_wrappers_special_treatment_)
             , missing_columns_filler(std::move(missing_columns_filler_))
-            , should_skip_if_empty(parent_field_descriptor
-                ? shouldSkipZeroOrEmpty(*parent_field_descriptor, google_wrappers_special_treatment_) : false)
+            , should_skip_if_empty(parent_field_descriptor ? shouldSkipZeroOrEmpty(*parent_field_descriptor) : false)
             , reader(reader_or_writer_.reader)
             , writer(reader_or_writer_.writer)
         {
@@ -2235,7 +2195,7 @@ namespace
                 info.field_serializer->setColumns(field_columns.data(), field_columns.size());
             }
 
-            if (reader || (google_wrappers_special_treatment && isGoogleWrapperField(parent_field_descriptor)))
+            if (reader)
             {
                 mutable_columns.resize(num_columns_);
                 for (size_t i : collections::range(num_columns_))
@@ -2279,8 +2239,7 @@ namespace
             if (parent_field_descriptor)
             {
                 bool is_group = (parent_field_descriptor->type() == FieldTypeId::TYPE_GROUP);
-                writer->endNestedMessage(parent_field_descriptor->number(), is_group,
-                    should_skip_if_empty || (google_wrappers_special_treatment && isNullGoogleWrapper(row_num)));
+                writer->endNestedMessage(parent_field_descriptor->number(), is_group, should_skip_if_empty);
             }
             else if (has_envelope_as_parent)
             {
@@ -2321,17 +2280,7 @@ namespace
                         if (info.field_read)
                             info.field_read = false;
                         else
-                        {
-                            if (google_wrappers_special_treatment && isNullableGoogleWrapper())
-                            {
-                                auto * nullable_ser = dynamic_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
-                                nullable_ser->insertNestedDefaults(row_num);
-                            }
-                            else
-                            {
-                                info.field_serializer->insertDefaults(row_num);
-                            }
-                        }
+                            info.field_serializer->insertDefaults(row_num);
                     }
                 }
                 catch (...)
@@ -2413,16 +2362,6 @@ namespace
                 missing_columns_filler->addDefaults(mutable_columns, row_num);
         }
 
-        bool isNullGoogleWrapper(size_t row_num)
-        {
-            return isGoogleWrapperField(parent_field_descriptor) && mutable_columns[0].get()->isNullAt(row_num);
-        }
-
-        bool isNullableGoogleWrapper()
-        {
-            return isGoogleWrapperField(parent_field_descriptor) && mutable_columns[0].get()->isNullable();
-        }
-
         struct FieldInfo
         {
             FieldInfo(
@@ -2447,7 +2386,6 @@ namespace
         const FieldDescriptor * const parent_field_descriptor;
         bool has_envelope_as_parent = false;
         const bool with_length_delimiter;
-        const bool google_wrappers_special_treatment;
         const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
         const bool should_skip_if_empty;
         ProtobufReader * const reader;
@@ -2763,8 +2701,7 @@ namespace
             std::vector<size_t> & missing_column_indices,
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
-            bool with_envelope,
-            bool google_wrappers_special_treatment)
+            bool with_envelope)
         {
             root_serializer_ptr = std::make_shared<ProtobufSerializer *>();
             get_root_desc_function = [root_serializer_ptr = root_serializer_ptr](size_t indent) -> String
@@ -2781,7 +2718,6 @@ namespace
                 data_types.data(),
                 message_descriptor,
                 with_length_delimiter,
-                google_wrappers_special_treatment,
                 /* parent_field_descriptor = */ nullptr,
                 used_column_indices,
                 /* columns_are_reordered_outside = */ false,
@@ -2889,8 +2825,7 @@ namespace
         static bool findFieldsByColumnName(
             const std::string_view & column_name,
             const MessageDescriptor & message_descriptor,
-            std::vector<std::pair<const FieldDescriptor *, std::string_view /* suffix */>> & out_field_descriptors_with_suffixes,
-            bool google_wrappers_special_treatment)
+            std::vector<std::pair<const FieldDescriptor *, std::string_view /* suffix */>> & out_field_descriptors_with_suffixes)
         {
             out_field_descriptors_with_suffixes.clear();
 
@@ -2901,11 +2836,7 @@ namespace
                 const auto & field_descriptor = *message_descriptor.field(i);
                 if (columnNameEqualsToFieldName(column_name, field_descriptor))
                 {
-                    std::string_view suffix =
-                        google_wrappers_special_treatment && isGoogleWrapperField(field_descriptor)
-                        ? googleWrapperColumnName(field_descriptor)
-                        : "";
-                    out_field_descriptors_with_suffixes.emplace_back(&field_descriptor, suffix);
+                    out_field_descriptors_with_suffixes.emplace_back(&field_descriptor, std::string_view{});
                     break;
                 }
             }
@@ -2985,7 +2916,6 @@ namespace
             const DataTypePtr * data_types,
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
-            bool google_wrappers_special_treatment,
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
@@ -3002,7 +2932,6 @@ namespace
                 data_types,
                 message_descriptor,
                 with_length_delimiter,
-                google_wrappers_special_treatment,
                 parent_field_descriptor,
                 used_column_indices,
                 columns_are_reordered_outside,
@@ -3015,7 +2944,6 @@ namespace
             const DataTypePtr * data_types,
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
-            bool google_wrappers_special_treatment,
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
@@ -3070,15 +2998,14 @@ namespace
                 const auto & column_name = column_names[column_idx];
                 const auto & data_type = data_types[column_idx];
 
-                if (!findFieldsByColumnName(column_name, message_descriptor, field_descriptors_with_suffixes, google_wrappers_special_treatment))
+                if (!findFieldsByColumnName(column_name, message_descriptor, field_descriptors_with_suffixes))
                     continue;
 
                 if ((field_descriptors_with_suffixes.size() == 1) && field_descriptors_with_suffixes[0].second.empty())
                 {
                     /// Simple case: one column is serialized as one field.
                     const auto & field_descriptor = *field_descriptors_with_suffixes[0].first;
-                    auto field_serializer = buildFieldSerializer(column_name, data_type,
-                        field_descriptor, field_descriptor.is_repeated(), google_wrappers_special_treatment);
+                    auto field_serializer = buildFieldSerializer(column_name, data_type, field_descriptor, field_descriptor.is_repeated());
 
                     if (field_serializer)
                     {
@@ -3141,7 +3068,6 @@ namespace
                                 nested_data_types.data(),
                                 *field_descriptor->message_type(),
                                 /* with_length_delimiter = */ false,
-                                google_wrappers_special_treatment,
                                 field_descriptor,
                                 used_column_indices_in_nested,
                                 /* columns_are_reordered_outside = */ true,
@@ -3182,7 +3108,6 @@ namespace
                                 nested_data_types.data(),
                                 *field_descriptor->message_type(),
                                 /* with_length_delimiter = */ false,
-                                google_wrappers_special_treatment,
                                 field_descriptor,
                                 used_column_indices_in_nested,
                                 /* columns_are_reordered_outside = */ true,
@@ -3236,7 +3161,7 @@ namespace
             }
 
             return std::make_unique<ProtobufSerializerMessage>(
-                std::move(field_descs), parent_field_descriptor, with_length_delimiter, google_wrappers_special_treatment,
+                std::move(field_descs), parent_field_descriptor, with_length_delimiter,
                 std::move(missing_columns_filler), reader_or_writer);
         }
 
@@ -3246,8 +3171,7 @@ namespace
             const std::string_view & column_name,
             const DataTypePtr & data_type,
             const FieldDescriptor & field_descriptor,
-            bool allow_repeat,
-            bool google_wrappers_special_treatment)
+            bool allow_repeat)
         {
             auto data_type_id = data_type->getTypeId();
             switch (data_type_id)
@@ -3284,8 +3208,7 @@ namespace
                 case TypeIndex::Nullable:
                 {
                     const auto & nullable_data_type = assert_cast<const DataTypeNullable &>(*data_type);
-                    auto nested_serializer = buildFieldSerializer(column_name, nullable_data_type.getNestedType(),
-                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
+                    auto nested_serializer = buildFieldSerializer(column_name, nullable_data_type.getNestedType(), field_descriptor, allow_repeat);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerNullable>(std::move(nested_serializer));
@@ -3295,8 +3218,7 @@ namespace
                 {
                     const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*data_type);
                     auto nested_serializer
-                        = buildFieldSerializer(column_name, low_cardinality_data_type.getDictionaryType(),
-                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
+                        = buildFieldSerializer(column_name, low_cardinality_data_type.getDictionaryType(), field_descriptor, allow_repeat);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerLowCardinality>(std::move(nested_serializer));
@@ -3305,8 +3227,7 @@ namespace
                 case TypeIndex::Map:
                 {
                     const auto & map_data_type = assert_cast<const DataTypeMap &>(*data_type);
-                    auto nested_serializer = buildFieldSerializer(column_name, map_data_type.getNestedType(),
-                        field_descriptor, allow_repeat, google_wrappers_special_treatment);
+                    auto nested_serializer = buildFieldSerializer(column_name, map_data_type.getNestedType(), field_descriptor, allow_repeat);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerMap>(std::move(nested_serializer));
@@ -3321,8 +3242,7 @@ namespace
                         throwFieldNotRepeated(field_descriptor, column_name);
 
                     auto nested_serializer = buildFieldSerializer(column_name, array_data_type.getNestedType(), field_descriptor,
-                                                                  /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
-                                                                  google_wrappers_special_treatment);
+                                                                  /* allow_repeat = */ false); // We do our repeating now, so for nested type we forget about the repeating.
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerArray>(std::move(nested_serializer));
@@ -3346,7 +3266,6 @@ namespace
                             tuple_data_type.getElements().data(),
                             *field_descriptor.message_type(),
                             /* with_length_delimiter = */ false,
-                            google_wrappers_special_treatment,
                             &field_descriptor,
                             used_column_indices,
                             /* columns_are_reordered_outside = */ false,
@@ -3373,8 +3292,7 @@ namespace
                     for (const auto & nested_data_type : tuple_data_type.getElements())
                     {
                         auto nested_serializer = buildFieldSerializer(column_name, nested_data_type, field_descriptor,
-                                                                      /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
-                                                                      google_wrappers_special_treatment);
+                                                                      /* allow_repeat = */ false); // We do our repeating now, so for nested type we forget about the repeating.
                         if (!nested_serializer)
                             break;
                         nested_serializers.push_back(std::move(nested_serializer));
@@ -3444,12 +3362,12 @@ namespace
 
         switch (field_descriptor->type())
         {
-            case FieldTypeId::TYPE_SFIXED32:
-            case FieldTypeId::TYPE_SINT32:
+            case FieldTypeId::TYPE_SFIXED32: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT32: [[fallthrough]];
             case FieldTypeId::TYPE_INT32:
                 return {field_descriptor->name(), std::make_shared<DataTypeInt32>()};
-            case FieldTypeId::TYPE_SFIXED64:
-            case FieldTypeId::TYPE_SINT64:
+            case FieldTypeId::TYPE_SFIXED64: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT64: [[fallthrough]];
             case FieldTypeId::TYPE_INT64:
                 return {field_descriptor->name(), std::make_shared<DataTypeInt64>()};
             case FieldTypeId::TYPE_BOOL:
@@ -3458,13 +3376,13 @@ namespace
                 return {field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
             case FieldTypeId::TYPE_DOUBLE:
                 return {field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
-            case FieldTypeId::TYPE_UINT32:
+            case FieldTypeId::TYPE_UINT32: [[fallthrough]];
             case FieldTypeId::TYPE_FIXED32:
                 return {field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
-            case FieldTypeId::TYPE_UINT64:
+            case FieldTypeId::TYPE_UINT64: [[fallthrough]];
             case FieldTypeId::TYPE_FIXED64:
                 return {field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
-            case FieldTypeId::TYPE_BYTES:
+            case FieldTypeId::TYPE_BYTES: [[fallthrough]];
             case FieldTypeId::TYPE_STRING:
                 return {field_descriptor->name(), std::make_shared<DataTypeString>()};
             case FieldTypeId::TYPE_ENUM:
@@ -3485,7 +3403,7 @@ namespace
                 else
                     throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
             }
-            case FieldTypeId::TYPE_GROUP:
+            case FieldTypeId::TYPE_GROUP: [[fallthrough]];
             case FieldTypeId::TYPE_MESSAGE:
             {
                 const auto * message_descriptor = field_descriptor->message_type();
@@ -3521,10 +3439,9 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
     bool with_envelope,
-    bool flatten_google_wrappers,
     ProtobufReader & reader)
 {
-    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, flatten_google_wrappers);
+    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
@@ -3533,11 +3450,10 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const google::protobuf::Descriptor & message_descriptor,
     bool with_length_delimiter,
     bool with_envelope,
-    bool defaults_for_nullable_google_wrappers,
     ProtobufWriter & writer)
 {
     std::vector<size_t> missing_column_indices;
-    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers);
+    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor)

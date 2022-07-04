@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -88,11 +88,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
-    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
+    commands = MutationCommands::create(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->data_part_storage);
+    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->volume);
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
@@ -110,12 +110,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
-        if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
+        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
         {
             String dummy;
             if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
-                LOG_DEBUG(log, "Mutation of part {} finished by some other replica, will download mutated part", entry.new_part_name);
+                LOG_DEBUG(log, "Mutation of part {} finished by some other replica, will download merged part", entry.new_part_name);
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = true,
@@ -127,7 +127,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             if (!zero_copy_lock)
             {
-                LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and mutated merged part", entry.new_part_name);
+                LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
@@ -170,16 +170,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
-    auto builder = mutate_task->getBuilder();
 
-    if (!builder)
-        builder = new_part->data_part_storage->getBuilder();
-
-    storage.renameTempPartAndReplace(new_part, *transaction_ptr, builder);
+    storage.renameTempPartAndReplace(new_part, NO_TRANSACTION_RAW, nullptr, transaction_ptr.get());
 
     try
     {
-        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, mutate_task->getHardlinkedFiles());
+        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part);
     }
     catch (const Exception & e)
     {

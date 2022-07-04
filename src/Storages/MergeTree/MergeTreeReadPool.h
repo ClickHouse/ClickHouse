@@ -13,7 +13,7 @@ namespace DB
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
-/**   Provides read tasks for MergeTreeThreadSelectProcessor`s in fine-grained batches, allowing for more
+/**   Provides read tasks for MergeTreeThreadSelectBlockInputStream`s in fine-grained batches, allowing for more
  *    uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
  *    workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
  *    in "sequential" manner, requesting work in small batches. As soon as some thread has exhausted
@@ -99,16 +99,11 @@ private:
     const Names column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
-
-    struct PerPartParams
-    {
-        MergeTreeReadTaskColumns task_columns;
-        NameSet column_name_set;
-        MergeTreeBlockSizePredictorPtr size_predictor;
-    };
-
-    std::vector<PerPartParams> per_part_params;
-
+    std::vector<NameSet> per_part_column_name_set;
+    std::vector<NamesAndTypesList> per_part_columns;
+    std::vector<NamesAndTypesList> per_part_pre_columns;
+    std::vector<char> per_part_should_reorder;
+    std::vector<MergeTreeBlockSizePredictorPtr> per_part_size_predictor;
     PrewhereInfoPtr prewhere_info;
 
     struct Part

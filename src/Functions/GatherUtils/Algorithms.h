@@ -308,7 +308,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
     {
         ssize_t size = length;
         if (size < 0)
-            size += offset;
+            size += static_cast<ssize_t>(src.getElementSize()) - offset;
 
         if (size > 0)
             writeSlice(src.getSliceFromRight(offset, size), sink);

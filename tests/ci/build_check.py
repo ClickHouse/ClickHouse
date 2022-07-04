@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+#
 import subprocess
 import logging
 import json
@@ -7,21 +7,13 @@ import os
 import sys
 import time
 from shutil import rmtree
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from env_helper import (
-    CACHES_PATH,
-    GITHUB_JOB,
-    IMAGES_PATH,
-    REPO_COPY,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
-)
+from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from version_helper import (
     ClickHouseVersion,
-    Git,
     get_version_from_repo,
     update_version_local,
 )
@@ -31,7 +23,15 @@ from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/binary-builder"
-BUILD_LOG_NAME = "build_log.log"
+
+
+def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
+    if build_check_name == "ClickHouse build check (actions)":
+        build_config_name = "build_config"
+    else:
+        raise Exception(f"Unknown build check name {build_check_name}")
+
+    return CI_CONFIG[build_config_name][build_name]
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
@@ -94,7 +94,7 @@ def get_packager_cmd(
 def build_clickhouse(
     packager_cmd: str, logs_path: str, build_output_path: str
 ) -> Tuple[str, bool]:
-    build_log_path = os.path.join(logs_path, BUILD_LOG_NAME)
+    build_log_path = os.path.join(logs_path, "build_log.log")
     success = False
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
@@ -116,56 +116,15 @@ def build_clickhouse(
     return build_log_path, success
 
 
-def check_for_success_run(
-    s3_helper: S3Helper,
-    s3_prefix: str,
-    build_name: str,
-    build_config: BuildConfig,
-):
-    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix)
-    logging.info("Checking for artifacts in %s", logged_prefix)
+def get_build_results_if_exists(
+    s3_helper: S3Helper, s3_prefix: str
+) -> Optional[List[str]]:
     try:
-        # TODO: theoretically, it would miss performance artifact for pr==0,
-        # but luckily we rerun only really failed tasks now, so we're safe
-        build_results = s3_helper.list_prefix(s3_prefix)
+        content = s3_helper.list_prefix(s3_prefix)
+        return content
     except Exception as ex:
-        logging.info("Got exception while listing %s: %s\nRerun", logged_prefix, ex)
-        return
-
-    if build_results is None or len(build_results) == 0:
-        logging.info("Nothing found in %s, rerun", logged_prefix)
-        return
-
-    logging.info("Some build results found:\n%s", build_results)
-    build_urls = []
-    log_url = ""
-    for url in build_results:
-        url_escaped = url.replace("+", "%2B").replace(" ", "%20")
-        if BUILD_LOG_NAME in url:
-            log_url = f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
-        else:
-            build_urls.append(
-                f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
-            )
-    if not log_url:
-        # log is uploaded the last, so if there's no log we need to rerun the build
-        return
-
-    success = len(build_urls) > 0
-    create_json_artifact(
-        TEMP_PATH,
-        build_name,
-        log_url,
-        build_urls,
-        build_config,
-        0,
-        success,
-    )
-    # Fail build job if not successeded
-    if not success:
-        sys.exit(1)
-    else:
-        sys.exit(0)
+        logging.info("Got exception %s listing %s", ex, s3_prefix)
+        return None
 
 
 def create_json_artifact(
@@ -187,7 +146,6 @@ def create_json_artifact(
         "build_config": build_config,
         "elapsed_seconds": elapsed,
         "status": success,
-        "job_name": GITHUB_JOB,
     }
 
     json_name = "build_urls_" + build_name + ".json"
@@ -198,21 +156,19 @@ def create_json_artifact(
         json.dump(result, build_links)
 
 
-def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
-    # FIXME performance
-    # performance builds are havily relies on a fixed path for artifacts, that's why
-    # we need to preserve 0 for anything but PR number
-    # It should be fixed in performance-comparison image eventually
-    performance_pr = "0"
+def get_release_or_pr(
+    pr_info: PRInfo, build_config: BuildConfig, version: ClickHouseVersion
+) -> str:
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
-        return pr_info.head_ref, performance_pr
-    elif pr_info.number == 0:
-        # for pushes to master - major version
-        return f"{version.major}.{version.minor}", performance_pr
+        return pr_info.head_ref
+    elif pr_info.number == 0 and build_config["package_type"] != "performance":
+        # for pushes to master - major version, but not for performance builds
+        # they havily relies on a fixed path for build package and nobody going
+        # to deploy them somewhere, so it's ok.
+        return f"{version.major}.{version.minor}"
     # PR number for anything else
-    pr_number = str(pr_info.number)
-    return pr_number, pr_number
+    return str(pr_info.number)
 
 
 def upload_master_static_binaries(
@@ -239,9 +195,10 @@ def upload_master_static_binaries(
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    build_name = sys.argv[1]
+    build_check_name = sys.argv[1]
+    build_name = sys.argv[2]
 
-    build_config = CI_CONFIG["build_config"][build_name]
+    build_config = get_build_config(build_check_name, build_name)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
@@ -252,18 +209,43 @@ def main():
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    version = get_version_from_repo(git=Git(True))
-    release_or_pr, performance_pr = get_release_or_pr(pr_info, version)
+    version = get_version_from_repo()
+    release_or_pr = get_release_or_pr(pr_info, build_config, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
-    # FIXME performance
-    s3_performance_path = "/".join(
-        (performance_pr, pr_info.sha, build_name, "performance.tgz")
-    )
 
     # If this is rerun, then we try to find already created artifacts and just
-    # put them as github actions artifact (result)
-    check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
+    # put them as github actions artifcat (result)
+    build_results = get_build_results_if_exists(s3_helper, s3_path_prefix)
+    if build_results is not None and len(build_results) > 0:
+        logging.info("Some build results found %s", build_results)
+        build_urls = []
+        log_url = ""
+        for url in build_results:
+            if "build_log.log" in url:
+                log_url = "https://s3.amazonaws.com/clickhouse-builds/" + url.replace(
+                    "+", "%2B"
+                ).replace(" ", "%20")
+            else:
+                build_urls.append(
+                    "https://s3.amazonaws.com/clickhouse-builds/"
+                    + url.replace("+", "%2B").replace(" ", "%20")
+                )
+        success = len(build_urls) > 0
+        create_json_artifact(
+            TEMP_PATH,
+            build_name,
+            log_url,
+            build_urls,
+            build_config,
+            0,
+            success,
+        )
+        # Fail build job if not successeded
+        if not success:
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -271,9 +253,6 @@ def main():
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
-    if "official" in build_config:
-        official_flag = build_config["official"]
-
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
@@ -303,6 +282,12 @@ def main():
         logging.info("cache was not fetched, will create empty dir")
         os.makedirs(ccache_path)
 
+    if build_config["package_type"] == "performance" and pr_info.number != 0:
+        # because perf tests store some information about git commits
+        subprocess.check_call(
+            f"cd {REPO_COPY} && git fetch origin master:master", shell=True
+        )
+
     packager_cmd = get_packager_cmd(
         build_config,
         os.path.join(REPO_COPY, "docker/packager"),
@@ -315,12 +300,14 @@ def main():
 
     logging.info("Going to run packager with %s", packager_cmd)
 
-    logs_path = os.path.join(TEMP_PATH, "build_log")
-    if not os.path.exists(logs_path):
-        os.makedirs(logs_path)
+    build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")
+    if not os.path.exists(build_clickhouse_log):
+        os.makedirs(build_clickhouse_log)
 
     start = time.time()
-    log_path, success = build_clickhouse(packager_cmd, logs_path, build_output_path)
+    log_path, success = build_clickhouse(
+        packager_cmd, build_clickhouse_log, build_output_path
+    )
     elapsed = int(time.time() - start)
     subprocess.check_call(
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
@@ -328,35 +315,8 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)
     logging.info("Build finished with %s, log path %s", success, log_path)
 
-    # Upload the ccache first to have the least build time in case of problems
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
-
-    # FIXME performance
-    performance_urls = []
-    performance_path = os.path.join(build_output_path, "performance.tgz")
-    if os.path.exists(performance_path):
-        performance_urls.append(
-            s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
-        )
-        logging.info(
-            "Uploaded performance.tgz to %s, now delete to avoid duplication",
-            performance_urls[0],
-        )
-        os.remove(performance_path)
-
-    build_urls = (
-        s3_helper.upload_build_folder_to_s3(
-            build_output_path,
-            s3_path_prefix,
-            keep_dirs_in_s3_path=False,
-            upload_symlinks=False,
-        )
-        + performance_urls
-    )
-    logging.info("Got build URLs %s", build_urls)
-
-    print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
 
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(
@@ -365,6 +325,16 @@ def main():
         logging.info("Log url %s", log_url)
     else:
         logging.info("Build log doesn't exist")
+
+    build_urls = s3_helper.upload_build_folder_to_s3(
+        build_output_path,
+        s3_path_prefix,
+        keep_dirs_in_s3_path=False,
+        upload_symlinks=False,
+    )
+    logging.info("Got build URLs %s", build_urls)
+
+    print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
 
     print(f"::notice ::Log URL: {log_url}")
 

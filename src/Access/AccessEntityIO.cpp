@@ -16,13 +16,6 @@
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <Parsers/Access/ASTCreateQuotaQuery.h>
-#include <Parsers/Access/ASTCreateRoleQuery.h>
-#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTGrantQuery.h>
-#include <Parsers/ParserAttachAccessEntity.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <boost/range/algorithm/copy.hpp>

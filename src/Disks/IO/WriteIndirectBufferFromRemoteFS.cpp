@@ -32,11 +32,11 @@ WriteIndirectBufferFromRemoteFS::~WriteIndirectBufferFromRemoteFS()
     }
 }
 
+
 void WriteIndirectBufferFromRemoteFS::finalizeImpl()
 {
     WriteBufferFromFileDecorator::finalizeImpl();
-    if (create_metadata_callback)
-        create_metadata_callback(count());
+    create_metadata_callback(count());
 }
 
 

@@ -417,17 +417,17 @@ struct TimeWindowImpl<HOP>
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
-            wstart = AddTime<kind>::execute(wend, -window_num_units, time_zone);
+            wstart = AddTime<kind>::execute(wend, -1 * window_num_units, time_zone);
             ToType wend_latest;
 
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -hop_num_units, time_zone);
+                wend = AddTime<kind>::execute(wend, -1 * hop_num_units, time_zone);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
-            start_data[i] = AddTime<kind>::execute(wend_latest, -window_num_units, time_zone);
+            start_data[i] = AddTime<kind>::execute(wend_latest, -1 * window_num_units, time_zone);
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
@@ -570,7 +570,7 @@ struct TimeWindowImpl<WINDOW_ID>
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -gcd_num_units, time_zone);
+                wend = AddTime<kind>::execute(wend, -1 * gcd_num_units, time_zone);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;

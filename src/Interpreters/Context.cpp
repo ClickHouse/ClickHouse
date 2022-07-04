@@ -29,7 +29,7 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/IDiskRemote.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -47,7 +47,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <Backups/BackupsWorker.h>
+#include <Backups/BackupFactory.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -77,7 +77,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -180,11 +180,12 @@ struct ContextSharedPart
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
-    String user_defined_path;                               /// Path to the directory with user defined objects.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+
+    mutable VolumePtr backups_volume;                       /// Volume for all the backups.
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -204,8 +205,6 @@ struct ContextSharedPart
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
     mutable std::optional<Lemmatizers> lemmatizers;
 #endif
-
-    std::optional<BackupsWorker> backups_worker;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -273,7 +272,7 @@ struct ContextSharedPart
     bool shutdown_called = false;
 
     /// Has background executors for MergeTree tables been initialized?
-    bool are_background_executors_initialized = false;
+    bool is_background_executors_initialized = false;
 
     Stopwatch uptime_watch;
 
@@ -313,7 +312,7 @@ struct ContextSharedPart
         /// since it may use per-user MemoryTracker which will be destroyed here.
         try
         {
-            IObjectStorage::getThreadPoolWriter().wait();
+            IDiskRemote::getThreadPoolWriter().wait();
         }
         catch (...)
         {
@@ -342,6 +341,8 @@ struct ContextSharedPart
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
+        if (access_control)
+            access_control->stopPeriodicReloadingUsersConfigs();
         if (external_dictionaries_loader)
             external_dictionaries_loader->enablePeriodicUpdates(false);
         if (external_user_defined_executable_functions_loader)
@@ -350,10 +351,6 @@ struct ContextSharedPart
             external_models_loader->enablePeriodicUpdates(false);
 
         Session::shutdownNamedSessions();
-
-        /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
-        if (backups_worker)
-            backups_worker->shutdown();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
@@ -453,8 +450,6 @@ struct ContextSharedPart
         delete_message_broker_schedule_pool.reset();
         delete_ddl_worker.reset();
         delete_access_control.reset();
-
-        total_memory_tracker.resetOvercommitTracker();
     }
 
     bool hasTraceCollector() const
@@ -533,7 +528,6 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 Context::~Context() = default;
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
-const InterserverIOHandler & Context::getInterserverIOHandler() const { return shared->interserver_io_handler; }
 
 std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
@@ -588,12 +582,6 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
-String Context::getUserDefinedPath() const
-{
-    auto lock = getLock();
-    return shared->user_defined_path;
-}
-
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -639,9 +627,6 @@ void Context::setPath(const String & path)
 
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
-
-    if (shared->user_defined_path.empty())
-        shared->user_defined_path = shared->path + "user_defined/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
@@ -696,13 +681,7 @@ void Context::setUserScriptsPath(const String & path)
     shared->user_scripts_path = path;
 }
 
-void Context::setUserDefinedPath(const String & path)
-{
-    auto lock = getLock();
-    shared->user_defined_path = path;
-}
-
-void Context::addWarningMessage(const String & msg) const
+void Context::addWarningMessage(const String & msg)
 {
     auto lock = getLock();
     shared->addWarningMessage(msg);
@@ -767,7 +746,6 @@ void Context::setUser(const UUID & user_id_)
         user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
-
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
     auto default_profile_info = access->getDefaultProfileInfo();
@@ -1079,7 +1057,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
 
-    std::lock_guard lock(query_factories_info.mutex);
+    auto lock = getLock();
 
     switch (factory_type)
     {
@@ -1377,7 +1355,7 @@ void Context::killCurrentQuery()
     {
         process_list_elem->cancelQuery(true);
     }
-}
+};
 
 String Context::getDefaultFormat() const
 {
@@ -1620,17 +1598,6 @@ Lemmatizers & Context::getLemmatizers() const
 }
 #endif
 
-BackupsWorker & Context::getBackupsWorker() const
-{
-    auto lock = getLock();
-
-    if (!shared->backups_worker)
-        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads);
-
-    return *shared->backups_worker;
-}
-
-
 void Context::setProgressCallback(ProgressCallback callback)
 {
     /// Callback is set to a session or to a query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
@@ -1803,19 +1770,10 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
-    {
-        size_t background_buffer_flush_schedule_pool_size = 16;
-        if (getConfigRef().has("background_buffer_flush_schedule_pool_size"))
-            background_buffer_flush_schedule_pool_size = getConfigRef().getUInt64("background_buffer_flush_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_buffer_flush_schedule_pool_size"))
-            background_buffer_flush_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_buffer_flush_schedule_pool_size");
-
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_buffer_flush_schedule_pool_size,
+            settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             "BgBufSchPool");
-    }
-
     return *shared->buffer_flush_schedule_pool;
 }
 
@@ -1854,19 +1812,10 @@ BackgroundSchedulePool & Context::getSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
-    {
-        size_t background_schedule_pool_size = 128;
-        if (getConfigRef().has("background_schedule_pool_size"))
-            background_schedule_pool_size = getConfigRef().getUInt64("background_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_schedule_pool_size"))
-            background_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_schedule_pool_size");
-
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_schedule_pool_size,
+            settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
             "BgSchPool");
-    }
-
     return *shared->schedule_pool;
 }
 
@@ -1874,19 +1823,10 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
-    {
-        size_t background_distributed_schedule_pool_size = 16;
-        if (getConfigRef().has("background_distributed_schedule_pool_size"))
-            background_distributed_schedule_pool_size = getConfigRef().getUInt64("background_distributed_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_distributed_schedule_pool_size"))
-            background_distributed_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_distributed_schedule_pool_size");
-
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_distributed_schedule_pool_size,
+            settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             "BgDistSchPool");
-    }
-
     return *shared->distributed_schedule_pool;
 }
 
@@ -1894,19 +1834,10 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->message_broker_schedule_pool)
-    {
-        size_t background_message_broker_schedule_pool_size = 16;
-        if (getConfigRef().has("background_message_broker_schedule_pool_size"))
-            background_message_broker_schedule_pool_size = getConfigRef().getUInt64("background_message_broker_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_message_broker_schedule_pool_size"))
-            background_message_broker_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_message_broker_schedule_pool_size");
-
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_message_broker_schedule_pool_size,
+            settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             "BgMBSchPool");
-    }
-
     return *shared->message_broker_schedule_pool;
 }
 
@@ -2226,7 +2157,7 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
-InterserverCredentialsPtr Context::getInterserverCredentials() const
+InterserverCredentialsPtr Context::getInterserverCredentials()
 {
     return shared->interserver_io_credentials.get();
 }
@@ -2334,7 +2265,7 @@ void Context::reloadClusterConfig() const
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
-        auto new_clusters = std::make_shared<Clusters>(config, settings, getMacros());
+        auto new_clusters = std::make_shared<Clusters>(config, settings);
 
         {
             std::lock_guard lock(shared->clusters_mutex);
@@ -2356,7 +2287,7 @@ std::shared_ptr<Clusters> Context::getClusters() const
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        shared->clusters = std::make_shared<Clusters>(config, settings, getMacros());
+        shared->clusters = std::make_shared<Clusters>(config, settings);
     }
 
     return shared->clusters;
@@ -2387,7 +2318,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     shared->clusters_config = config;
 
     if (!shared->clusters)
-        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, getMacros(), config_name);
+        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
 }
@@ -2573,14 +2504,6 @@ std::shared_ptr<ProcessorsProfileLog> Context::getProcessorsProfileLog() const
     return shared->system_logs->processors_profile_log;
 }
 
-std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
-{
-    auto lock = getLock();
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->cache_log;
-}
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
@@ -2853,12 +2776,15 @@ void Context::shutdown()
     }
 
     // Special volumes might also use disks that require shutdown.
-    if (shared->tmp_volume)
+    for (const auto & volume : {shared->tmp_volume, shared->backups_volume})
     {
-        auto & disks = shared->tmp_volume->getDisks();
-        for (auto & disk : disks)
+        if (volume)
         {
-            disk->shutdown();
+            auto & disks = volume->getDisks();
+            for (auto & disk : disks)
+            {
+                disk->shutdown();
+            }
         }
     }
 
@@ -3288,87 +3214,59 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 void Context::initializeBackgroundExecutorsIfNeeded()
 {
     auto lock = getLock();
-    if (shared->are_background_executors_initialized)
+    if (shared->is_background_executors_initialized)
         return;
 
-    const auto & config = getConfigRef();
-
-    size_t background_pool_size = 16;
-    if (config.has("background_pool_size"))
-        background_pool_size = config.getUInt64("background_pool_size");
-    else if (config.has("profiles.default.background_pool_size"))
-        background_pool_size = config.getUInt64("profiles.default.background_pool_size");
-
-    size_t background_merges_mutations_concurrency_ratio = 2;
-    if (config.has("background_merges_mutations_concurrency_ratio"))
-        background_merges_mutations_concurrency_ratio = config.getUInt64("background_merges_mutations_concurrency_ratio");
-    else if (config.has("profiles.default.background_pool_size"))
-        background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
-
-    size_t background_move_pool_size = 8;
-    if (config.has("background_move_pool_size"))
-        background_move_pool_size = config.getUInt64("background_move_pool_size");
-    else if (config.has("profiles.default.background_move_pool_size"))
-        background_move_pool_size = config.getUInt64("profiles.default.background_move_pool_size");
-
-    size_t background_fetches_pool_size = 8;
-    if (config.has("background_fetches_pool_size"))
-        background_fetches_pool_size = config.getUInt64("background_fetches_pool_size");
-    else if (config.has("profiles.default.background_fetches_pool_size"))
-        background_fetches_pool_size = config.getUInt64("profiles.default.background_fetches_pool_size");
-
-    size_t background_common_pool_size = 8;
-    if (config.has("background_common_pool_size"))
-        background_common_pool_size = config.getUInt64("background_common_pool_size");
-    else if (config.has("profiles.default.background_common_pool_size"))
-        background_common_pool_size = config.getUInt64("profiles.default.background_common_pool_size");
+    const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
     /// With this executor we can execute more tasks than threads we have
-    shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
+    shared->merge_mutate_executor = MergeMutateBackgroundExecutor::create
     (
         "MergeMutate",
-        /*max_threads_count*/background_pool_size,
-        /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
+        /*max_threads_count*/getSettingsRef().background_pool_size,
+        /*max_tasks_count*/max_merges_and_mutations,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
-    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
-        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio);
 
-    shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
+    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_pool_size, max_merges_and_mutations);
+
+    shared->moves_executor = OrdinaryBackgroundExecutor::create
     (
         "Move",
-        background_move_pool_size,
-        background_move_pool_size,
+        getSettingsRef().background_move_pool_size,
+        getSettingsRef().background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask
     );
-    LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
-    shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
+    LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}",
+        getSettingsRef().background_move_pool_size, getSettingsRef().background_move_pool_size);
+
+    shared->fetch_executor = OrdinaryBackgroundExecutor::create
     (
         "Fetch",
-        background_fetches_pool_size,
-        background_fetches_pool_size,
+        getSettingsRef().background_fetches_pool_size,
+        getSettingsRef().background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask
     );
-    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
-    shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
+    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}",
+        getSettingsRef().background_fetches_pool_size, getSettingsRef().background_fetches_pool_size);
+
+    shared->common_executor = OrdinaryBackgroundExecutor::create
     (
         "Common",
-        background_common_pool_size,
-        background_common_pool_size,
+        getSettingsRef().background_common_pool_size,
+        getSettingsRef().background_common_pool_size,
         CurrentMetrics::BackgroundCommonPoolTask
     );
-    LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 
-    shared->are_background_executors_initialized = true;
+    LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
+        getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
+
+    shared->is_background_executors_initialized = true;
 }
 
-bool Context::areBackgroundExecutorsInitialized()
-{
-    auto lock = getLock();
-    return shared->are_background_executors_initialized;
-}
 
 MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {
@@ -3417,15 +3315,10 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
     res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
-    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
-
-    res.max_query_cache_size = settings.max_query_cache_size;
-    res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
-    res.remote_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;

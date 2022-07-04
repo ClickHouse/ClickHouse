@@ -34,10 +34,7 @@ using BlocksWithPartition = std::vector<BlockWithPartition>;
 class MergeTreeDataWriter
 {
 public:
-    explicit MergeTreeDataWriter(MergeTreeData & data_)
-        : data(data_)
-        , log(&Poco::Logger::get(data.getLogName() + " (Writer)"))
-    {}
+    explicit MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Writer)")) {}
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
@@ -54,7 +51,6 @@ public:
     struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
-        DataPartStorageBuilderPtr builder;
 
         struct Stream
         {
@@ -78,7 +74,6 @@ public:
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
         const IMergeTreeDataPart * parent_part);
 
     /// For mutation: MATERIALIZE PROJECTION.
@@ -87,7 +82,6 @@ public:
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
         const IMergeTreeDataPart * parent_part,
         size_t block_num);
 
@@ -97,7 +91,6 @@ public:
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
         const IMergeTreeDataPart * parent_part);
 
     static Block mergeBlock(
@@ -112,7 +105,6 @@ private:
         const String & part_name,
         MergeTreeDataPartType part_type,
         const String & relative_path,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
         bool is_temp,
         const IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,

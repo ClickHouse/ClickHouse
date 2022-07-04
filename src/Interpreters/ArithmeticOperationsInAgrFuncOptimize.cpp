@@ -59,13 +59,13 @@ Field zeroField(const Field & value)
 {
     switch (value.getType())
     {
-        case Field::Types::UInt64: return static_cast<UInt64>(0);
-        case Field::Types::Int64: return static_cast<Int64>(0);
-        case Field::Types::Float64: return static_cast<Float64>(0);
-        case Field::Types::UInt128: return static_cast<UInt128>(0);
-        case Field::Types::Int128: return static_cast<Int128>(0);
-        case Field::Types::UInt256: return static_cast<UInt256>(0);
-        case Field::Types::Int256: return static_cast<Int256>(0);
+        case Field::Types::UInt64: return UInt64(0);
+        case Field::Types::Int64: return Int64(0);
+        case Field::Types::Float64: return Float64(0);
+        case Field::Types::UInt128: return UInt128(0);
+        case Field::Types::Int128: return Int128(0);
+        case Field::Types::UInt256: return UInt256(0);
+        case Field::Types::Int256: return Int256(0);
         default:
             break;
     }

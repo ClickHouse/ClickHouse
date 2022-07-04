@@ -5,5 +5,3 @@ collapsed: true
 link:
   type: doc
   id: en/sql-reference/aggregate-functions/index
-customProps:
-  description: List of Aggregate Fucntions in ClickHouse

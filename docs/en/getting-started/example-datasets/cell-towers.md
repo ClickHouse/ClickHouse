@@ -126,6 +126,6 @@ SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM 
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
 
-The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
+The data is also available for interactive queries in the [Playground](https://gh-api.clickhouse.com/play?user=play), [example](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 
 Although you cannot create temporary tables there.

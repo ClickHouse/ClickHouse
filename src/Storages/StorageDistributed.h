@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -7,7 +9,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -34,44 +36,14 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public IStorage, WithContext
+class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageDistributed>;
     friend class DistributedSink;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
 public:
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        bool attach_,
-        ClusterPtr owned_cluster_ = {},
-        ASTPtr remote_table_function_ptr_ = {});
-
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ASTPtr remote_table_function_ptr_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        bool attach,
-        ClusterPtr owned_cluster_ = {});
-
     ~StorageDistributed() override;
 
     std::string getName() const override { return "Distributed"; }
@@ -104,6 +76,15 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -119,7 +100,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    QueryPipelineBuilderPtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -156,6 +137,37 @@ public:
     size_t getShardCount() const;
 
 private:
+    StorageDistributed(
+        const StorageID & id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        ContextPtr context_,
+        const ASTPtr & sharding_key_,
+        const String & storage_policy_name_,
+        const String & relative_data_path_,
+        const DistributedSettings & distributed_settings_,
+        bool attach_,
+        ClusterPtr owned_cluster_ = {},
+        ASTPtr remote_table_function_ptr_ = {});
+
+    StorageDistributed(
+        const StorageID & id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        ASTPtr remote_table_function_ptr_,
+        const String & cluster_name_,
+        ContextPtr context_,
+        const ASTPtr & sharding_key_,
+        const String & storage_policy_name_,
+        const String & relative_data_path_,
+        const DistributedSettings & distributed_settings_,
+        bool attach,
+        ClusterPtr owned_cluster_ = {});
+
     void renameOnDisk(const String & new_path_to_table_data);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }

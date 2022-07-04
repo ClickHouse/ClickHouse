@@ -2,7 +2,7 @@
 sidebar_position: 31
 ---
 
-# stddevSamp
+# stddevSamp {#stddevsamp}
 
 The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varsamp.md).
 

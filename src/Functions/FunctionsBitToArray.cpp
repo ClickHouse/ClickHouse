@@ -93,7 +93,7 @@ private:
             if (!first)
                 writeChar(',', out);
             first = false;
-            writeIntText(static_cast<T>(bit), out);
+            writeIntText(T(bit), out);
         }
     }
 
