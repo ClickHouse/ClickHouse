@@ -30,13 +30,26 @@ Strings BackupCoordinationLocal::setStatusAndWaitFor(const String &, const Strin
 void BackupCoordinationLocal::addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
     std::lock_guard lock{mutex};
-    replicated_part_names.addPartNames(table_shared_id, table_name_for_logs, replica_name, part_names_and_checksums);
+    replicated_parts_and_mutations.addPartNames(table_shared_id, table_name_for_logs, replica_name, part_names_and_checksums);
 }
 
 Strings BackupCoordinationLocal::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{mutex};
-    return replicated_part_names.getPartNames(table_shared_id, replica_name);
+    return replicated_parts_and_mutations.getPartNames(table_shared_id, replica_name);
+}
+
+
+void BackupCoordinationLocal::addReplicatedMutations(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations)
+{
+    std::lock_guard lock{mutex};
+    replicated_parts_and_mutations.addMutations(table_shared_id, table_name_for_logs, replica_name, mutations);
+}
+
+std::vector<IBackupCoordination::MutationInfo> BackupCoordinationLocal::getReplicatedMutations(const String & table_shared_id, const String & replica_name) const
+{
+    std::lock_guard lock{mutex};
+    return replicated_parts_and_mutations.getMutations(table_shared_id, replica_name);
 }
 
 
@@ -56,34 +69,26 @@ Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_sha
 }
 
 
-void BackupCoordinationLocal::addReplicatedAccessPath(const String & access_zk_path, const String & file_path)
+void BackupCoordinationLocal::addReplicatedAccessPath(const String & access_zk_path, const String & host_id, const String & file_path)
 {
     std::lock_guard lock{mutex};
-    replicated_access_paths[access_zk_path].push_back(file_path);
+    auto & ref = replicated_access_paths[access_zk_path];
+    ref.file_paths.push_back(file_path);
+    ref.host_to_store_access = host_id;
 }
 
-Strings BackupCoordinationLocal::getReplicatedAccessPaths(const String & access_zk_path) const
+Strings BackupCoordinationLocal::getReplicatedAccessPaths(const String & access_zk_path, const String & host_id) const
 {
     std::lock_guard lock{mutex};
     auto it = replicated_access_paths.find(access_zk_path);
     if (it == replicated_access_paths.end())
         return {};
-    return it->second;
-}
 
-void BackupCoordinationLocal::setReplicatedAccessHost(const String & access_zk_path, const String & host_id)
-{
-    std::lock_guard lock{mutex};
-    replicated_access_hosts[access_zk_path] = host_id;
-}
-
-String BackupCoordinationLocal::getReplicatedAccessHost(const String & access_zk_path) const
-{
-    std::lock_guard lock{mutex};
-    auto it = replicated_access_hosts.find(access_zk_path);
-    if (it == replicated_access_hosts.end())
+    const auto & ref = it->second;
+    if (ref.host_to_store_access != host_id)
         return {};
-    return it->second;
+
+    return ref.file_paths;
 }
 
 
