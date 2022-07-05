@@ -1,5 +1,5 @@
 ## The Intel® QPL provides high performance implementations of data processing functions for existing hardware accelerator, and/or software path in case if hardware accelerator is not available.
-if (OS_LINUX AND ARCH_AMD64 AND (HAVE_AVX2 OR HAVE_AVX512))
+if (OS_LINUX AND ARCH_AMD64 AND (ENABLE_AVX2 OR ENABLE_AVX512))
     option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QPL)
     message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with avx2/avx512 support")
@@ -115,7 +115,7 @@ target_compile_options(isal_asm PUBLIC "-I${QPL_SRC_DIR}/isal/include/"
                        PUBLIC "-I${QPL_SRC_DIR}/isal/crc/"
                        PUBLIC "-DAS_FEATURE_LEVEL=10"
                        PUBLIC "-DQPL_LIB")
-if (HAVE_AVX512)
+if (ENABLE_AVX512)
     target_compile_options(isal_asm PUBLIC "-DHAVE_AS_KNOWS_AVX512")
 endif()
 
