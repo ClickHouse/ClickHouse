@@ -101,10 +101,6 @@ target_include_directories(isal
                            PRIVATE ${QPL_SRC_DIR}/isal/include
                            PUBLIC ${QPL_SRC_DIR}/isal/igzip)
 
-set_target_properties(isal PROPERTIES
-                      CXX_STANDARD 11
-                      C_STANDARD 99)
-
 target_compile_options(isal PRIVATE
                        "$<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}>"
                        "$<$<CONFIG:Debug>:>"
@@ -130,8 +126,6 @@ target_compile_definitions(isal PUBLIC
                            NDEBUG)
 
 # [SUBDIR]core-sw
-enable_language(C)
-
 #
 # Create avx512 library
 #
@@ -149,7 +143,9 @@ file(GLOB DATA_SOURCES
 
 # Create library
 add_library(qplcore_avx512 OBJECT ${SOURCES})
-
+# Two libraries will be created which implemented by AVX512 and non-AVX512 respectively.
+# The Program will check SIMD capabilities of the target system at runtime and use up to AVX512 if available.
+# PLATFORM=2 means AVX512 implementation; PLATFORM=0 means non-AVX512 implementation.
 target_compile_definitions(qplcore_avx512 PRIVATE PLATFORM=2)
 
 target_include_directories(qplcore_avx512
@@ -218,10 +214,6 @@ target_include_directories(core_iaa
         PRIVATE $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/sources/include>
         PRIVATE $<TARGET_PROPERTY:qplcore_avx512,INTERFACE_INCLUDE_DIRECTORIES>)
 
-set_target_properties(core_iaa PROPERTIES
-        $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>
-        CXX_STANDARD 17)
-
 target_compile_options(core_iaa
         PRIVATE $<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS};
         $<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>>)
@@ -271,7 +263,6 @@ target_compile_definitions(middle_layer_lib
         PUBLIC $<$<BOOL:${EFFICIENT_WAIT}>:QPL_EFFICIENT_WAIT>
         PUBLIC QPL_BADARG_CHECK)
 
-set_target_properties(middle_layer_lib PROPERTIES CXX_STANDARD 17)
 set_source_files_properties(${GENERATED_PX_TABLES_SRC} PROPERTIES COMPILE_DEFINITIONS PLATFORM=0)
 set_source_files_properties(${GENERATED_AVX512_TABLES_SRC} PROPERTIES COMPILE_DEFINITIONS PLATFORM=2)
 
@@ -305,10 +296,6 @@ target_include_directories(_qpl
         PUBLIC $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include/>
         PRIVATE $<TARGET_PROPERTY:middle_layer_lib,INTERFACE_INCLUDE_DIRECTORIES>
         PRIVATE $<BUILD_INTERFACE:${QPL_SRC_DIR}/c_api>)
-
-set_target_properties(_qpl PROPERTIES
-        $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>
-        CXX_STANDARD 17)
 
 target_compile_options(_qpl
         PRIVATE $<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS};
