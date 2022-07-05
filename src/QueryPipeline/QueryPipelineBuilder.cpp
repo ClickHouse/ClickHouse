@@ -311,7 +311,7 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     Processors * collected_processors)
 {
     if (transform->getOutputs().size() != 1)
-        throw Exception("Merge transform must have exactly 1 output", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge transform must have exactly 1 output, got {}", transform->getOutputs().size());
 
     connect(*left->pipe.output_ports.front(), transform->getInputs().front());
     connect(*right->pipe.output_ports.front(), transform->getInputs().back());
@@ -323,7 +323,7 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     left->pipe.processors.emplace_back(transform);
 
     left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
-    left->pipe.holder = std::move(right->pipe.holder);
+    // left->pipe.holder = std::move(right->pipe.holder);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     return left;
