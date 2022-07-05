@@ -33,6 +33,7 @@ DROP TABLE IF EXISTS replicated_summing_merge_tree_with_sampling_with_list_of_co
 DROP TABLE IF EXISTS replicated_aggregating_merge_tree_with_sampling;
 
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE merge_tree
 	(d Date, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = MergeTree(d, (a, b), 111);
 CREATE TABLE collapsing_merge_tree

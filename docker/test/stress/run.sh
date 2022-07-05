@@ -42,6 +42,7 @@ function install_packages()
 function configure()
 {
     # install test configs
+    export USE_DATABASE_ORDINARY=1
     /usr/share/clickhouse-test/config/install.sh
 
     # we mount tests folder from repo to /usr/share
@@ -109,7 +110,8 @@ function stop()
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
-    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" ||:
+    echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
+    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 }
 
@@ -118,9 +120,10 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt ${1:-240} ]
+        if [ "$counter" -gt ${1:-120} ]
         then
             echo "Cannot start clickhouse-server"
+            echo -e "Cannot start clickhouse-server\tFAIL" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
@@ -284,11 +287,20 @@ then
 
     rm -rf /var/lib/clickhouse/*
 
+    # Make BC check more funny by forcing Ordinary engine for system database
+    # New version will try to convert it to Atomic on startup
+    mkdir /var/lib/clickhouse/metadata
+    echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
+
     # Install previous release packages
     install_packages previous_release_package_folder
 
     # Start server from previous release
     configure
+
+    # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
+    rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+
     start
 
     clickhouse-client --query="SELECT 'Server version: ', version()"

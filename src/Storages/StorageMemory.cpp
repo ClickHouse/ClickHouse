@@ -38,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 
@@ -479,24 +480,21 @@ namespace
     };
 }
 
-void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        BackupEntriesCollector::throwPartitionsNotSupported(getStorageID(), getName());
-
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
     backup_entries_collector.addBackupEntries(
         std::make_shared<MemoryBackupEntriesBatch>(getInMemoryMetadataPtr(), data.get(), data_path_in_backup, max_compress_block_size)
             ->getBackupEntries());
 }
 
-void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
-
     auto backup = restorer.getBackup();
-    if (!restorer.isNonEmptyTableAllowed() && total_size_bytes && backup->hasFiles(data_path_in_backup))
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed() && total_size_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     restorer.addDataRestoreTask(
@@ -514,6 +512,11 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     IndexForNativeFormat index;
     {
         String index_file_path = data_path_in_backup_fs / "index.mrk";
+        if (!backup->fileExists(index_file_path))
+        {
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
+                            getStorageID().getFullTableName(), index_file_path);
+        }
         auto backup_entry = backup->readFile(index_file_path);
         auto in = backup_entry->getReadBuffer();
         CompressedReadBuffer compressed_in{*in};
@@ -526,6 +529,11 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     size_t new_rows = 0;
     {
         String data_file_path = data_path_in_backup_fs / "data.bin";
+        if (!backup->fileExists(data_file_path))
+        {
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
+                            getStorageID().getFullTableName(), data_file_path);
+        }
         auto backup_entry = backup->readFile(data_file_path);
         std::unique_ptr<ReadBuffer> in = backup_entry->getReadBuffer();
         std::optional<Poco::TemporaryFile> temp_data_copy;

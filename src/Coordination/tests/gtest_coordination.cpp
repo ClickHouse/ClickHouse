@@ -27,6 +27,7 @@
 #include <Coordination/Changelog.h>
 #include <filesystem>
 #include <Common/SipHash.h>
+#include <Coordination/pathUtils.h>
 
 #include <Coordination/SnapshotableHashTable.h>
 
@@ -1954,6 +1955,84 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     }
 
     ASSERT_FALSE(get_committed_data());
+}
+
+TEST_P(CoordinationTest, TestListRequestTypes)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    KeeperStorage storage{500, "", true};
+
+    int64_t zxid = 0;
+
+    static constexpr std::string_view path = "/test";
+
+    const auto create_path = [&](bool is_ephemeral)
+    {
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        int new_zxid = ++zxid;
+        create_request->path = path;
+        create_request->is_sequential = true;
+        create_request->is_ephemeral = is_ephemeral;
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+
+        EXPECT_GE(responses.size(), 1);
+        const auto & create_response = dynamic_cast<ZooKeeperCreateResponse &>(*responses[0].response);
+        return create_response.path_created;
+    };
+
+    static constexpr size_t persistent_num = 5;
+    std::unordered_set<std::string> expected_persistent_children;
+    for (size_t i = 0; i < persistent_num; ++i)
+    {
+        expected_persistent_children.insert(getBaseName(create_path(false)).toString());
+    }
+    ASSERT_EQ(expected_persistent_children.size(), persistent_num);
+
+    static constexpr size_t ephemeral_num = 5;
+    std::unordered_set<std::string> expected_ephemeral_children;
+    for (size_t i = 0; i < ephemeral_num; ++i)
+    {
+        expected_ephemeral_children.insert(getBaseName(create_path(true)).toString());
+    }
+    ASSERT_EQ(expected_ephemeral_children.size(), ephemeral_num);
+
+    const auto get_children = [&](const auto list_request_type)
+    {
+        const auto list_request = std::make_shared<ZooKeeperFilteredListRequest>();
+        int new_zxid = ++zxid;
+        list_request->path = parentPath(StringRef{path}).toString();
+        list_request->list_request_type = list_request_type;
+        storage.preprocessRequest(list_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(list_request, 1, new_zxid);
+
+        EXPECT_GE(responses.size(), 1);
+        const auto & list_response = dynamic_cast<ZooKeeperListResponse &>(*responses[0].response);
+        return list_response.names;
+    };
+
+    const auto persistent_children = get_children(ListRequestType::PERSISTENT_ONLY);
+    EXPECT_EQ(persistent_children.size(), persistent_num);
+    for (const auto & child : persistent_children)
+    {
+        EXPECT_TRUE(expected_persistent_children.contains(child)) << "Missing persistent child " << child;
+    }
+
+    const auto ephemeral_children = get_children(ListRequestType::EPHEMERAL_ONLY);
+    EXPECT_EQ(ephemeral_children.size(), ephemeral_num);
+    for (const auto & child : ephemeral_children)
+    {
+        EXPECT_TRUE(expected_ephemeral_children.contains(child)) << "Missing ephemeral child " << child;
+    }
+
+    const auto all_children = get_children(ListRequestType::ALL);
+    EXPECT_EQ(all_children.size(), ephemeral_num + persistent_num);
+    for (const auto & child : all_children)
+    {
+        EXPECT_TRUE(expected_ephemeral_children.contains(child) || expected_persistent_children.contains(child)) << "Missing child " << child;
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
