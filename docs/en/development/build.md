@@ -164,3 +164,18 @@ ClickHouse is available in pre-built binaries and packages. Binaries are portabl
 They are built for stable, prestable and testing releases as long as for every commit to master and for every pull request.
 
 To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green check mark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
+
+## Faster builds for development: Split build configuration {#split-build}
+
+Normally, ClickHouse is statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that on every change the entire binary needs to be linked, which is slow and may be inconvenient for development. There is an alternative configuration which instead creates dynamically loaded shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
+```
+-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+```
+
+Note that the split build has several drawbacks:
+* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
+* Risk of segfault if you run any of the programs while rebuilding the project.
+* You cannot run the integration tests since they only work a single complete binary.
+* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
+
+[Original article](https://clickhouse.com/docs/en/development/build/) <!--hide-->
