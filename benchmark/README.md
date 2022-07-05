@@ -328,7 +328,14 @@ Advantages:
 - a benchmark for time-series scenarios;
 
 Disadvantages:
-- not applicable for scenarios with data analytics. 
+- not applicable for scenarios with data analytics.
+
+### Fair Database Benchmarks
+
+https://github.com/db-benchmarks/db-benchmarks
+
+A benchmark suite inspired by ClickHouse benchmarks.
+Used mostly to compare search engines: Elasticsearch and Manticore.
 
 ### STAC
 
