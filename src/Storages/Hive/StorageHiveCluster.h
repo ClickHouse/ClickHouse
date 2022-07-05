@@ -35,10 +35,12 @@ public:
         const String & comment_,
         const ASTPtr & partition_by_ast_,
         std::unique_ptr<HiveSettings> storage_settings_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool is_remote_);
 
     String getName() const override { return "HiveCluster"; }
     bool supportsIndexForIn() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
     bool mayBenefitFromIndexForIn(
         const ASTPtr & /* left_in_operand */,
         ContextPtr /* query_context */,
@@ -47,7 +49,7 @@ public:
         return true;
     }
 
-    bool isRemote() const override { return true; }
+    bool isRemote() const override { return is_remote; }
 
     void read(
         QueryPlan & query_plan_,
@@ -61,6 +63,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
     void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & alter_lock_holder) override;
 
@@ -74,7 +77,13 @@ private:
 
     std::shared_ptr<HiveSettings> storage_settings;
 
+    /// It's false when it's a storage instance created by table function 'hiveClusterLocalShard'
+    /// and in the read() use Context::getReadTaskCallback() to get tasks from the initiator node
+    bool is_remote;
+
     Poco::Logger * logger = &Poco::Logger::get("StorageHiveCluster");
+
+    ASTPtr rewriteQuery(const ASTPtr & query);
 };
 }
 
