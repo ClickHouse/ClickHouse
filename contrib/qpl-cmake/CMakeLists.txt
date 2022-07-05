@@ -1,8 +1,8 @@
 ## The Intel® QPL provides high performance implementations of data processing functions for existing hardware accelerator, and/or software path in case if hardware accelerator is not available.
-if (OS_LINUX AND ARCH_AMD64 AND (HAVE_AVX2 OR HAVE_AVX512) AND NOT BUILD_STANDALONE_KEEPER)
+if (OS_LINUX AND ARCH_AMD64 AND (HAVE_AVX2 OR HAVE_AVX512))
     option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QPL)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with avx2/avx512 support")
 endif()
 
 if (NOT ENABLE_QPL)
@@ -113,9 +113,11 @@ target_compile_options(isal PRIVATE
 target_compile_options(isal_asm PUBLIC "-I${QPL_SRC_DIR}/isal/include/"
                        PUBLIC "-I${QPL_SRC_DIR}/isal/igzip/"
                        PUBLIC "-I${QPL_SRC_DIR}/isal/crc/"
-                       PUBLIC "-DHAVE_AS_KNOWS_AVX512"
                        PUBLIC "-DAS_FEATURE_LEVEL=10"
                        PUBLIC "-DQPL_LIB")
+if (HAVE_AVX512)
+    target_compile_options(isal_asm PUBLIC "-DHAVE_AS_KNOWS_AVX512")
+endif()
 
 if (SANITIZE STREQUAL "undefined")
     get_target_property(target_options isal_asm COMPILE_OPTIONS)
@@ -323,4 +325,4 @@ target_link_libraries(_qpl
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)
-target_include_directories(_qpl PUBLIC "${QPL_PROJECT_DIR}/include")
+target_include_directories(_qpl SYSTEM BEFORE PUBLIC "${QPL_PROJECT_DIR}/include")

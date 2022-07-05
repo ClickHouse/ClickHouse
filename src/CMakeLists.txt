@@ -228,25 +228,11 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
-macro(remove_item_object_library name common_file)
-    if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-        list (REMOVE_ITEM dbms_sources ${common_file})
-    else ()
-        list (REMOVE_ITEM ${${name}_sources} ${common_file})
-    endif ()
-endmacro()
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
-if (NOT ENABLE_QPL)
-remove_item_object_library(clickhouse_compression Compression/CompressionCodecDeflate.cpp)
-else ()
-set_source_files_properties(
-    Compression/CompressionCodecDeflate.cpp
-    PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-endif ()
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
@@ -355,6 +341,12 @@ set_source_files_properties(
         Columns/ColumnDecimal.cpp
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
+
+if (ENABLE_QPL)
+set_source_files_properties(
+        Compression/CompressionCodecDeflate.cpp
+        PROPERTIES COMPILE_FLAGS "-mwaitpkg")
+endif ()
 
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
@@ -535,7 +527,6 @@ target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 if (TARGET ch_contrib::qpl)
 dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
-dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/qpl/include)
 endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
