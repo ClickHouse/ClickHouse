@@ -65,7 +65,7 @@ def get_previous_release(server_version):
                 + " server version"
             )
 
-        releases = [ReleaseInfo(release) for release releases_str]
+        releases = [ReleaseInfo(release) for release in releases_str]
         found, previous_release = find_previous_release(server_version, releases)
         page += 1
 
