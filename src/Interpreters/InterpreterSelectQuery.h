@@ -128,7 +128,7 @@ public:
     /// It will set shard_num and shard_count to the client_info
     void setProperClientInfo(size_t replica_num, size_t replica_count);
 
-    static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context);
+    static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context);
 
 private:
