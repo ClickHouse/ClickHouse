@@ -65,7 +65,7 @@ echo 'SELECT version()' | curl 'http://localhost:8123/' --data-binary @-
 
 ### Volumes
 
-Typically you may want to mount the following folders inside your container to archieve persistency:
+Typically you may want to mount the following folders inside your container to achieve persistency:
 
 * `/var/lib/clickhouse/` - main folder where ClickHouse stores the data
 * `/var/log/clickhouse-server/` - logs
@@ -87,7 +87,7 @@ You may also want to mount:
 
 ClickHouse has some advanced functionality, which requires enabling several [Linux capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html).
 
-It is optional and can be enabled using the following [docker command-line arguments](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities):
+These are optional and can be enabled using the following [docker command-line arguments](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities):
 
 ```bash
 docker run -d \
@@ -114,7 +114,7 @@ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /pa
 docker run --rm --user ${UID}:${GID} --name some-clickhouse-server --ulimit nofile=262144:262144 -v "$(pwd)/logs/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server
 ```
 
-When you use the image with local directories mounted, you probably would like to specify the user to maintain the proper file ownership. Use the `--user` argument and mount `/var/lib/clickhouse` and `/var/log/clickhouse-server` inside the container. Otherwise, the image will complain and not start.
+When you use the image with local directories mounted, you probably want to specify the user to maintain the proper file ownership. Use the `--user` argument and mount `/var/lib/clickhouse` and `/var/log/clickhouse-server` inside the container. Otherwise, the image will complain and not start.
 
 ### Start server from root (useful in case of userns enabled)
 
@@ -132,7 +132,7 @@ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLIC
 
 ## How to extend this image
 
-If you would like to do additional initialization in an image derived from this one, add one or more `*.sql`, `*.sql.gz`, or `*.sh` scripts under `/docker-entrypoint-initdb.d`. After the entrypoint calls `initdb` it will run any `*.sql` files, run any executable `*.sh` scripts, and source any non-executable `*.sh` scripts found in that directory to do further initialization before starting the service.
+To perform additional initialization in an image derived from this one, add one or more `*.sql`, `*.sql.gz`, or `*.sh` scripts under `/docker-entrypoint-initdb.d`. After the entrypoint calls `initdb`, it will run any `*.sql` files, run any executable `*.sh` scripts, and source any non-executable `*.sh` scripts found in that directory to do further initialization before starting the service.
 Also, you can provide environment variables `CLICKHOUSE_USER` & `CLICKHOUSE_PASSWORD` that will be used for clickhouse-client during initialization.
 
 For example, to add an additional user and database, add the following to `/docker-entrypoint-initdb.d/init-db.sh`:
@@ -150,3 +150,4 @@ EOSQL
 ## License
 
 View [license information](https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE) for the software contained in this image.
+
