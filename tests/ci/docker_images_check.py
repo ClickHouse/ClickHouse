@@ -210,6 +210,7 @@ def build_and_push_dummy_image(
 def build_and_push_one_image(
     image: DockerImage,
     version_string: str,
+    additional_cache: str,
     push: bool,
     child: bool,
 ) -> Tuple[bool, str]:
@@ -232,14 +233,23 @@ def build_and_push_one_image(
     if child:
         from_tag_arg = f"--build-arg FROM_TAG={version_string} "
 
+    cache_from = (
+        f"--cache-from type=registry,ref={image.repo}:{version_string} "
+        f"--cache-from type=registry,ref={image.repo}:latest"
+    )
+    if additional_cache:
+        cache_from = (
+            f"{cache_from} "
+            f"--cache-from type=registry,ref={image.repo}:{additional_cache}"
+        )
+
     with open(build_log, "wb") as bl:
         cmd = (
             "docker buildx build --builder default "
             f"--label build-url={GITHUB_RUN_URL} "
             f"{from_tag_arg}"
             f"--tag {image.repo}:{version_string} "
-            f"--cache-from type=registry,ref={image.repo}:{version_string} "
-            f"--cache-from type=registry,ref={image.repo}:latest "
+            f"{cache_from} "
             f"--cache-to type=inline,mode=max "
             f"{push_arg}"
             f"--progress plain {image.full_path}"
@@ -258,6 +268,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
+    additional_cache,
     push: bool,
     child: bool,
 ) -> List[Tuple[str, str, str]]:
@@ -265,7 +276,9 @@ def process_single_image(
     result = []
     for ver in versions:
         for i in range(5):
-            success, build_log = build_and_push_one_image(image, ver, push, child)
+            success, build_log = build_and_push_one_image(
+                image, ver, additional_cache, push, child
+            )
             if success:
                 result.append((image.repo + ":" + ver, build_log, "OK"))
                 break
@@ -282,17 +295,23 @@ def process_single_image(
 
 
 def process_image_with_parents(
-    image: DockerImage, versions: List[str], push: bool, child: bool = False
+    image: DockerImage,
+    versions: List[str],
+    additional_cache: str,
+    push: bool,
+    child: bool = False,
 ) -> List[Tuple[str, str, str]]:
     result = []  # type: List[Tuple[str,str,str]]
     if image.built:
         return result
 
     if image.parent is not None:
-        result += process_image_with_parents(image.parent, versions, push, False)
+        result += process_image_with_parents(
+            image.parent, versions, additional_cache, push, False
+        )
         child = True
 
-    result += process_single_image(image, versions, push, child)
+    result += process_single_image(image, versions, additional_cache, push, child)
     return result
 
 
@@ -417,8 +436,10 @@ def main():
     result_images = {}
     images_processing_result = []
     for image in changed_images:
+        # If we are in backport PR, then pr_info.release_pr is defined
+        # We use it as tag to reduce rebuilding time
         images_processing_result += process_image_with_parents(
-            image, image_versions, args.push
+            image, image_versions, pr_info.release_pr, args.push
         )
         result_images[image.repo] = result_version
 
