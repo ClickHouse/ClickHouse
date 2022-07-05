@@ -69,26 +69,16 @@ Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_sha
 }
 
 
-void BackupCoordinationLocal::addReplicatedAccessPath(const String & access_zk_path, const String & host_id, const String & file_path)
+void BackupCoordinationLocal::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
 {
     std::lock_guard lock{mutex};
-    auto & ref = replicated_access_paths[access_zk_path];
-    ref.file_paths.push_back(file_path);
-    ref.host_to_store_access = host_id;
+    replicated_access.addFilePath(access_zk_path, access_entity_type, host_id, file_path);
 }
 
-Strings BackupCoordinationLocal::getReplicatedAccessPaths(const String & access_zk_path, const String & host_id) const
+Strings BackupCoordinationLocal::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const
 {
     std::lock_guard lock{mutex};
-    auto it = replicated_access_paths.find(access_zk_path);
-    if (it == replicated_access_paths.end())
-        return {};
-
-    const auto & ref = it->second;
-    if (ref.host_to_store_access != host_id)
-        return {};
-
-    return ref.file_paths;
+    return replicated_access.getFilePaths(access_zk_path, access_entity_type, host_id);
 }
 
 

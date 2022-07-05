@@ -1,4 +1,5 @@
 #include <Backups/BackupCoordinationDistributed.h>
+#include <Access/Common/AccessEntityType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -182,7 +183,7 @@ void BackupCoordinationDistributed::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/repl_part_names", "");
     zookeeper->createIfNotExists(zookeeper_path + "/repl_mutations", "");
     zookeeper->createIfNotExists(zookeeper_path + "/repl_data_paths", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/repl_access_paths", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_access", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_names", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_infos", "");
     zookeeper->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
@@ -327,40 +328,48 @@ Strings BackupCoordinationDistributed::getReplicatedDataPaths(const String & tab
 }
 
 
-void BackupCoordinationDistributed::addReplicatedAccessPath(const String & access_zk_path, const String & host_id, const String & file_path)
+void BackupCoordinationDistributed::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_access_paths/" + escapeForFileName(access_zk_path);
+    String path = zookeeper_path + "/repl_access/" + escapeForFileName(access_zk_path);
     zookeeper->createIfNotExists(path, "");
-    zookeeper->createIfNotExists(path + "/" + escapeForFileName(file_path), "");
-
-    path += "/host";
-    auto code = zookeeper->tryCreate(path, host_id, zkutil::CreateMode::Persistent);
-    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-        throw zkutil::KeeperException(code, path);
-
-    if (code == Coordination::Error::ZNODEEXISTS)
-        zookeeper->set(path, host_id);
+    path += "/" + AccessEntityTypeInfo::get(access_entity_type).name;
+    zookeeper->createIfNotExists(path, "");
+    path += "/" + host_id;
+    zookeeper->createIfNotExists(path, file_path);
 }
 
-Strings BackupCoordinationDistributed::getReplicatedAccessPaths(const String & access_zk_path, const String & host_id) const
+Strings BackupCoordinationDistributed::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const
 {
+    std::lock_guard lock{mutex};
+    prepareReplicatedAccess();
+    return replicated_access->getFilePaths(access_zk_path, access_entity_type, host_id);
+}
+
+void BackupCoordinationDistributed::prepareReplicatedAccess() const
+{
+    if (replicated_access)
+        return;
+
+    replicated_access.emplace();
     auto zookeeper = get_zookeeper();
-
-    String path = zookeeper_path + "/repl_access_paths/" + escapeForFileName(access_zk_path);
-    String path2 = path + "/host";
-    if (zookeeper->get(path2) != host_id)
-        return {};
-
-    Strings children = zookeeper->getChildren(path);
-    Strings file_paths;
-    file_paths.reserve(children.size());
-    for (const String & child : children)
+    
+    String path = zookeeper_path + "/repl_access/";
+    for (const String & escaped_access_zk_path : zookeeper->getChildren(path))
     {
-        if (child != "host")
-            file_paths.push_back(unescapeForFileName(child));
+        String access_zk_path = unescapeForFileName(escaped_access_zk_path);
+        String path2 = path + "/" + escaped_access_zk_path;
+        for (const String & type_str : zookeeper->getChildren(path2))
+        {
+            AccessEntityType type = AccessEntityTypeInfo::parseType(type_str);
+            String path3 = path2 + "/" + type_str;
+            for (const String & host_id : zookeeper->getChildren(path3))
+            {
+                String file_path = zookeeper->get(path3 + "/" + host_id);
+                replicated_access->addFilePath(access_zk_path, type, host_id, file_path);
+            }
+        }
     }
-    return file_paths;
 }
 
 
