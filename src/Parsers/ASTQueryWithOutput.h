@@ -15,6 +15,7 @@ class ASTQueryWithOutput : public IAST
 {
 public:
     ASTPtr out_file;
+    bool is_stdout_enabled;
     ASTPtr format;
     ASTPtr settings_ast;
     ASTPtr compression;
