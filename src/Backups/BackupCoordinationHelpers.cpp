@@ -320,6 +320,34 @@ void BackupCoordinationReplicatedPartsAndMutations::prepare() const
 }
 
 
+/// Helper designed to be used in an implementation of the IBackupCoordination interface in the part related to replicated access storages.
+BackupCoordinationReplicatedAccess::BackupCoordinationReplicatedAccess() = default;
+BackupCoordinationReplicatedAccess::~BackupCoordinationReplicatedAccess() = default;
+
+void BackupCoordinationReplicatedAccess::addFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
+{
+    auto & ref = file_paths_by_zk_path[std::make_pair(access_zk_path, access_entity_type)];
+    ref.file_paths.emplace(file_path);
+
+    /// std::max() because the calculation must give the same result being repeated on a different replica.
+    ref.host_to_store_access = std::max(ref.host_to_store_access, host_id);
+}
+
+Strings BackupCoordinationReplicatedAccess::getFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const
+{
+    auto it = file_paths_by_zk_path.find(std::make_pair(access_zk_path, access_entity_type));
+    if (it == file_paths_by_zk_path.end())
+        return {};
+
+    auto & file_paths = it->second;
+    if (file_paths.host_to_store_access != host_id)
+        return {};
+
+    Strings res{file_paths.file_paths.begin(), file_paths.file_paths.end()};
+    return res;
+}
+
+
 /// Helps to wait until all hosts come to a specified stage.
 BackupCoordinationStatusSync::BackupCoordinationStatusSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
     : zookeeper_path(zookeeper_path_)

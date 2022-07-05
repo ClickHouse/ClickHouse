@@ -9,6 +9,8 @@
 
 namespace DB
 {
+enum class AccessEntityType;
+
 
 /// Helper designed to be used in an implementation of the IBackupCoordination interface in the part related to replicated tables.
 class BackupCoordinationReplicatedPartsAndMutations
@@ -70,6 +72,30 @@ private:
 
     std::map<String /* table_shared_id */, TableInfo> table_infos; /// Should be ordered because we need this map to be in the same order on every replica.
     mutable bool prepared = false;
+};
+
+
+/// Helper designed to be used in an implementation of the IBackupCoordination interface in the part related to replicated access storages.
+class BackupCoordinationReplicatedAccess
+{
+public:
+    BackupCoordinationReplicatedAccess();
+    ~BackupCoordinationReplicatedAccess();
+
+    /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
+    void addFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path);
+    Strings getFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const;
+
+private:
+    using ZkPathAndEntityType = std::pair<String, AccessEntityType>;
+
+    struct FilePathsAndHost
+    {
+        std::unordered_set<String> file_paths;
+        String host_to_store_access;
+    };
+
+    std::map<ZkPathAndEntityType, FilePathsAndHost> file_paths_by_zk_path;
 };
 
 

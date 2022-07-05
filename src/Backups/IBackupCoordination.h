@@ -6,7 +6,7 @@
 
 namespace DB
 {
-struct ReplicatedMergeTreeMutationEntry;
+enum class AccessEntityType;
 
 
 /// Keeps information about files contained in a backup.
@@ -59,8 +59,8 @@ public:
     virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
 
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
-    virtual void addReplicatedAccessPath(const String & access_zk_path, const String & host_id, const String & file_path) = 0;
-    virtual Strings getReplicatedAccessPaths(const String & access_zk_path, const String & host_id) const = 0;
+    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
  
     struct FileInfo
     {
