@@ -5,6 +5,8 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
+#include <Parsers/CommonParsers.h>
+
 namespace DB
 {
 
@@ -57,5 +59,46 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     return true;
 }
+
+bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKQLWithUnionQuery kql_p;
+    ASTPtr select;
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+
+    auto begin = pos;
+    auto paren_count = 0 ;
+    String kql_statement;
+
+    if (s_lparen.ignore(pos, expected))
+    {   
+        ++paren_count;
+        while (!pos->isEnd())
+        {
+            if (pos->type == TokenType::ClosingRoundBracket)
+                --paren_count;
+            if (pos->type == TokenType::OpeningRoundBracket)
+                ++paren_count;
+
+            if (paren_count == 0)
+                break;
+
+            kql_statement = kql_statement + " " + String(pos->begin,pos->end);
+            ++pos;
+        }
+
+        Tokens token_kql(kql_statement.c_str(), kql_statement.c_str() + kql_statement.size());
+        IParser::Pos pos_kql(token_kql, pos.max_depth);
+
+        if (kql_p.parse(pos_kql, select, expected))
+        {
+            node = select;
+            ++pos;
+            return true;
+        }
+    }
+    pos =  begin;
+    return false;
+};
 
 }
