@@ -334,7 +334,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 class ParserColumnDeclarationList : public IParserBase
 {
 public:
-    explicit ParserColumnDeclarationList(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
+    explicit ParserColumnDeclarationList(bool require_type_ = true, bool allow_null_modifiers_ = true, bool check_keywords_after_name_ = false)
         : require_type(require_type_)
         , allow_null_modifiers(allow_null_modifiers_)
         , check_keywords_after_name(check_keywords_after_name_)
