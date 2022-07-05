@@ -925,7 +925,6 @@ void StorageHive::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 void StorageHive::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & /*alter_lock_holder*/)
 {
     auto table_id = getStorageID();
-    checkAlterIsPossible(params, local_context);
     auto metadata_snapshot = getInMemoryMetadataPtr();
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
