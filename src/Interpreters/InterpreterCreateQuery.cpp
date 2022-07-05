@@ -988,6 +988,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
+
+        /// Compatibility setting which should be enabled by default on attach
+        /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
+        getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
