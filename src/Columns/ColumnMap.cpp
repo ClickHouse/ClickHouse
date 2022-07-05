@@ -99,7 +99,12 @@ void ColumnMap::insertData(const char *, size_t)
 void ColumnMap::insert(const Field & x)
 {
     const auto & map = DB::get<const Map &>(x);
-    nested->insert(Array(map.begin(), map.end()));
+
+    Array array;
+    for (size_t i = 0; i < map.size(); i += 2)
+        array.push_back(Tuple({map[i], map[i + 1]}));
+
+    nested->insert(array);
 }
 
 void ColumnMap::insertDefault()

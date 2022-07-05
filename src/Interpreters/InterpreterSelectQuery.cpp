@@ -284,67 +284,28 @@ static void checkAccessRightsForSelect(
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
-/// Parse additional filter for table in format 'table.name:expression'
-/// Examples: 'default.hits:UserID=12345', 'visits:UserID = 0 ? 1 : 0'
 static ASTPtr parseAdditionalFilterConditionForTable(
-    const char * start,
-    const char * end,
+    const Map & setting,
     const DatabaseAndTableWithAlias & target,
     const Context & context)
 {
-    const char delimiter = ':';
-
-    const char * pos = start;
-    for (; pos < end; ++pos)
-        if (*pos == delimiter)
-            break;
-
-    std::string_view table(start, pos - start);
-
-    if (pos == end)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "No table is specified for additional filter {}. Expected syntax: 'table:condition'",
-            table);
-
-    trim(table);
-
-    if ((table == target.table && context.getCurrentDatabase() == target.database) ||
-        (table == target.database + '.' + target.table))
+    for (size_t i = 0; i < setting.size(); ++i)
     {
-        /// Try to parse expression
-        ParserExpression parser;
-        const auto & settings = context.getSettingsRef();
-        return parseQuery(parser, pos + 1, end, "additional filter", settings.max_query_size, settings.max_parser_depth);
-    }
+        const auto & tuple = setting[i].safeGet<const Tuple &>();
+        auto & table = tuple.at(0).safeGet<String>();
+        auto & filter = tuple.at(1).safeGet<String>();
 
-    return nullptr;
-}
-
-static ASTPtr parseAdditionalFilterConditionForTable(
-    const std::string & setting,
-    const DatabaseAndTableWithAlias & target,
-    const Context & context)
-{
-    if (setting.empty())
-        return nullptr;
-
-    const char delimiter = ';';
-
-    const char * start = setting.data();
-    const char * end = start + setting.size();
-    for (const char * pos = start; pos < end; ++pos)
-    {
-        if (*pos == delimiter)
+        if ((table == target.table && context.getCurrentDatabase() == target.database) ||
+            (table == target.database + '.' + target.table))
         {
-            if (auto ast = parseAdditionalFilterConditionForTable(start, pos, target, context))
-                return ast;
-
-            start = pos + 1;
+            /// Try to parse expression
+            ParserExpression parser;
+            const auto & settings = context.getSettingsRef();
+            return parseQuery(
+                parser, filter.data(), filter.data() + filter.size(),
+                "additional filter", settings.max_query_size, settings.max_parser_depth);
         }
     }
-
-    if (start < end)
-        return parseAdditionalFilterConditionForTable(start, end, target, context);
 
     return nullptr;
 }
@@ -528,9 +489,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
 
-    if (!settings.additional_filters.value.empty() && storage && !joined_tables.tablesWithColumns().empty())
+    if (!settings.additional_table_filters.value.empty() && storage && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
-            settings.additional_filters, joined_tables.tablesWithColumns().front().table, *context);
+            settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
