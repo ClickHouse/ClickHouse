@@ -131,7 +131,7 @@ StoredObject MetadataStorageFromLocalDisk::createStorageObject(const std::string
         };
     }
 
-    return {blob_path, object_size, std::move(cache_hint_creator)};
+    return StoredObject(blob_path, object_size, std::move(cache_hint_creator));
 }
 
 uint32_t MetadataStorageFromLocalDisk::getHardlinkCount(const std::string & path) const

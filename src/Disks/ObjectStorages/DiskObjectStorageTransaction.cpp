@@ -313,14 +313,14 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         tx->createEmptyMetadataFile(to_path);
         auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
 
-        for (const auto & [blob_from, size, _] : source_blobs)
+        for (const auto & object_from : source_blobs)
         {
             auto blob_name = object_storage.generateBlobNameForPath(to_path);
             auto object_to = metadata_storage.createStorageObject(blob_name);
 
-            object_storage.copyObject(blob_from, object_to.path);
+            object_storage.copyObject(object_from, object_to);
 
-            tx->addBlobToMetadata(to_path, blob_name, size);
+            tx->addBlobToMetadata(to_path, blob_name, object_from.bytes_size);
 
             created_objects.push_back(object_to);
         }

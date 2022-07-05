@@ -61,12 +61,12 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::findLastRevision()
 
 int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path)
 {
-    const std::string path = source_path + SCHEMA_VERSION_OBJECT;
+    StoredObject object(fs::path(source_path) / SCHEMA_VERSION_OBJECT);
     int version = 0;
-    if (!object_storage->exists(path))
+    if (!object_storage->exists(object))
         return version;
 
-    auto buf = object_storage->readObject(path);
+    auto buf = object_storage->readObject(object);
     readIntText(version, *buf);
 
     return version;
@@ -74,8 +74,7 @@ int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStora
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int & version) const
 {
-    auto path = fs::path(disk->object_storage_root_path) / SCHEMA_VERSION_OBJECT;
-    StoredObject object{path};
+    StoredObject object(fs::path(disk->object_storage_root_path) / SCHEMA_VERSION_OBJECT);
 
     auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite);
     writeIntText(version, *buf);
@@ -85,7 +84,8 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int &
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const
 {
-    disk->object_storage->copyObject(key, key, metadata);
+    StoredObject object(key);
+    disk->object_storage->copyObject(object, object, metadata);
 }
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema(const String & path) const
@@ -431,11 +431,13 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
         disk->createDirectories(directoryPath(path));
         auto relative_key = shrinkKey(source_path, key);
         auto full_path = fs::path(disk->object_storage_root_path) / relative_key;
-        StoredObject object{full_path};
+
+        StoredObject object_to(full_path);
+        StoredObject object_from(key);
 
         /// Copy object if we restore to different bucket / path.
         if (source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->object_storage_root_path != source_path)
-            source_object_storage->copyObjectToAnotherObjectStorage(key, object, *disk->object_storage);
+            source_object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, *disk->object_storage);
 
         auto tx = disk->metadata_storage->createTransaction();
         tx->addBlobToMetadata(path, relative_key, meta.size_bytes);

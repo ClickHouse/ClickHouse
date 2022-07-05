@@ -139,7 +139,7 @@ StoredObjects MetadataStorageFromRemoteDisk::getStorageObjects(const std::string
 StoredObject MetadataStorageFromRemoteDisk::createStorageObject(const std::string & blob_name) const
 {
     auto object_path = fs::path(object_storage_root_path) / blob_name;
-    return { object_path, 0, [](const String & path){ return path; }};
+    return StoredObject(object_path, 0, [](const String & path){ return path; });
 }
 
 uint32_t MetadataStorageFromRemoteDisk::getHardlinkCount(const std::string & path) const

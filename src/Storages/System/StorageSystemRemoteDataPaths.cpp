@@ -73,7 +73,7 @@ Pipe StorageSystemRemoteDataPaths::read(
 
                     if (cache)
                     {
-                        auto cache_paths = cache->tryGetCachePaths(cache->hash(remote_path.path));
+                        auto cache_paths = cache->tryGetCachePaths(cache->hash(remote_path.getCacheHint()));
                         col_cache_paths->insert(Array(cache_paths.begin(), cache_paths.end()));
                     }
                     else
