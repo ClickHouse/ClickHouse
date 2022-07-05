@@ -1,8 +1,18 @@
 ## The Intel® QPL provides high performance implementations of data processing functions for existing hardware accelerator, and/or software path in case if hardware accelerator is not available.
+if (OS_LINUX AND ARCH_AMD64 AND (HAVE_AVX2 OR HAVE_AVX512) AND NOT BUILD_STANDALONE_KEEPER)
+    option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QPL)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64")
+endif()
+
+if (NOT ENABLE_QPL)
+    message(STATUS "Not using QPL")
+    return()
+endif()
 
 set (QPL_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl")
 set (QPL_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl/sources")
-set (QPL_BINARY_DIR "${ClickHouse_SOURCE_DIR}/build/contrib/qpl")
+set (QPL_BINARY_DIR "${ClickHouse_BINARY_DIR}/build/contrib/qpl")
 set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
 
 set (EFFICIENT_WAIT ON)
@@ -13,7 +23,7 @@ set (SANITIZE_THREADS OFF)
 set (LIB_FUZZING_ENGINE OFF)
 
 function(GetLibraryVersion _content _outputVar)
-    string(REGEX MATCHALL ".*Qpl VERSION+.* (.+).*LANGUAGES" VERSION_REGEX "${_content}")
+    string(REGEX MATCHALL "Qpl VERSION (.+) LANGUAGES" VERSION_REGEX "${_content}")
     SET(${_outputVar} ${CMAKE_MATCH_1} PARENT_SCOPE)
 endfunction()
 
@@ -81,9 +91,6 @@ set(ISAL_ASM_SRC ${QPL_SRC_DIR}/isal/igzip/igzip_body.asm
                  ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_01.asm
                  ${QPL_SRC_DIR}/isal/crc/crc32_iscsi_by16_10.asm)
 
-set(DISABLED_WARNINGS_FLAGS /wd4244 /wd4101 /wd4267 /wd4018 /wd4146 /wd4334 /wd4308)
-set(FEATURE_FLAGS -DHAVE_AS_KNOWS_AVX512 -DAS_FEATURE_LEVEL=10)
-
 # Adding ISA-L library target
 add_library(isal OBJECT ${ISAL_C_SRC})
 add_library(isal_asm OBJECT ${ISAL_ASM_SRC})
@@ -100,7 +107,6 @@ set_target_properties(isal PROPERTIES
 
 target_compile_options(isal PRIVATE
                        "$<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}>"
-                       "$<$<C_COMPILER_ID:MSVC>:/WX;${DISABLED_WARNINGS_FLAGS};${QPL_WINDOWS_TOOLCHAIN_REQUIRED_FLAGS}>"
                        "$<$<CONFIG:Debug>:>"
                        "$<$<CONFIG:Release>:>")
 
@@ -151,24 +157,16 @@ target_include_directories(qplcore_avx512
                            PRIVATE $<TARGET_PROPERTY:isal,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set_target_properties(qplcore_avx512 PROPERTIES
-        $<$<C_COMPILER_ID:MSVC>:C_STANDARD 18>
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>)
 
 target_link_libraries(qplcore_avx512 ${CMAKE_DL_LIBS} isal)
 
-if (WIN32)
-    target_compile_options(qplcore_avx512
-                           PRIVATE ${QPL_WINDOWS_TOOLCHAIN_REQUIRED_FLAGS}
-                           PRIVATE /arch:AVX512
-                           PRIVATE "$<$<CONFIG:Debug>:>"
-                           PRIVATE "$<$<CONFIG:Release>:-O2>")
-else ()
-    target_compile_options(qplcore_avx512
-                           PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
-                           PRIVATE -march=skylake-avx512
-                           PRIVATE "$<$<CONFIG:Debug>:>"
-                           PRIVATE "$<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>")
-endif ()
+target_compile_options(qplcore_avx512
+                        PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
+                        PRIVATE -march=skylake-avx512
+                        PRIVATE "$<$<CONFIG:Debug>:>"
+                        PRIVATE "$<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>")
+
 
 target_compile_definitions(qplcore_avx512 PUBLIC QPL_BADARG_CHECK)
 
@@ -189,22 +187,14 @@ target_include_directories(qplcore_px
                            PRIVATE $<TARGET_PROPERTY:isal,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set_target_properties(qplcore_px PROPERTIES
-        $<$<C_COMPILER_ID:MSVC>:C_STANDARD 18>
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>)
 
 target_link_libraries(qplcore_px isal ${CMAKE_DL_LIBS})
 
-if (WIN32)
-    target_compile_options(qplcore_px
-                           PRIVATE "$<$<CONFIG:Debug>:>"
-                           PRIVATE ${QPL_WINDOWS_TOOLCHAIN_REQUIRED_FLAGS}
-                           PRIVATE "$<$<CONFIG:Release>:-O2>")
-else ()
-    target_compile_options(qplcore_px
-                           PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
-                           PRIVATE "$<$<CONFIG:Debug>:>"
-                           PRIVATE "$<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>")
-endif ()
+target_compile_options(qplcore_px
+                        PRIVATE ${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS}
+                        PRIVATE "$<$<CONFIG:Debug>:>"
+                        PRIVATE "$<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>")
 
 target_compile_definitions(qplcore_px PUBLIC QPL_BADARG_CHECK)
 
@@ -227,21 +217,12 @@ target_include_directories(core_iaa
         PRIVATE $<TARGET_PROPERTY:qplcore_avx512,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set_target_properties(core_iaa PROPERTIES
-        $<$<C_COMPILER_ID:MSVC>:C_STANDARD 18>
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>
         CXX_STANDARD 17)
 
-if (WIN32)
-    modify_standard_language_flag(LANGUAGE_NAME "CXX"
-            FLAG_NAME "/GR"
-            NEW_FLAG_VALUE "-")
-endif ()
-
 target_compile_options(core_iaa
         PRIVATE $<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS};
-                                       $<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>>
-        PRIVATE $<$<C_COMPILER_ID:MSVC>:${QPL_WINDOWS_TOOLCHAIN_REQUIRED_FLAGS};
-                                        $<$<CONFIG:Release>:-O2>>)
+        $<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>>)
 
 target_compile_features(core_iaa PRIVATE c_std_11)
 
@@ -276,25 +257,14 @@ add_library(middle_layer_lib OBJECT
         ${GENERATED_AVX512_TABLES_SRC}
         ${MIDDLE_LAYER_SRC})
 
-if (WIN32)
-    modify_standard_language_flag(LANGUAGE_NAME "CXX"
-            FLAG_NAME "/GR"
-            NEW_FLAG_VALUE "-")
-endif ()
-
 target_compile_options(middle_layer_lib
         PRIVATE $<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS};
                                        ${QPL_LINUX_TOOLCHAIN_DYNAMIC_LIBRARY_FLAGS};
                                        $<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>>
-        PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU>:${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>
-        PRIVATE $<$<C_COMPILER_ID:MSVC>:${QPL_WINDOWS_TOOLCHAIN_REQUIRED_FLAGS};
-                                        ${QPL_WINDOWS_TOOLCHAIN_DYNAMIC_LIBRARY_FLAGS}
-                                        $<$<CONFIG:Release>:-O2>>
-        PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:${QPL_WINDOWS_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
+        PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU>:${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
 
 target_compile_definitions(middle_layer_lib
         PUBLIC QPL_VERSION="${QPL_VERSION}"
-        PUBLIC $<$<C_COMPILER_ID:MSVC>:_ENABLE_EXTENDED_ALIGNED_STORAGE>
         PUBLIC $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>
         PUBLIC $<$<BOOL:${EFFICIENT_WAIT}>:QPL_EFFICIENT_WAIT>
         PUBLIC QPL_BADARG_CHECK)
@@ -335,7 +305,6 @@ target_include_directories(_qpl
         PRIVATE $<BUILD_INTERFACE:${QPL_SRC_DIR}/c_api>)
 
 set_target_properties(_qpl PROPERTIES
-        $<$<C_COMPILER_ID:MSVC>:C_STANDARD 18>
         $<$<C_COMPILER_ID:GNU>:C_STANDARD 17>
         CXX_STANDARD 17)
 
@@ -343,17 +312,12 @@ target_compile_options(_qpl
         PRIVATE $<$<C_COMPILER_ID:GNU>:${QPL_LINUX_TOOLCHAIN_REQUIRED_FLAGS};
                                        ${QPL_LINUX_TOOLCHAIN_DYNAMIC_LIBRARY_FLAGS};
                                        $<$<CONFIG:Release>:-O3;-D_FORTIFY_SOURCE=2>>
-        PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU>:${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>
-        PRIVATE $<$<C_COMPILER_ID:MSVC>:${QPL_WINDOWS_TOOLCHAIN_REQUIRED_FLAGS};
-                                        ${QPL_WINDOWS_TOOLCHAIN_DYNAMIC_LIBRARY_FLAGS}
-                                        $<$<CONFIG:Release>:-O2>>
-        PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:${QPL_WINDOWS_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
+        PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU>:${QPL_LINUX_TOOLCHAIN_CPP_EMBEDDED_FLAGS}>)
 
 target_compile_definitions(_qpl
-        PUBLIC -DQPL_LIB
-        PUBLIC -DQPL_BADARG_CHECK
-        PUBLIC -DENABLE_QPL_COMPRESSION
-        PUBLIC $<$<C_COMPILER_ID:MSVC>:_ENABLE_EXTENDED_ALIGNED_STORAGE>)
+        PRIVATE -DQPL_LIB
+        PRIVATE -DQPL_BADARG_CHECK
+        PUBLIC -DENABLE_QPL_COMPRESSION)
 
 target_link_libraries(_qpl
         PRIVATE ${CMAKE_DL_LIBS})

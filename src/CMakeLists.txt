@@ -235,13 +235,12 @@ macro(remove_item_object_library name common_file)
         list (REMOVE_ITEM ${${name}_sources} ${common_file})
     endif ()
 endmacro()
-
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
-if (NOT ENABLE_QPL_COMPRESSION)
+if (NOT ENABLE_QPL)
 remove_item_object_library(clickhouse_compression Compression/CompressionCodecDeflate.cpp)
 else ()
 set_source_files_properties(
@@ -534,7 +533,7 @@ endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (ENABLE_QPL_COMPRESSION)
+if (TARGET ch_contrib::qpl)
 dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/qpl/include)
 endif ()
