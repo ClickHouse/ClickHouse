@@ -8188,7 +8188,15 @@ void StorageReplicatedMergeTree::backupData(
     /// First we generate backup entries in the same way as an ordinary MergeTree does.
     /// But then we don't add them to the BackupEntriesCollector right away,
     /// because we need to coordinate them with other replicas (other replicas can have better parts).
-    auto backup_entries = backupParts(backup_entries_collector.getContext(), "", partitions);
+    auto local_context = backup_entries_collector.getContext();
+
+    DataPartsVector data_parts;
+    if (partitions)
+        data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
+    else
+        data_parts = getVisibleDataPartsVector(local_context);
+
+    auto backup_entries = backupParts(data_parts, "");
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();
@@ -8232,6 +8240,20 @@ void StorageReplicatedMergeTree::backupData(
     /// Send our list of part names to the coordination (to compare with other replicas).
     coordination->addReplicatedPartNames(shared_id, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
 
+    /// Send a list of mutations to the coordination too (we need to find the mutations which are not finished for added part names).
+    {
+        std::vector<IBackupCoordination::MutationInfo> mutation_infos;
+        auto zookeeper = getZooKeeper();
+        Strings mutation_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "mutations");
+        mutation_infos.reserve(mutation_ids.size());
+        for (const auto & mutation_id : mutation_ids)
+        {
+            mutation_infos.emplace_back(
+                IBackupCoordination::MutationInfo{mutation_id, zookeeper->get(fs::path(zookeeper_path) / "mutations" / mutation_id)});
+        }
+        coordination->addReplicatedMutations(shared_id, getStorageID().getFullTableName(), getReplicaName(), mutation_infos);
+    }
+
     /// This task will be executed after all replicas have collected their parts and the coordination is ready to
     /// give us the final list of parts to add to the BackupEntriesCollector.
     auto post_collecting_task = [shared_id,
@@ -8258,7 +8280,16 @@ void StorageReplicatedMergeTree::backupData(
             for (const auto & data_path : data_paths_fs)
                 backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
         }
+
+        auto mutation_infos = coordination->getReplicatedMutations(shared_id, replica_name);
+        for (const auto & mutation_info : mutation_infos)
+        {
+            auto backup_entry = ReplicatedMergeTreeMutationEntry::parse(mutation_info.entry, mutation_info.id).backup();
+            for (const auto & data_path : data_paths_fs)
+                backup_entries_collector.addBackupEntry(data_path / "mutations" / (mutation_info.id + ".txt"), backup_entry);
+        }
     };
+
     backup_entries_collector.addPostTask(post_collecting_task);
 }
 

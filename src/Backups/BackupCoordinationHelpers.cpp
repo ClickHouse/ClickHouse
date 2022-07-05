@@ -1,5 +1,6 @@
 #include <Backups/BackupCoordinationHelpers.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
 #include <IO/ReadHelpers.h>
@@ -26,18 +27,15 @@ namespace
     };
 }
 
+using MutationInfo = IBackupCoordination::MutationInfo;
 
-class BackupCoordinationReplicatedPartNames::CoveredPartsFinder
+
+class BackupCoordinationReplicatedPartsAndMutations::CoveredPartsFinder
 {
 public:
     explicit CoveredPartsFinder(const String & table_name_for_logs_) : table_name_for_logs(table_name_for_logs_) {}
 
-    void addPartName(const String & new_part_name, const std::shared_ptr<const String> & replica_name)
-    {
-        addPartName(MergeTreePartInfo::fromPartName(new_part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING), replica_name);
-    }
-
-    void addPartName(MergeTreePartInfo && new_part_info, const std::shared_ptr<const String> & replica_name)
+    void addPartInfo(MergeTreePartInfo && new_part_info, const std::shared_ptr<const String> & replica_name)
     {
         auto new_min_block = new_part_info.min_block;
         auto new_max_block = new_part_info.max_block;
@@ -83,8 +81,7 @@ public:
             {
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Intersected parts detected in the table {}: {} on replica {} and {} on replica {}. It should be investigated",
-                    table_name_for_logs,
+                    "Intersected parts detected: {} on replica {} and {} on replica {}",
                     part.info.getPartName(),
                     *part.replica_name,
                     new_part_info.getPartName(),
@@ -153,19 +150,21 @@ private:
 };
 
 
-BackupCoordinationReplicatedPartNames::BackupCoordinationReplicatedPartNames() = default;
-BackupCoordinationReplicatedPartNames::~BackupCoordinationReplicatedPartNames() = default;
+BackupCoordinationReplicatedPartsAndMutations::BackupCoordinationReplicatedPartsAndMutations() = default;
+BackupCoordinationReplicatedPartsAndMutations::~BackupCoordinationReplicatedPartsAndMutations() = default;
 
-void BackupCoordinationReplicatedPartNames::addPartNames(
+void BackupCoordinationReplicatedPartsAndMutations::addPartNames(
     const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
-    if (part_names_prepared)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after getPartNames()");
+    if (prepared)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after preparing");
 
     auto & table_info = table_infos[table_shared_id];
+    table_info.table_name_for_logs = table_name_for_logs;
+
     if (!table_info.covered_parts_finder)
         table_info.covered_parts_finder = std::make_unique<CoveredPartsFinder>(table_name_for_logs);
 
@@ -175,10 +174,10 @@ void BackupCoordinationReplicatedPartNames::addPartNames(
     {
         const auto & part_name = part_name_and_checksum.part_name;
         const auto & checksum = part_name_and_checksum.checksum;
-        auto it = table_info.parts_replicas.find(part_name);
-        if (it == table_info.parts_replicas.end())
+        auto it = table_info.replicas_by_part_name.find(part_name);
+        if (it == table_info.replicas_by_part_name.end())
         {
-            it = table_info.parts_replicas.emplace(part_name, PartReplicas{}).first;
+            it = table_info.replicas_by_part_name.emplace(part_name, PartReplicas{}).first;
             it->second.checksum = checksum;
         }
         else
@@ -202,43 +201,122 @@ void BackupCoordinationReplicatedPartNames::addPartNames(
         /// `replica_names` should be ordered because we need this vector to be in the same order on every replica.
         replica_names.insert(
             std::upper_bound(replica_names.begin(), replica_names.end(), replica_name_ptr, LessReplicaName{}), replica_name_ptr);
-
-        table_info.covered_parts_finder->addPartName(part_name, replica_name_ptr);
     }
 }
 
-Strings BackupCoordinationReplicatedPartNames::getPartNames(const String & table_shared_id, const String & replica_name) const
+Strings BackupCoordinationReplicatedPartsAndMutations::getPartNames(const String & table_shared_id, const String & replica_name) const
 {
-    preparePartNames();
+    prepare();
+    
     auto it = table_infos.find(table_shared_id);
     if (it == table_infos.end())
         return {};
-    const auto & replicas_parts = it->second.replicas_parts;
-    auto it2 = replicas_parts.find(replica_name);
-    if (it2 == replicas_parts.end())
+    
+    const auto & part_names_by_replica_name = it->second.part_names_by_replica_name;
+    auto it2 = part_names_by_replica_name.find(replica_name);
+    if (it2 == part_names_by_replica_name.end())
         return {};
+    
     return it2->second;
 }
 
-void BackupCoordinationReplicatedPartNames::preparePartNames() const
+void BackupCoordinationReplicatedPartsAndMutations::addMutations(
+    const String & table_shared_id,
+    const String & table_name_for_logs,
+    const String & replica_name,
+    const std::vector<MutationInfo> & mutations)
 {
-    if (part_names_prepared)
+    if (prepared)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMutations() must not be called after preparing");
+
+    auto & table_info = table_infos[table_shared_id];
+    table_info.table_name_for_logs = table_name_for_logs;
+    for (const auto & [mutation_id, mutation_entry] : mutations)
+        table_info.mutations.emplace(mutation_id, mutation_entry);
+
+    /// std::max() because the calculation must give the same result being repeated on a different replica.
+    table_info.replica_name_to_store_mutations = std::max(table_info.replica_name_to_store_mutations, replica_name);
+}
+
+std::vector<MutationInfo>
+BackupCoordinationReplicatedPartsAndMutations::getMutations(const String & table_shared_id, const String & replica_name) const
+{
+    prepare();
+    
+    auto it = table_infos.find(table_shared_id);
+    if (it == table_infos.end())
+        return {};
+    
+    const auto & table_info = it->second;
+    if (table_info.replica_name_to_store_mutations != replica_name)
+        return {};
+
+    std::vector<MutationInfo> res;
+    for (const auto & [mutation_id, mutation_entry] : table_info.mutations)
+        res.emplace_back(MutationInfo{mutation_id, mutation_entry});
+    return res;
+}
+
+void BackupCoordinationReplicatedPartsAndMutations::prepare() const
+{
+    if (prepared)
         return;
 
     size_t counter = 0;
     for (const auto & table_info : table_infos | boost::adaptors::map_values)
     {
-        for (const auto & [part_name, part_replicas] : table_info.parts_replicas)
+        try
         {
-            if (table_info.covered_parts_finder->isCoveredByAnotherPart(part_name))
-                continue;
-            size_t chosen_index = (counter++) % part_replicas.replica_names.size();
-            const auto & chosen_replica_name = *part_replicas.replica_names[chosen_index];
-            table_info.replicas_parts[chosen_replica_name].push_back(part_name);
+            /// Remove parts covered by other parts.
+            for (const auto & [part_name, part_replicas] : table_info.replicas_by_part_name)
+            {
+                auto part_info = MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+                
+                auto & min_data_versions_by_partition = table_info.min_data_versions_by_partition;
+                auto it2 = min_data_versions_by_partition.find(part_info.partition_id);
+                if (it2 == min_data_versions_by_partition.end())
+                    min_data_versions_by_partition[part_info.partition_id] = part_info.getDataVersion();
+                else
+                    it2->second = std::min(it2->second, part_info.getDataVersion());
+
+                table_info.covered_parts_finder->addPartInfo(std::move(part_info), part_replicas.replica_names[0]);
+            }
+
+            for (const auto & [part_name, part_replicas] : table_info.replicas_by_part_name)
+            {
+                if (table_info.covered_parts_finder->isCoveredByAnotherPart(part_name))
+                    continue;
+                size_t chosen_index = (counter++) % part_replicas.replica_names.size();
+                const auto & chosen_replica_name = *part_replicas.replica_names[chosen_index];
+                table_info.part_names_by_replica_name[chosen_replica_name].push_back(part_name);
+            }
+
+            /// Remove finished or unrelated mutations.
+            std::unordered_map<String, String> unfinished_mutations;
+            for (const auto & [mutation_id, mutation_entry_str] : table_info.mutations)
+            {
+                auto mutation_entry = ReplicatedMergeTreeMutationEntry::parse(mutation_entry_str, mutation_id);
+                std::map<String, Int64> new_block_numbers;
+                for (const auto & [partition_id, block_number] : mutation_entry.block_numbers)
+                {
+                    auto it = table_info.min_data_versions_by_partition.find(partition_id);
+                    if ((it != table_info.min_data_versions_by_partition.end()) && (it->second < block_number))
+                        new_block_numbers[partition_id] = block_number;
+                }
+                mutation_entry.block_numbers = std::move(new_block_numbers);
+                if (!mutation_entry.block_numbers.empty())
+                    unfinished_mutations[mutation_id] = mutation_entry.toString();
+            }
+            table_info.mutations = unfinished_mutations;
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While checking data of table {}", table_info.table_name_for_logs);
+            throw;
         }
     }
 
-    part_names_prepared = true;
+    prepared = true;
 }
 
 

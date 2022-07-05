@@ -637,9 +637,8 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
         backup_entries_collector.getContext()->getAccessControl());
 
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
-    backup_coordination->addReplicatedAccessPath(zookeeper_path, backup_entry_with_path.first);
     String current_host_id = backup_entries_collector.getBackupSettings().host_id;
-    backup_coordination->setReplicatedAccessHost(zookeeper_path, current_host_id);
+    backup_coordination->addReplicatedAccessPath(zookeeper_path, current_host_id, backup_entry_with_path.first);
 
     backup_entries_collector.addPostTask(
         [backup_entry = backup_entry_with_path.second,
@@ -648,10 +647,7 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
          &backup_entries_collector,
          backup_coordination]
         {
-            if (current_host_id != backup_coordination->getReplicatedAccessHost(zookeeper_path))
-                return;
-
-            for (const String & path : backup_coordination->getReplicatedAccessPaths(zookeeper_path))
+            for (const String & path : backup_coordination->getReplicatedAccessPaths(zookeeper_path, current_host_id))
                 backup_entries_collector.addBackupEntry(path, backup_entry);
         });
 }

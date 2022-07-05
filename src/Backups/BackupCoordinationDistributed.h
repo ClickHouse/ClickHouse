@@ -26,14 +26,19 @@ public:
 
     Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const override;
 
+    void addReplicatedMutations(
+        const String & table_shared_id,
+        const String & table_name_for_logs,
+        const String & replica_name,
+        const std::vector<MutationInfo> & mutations) override;
+    
+    std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const override;
+
     void addReplicatedDataPath(const String & table_shared_id, const String & data_path) override;
     Strings getReplicatedDataPaths(const String & table_shared_id) const override;
 
-    void addReplicatedAccessPath(const String & access_zk_path, const String & file_path) override;
-    Strings getReplicatedAccessPaths(const String & access_zk_path) const override;
-
-    void setReplicatedAccessHost(const String & access_zk_path, const String & host_id) override;
-    String getReplicatedAccessHost(const String & access_zk_path) const override;
+    void addReplicatedAccessPath(const String & access_zk_path, const String & host_id, const String & file_path) override;
+    Strings getReplicatedAccessPaths(const String & access_zk_path, const String & host_id) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
@@ -53,7 +58,7 @@ public:
 private:
     void createRootNodes();
     void removeAllNodes();
-    void prepareReplicatedPartNames() const;
+    void prepareReplicatedPartsAndMutations() const;
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
@@ -61,7 +66,7 @@ private:
     BackupCoordinationStatusSync status_sync;
 
     mutable std::mutex mutex;
-    mutable std::optional<BackupCoordinationReplicatedPartNames> replicated_part_names;
+    mutable std::optional<BackupCoordinationReplicatedPartsAndMutations> replicated_parts_and_mutations;
 };
 
 }

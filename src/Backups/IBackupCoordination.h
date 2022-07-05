@@ -6,6 +6,8 @@
 
 namespace DB
 {
+struct ReplicatedMergeTreeMutationEntry;
+
 
 /// Keeps information about files contained in a backup.
 class IBackupCoordination
@@ -36,6 +38,18 @@ public:
     /// parts covered by another parts.
     virtual Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const = 0;
 
+    struct MutationInfo
+    {
+        String id;
+        String entry;
+    };
+
+    /// Adds information about mutations of a replicated table.
+    virtual void addReplicatedMutations(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations) = 0;
+
+    /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames(). 
+    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const = 0; 
+
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
     /// getReplicatedDataPaths().
@@ -45,13 +59,9 @@ public:
     virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
 
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
-    virtual void addReplicatedAccessPath(const String & access_zk_path, const String & file_path) = 0;
-    virtual Strings getReplicatedAccessPaths(const String & access_zk_path) const = 0;
-
-    /// Sets the host id of a host storing access entities of a ReplicatedAccessStorage to backup.
-    virtual void setReplicatedAccessHost(const String & access_zk_path, const String & host) = 0;
-    virtual String getReplicatedAccessHost(const String & access_zk_path) const = 0;
-
+    virtual void addReplicatedAccessPath(const String & access_zk_path, const String & host_id, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessPaths(const String & access_zk_path, const String & host_id) const = 0;
+ 
     struct FileInfo
     {
         String file_name;
