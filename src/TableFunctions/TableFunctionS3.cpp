@@ -13,11 +13,13 @@
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 
-#include <list>
-#include <map>
-#include <set>
-
+#include <array>
 #include <filesystem>
+#include <functional>
+#include <list>
+#include <set>
+#include <tuple>
+#include <utility>
 
 
 namespace DB
@@ -46,43 +48,42 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-        /// parameter -> (can_be_skipped, is_valid)
-        static std::map<String, std::pair<bool, std::function<bool (const String & value)>>> parameters_info =
-        {
-            {"access_key_id", {true, [](const String &){ return true; }}},
-            {"secret_access_key", {true, [](const String &){ return true; }}},
-            {"session_token", {true, [](const String &){ return true; }}},
-            {"format", {false, [](const String & value){ return FormatFactory::instance().getAllFormats().contains(value); }}},
-            {"structure", {false, [](const String &){ return true; }}},
-            {"compression_method", {false, [](const String &){ return true; }}}
-        };
+        using IsValid = std::function<bool (const String & value)>;
+        using ParameterInfo = std::tuple<bool, String, IsValid>; /// (can_be_skipped, parameter, is_valid).
+        using ParametersInfo = std::array<ParameterInfo, 6>;
+        static const ParametersInfo parameters_info =
+        {{
+            {true, "access_key_id", [](const String &){ return true; }},
+            {true, "secret_access_key", [](const String &){ return true; }},
+            {true, "session_token", [](const String &){ return true; }},
+            {false, "format", [](const String & value){ return FormatFactory::instance().getAllFormats().contains(value); }},
+            {false, "structure", [](const String &){ return true; }},
+            {false, "compression_method", [](const String &){ return true; }}
+        }};
 
-        std::list<std::pair<String, size_t>> matches;
-        std::set<std::pair<String, size_t>> wrong_matches;
+        using Match = std::pair<ParametersInfo::const_iterator, size_t>;
+        std::list<Match> matches;
+        std::set<Match> wrong_matches;
 
-        auto parameters_it = parameters_info.begin();
-        for (size_t index = 1; index < args.size(); )
+        for (Match match = {parameters_info.begin(), 1}; match.second < args.size(); )
         {
-            const auto & arg = args[index]->as<ASTLiteral &>().value.safeGet<String>();
-            if (!wrong_matches.contains({parameters_it->first, index}) && parameters_it->second.second(arg))
+            const auto & arg = args[match.second]->as<ASTLiteral &>().value.safeGet<String>();
+            if (match.first != parameters_info.end() && !wrong_matches.contains(match) && std::get<IsValid>(*match.first)(arg))
             {
                 /// Valid.
-                matches.push_back({parameters_it->first, index});
-                ++index;
-                ++parameters_it;
+                matches.emplace_back(match);
+                ++match.first;
+                ++match.second;
             }
-            else if (parameters_it->second.first && std::next(parameters_it) != parameters_info.end())
+            else if (match.first != parameters_info.end() && std::get<bool>(*match.first) && std::next(match.first) != parameters_info.end())
             {
                 /// Invalid and can be skipped.
-                ++parameters_it;
+                ++match.first;
             }
             else if (!matches.empty())
             {
                 /// Invalid and can't be skipped.
-                auto [last_parameter, last_index] = matches.back();
-                parameters_it = parameters_info.find(last_parameter);
-                index = last_index;
-                wrong_matches.emplace(std::move(last_parameter), last_index);
+                wrong_matches.emplace(match = std::move(matches.back()));
                 matches.pop_back();
             }
             else
@@ -92,7 +93,9 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             }
         }
 
-        std::map<String, size_t> args_to_idx(matches.begin(), matches.end());
+        std::map<String, size_t> args_to_idx;
+        for (const auto & [parameter_it, index] : matches)
+            args_to_idx.emplace(std::move(std::get<String>(*parameter_it)), index);
 
         /// This argument is always the first
         s3_configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
