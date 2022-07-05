@@ -54,7 +54,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = std::map<String, Field, std::less<String>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
+using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -1010,6 +1010,8 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
+
+String fieldTypeToString(Field::Types::Which type);
 
 }
 

@@ -86,4 +86,3 @@ SELECT * FROM WatchLog;
 -   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 -   [merge](../../../sql-reference/table-functions/merge.md) table function
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/merge/) <!--hide-->

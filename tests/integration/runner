@@ -346,6 +346,17 @@ if __name__ == "__main__":
             )
         except Exception as ex:
             print("Volume creationg failed, probably it already exists, exception", ex)
+        # TODO: this part cleans out stale volumes produced by container name
+        # randomizer, we should remove it after Sep 2022
+        try:
+            subprocess.check_call(
+                "docker volume rm $(docker volume ls -q | "
+                f"grep '{VOLUME_NAME}_.*_volume')",
+                shell=True,
+            )
+        except Exception as ex:
+            print("Probably, some stale volumes still there, just continue:", ex)
+        # TODO END
         dockerd_internal_volume = f"--volume={VOLUME_NAME}_volume:/var/lib/docker"
 
     # If enabled we kill and remove containers before pytest session run.
@@ -392,7 +403,11 @@ if __name__ == "__main__":
         command=args.command,
     )
 
-    containers = subprocess.check_output(f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}", shell=True, universal_newlines=True).splitlines()
+    containers = subprocess.check_output(
+        f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        shell=True,
+        universal_newlines=True,
+    ).splitlines()
     if containers:
         print(f"Trying to kill containers name={CONTAINER_NAME} ids={containers}")
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
