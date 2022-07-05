@@ -1,0 +1,9 @@
+performing test: select
+1	2	3
+1	2	3
+performing test: bad_query_incorrect_usage
+query failed
+performing test: bad_query_no_into_outfile
+query failed
+performing test: bad_query_file_exists
+query failed

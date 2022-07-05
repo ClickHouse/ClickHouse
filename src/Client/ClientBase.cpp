@@ -69,6 +69,7 @@
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <IO/TeeWriteBuffer.h>
 
 
 namespace fs = std::filesystem;
@@ -404,7 +405,6 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     processed_rows += block.rows();
-
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
@@ -415,7 +415,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive) && !select_into_file)
+    if (need_render_progress && (stdout_is_a_tty || is_interactive) && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput();
 
     try
@@ -435,7 +435,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
     {
-        if (select_into_file)
+        if (select_into_file && !select_into_file_and_stdout)
             std::cerr << "\r";
         progress_indication.writeProgress();
     }
@@ -512,7 +512,7 @@ try
         String current_format = format;
 
         select_into_file = false;
-
+        select_into_file_and_stdout = false;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -548,12 +548,23 @@ try
                             range.first,
                             range.second);
                 }
-
-                out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                    compression_method,
-                    compression_level
-                );
+                if (query_with_output->is_stdout_enabled)
+                {
+                    select_into_file_and_stdout = true;
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<TeeWriteBuffer>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                        compression_method,
+                        compression_level
+                    );
+                }
+                else
+                {
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                        compression_method,
+                        compression_level
+                    );
+                }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
                 if (is_interactive && is_default_format)
@@ -579,7 +590,7 @@ try
 
         /// It is not clear how to write progress intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
-        if (!need_render_progress || select_into_file)
+        if (!need_render_progress || (select_into_file && !select_into_file_and_stdout))
             output_format = global_context->getOutputFormatParallelIfPossible(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else

@@ -107,6 +107,13 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         query_with_output.children.push_back(query_with_output.out_file);
+
+        ParserKeyword s_stdout("AND STDOUT");
+        if (s_stdout.ignore(pos, expected))
+        {
+            query_with_output.is_stdout_enabled = true;
+        }
+
     }
 
     ParserKeyword s_format("FORMAT");
