@@ -46,7 +46,7 @@ TLDR: *All Benchmarks Are Bastards*.
 
 ## Rules and Contribution
 
-### How to add a new result
+### How To Add a New Result
 
 To introduce a new system, simply copy-paste one of the directories and edit the files accordingly:
 - `benchmark.sh`: this is the main script to run the benchmark on a fresh VM; Ubuntu 22.04 or newer should be used by default, or any other system if this is specified in the comments. The script is not necessarily can be run in a fully automated manner - it is recommended to always copy-paste the commands one by one and observe the results. For managed databases, if the setup requires clicking in the UI, write a `README.md` instead.
@@ -60,13 +60,26 @@ To introduce a new result for the existing system on different hardware configur
 
 To introduce a new result for an existing system with a different usage scenario, either copy the whole directory and name it differently (e.g. `timescaledb`, `timescaledb-compression`) or add a new file to the `results` directory.
 
-### Installation and fine-tuning
+### Installation And Fine-Tuning
 
 The systems can be installed or used in any reasonable way: from a binary distribution, from a Docker container, from the package manager, or compiled - whatever is more natural and simple or gives better results.
 
 It's better to use the default settings and avoid fine-tuning. Configuration changes can be applied if it is considered strictly necessary and documented.
 
 Fine-tuning and optimization for the benchmark are not recommended but allowed. In this case, add the results on vanilla configuration and fine-tuned configuration separately.
+
+### Data Loading
+
+The dataset is available in `CSV`, `TSV`, `JSONlines` and `Parquet` formats by the following links:
+
+https://datasets.clickhouse.com/hits_compatible/hits.csv.gz
+https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz
+https://datasets.clickhouse.com/hits_compatible/hits.json.gz
+https://datasets.clickhouse.com/hits_compatible/hits.parquet
+https://datasets.clickhouse.com/hits_compatible/athena/hits.parquet
+https://datasets.clickhouse.com/hits_compatible/athena_partitioned/hits_{0..99}.parquet
+
+To correctly compare insertion time, the dataset should be downloaded and decompressed before loading. The dataset should be loaded as a single file in the most straightforward way. Splitting the dataset for parallel loading is not recommended, as it will make comparisons more difficult. Splitting the dataset is possible if the system cannot eat it as a whole due to its limitations.
 
 ### Indexing
 
@@ -344,12 +357,16 @@ https://www.stacresearch.com/
 Disadvantages:
 - requires a paid membership. 
 
-### More
+### More...
 
 If you know more well-defined, realistic, and reproducible benchmarks for analytical workloads, please let me know.
 
 I collect every benchmark that includes ClickHouse [here](https://github.com/ClickHouse/ClickHouse/issues/22398).
 
-### References and Citation.
+## Additional Outcomes
+
+This benchmark can be used to collect the snippets for installation and data loading across a wide variety of DBMS. The usability and quality of the documentation can be compared. It has been used to improve the quality of the participants as demonstrated in [duckdb#3969](https://github.com/duckdb/duckdb/issues/3969), [timescaledb#4473](https://github.com/timescale/timescaledb/issues/4473), [mariadb-corporation#16](https://github.com/mariadb-corporation/mariadb-community-columnstore-docker/issues/16), [MonetDB#7309](https://github.com/duckdb/duckdb/issues/3969), [questdb#2272](https://github.com/questdb/questdb/issues/2272), [crate#12654](https://github.com/crate/crate/issues/12654), [LocustDB#152](https://github.com/cswinter/LocustDB/issues/152), etc; 
+
+### References and Citation
 
 Alexey Milovidov, 2022.
