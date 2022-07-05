@@ -27,10 +27,19 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-static size_t tryAddNewFilterStep(
-    QueryPlan::Node * parent_node,
-    QueryPlan::Nodes & nodes,
-    const Names & allowed_inputs)
+static bool filterColumnIsNotAmongAggregatesArguments(const AggregateDescriptions & aggregates, const std::string & filter_column_name)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        const auto & argument_names = aggregate.argument_names;
+        if (std::find(argument_names.begin(), argument_names.end(), filter_column_name) != argument_names.end())
+            return false;
+    }
+    return true;
+}
+
+static size_t
+tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs, bool can_remove_filter = true)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
 
@@ -62,11 +71,6 @@ static size_t tryAddNewFilterStep(
     /// Filter column was replaced to constant.
     const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
 
-    if (!filter_node || filter_is_constant)
-        /// This means that all predicates of filter were pushed down.
-        /// Replace current actions to expression, as we don't need to filter anything.
-        parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
-
     /// Add new Filter step before Aggregating.
     /// Expression/Filter -> Aggregating -> Something
     auto & node = nodes.emplace_back();
@@ -77,19 +81,29 @@ static size_t tryAddNewFilterStep(
     /// New filter column is the first one.
     auto split_filter_column_name = (*split_filter->getIndex().begin())->result_name;
     node.step = std::make_unique<FilterStep>(
-        node.children.at(0)->step->getOutputStream(), std::move(split_filter), std::move(split_filter_column_name), true);
+        node.children.at(0)->step->getOutputStream(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
+
+    if (auto * transforming_step = dynamic_cast<ITransformingStep *>(child.get()))
+    {
+        transforming_step->updateInputStream(node.step->getOutputStream());
+    }
+    else
+    {
+        if (auto * join = typeid_cast<JoinStep *>(child.get()))
+            join->updateLeftStream(node.step->getOutputStream());
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "We are trying to push down a filter through a step for which we cannot update input stream");
+    }
+
+    if (!filter_node || filter_is_constant)
+        /// This means that all predicates of filter were pushed down.
+        /// Replace current actions to expression, as we don't need to filter anything.
+        parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
+    else
+        filter->updateInputStream(child->getOutputStream());
 
     return 3;
-}
-
-static Names getAggregatingKeys(const Aggregator::Params & params)
-{
-    Names keys;
-    keys.reserve(params.keys.size());
-    for (auto pos : params.keys)
-        keys.push_back(params.src_header.getByPosition(pos).name);
-
-    return keys;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
@@ -112,9 +126,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
         const auto & params = aggregating->getParams();
-        Names keys = getAggregatingKeys(params);
+        const auto & keys = params.keys;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys))
+        const bool filter_column_is_not_among_aggregation_keys
+            = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
+        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys
+            && filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys, can_remove_filter))
             return updated_steps;
     }
 
@@ -213,7 +232,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 allowed_keys.push_back(name);
             }
 
-            if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys))
+            const bool can_remove_filter
+                = std::find(source_columns.begin(), source_columns.end(), filter->getFilterColumnName()) == source_columns.end();
+            if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys, can_remove_filter))
                 return updated_steps;
         }
     }
