@@ -3,11 +3,11 @@
 #if USE_AWS_S3
 
 #include <Storages/StorageS3Cluster.h>
+#include <Storages/StorageS3.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <DataTypes/DataTypeString.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <IO/S3Common.h>
-#include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
@@ -17,7 +17,6 @@
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 
 #include "registerTableFunctions.h"
@@ -65,7 +64,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
         throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// This arguments are always the first
-    configuration.cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
 
     if (!context->tryGetCluster(configuration.cluster_name))
         throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", configuration.cluster_name);
