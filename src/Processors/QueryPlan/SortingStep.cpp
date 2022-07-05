@@ -159,22 +159,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     }
     else if (type == Type::Full)
     {
-        if (input_streams.back().sort_mode == DataStream::SortMode::Chunk
-            && input_streams.back().sort_description == result_description)
-        {
-            assert(pipeline.getNumStreams() > 1);
-
-            auto transform = std::make_shared<MergingSortedTransform>(
-                    pipeline.getHeader(),
-                    pipeline.getNumStreams(),
-                    result_description,
-                    max_block_size,
-                    limit);
-
-            pipeline.addTransform(std::move(transform));
-            return;
-        }
-
         pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -192,7 +176,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<LimitsCheckingTransform>(header, limits);
+            auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);
+            return transform;
         });
 
         bool increase_sort_description_compile_attempts = true;

@@ -5,8 +5,9 @@
 
 namespace DB
 {
-
-/// rewrite (1) to (2)
+///
+/// Remove outer braces in ORDER BY
+/// For example, rewrite (1) to (2)
 /// (1) ... ORDER BY (a, b)
 /// │    ExpressionList (children 1)              │
 /// │     OrderByElement (children 1)             │

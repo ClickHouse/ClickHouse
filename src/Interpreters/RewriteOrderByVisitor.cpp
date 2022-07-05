@@ -4,7 +4,8 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 
-namespace DB {
+namespace DB
+{
 
 void RewriteOrderBy::visit(ASTPtr & ast, Data &)
 {
@@ -33,7 +34,10 @@ void RewriteOrderBy::visit(ASTPtr & ast, Data &)
         auto new_order_by = std::make_shared<ASTExpressionList>();
         for (const auto & identifier : inner_list->children)
         {
+            // clone w/o children
             auto clone = std::make_shared<ASTOrderByElement>(*order_by_elem);
+            clone->children.clear();
+
             clone->children.emplace_back(identifier);
             new_order_by->children.emplace_back(clone);
         }
