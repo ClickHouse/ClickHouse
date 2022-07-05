@@ -1,3 +1,4 @@
+#include <mutex>
 #include <Storages/Hive/HiveFile.h>
 
 #if USE_HIVE
@@ -26,15 +27,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 #define THROW_ARROW_NOT_OK(status)                                     \
     do                                                                 \
     {                                                                  \
-        if (const ::arrow::Status & _s = (status); !_s.ok())                   \
+        if (const ::arrow::Status & _s = (status); !_s.ok())           \
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
-
 
 template <class FieldType, class StatisticsType>
 Range createRangeFromOrcStatistics(const StatisticsType * stats)
@@ -353,6 +354,65 @@ std::optional<size_t> HiveParquetFile::getRowsImpl()
 
     auto meta = reader->parquet_reader()->metadata();
     return meta->num_rows();
+}
+
+HiveFileFactory & HiveFileFactory::instance()
+{
+    static HiveFileFactory instance;
+    static std::once_flag init_flag;
+    std::call_once(init_flag, []() { registerHiveFileCreators(instance); });
+
+    return instance;
+}
+
+HiveFilePtr HiveFileFactory::createFile(
+        const String & format_name,
+        const FieldVector & fields,
+        const String & namenode_url,
+        const String & path,
+        UInt64 ts,
+        size_t size,
+        const NamesAndTypesList & index_names_and_types,
+        const std::shared_ptr<HiveSettings> & hive_settings,
+        ContextPtr context)
+{
+    auto it = creators.find(format_name);
+    if (it == creators.end())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported file format {}", format_name);
+    return it->second(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
+}
+
+void HiveFileFactory::registerHiveFileCreators(HiveFileFactory & instance)
+{
+    instance.creators[IHiveFile::CH_HIVE_TEXT_FORAMT] = [](const FieldVector & fields,
+                                       const String & namenode_url,
+                                       const String & path,
+                                       UInt64 ts,
+                                       size_t size,
+                                       const NamesAndTypesList & index_names_and_types,
+                                       const std::shared_ptr<HiveSettings> & hive_settings,
+                                       ContextPtr context)
+    { return std::make_shared<HiveTextFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context); };
+
+    instance.creators[IHiveFile::CH_ORC_FORAMT] = [](const FieldVector & fields,
+                                       const String & namenode_url,
+                                       const String & path,
+                                       UInt64 ts,
+                                       size_t size,
+                                       const NamesAndTypesList & index_names_and_types,
+                                       const std::shared_ptr<HiveSettings> & hive_settings,
+                                       ContextPtr context)
+    { return std::make_shared<HiveORCFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context); };
+
+    instance.creators[IHiveFile::CH_PARQUET_FORMAT] = [](const FieldVector & fields,
+                                       const String & namenode_url,
+                                       const String & path,
+                                       UInt64 ts,
+                                       size_t size,
+                                       const NamesAndTypesList & index_names_and_types,
+                                       const std::shared_ptr<HiveSettings> & hive_settings,
+                                       ContextPtr context)
+    { return std::make_shared<HiveParquetFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context); };
 }
 
 }

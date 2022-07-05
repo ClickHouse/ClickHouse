@@ -35,6 +35,7 @@ void registerTableFunctions()
 
 #if USE_HIVE
     registerTableFunctionHive(factory);
+    registerTableFunctionHiveCluster(factory);
 #endif
 
     registerTableFunctionODBC(factory);

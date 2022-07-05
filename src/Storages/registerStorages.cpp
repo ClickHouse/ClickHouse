@@ -41,6 +41,7 @@ void registerStorageHDFS(StorageFactory & factory);
 
 #if USE_HIVE
 void registerStorageHive(StorageFactory & factory);
+void registerStorageHiveCluster(StorageFactory & factory);
 #endif
 
 #endif
@@ -121,6 +122,7 @@ void registerStorages()
 
     #if USE_HIVE
     registerStorageHive(factory);
+    registerStorageHiveCluster(factory);
     #endif
 
     #endif
