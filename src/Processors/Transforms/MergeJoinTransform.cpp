@@ -320,9 +320,9 @@ static void prepareChunk(Chunk & chunk)
 void MergeJoinAlgorithm::initialize(Inputs inputs)
 {
     if (inputs.size() != 2)
-        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two inputs  arerequired, got {}", inputs.size());
 
-    LOG_DEBUG(log, "MergeJoinAlgorithm initialize, number of inputs: {}", inputs.size());
+    LOG_DEBUG(log, "Initialize, number of inputs: {}", inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         assert(inputs[i].chunk.getNumColumns() == cursors[i]->sampleBlock().columns());
@@ -861,7 +861,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.onFinish(total_stopwatch.elapsedSeconds());
+    algorithm.logElapsed(total_stopwatch.elapsedSeconds(), true);
 }
 
 }
