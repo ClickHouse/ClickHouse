@@ -306,7 +306,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.attributes.push_back(Tuple{"db.statement", elem.query});
         span.attributes.push_back(Tuple{"clickhouse.query_id", elem.client_info.current_query_id});
         span.attributes.push_back(Tuple{"clickhouse.exception", elem.exception});
-        span.attributes.push_back(Tuple{"clickhouse.exception_code", elem.exception_code});
+        span.attributes.push_back(Tuple{"clickhouse.exception_code", toString(elem.exception_code)});
         if (!context->query_trace_context.tracestate.empty())
         {
             span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
