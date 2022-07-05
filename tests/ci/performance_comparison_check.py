@@ -126,6 +126,14 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
+    check_name_prefix = (
+        check_name_with_group.lower()
+        .replace(" ", "_")
+        .replace("(", "_")
+        .replace(")", "_")
+        .replace(",", "_")
+    )
+
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     # with RamDrive(ramdrive_path, ramdrive_size):
@@ -161,6 +169,8 @@ if __name__ == "__main__":
             "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
             "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
             "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
+            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
+            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
         }
     )
 
@@ -186,13 +196,6 @@ if __name__ == "__main__":
         "runlog.log": run_log_path,
     }
 
-    check_name_prefix = (
-        check_name_with_group.lower()
-        .replace(" ", "_")
-        .replace("(", "_")
-        .replace(")", "_")
-        .replace(",", "_")
-    )
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
     s3_helper = S3Helper("https://s3.amazonaws.com")
     uploaded = {}  # type: Dict[str, str]

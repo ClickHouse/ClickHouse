@@ -1204,7 +1204,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     as select
         $PR_TO_TEST :: UInt32 AS pull_request_number,
         '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
-        'Performance' :: LowCardinality(String) AS check_name,
+        '${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME:-Performance}' :: LowCardinality(String) AS check_name,
         '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' :: LowCardinality(String) AS check_status,
         -- TODO toDateTime() can't parse output of 'date', so no time for now.
         (($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000) :: UInt64 AS check_duration_ms,
@@ -1226,15 +1226,15 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         select '' test_name,
             '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
             0 test_duration_ms,
-            'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
+            'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#fail1' report_url
         union all
             select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
-                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.'
                     || test || '.' || toString(query_index) report_url
             from queries where changed_fail != 0 and diff > 0
         union all
             select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
-                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.'
                     || test || '.' || toString(query_index) report_url
             from queries where unstable_fail != 0
     )
