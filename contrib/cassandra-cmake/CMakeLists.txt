@@ -1,6 +1,6 @@
-option(ENABLE_CASSANDRA "Enable Cassandra" ${ENABLE_LIBRARIES})
+option(CLICKHOUSE_ENABLE_CASSANDRA "Enable Cassandra" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_CASSANDRA)
+if (NOT CLICKHOUSE_ENABLE_CASSANDRA)
     message(STATUS "Not using cassandra")
     return()
 endif()

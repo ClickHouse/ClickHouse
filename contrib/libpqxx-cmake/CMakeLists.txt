@@ -1,6 +1,6 @@
-option(ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
+option(CLICKHOUSE_ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_LIBPQXX)
+if (NOT CLICKHOUSE_ENABLE_LIBPQXX)
     message(STATUS "Not using libpqxx")
     return()
 endif()

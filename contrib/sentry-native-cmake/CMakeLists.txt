@@ -1,10 +1,10 @@
 if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES AND NOT (OS_DARWIN AND COMPILER_CLANG))
-    option (ENABLE_SENTRY "Enable Sentry" ${ENABLE_LIBRARIES})
+    option (CLICKHOUSE_ENABLE_SENTRY "Enable Sentry" ${ENABLE_LIBRARIES})
 else()
-    option (ENABLE_SENTRY "Enable Sentry" OFF)
+    option (CLICKHOUSE_ENABLE_SENTRY "Enable Sentry" OFF)
 endif()
 
-if (NOT ENABLE_SENTRY)
+if (NOT CLICKHOUSE_ENABLE_SENTRY)
     message(STATUS "Not using sentry")
     return()
 endif()

@@ -1,10 +1,10 @@
 if (OS_LINUX)
-    option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
+    option(CLICKHOUSE_ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
 else ()
-    option(ENABLE_ICU "Enable ICU" 0)
+    option(CLICKHOUSE_ENABLE_ICU "Enable ICU" 0)
 endif ()
 
-if (NOT ENABLE_ICU)
+if (NOT CLICKHOUSE_ENABLE_ICU)
     message(STATUS "Not using icu")
     return()
 endif()

@@ -1,6 +1,6 @@
-option (ENABLE_LDAP "Enable LDAP" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_LDAP "Enable LDAP" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_LDAP)
+if (NOT CLICKHOUSE_ENABLE_LDAP)
     message(STATUS "Not using ldap")
     return()
 endif()

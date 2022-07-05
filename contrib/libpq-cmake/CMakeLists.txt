@@ -1,4 +1,4 @@
-if (NOT ENABLE_LIBPQXX)
+if (NOT CLICKHOUSE_ENABLE_LIBPQXX)
     return()
 endif()
 

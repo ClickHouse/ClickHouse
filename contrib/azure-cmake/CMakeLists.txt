@@ -1,6 +1,6 @@
-option (ENABLE_AZURE_BLOB_STORAGE "Enable Azure blob storage" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_AZURE_BLOB_STORAGE "Enable Azure blob storage" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_AZURE_BLOB_STORAGE)
+if (NOT CLICKHOUSE_ENABLE_AZURE_BLOB_STORAGE)
     message(STATUS "Not using Azure blob storage")
     return()
 endif()

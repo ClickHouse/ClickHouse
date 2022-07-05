@@ -1,5 +1,5 @@
-option(ENABLE_MINIZIP "Enable minizip-ng the zip manipulation library" ${ENABLE_LIBRARIES})
-if (NOT ENABLE_MINIZIP)
+option(CLICKHOUSE_ENABLE_MINIZIP "Enable minizip-ng the zip manipulation library" ${ENABLE_LIBRARIES})
+if (NOT CLICKHOUSE_ENABLE_MINIZIP)
     message (STATUS "Not using minizip-ng")
     return()
 endif()
@@ -52,7 +52,7 @@ if(MZ_ZLIB)
 endif()
 
 # Check if bzip2 is present
-set(MZ_BZIP2 ${ENABLE_BZIP2})
+set(MZ_BZIP2 ${CLICKHOUSE_ENABLE_BZIP2})
 if(MZ_BZIP2)
     # Use bzip2 from ClickHouse contrib
     list(APPEND MINIZIP_LIB ch_contrib::bzip2)

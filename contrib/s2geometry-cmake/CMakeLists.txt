@@ -1,6 +1,6 @@
-option(ENABLE_S2_GEOMETRY "Enable S2 geometry library" ${ENABLE_LIBRARIES})
+option(CLICKHOUSE_ENABLE_S2_GEOMETRY "Enable S2 geometry library" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_S2_GEOMETRY)
+if (NOT CLICKHOUSE_ENABLE_S2_GEOMETRY)
     message(STATUS "Not using S2 geometry")
     return()
 endif()

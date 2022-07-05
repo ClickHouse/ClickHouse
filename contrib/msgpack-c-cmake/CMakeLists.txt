@@ -1,6 +1,6 @@
-option (ENABLE_MSGPACK "Enable msgpack library" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_MSGPACK "Enable msgpack library" ${ENABLE_LIBRARIES})
 
-if(NOT ENABLE_MSGPACK)
+if(NOT CLICKHOUSE_ENABLE_MSGPACK)
     message(STATUS "Not using msgpack")
     return()
 endif()

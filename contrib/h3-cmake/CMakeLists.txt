@@ -1,6 +1,6 @@
-option (ENABLE_H3 "Enable H3" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_H3 "Enable H3" ${ENABLE_LIBRARIES})
 
-if(NOT ENABLE_H3)
+if(NOT CLICKHOUSE_ENABLE_H3)
     message(STATUS "Not using H3")
     return()
 endif()

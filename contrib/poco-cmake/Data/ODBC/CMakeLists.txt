@@ -1,4 +1,4 @@
-if (ENABLE_ODBC)
+if (CLICKHOUSE_ENABLE_ODBC)
     if (NOT TARGET ch_contrib::unixodbc)
         message(FATAL_ERROR "Configuration error: unixodbc is not a target")
     endif()

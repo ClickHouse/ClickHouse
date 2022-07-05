@@ -1,4 +1,4 @@
-if (NOT ENABLE_KAFKA)
+if (NOT CLICKHOUSE_ENABLE_KAFKA)
     message(STATUS "Not using kafka")
     return()
 endif()

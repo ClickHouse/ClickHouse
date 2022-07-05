@@ -1,6 +1,6 @@
-option (ENABLE_CURL "Enable curl" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_CURL "Enable curl" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_CURL)
+if (NOT CLICKHOUSE_ENABLE_CURL)
     message(STATUS "Not using curl")
     return()
 endif()

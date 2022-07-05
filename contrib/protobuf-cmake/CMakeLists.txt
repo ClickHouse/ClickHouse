@@ -1,6 +1,6 @@
-option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
+option(CLICKHOUSE_ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
 
-if(NOT ENABLE_PROTOBUF)
+if(NOT CLICKHOUSE_ENABLE_PROTOBUF)
   message(STATUS "Not using protobuf")
   return()
 endif()

@@ -1,6 +1,6 @@
-option (ENABLE_CAPNP "Enable Cap'n Proto" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_CAPNP "Enable Cap'n Proto" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_CAPNP)
+if (NOT CLICKHOUSE_ENABLE_CAPNP)
     message(STATUS "Not using Cap'n Proto library")
     return()
 endif()

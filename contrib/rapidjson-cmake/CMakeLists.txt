@@ -1,6 +1,6 @@
-option(ENABLE_RAPIDJSON "Use rapidjson" ${ENABLE_LIBRARIES})
+option(CLICKHOUSE_ENABLE_RAPIDJSON "Use rapidjson" ${ENABLE_LIBRARIES})
 
-if(NOT ENABLE_RAPIDJSON)
+if(NOT CLICKHOUSE_ENABLE_RAPIDJSON)
     message(STATUS "Not using rapidjson")
     return()
 endif()

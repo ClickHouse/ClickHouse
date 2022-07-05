@@ -1,6 +1,6 @@
-option (ENABLE_SIMDJSON "Use simdjson" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_SIMDJSON "Use simdjson" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_SIMDJSON)
+if (NOT CLICKHOUSE_ENABLE_SIMDJSON)
     message(STATUS "Not using simdjson")
     return()
 endif()

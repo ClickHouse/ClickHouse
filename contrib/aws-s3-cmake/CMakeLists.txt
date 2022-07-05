@@ -1,10 +1,10 @@
 if(NOT OS_FREEBSD)
-    option(ENABLE_S3 "Enable S3" ${ENABLE_LIBRARIES})
-elseif(ENABLE_S3)
+    option(CLICKHOUSE_ENABLE_S3 "Enable S3" ${ENABLE_LIBRARIES})
+elseif(CLICKHOUSE_ENABLE_S3)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use S3 on FreeBSD")
 endif()
 
-if(NOT ENABLE_S3)
+if(NOT CLICKHOUSE_ENABLE_S3)
     message(STATUS "Not using S3")
     return()
 endif()

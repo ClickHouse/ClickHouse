@@ -1,6 +1,6 @@
-option (ENABLE_DATASKETCHES "Enable DataSketches" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_DATASKETCHES "Enable DataSketches" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_DATASKETCHES)
+if (NOT CLICKHOUSE_ENABLE_DATASKETCHES)
     message(STATUS "Not using DataSketches")
     return()
 endif()

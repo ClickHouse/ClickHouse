@@ -47,7 +47,7 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
 
 # https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
-if (ENABLE_ODBC AND NOT USE_MUSL)
+if (CLICKHOUSE_ENABLE_ODBC AND NOT USE_MUSL)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
         ${ENABLE_CLICKHOUSE_ALL})
 else ()
@@ -72,9 +72,9 @@ option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
 
-if (NOT ENABLE_NURAFT)
+if (NOT CLICKHOUSE_ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
-    # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
+    # since CLICKHOUSE_ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
     message (STATUS "clickhouse-keeper and clickhouse-keeper-converter will not be built (lack of NuRaft)")
     set(ENABLE_CLICKHOUSE_KEEPER OFF)
     set(ENABLE_CLICKHOUSE_KEEPER_CONVERTER OFF)

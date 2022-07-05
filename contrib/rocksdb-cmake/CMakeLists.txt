@@ -1,6 +1,6 @@
-option (ENABLE_ROCKSDB "Enable rocksdb library" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_ROCKSDB "Enable rocksdb library" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_ROCKSDB)
+if (NOT CLICKHOUSE_ENABLE_ROCKSDB)
   message (STATUS "Not using rocksdb")
   return()
 endif()

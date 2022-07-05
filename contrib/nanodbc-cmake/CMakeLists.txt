@@ -1,4 +1,4 @@
-if (NOT ENABLE_ODBC)
+if (NOT CLICKHOUSE_ENABLE_ODBC)
     return ()
 endif ()
 

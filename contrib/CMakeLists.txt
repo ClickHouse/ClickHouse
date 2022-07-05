@@ -123,7 +123,7 @@ add_contrib (libuv-cmake libuv)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 
-if (ENABLE_CURL_BUILD)
+if (CLICKHOUSE_ENABLE_CURL_BUILD)
     add_contrib (curl-cmake curl)
     add_contrib (azure-cmake azure)
     add_contrib (sentry-native-cmake sentry-native) # requires: curl

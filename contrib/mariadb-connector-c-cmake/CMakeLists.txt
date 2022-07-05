@@ -1,10 +1,10 @@
 if(OS_LINUX AND TARGET OpenSSL::SSL)
-    option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
+    option(CLICKHOUSE_ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
 else ()
-    option(ENABLE_MYSQL "Enable MySQL" FALSE)
+    option(CLICKHOUSE_ENABLE_MYSQL "Enable MySQL" FALSE)
 endif ()
 
-if(NOT ENABLE_MYSQL)
+if(NOT CLICKHOUSE_ENABLE_MYSQL)
     message (STATUS "Build without mysqlclient (support for MYSQL dictionary source will be disabled)")
     return()
 endif()

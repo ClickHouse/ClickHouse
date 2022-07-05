@@ -1,5 +1,5 @@
-option(ENABLE_BZIP2 "Enable bzip2 compression support" ${ENABLE_LIBRARIES})
-if (NOT ENABLE_BZIP2)
+option(CLICKHOUSE_ENABLE_BZIP2 "Enable bzip2 compression support" ${ENABLE_LIBRARIES})
+if (NOT CLICKHOUSE_ENABLE_BZIP2)
     message (STATUS "Not using bzip2")
     return()
 endif()

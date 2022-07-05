@@ -1,6 +1,6 @@
-option (ENABLE_KAFKA "Enable kafka" ${ENABLE_LIBRARIES})
+option (CLICKHOUSE_ENABLE_KAFKA "Enable kafka" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_KAFKA)
+if (NOT CLICKHOUSE_ENABLE_KAFKA)
     message(STATUS "Not using librdkafka")
     return()
 endif()
