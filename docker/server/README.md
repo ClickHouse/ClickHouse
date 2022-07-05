@@ -1,4 +1,4 @@
-# ClickHouse Server Docker Imagex
+# ClickHouse Server Docker Image
 
 ## What is ClickHouse?
 
