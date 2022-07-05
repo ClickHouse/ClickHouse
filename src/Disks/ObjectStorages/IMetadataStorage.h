@@ -93,8 +93,10 @@ protected:
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
-    /// General purpose functions (similar to Disk)
+    /// Get metadata root path.
     virtual const std::string & getPath() const = 0;
+
+    /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool exists(const std::string & path) const = 0;
 

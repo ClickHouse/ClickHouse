@@ -85,7 +85,7 @@ public:
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
-    void removeCacheIfExists(const std::string & path_hint_for_cache) override;
+    void removeCacheIfExists(const std::string & cache_hint) override;
 
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;

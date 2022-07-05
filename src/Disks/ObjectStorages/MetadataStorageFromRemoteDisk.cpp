@@ -213,7 +213,7 @@ void MetadataStorageFromRemoteDiskTransaction::setReadOnly(const std::string & p
 void MetadataStorageFromRemoteDiskTransaction::createEmptyMetadataFile(const std::string & path)
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(
-        metadata_storage_for_remote.getDisk()->getPath(), metadata_storage_for_remote.getMetadataPath(), path);
+        metadata_storage_for_remote.getDisk()->getPath(), metadata_storage_for_remote.getObjectStorageRootPath(), path);
 
     auto data = metadata->serializeToString();
     if (!data.empty())
@@ -223,7 +223,7 @@ void MetadataStorageFromRemoteDiskTransaction::createEmptyMetadataFile(const std
 void MetadataStorageFromRemoteDiskTransaction::createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)
 {
     DiskObjectStorageMetadataPtr metadata = std::make_unique<DiskObjectStorageMetadata>(
-        metadata_storage_for_remote.getDisk()->getPath(), metadata_storage_for_remote.getMetadataPath(), path);
+        metadata_storage_for_remote.getDisk()->getPath(), metadata_storage_for_remote.getObjectStorageRootPath(), path);
 
     metadata->addObject(blob_name, size_in_bytes);
 
