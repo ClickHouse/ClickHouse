@@ -6,7 +6,7 @@
       "inputSource": {
         "type": "local",
         "baseDir": "../",
-        "filter": "inputa?.tsv"
+        "filter": "hits.tsv"
       },
       "inputFormat": {
         "type": "tsv",
