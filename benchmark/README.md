@@ -79,7 +79,13 @@ https://datasets.clickhouse.com/hits_compatible/hits.parquet
 https://datasets.clickhouse.com/hits_compatible/athena/hits.parquet
 https://datasets.clickhouse.com/hits_compatible/athena_partitioned/hits_{0..99}.parquet
 
-To correctly compare insertion time, the dataset should be downloaded and decompressed before loading. The dataset should be loaded as a single file in the most straightforward way. Splitting the dataset for parallel loading is not recommended, as it will make comparisons more difficult. Splitting the dataset is possible if the system cannot eat it as a whole due to its limitations.
+The format of the source data can be selected up to convenience.
+
+To correctly compare the insertion time, the dataset should be downloaded and decompressed before loading. The dataset should be loaded as a single file in the most straightforward way. Splitting the dataset for parallel loading is not recommended, as it will make comparisons more difficult. Splitting the dataset is possible if the system cannot eat it as a whole due to its limitations.
+
+You should not wait for cool down after data loading or running OPTIMIZE / VACUUM before the main benchmark queries unless it is strictly required for the system.
+
+The used storage size can be measured without accounting for temporary data if there is temporary data that will be removed in the background. The built-in introspection capabilities can be used to measure the storage size, or it can be measured by checking the used space in the filesystem.
 
 ### Indexing
 
@@ -97,7 +103,7 @@ If a system is of a "multidimensional OLAP" kind, so always or implicitly doing 
 
 If the system contains a cache for query results, it should be disabled.
 
-If the system performs caching for source data, it is ok. If the cache can be flushed, it should be flushed before the first run of every query.
+If the system performs caching for source data (buffer pools and similar), it is ok. If the cache or buffer pools can be flushed, it should be flushed before the first run of every query.
 
 If the system contains a cache for intermediate data, it should be disabled if this cache is located near the end of the query execution pipeline, thus similar to a query result cache. 
 
