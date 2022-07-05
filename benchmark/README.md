@@ -72,16 +72,18 @@ Fine-tuning and optimization for the benchmark are not recommended but allowed. 
 
 The dataset is available in `CSV`, `TSV`, `JSONlines` and `Parquet` formats by the following links:
 
-https://datasets.clickhouse.com/hits_compatible/hits.csv.gz
-https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz
-https://datasets.clickhouse.com/hits_compatible/hits.json.gz
-https://datasets.clickhouse.com/hits_compatible/hits.parquet
-https://datasets.clickhouse.com/hits_compatible/athena/hits.parquet
-https://datasets.clickhouse.com/hits_compatible/athena_partitioned/hits_{0..99}.parquet
+- https://datasets.clickhouse.com/hits_compatible/hits.csv.gz
+- https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz
+- https://datasets.clickhouse.com/hits_compatible/hits.json.gz
+- https://datasets.clickhouse.com/hits_compatible/hits.parquet
 
 The format of the source data can be selected up to convenience.
 
-To correctly compare the insertion time, the dataset should be downloaded and decompressed before loading. The dataset should be loaded as a single file in the most straightforward way. Splitting the dataset for parallel loading is not recommended, as it will make comparisons more difficult. Splitting the dataset is possible if the system cannot eat it as a whole due to its limitations.
+Additional sources for stateless table engines are provided:
+- https://datasets.clickhouse.com/hits_compatible/athena/hits.parquet (the same parquet file in its own subdirectory)
+- https://datasets.clickhouse.com/hits_compatible/athena_partitioned/hits_{0..99}.parquet (100 files)
+
+To correctly compare the insertion time, the dataset should be downloaded and decompressed before loading (if it's using external compression; the parquet file includes internal compression and can be loaded as is). The dataset should be loaded as a single file in the most straightforward way. Splitting the dataset for parallel loading is not recommended, as it will make comparisons more difficult. Splitting the dataset is possible if the system cannot eat it as a whole due to its limitations.
 
 You should not wait for cool down after data loading or running OPTIMIZE / VACUUM before the main benchmark queries unless it is strictly required for the system.
 
