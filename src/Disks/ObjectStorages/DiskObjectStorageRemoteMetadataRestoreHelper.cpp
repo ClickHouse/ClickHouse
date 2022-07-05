@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -84,13 +85,13 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
 {
     LOG_TRACE(disk->log, "Migrate file {} to restorable schema", disk->metadata_storage->getPath() + path);
 
-    auto blobs = disk->metadata_storage->getBlobs(path);
-    for (const auto & [key, _] : blobs)
+    auto objects = disk->metadata_storage->getObjectStoragePaths(path);
+    for (const auto & [object_path, _] : objects)
     {
         ObjectAttributes metadata {
             {"path", path}
         };
-        updateObjectMetadata(disk->remote_fs_root_path + key, metadata);
+        updateObjectMetadata(object_path, metadata);
     }
 }
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
@@ -346,7 +347,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
     std::vector<std::future<void>> results;
-    auto restore_files = [this, &source_object_storage, &restore_information, &results](const BlobsPathToSize & keys)
+    auto restore_files = [this, &source_object_storage, &restore_information, &results](const PathsWithSize & keys)
     {
         std::vector<String> keys_names;
         for (const auto & [key, size] : keys)
@@ -379,7 +380,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
         return true;
     };
 
-    BlobsPathToSize children;
+    RelativePathsWithSize children;
     source_object_storage->listPrefix(restore_information.source_path, children);
 
     restore_files(children);
@@ -456,7 +457,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
     bool send_metadata = source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->remote_fs_root_path != restore_information.source_path;
 
     std::set<String> renames;
-    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const BlobsPathToSize & keys)
+    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const PathsWithSize & keys)
     {
         const String rename = "rename";
         const String hardlink = "hardlink";
@@ -523,7 +524,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         return true;
     };
 
-    BlobsPathToSize children;
+    RelativePathsWithSize children;
     source_object_storage->listPrefix(restore_information.source_path + "operations/", children);
     restore_file_operations(children);
 

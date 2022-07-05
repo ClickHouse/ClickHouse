@@ -1,3 +1,4 @@
+#include <cstring>
 #include <Poco/String.h>
 
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -6,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Names.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAsterisk.h>
@@ -29,38 +31,56 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
 }
+bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const std::string_view & name, const String & column_name, DataTypePtr column_type)
+{
+    if (name.size() < column_name.size())
+        return false;
 
+    if (!name.starts_with(column_name))
+        return false;
+
+    if (name.size() == column_name.size())
+        return true;
+
+    /// In case the type is named tuple, check the name recursively.
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(column_type.get()))
+    {
+        if (type_tuple->haveExplicitNames() && name.at(column_name.size()) == '.')
+        {
+            const Strings & names = type_tuple->getElementNames();
+            const DataTypes & element_types = type_tuple->getElements();
+            std::string_view sub_name = name.substr(column_name.size() + 1);
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                if (matchColumnName(sub_name, names[i], element_types[i]))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
 bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const
 {
     const auto & table = tables[table_pos].table;
-    auto nested1 = IdentifierSemantic::extractNestedName(identifier, table.table);
-    auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
-
-    const String & short_name = identifier.shortName();
     const auto & columns = tables[table_pos].columns;
+
+    // Remove database and table name from the identifier'name
+    auto full_name = IdentifierSemantic::extractNestedName(identifier, table);
+
     for (const auto & column : columns)
     {
-        const String & known_name = column.name;
-        if (short_name == known_name)
-            return false;
-        if (nested1 && *nested1 == known_name)
-            return false;
-        if (nested2 && *nested2 == known_name)
+        if (matchColumnName(full_name, column.name, column.type))
             return false;
     }
-
     const auto & hidden_columns = tables[table_pos].hidden_columns;
     for (const auto & column : hidden_columns)
     {
-        const String & known_name = column.name;
-        if (short_name == known_name)
-            return false;
-        if (nested1 && *nested1 == known_name)
-            return false;
-        if (nested2 && *nested2 == known_name)
+        if (matchColumnName(full_name, column.name, column.type))
             return false;
     }
-
     return !columns.empty();
 }
 

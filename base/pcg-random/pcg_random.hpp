@@ -113,6 +113,8 @@
 
 #include "pcg_extras.hpp"
 
+// NOLINTBEGIN(*)
+
 namespace DB
 {
     struct PcgSerializer;
@@ -1776,5 +1778,7 @@ typedef pcg_engines::ext_oneseq_xsh_rs_64_32<14,32,true>    pcg32_k16384_fast;
 #ifdef _MSC_VER
     #pragma warning(default:4146)
 #endif
+
+// NOLINTEND(*)
 
 #endif // PCG_RAND_HPP_INCLUDED

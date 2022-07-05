@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 
@@ -527,11 +528,8 @@ std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 }
 
 
-void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        BackupEntriesCollector::throwPartitionsNotSupported(getStorageID(), getName());
-
     auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
     loadIndices(lock_timeout);
 
@@ -589,13 +587,13 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         data_path_in_backup_fs / "count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
 }
 
-void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
-
     auto backup = restorer.getBackup();
-    if (!restorer.isNonEmptyTableAllowed() && total_bytes && backup->hasFiles(data_path_in_backup))
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed() && total_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     auto lock_timeout = getLockTimeout(restorer.getContext());
@@ -624,6 +622,11 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         auto old_data_size = file_checker.getFileSize(data_file_path);
         {
             String file_path_in_backup = data_path_in_backup_fs / fileName(data_file_path);
+            if (!backup->fileExists(file_path_in_backup))
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
+                                getStorageID().getFullTableName(), file_path_in_backup);
+            }
             auto backup_entry = backup->readFile(file_path_in_backup);
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
@@ -634,6 +637,11 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         {
             String index_path_in_backup = data_path_in_backup_fs / fileName(index_file_path);
             IndexForNativeFormat extra_indices;
+            if (!backup->fileExists(index_path_in_backup))
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
+                                getStorageID().getFullTableName(), index_path_in_backup);
+            }
             auto backup_entry = backup->readFile(index_path_in_backup);
             auto index_in = backup_entry->getReadBuffer();
             CompressedReadBuffer index_compressed_in{*index_in};

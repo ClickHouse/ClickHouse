@@ -1045,7 +1045,7 @@ void StorageWindowView::threadFuncFireProc()
     if (shutdown_called)
         return;
 
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
     while (next_fire_signal <= timestamp_now)
@@ -1077,7 +1077,7 @@ void StorageWindowView::threadFuncFireProc()
 
 void StorageWindowView::threadFuncFireEvent()
 {
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
 
     LOG_TRACE(log, "Fire events: {}", fire_signal.size());
 
@@ -1630,7 +1630,7 @@ void StorageWindowView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (!std::exchange(has_inner_table, false))
         return;
@@ -1638,10 +1638,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     try
     {
         InterpreterDropQuery::executeDropQuery(
-            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
+            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
     }
     catch (...)
     {
