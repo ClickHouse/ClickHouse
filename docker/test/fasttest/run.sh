@@ -134,7 +134,6 @@ function clone_submodules
             contrib/jemalloc
             contrib/replxx
             contrib/qpl
-            contrib/nasm
             contrib/wyhash
             contrib/hashidsxx
         )

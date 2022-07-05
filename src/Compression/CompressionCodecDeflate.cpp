@@ -1,3 +1,4 @@
+#ifdef ENABLE_QPL_COMPRESSION
 #include <cstdio>
 #include <thread>
 #include <Compression/CompressionCodecDeflate.h>
@@ -355,3 +356,4 @@ void registerCodecDeflate(CompressionCodecFactory & factory)
         "DEFLATE", static_cast<char>(CompressionMethodByte::Deflate), [&]() { return std::make_shared<CompressionCodecDeflate>(); });
 }
 }
+#endif
