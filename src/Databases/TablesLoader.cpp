@@ -171,6 +171,11 @@ void TablesLoader::removeUnresolvableDependencies(bool remove_loaded)
 
 void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool)
 {
+    /// Compatibility setting which should be enabled by default on attach
+    /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types of columns
+    ContextMutablePtr load_context = Context::createCopy(global_context);
+    load_context->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
+
     /// Load independent tables in parallel.
     /// Then remove loaded tables from dependency graph, find tables/dictionaries that do not have unresolved dependencies anymore,
     /// move them to the list of independent tables and load.
@@ -183,7 +188,7 @@ void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool)
         assert(metadata.parsed_tables.size() == tables_processed + metadata.independent_database_objects.size() + getNumberOfTablesWithDependencies());
         logDependencyGraph();
 
-        startLoadingIndependentTables(pool, level);
+        startLoadingIndependentTables(pool, level, load_context);
 
         TableNames new_independent_database_objects;
         for (const auto & table_name : metadata.independent_database_objects)
@@ -237,7 +242,7 @@ DependenciesInfosIter TablesLoader::removeResolvedDependency(const DependenciesI
     return metadata.dependencies_info.erase(info_it);
 }
 
-void TablesLoader::startLoadingIndependentTables(ThreadPool & pool, size_t level)
+void TablesLoader::startLoadingIndependentTables(ThreadPool & pool, size_t level, ContextMutablePtr load_context)
 {
     size_t total_tables = metadata.parsed_tables.size();
 
@@ -245,10 +250,10 @@ void TablesLoader::startLoadingIndependentTables(ThreadPool & pool, size_t level
 
     for (const auto & table_name : metadata.independent_database_objects)
     {
-        pool.scheduleOrThrowOnError([this, total_tables, &table_name]()
+        pool.scheduleOrThrowOnError([this, load_context, total_tables, &table_name]()
         {
             const auto & path_and_query = metadata.parsed_tables[table_name];
-            databases[table_name.database]->loadTableFromMetadata(global_context, path_and_query.path, table_name, path_and_query.ast, force_restore);
+            databases[table_name.database]->loadTableFromMetadata(load_context, path_and_query.path, table_name, path_and_query.ast, force_restore);
             logAboutProgress(log, ++tables_processed, total_tables, stopwatch);
         });
     }
