@@ -1,3 +1,5 @@
+-- Tags: no-backward-compatibility-check:22.6
+
 DROP TABLE IF EXISTS segfault;
 DROP TABLE IF EXISTS segfault_mv;
 
