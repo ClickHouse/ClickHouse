@@ -16,7 +16,7 @@ CURRENT_WORK_DIR = os.getcwd()
 CONTAINER_NAME = "clickhouse_integration_tests"
 
 CONFIG_DIR_IN_REPO = "programs/server"
-INTERGATION_DIR_IN_REPO = "tests/integration"
+INTEGRATION_DIR_IN_REPO = "tests/integration"
 SRC_DIR_IN_REPO = "src"
 
 DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
@@ -55,7 +55,9 @@ def check_args_and_update_paths(args):
         if not os.path.isabs(args.cases_dir):
             args.cases_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.cases_dir))
     else:
-        args.cases_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, INTERGATION_DIR_IN_REPO))
+        args.cases_dir = os.path.abspath(
+            os.path.join(CLICKHOUSE_ROOT, INTEGRATION_DIR_IN_REPO)
+        )
         logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
 
     if args.src_dir:
@@ -305,12 +307,11 @@ if __name__ == "__main__":
         command=args.command
     )
 
-    try:
-        print("Trying to kill container", CONTAINER_NAME, "if it's already running")
-        subprocess.check_call(f'docker kill $(docker ps -a -q --filter name={CONTAINER_NAME} --format="{{{{.ID}}}}")', shell=True)
-        print("Container killed")
-    except:
-        print("Nothing to kill")
+    containers = subprocess.check_output(f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}", shell=True, universal_newlines=True).splitlines()
+    if containers:
+        print(f"Trying to kill containers name={CONTAINER_NAME} ids={containers}")
+        subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
+        print(f"Containers {containers} killed")
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)
