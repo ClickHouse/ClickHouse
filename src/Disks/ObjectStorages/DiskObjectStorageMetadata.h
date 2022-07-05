@@ -22,7 +22,7 @@ private:
     /// Relative paths of blobs.
     RelativePathsWithSize storage_objects;
 
-    const String & object_storage_root_path;
+    const std::string object_storage_root_path;
 
     /// Relative path to metadata file on local FS.
     const std::string metadata_file_path;

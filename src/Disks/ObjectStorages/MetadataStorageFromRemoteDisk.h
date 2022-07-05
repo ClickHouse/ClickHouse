@@ -51,7 +51,7 @@ public:
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 
-    std::string getMetadataPath() const { return object_storage_root_path; }
+    std::string getObjectStorageRootPath() const { return object_storage_root_path; }
 
     DiskPtr getDisk() const override { return disk; }
 

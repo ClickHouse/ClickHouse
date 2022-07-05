@@ -42,6 +42,7 @@ ON data_paths.cache_path = caches.cache_path;
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
 0
+SELECT * FROM system.filesystem_cache;
 SELECT count()
 FROM (
     SELECT
@@ -107,10 +108,11 @@ FROM (
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
 ON data_paths.cache_path = caches.cache_path;
-0
+1
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
 0
+SELECT * FROM system.filesystem_cache;
 SELECT count()
 FROM (
     SELECT
