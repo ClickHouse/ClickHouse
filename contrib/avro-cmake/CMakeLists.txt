@@ -1,7 +1,5 @@
 # Needed when using Apache Avro serialization format
-option (ENABLE_AVRO "Enable Avro" ${ENABLE_LIBRARIES})
 option (CLICKHOUSE_ENABLE_AVRO "Enable avro" ${ENABLE_LIBRARIES})
-set_prefixed_option_if_needed(ENABLE_AVRO ${ENABLE_LIBRARIES})
 
 if (NOT CLICKHOUSE_ENABLE_AVRO)
     message(STATUS "Not using avro")

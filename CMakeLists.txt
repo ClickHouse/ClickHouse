@@ -2,10 +2,6 @@ cmake_minimum_required(VERSION 3.14)
 
 project(ClickHouse LANGUAGES C CXX ASM)
 
-# If a ClickHouse CMake option without "CLICKHOUSE_" prefix is specified, issue a warning and set the corresponding option with prefix to
-# the specified value. To be removed after a grace period of three months (Oct 22)
-include (cmake/set_prefixed_option_if_needed.cmake)
-
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)

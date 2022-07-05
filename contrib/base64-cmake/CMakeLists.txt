@@ -1,7 +1,5 @@
 if(ARCH_AMD64 OR ARCH_AARCH64)
-    option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
     option (CLICKHOUSE_ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
-    set_prefixed_option_if_needed(ENABLE_BASE64 ${ENABLE_LIBRARIES})
 elseif(CLICKHOUSE_ENABLE_BASE64)
     message (${RECONFIGURE_MESSAGE_LEVEL} "base64 library is only supported on x86_64 and aarch64")
 endif()

@@ -1,7 +1,5 @@
 # https://clang.llvm.org/extra/clang-tidy/
-option (ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
 option (CLICKHOUSE_ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
-set_prefixed_option_if_needed(ENABLE_CLANG_TIDY OFF)
 
 if (CLICKHOUSE_ENABLE_CLANG_TIDY)
 

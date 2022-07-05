@@ -1,6 +1,4 @@
-option (ENABLE_BROTLI "Enable brotli" ${ENABLE_LIBRARIES})
 option (CLICKHOUSE_ENABLE_BROTLI "Enable brotli" ${ENABLE_LIBRARIES})
-set_prefixed_option_if_needed(ENABLE_BROTLI ${ENABLE_LIBRARIES})
 
 if (NOT CLICKHOUSE_ENABLE_BROTLI)
     message(STATUS "Not using brotli")
