@@ -28,12 +28,15 @@ public:
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    bool addJoinedBlock(const Block & /* block */, bool /* check_limits */) override { __builtin_unreachable(); }
+    bool addJoinedBlock(const Block & /* block */, bool /* check_limits */) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addJoinedBlock should not be called");
+    }
 
     void checkTypesOfKeys(const Block & left_block) const override
     {
         if (table_join->getClauses().size() != 1)
-            throw Exception("FullSortingMergeJoin supports only one join key", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin supports only one join key");
 
         /// Key column can change nullability and it's not handled on type conversion stage, so algorithm should be aware of it
         if (table_join->hasUsing() && table_join->joinUseNulls())
@@ -48,6 +51,8 @@ public:
             bool type_equals
                 = table_join->hasUsing() ? left_type->equals(*right_type) : removeNullable(left_type)->equals(*removeNullable(right_type));
 
+            /// Even slightly different types should be converted on previous pipeline steps.
+            /// If we still have some differences, we can't join, because the algorithm expects strict type equality.
             if (!type_equals)
             {
                 throw DB::Exception(
@@ -70,16 +75,25 @@ public:
     void setTotals(const Block & block) override { totals = block; }
     const Block & getTotals() const override { return totals; }
 
-    size_t getTotalRowCount() const override { __builtin_unreachable(); }
-    size_t getTotalByteCount() const override { __builtin_unreachable(); }
-    bool alwaysReturnsEmptySet() const override { __builtin_unreachable(); }
+    size_t getTotalRowCount() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getTotalRowCount should not be called");
+    }
+
+    size_t getTotalByteCount() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getTotalByteCount should not be called");
+    }
+
+    bool alwaysReturnsEmptySet() const override { return false; }
 
     std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {
-        __builtin_unreachable();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getNonJoinedBlocks should not be called");
     }
 
+    /// Left and right streams have the same priority and are processed simultaneously
     virtual JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
 private:
