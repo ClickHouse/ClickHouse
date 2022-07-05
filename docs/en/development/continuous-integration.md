@@ -123,12 +123,10 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
 - **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
-  - `clickhouse-client_XXX_all.deb`
+  - `clickhouse-client_XXX_amd64.deb`
   - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
   - `clickhouse-common-staticXXX_amd64.deb`
-  - `clickhouse-server_XXX_all.deb`
-  - `clickhouse_XXX_amd64.buildinfo`
-  - `clickhouse_XXX_amd64.changes`
+  - `clickhouse-server_XXX_amd64.deb`
   - `clickhouse`: Main built binary.
   - `clickhouse-odbc-bridge`
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
