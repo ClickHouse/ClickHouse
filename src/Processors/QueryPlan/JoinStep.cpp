@@ -34,12 +34,12 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
     if (join->pipelineType() == JoinPipelineType::YShaped)
-        return QueryPipelineBuilder::joinPipelines2(
+        return QueryPipelineBuilder::joinPipelinesYShaped(
             std::move(pipelines[0]), std::move(pipelines[1]),
             join, output_stream->header,
             max_block_size, &processors);
 
-    return QueryPipelineBuilder::joinPipelines(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, max_streams, keep_left_read_in_order, &processors);
+    return QueryPipelineBuilder::joinPipelinesRightLeft(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, max_streams, keep_left_read_in_order, &processors);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const

@@ -180,9 +180,12 @@ public:
 
     virtual JoinPipelineType pipelineType() const override
     {
+        /// No need to process anything in the right stream if it's a dictionary will just join the left stream with it.
         bool is_filled = from_storage_join || data->type == Type::DICT;
         if (is_filled)
             return JoinPipelineType::FilledRight;
+
+        /// Default pipeline processes right stream at first and then left.
         return JoinPipelineType::FillRightFirst;
     }
 

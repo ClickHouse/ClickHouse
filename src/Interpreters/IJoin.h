@@ -22,19 +22,20 @@ class NotJoinedBlocks;
 enum class JoinPipelineType
 {
     /*
-     * Right stream processed first.
+     * Right stream processed first, then when join data structures are ready, the left stream is processed using it.
      * The pipeline is not sorted.
      */
     FillRightFirst,
 
     /*
-     * Only left stream is processed, right is already filled.
+     * Only the left stream is processed. Right is already filled.
      */
     FilledRight,
 
     /*
      * The pipeline is created from the left and right streams processed with merging transform.
-     * The pipeline is sorted.
+     * Left and right streams have the same priority and are processed simultaneously.
+     * The pipelines are sorted.
      */
     YShaped,
 };

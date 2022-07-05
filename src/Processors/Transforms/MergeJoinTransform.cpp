@@ -439,8 +439,6 @@ void dispatchKind(JoinKind kind, Args && ... args)
         return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
-
-    __builtin_unreachable();
 }
 
 std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState()

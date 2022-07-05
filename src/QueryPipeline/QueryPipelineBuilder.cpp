@@ -329,7 +329,7 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     return left;
 }
 
-std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
@@ -357,7 +357,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines2(
     return result;
 }
 
-std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
