@@ -190,7 +190,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecMultiple(*this);
 #ifdef ENABLE_QPL_COMPRESSION
     registerCodecDeflate(*this);
-#endif    
+#endif
 #ifndef KEEPER_STANDALONE_BUILD
     registerCodecDelta(*this);
     registerCodecT64(*this);
