@@ -886,26 +886,63 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     return descr;
 }
 
-SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery & query, ContextPtr context_)
+SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery & query, const ContextPtr & context_)
 {
+    /// Expected AST from query.orderBy()
+    /// (1) ... ORDER BY a,b
+    /// │    ExpressionList (children 2)              │
+    /// │     OrderByElement (children 1)             │
+    /// │      Identifier CounterID                   │
+    /// │     OrderByElement (children 1)             │
+    /// │      Identifier EventDate                   │
+    ///
+    /// (2) ... ORDER BY (a, b)
+    /// │    ExpressionList (children 1)              │
+    /// │     OrderByElement (children 1)             │
+    /// │      Function tuple (children 1)            │
+    /// │       ExpressionList (children 2)           │
+    /// │        Identifier CounterID                 │
+    /// │        Identifier EventDate                 │
+    ///
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
-    for (const auto & elem : query.orderBy()->children)
-    {
-        String name = elem->children.front()->getColumnName();
-        const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
+    auto add_sort_column_desc = [&](const ASTOrderByElement & order_by_elem, const String & column)
+    {
         std::shared_ptr<Collator> collator;
         if (order_by_elem.collation)
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
+
         if (order_by_elem.with_fill)
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context_);
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
+            order_descr.emplace_back(column, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+            order_descr.emplace_back(column, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+    };
+
+    for (const auto & elem : query.orderBy()->children)
+    {
+        const auto & order_by_elem = elem->as<ASTOrderByElement &>();
+        /// case (2)
+        if (const auto* func = order_by_elem.children.front()->as<ASTFunction>())
+        {
+            if (const auto* expr_list = func->children.front()->as<ASTExpressionList>())
+            {
+                for(const auto& identifier : expr_list->children)
+                    add_sort_column_desc(order_by_elem, identifier->getColumnName());
+            }
+        }
+        /// case (1)
+        else
+        {
+            add_sort_column_desc(order_by_elem, elem->children.front()->getColumnName());
+        }
     }
+
+    if (order_descr.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to build sort description for ORDER BY");
 
     order_descr.compile_sort_description = context_->getSettingsRef().compile_sort_description;
     order_descr.min_count_to_compile_sort_description = context_->getSettingsRef().min_count_to_compile_sort_description;
