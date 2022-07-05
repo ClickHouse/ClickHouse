@@ -50,7 +50,7 @@ struct StoredObject
 
     StoredObject() = default;
 
-    StoredObject(const std::string & path_, uint64_t bytes_size_ = 0, CacheHintCreator && cache_hint_creator_ = {});
+    explicit StoredObject(const std::string & path_, uint64_t bytes_size_ = 0, CacheHintCreator && cache_hint_creator_ = {});
 
     std::string getCacheHint() const;
 };

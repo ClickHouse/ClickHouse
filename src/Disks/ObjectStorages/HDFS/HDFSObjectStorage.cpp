@@ -116,7 +116,7 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
 void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeObject(object.path);
+        removeObject(object);
 }
 
 void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
@@ -128,7 +128,7 @@ void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
 void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeObjectIfExists(object.path);
+        removeObjectIfExists(object);
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string &) const

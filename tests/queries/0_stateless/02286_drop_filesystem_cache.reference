@@ -42,8 +42,8 @@ ON data_paths.cache_path = caches.cache_path;
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
 0
-SELECT * FROM system.filesystem_cache;
-SELECT count()
+SELECT cache_path FROM system.filesystem_cache;
+SELECT cache_path, local_path
 FROM (
     SELECT
         arrayJoin(cache_paths) AS cache_path,
@@ -54,7 +54,6 @@ FROM (
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
 ON data_paths.cache_path = caches.cache_path;
-0
 DROP TABLE IF EXISTS test2;
 CREATE TABLE test2 (key UInt32, value String)
 Engine=MergeTree()
@@ -112,8 +111,8 @@ ON data_paths.cache_path = caches.cache_path;
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
 0
-SELECT * FROM system.filesystem_cache;
-SELECT count()
+SELECT cache_path FROM system.filesystem_cache;
+SELECT cache_path, local_path
 FROM (
     SELECT
         arrayJoin(cache_paths) AS cache_path,
@@ -124,7 +123,6 @@ FROM (
     ) AS data_paths
 INNER JOIN system.filesystem_cache AS caches
 ON data_paths.cache_path = caches.cache_path;
-0
 DROP TABLE IF EXISTS test2;
 CREATE TABLE test2 (key UInt32, value String)
 Engine=MergeTree()

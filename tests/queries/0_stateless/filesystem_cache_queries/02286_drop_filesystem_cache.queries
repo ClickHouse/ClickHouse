@@ -43,8 +43,8 @@ ON data_paths.cache_path = caches.cache_path;
 
 DROP TABLE test NO DELAY;
 SELECT count() FROM system.filesystem_cache;
-SELECT * FROM system.filesystem_cache;
-SELECT count()
+SELECT cache_path FROM system.filesystem_cache;
+SELECT cache_path, local_path
 FROM (
     SELECT
         arrayJoin(cache_paths) AS cache_path,
