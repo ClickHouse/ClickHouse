@@ -8,6 +8,7 @@ namespace DB
 namespace
 {
 
+/// Return true if the column is nullable.
 class FunctionIsNullable : public IFunction
 {
 public:
