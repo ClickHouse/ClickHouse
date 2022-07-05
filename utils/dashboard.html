@@ -207,41 +207,58 @@
     const theme = 'light';
 
     const queries = [
-        { title: "ClickHouse", query:
-        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
-            FROM wikistat WHERE path = 'ClickHouse' AND time >= {start:Date}
-            GROUP BY t ORDER BY t
+        { title: "{repo} Weekly Unique Comment Authors", query:
+        `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
+            FROM github_events
+            WHERE repo_name = {repo:String}
+            AND event_type = 'IssueCommentEvent'
+            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+            GROUP BY t
+            ORDER BY t
             FORMAT JSONCompactColumns`},
-
-        { title: "{word2} Stats", query:
-        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
-            FROM wikistat WHERE path = {word2:String} AND time >= {start:Date}
-            GROUP BY t ORDER BY t
+        { title: "{repo} Weekly Unique Comments", query:
+        `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
+            FROM github_events
+            WHERE repo_name = {repo:String}
+            AND event_type = 'IssueCommentEvent'
+            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+            GROUP BY t
+            ORDER BY t
             FORMAT JSONCompactColumns`},
-
-        { title: "Blockchain", query:
-        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
-            FROM wikistat WHERE path = 'Blockchain' AND time >= {start:Date}
-            GROUP BY t ORDER BY t
+        { title: "{repo} Weekly Unique PR Authors", query:
+        `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
+            FROM github_events
+            WHERE repo_name = {repo:String}
+            AND event_type = 'PullRequestEvent'
+            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+            GROUP BY t
+            ORDER BY t
             FORMAT JSONCompactColumns`},
-
-        { title: "Big_Data", query:
-        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
-            FROM wikistat WHERE path = 'Big_Data' AND time >= {start:Date}
-            GROUP BY t ORDER BY t
+        { title: "{repo} Weekly Unique PRs", query:
+        `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
+            FROM github_events
+            WHERE repo_name = {repo:String}
+            AND event_type = 'PullRequestEvent'
+            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+            GROUP BY t
+            ORDER BY t
             FORMAT JSONCompactColumns`},
-
-        { title: "Hadoop", query:
-        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
-            FROM wikistat WHERE path = 'Hadoop' AND time >= {start:Date}
-            GROUP BY t ORDER BY t
-            FORMAT JSONCompactColumns`}
+        { title: "{repo} Daily Stars", query:
+        `SELECT toStartOfDay(created_at)::INT AS t, count() AS events
+            FROM github_events
+            WHERE repo_name = {repo:String}
+            AND event_type = 'WatchEvent'
+            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+            GROUP BY t
+            ORDER BY t
+            FORMAT JSONCompactColumns`},
     ];
 
     /// Query parameters with predefined default values.
     /// All other parameters will be automatically found in the queries.
     let params = {
         start: '2015-01-01',
+        repo: 'ClickHouse/ClickHouse',
         //word2: 'Coronavirus',
     };
 
@@ -523,7 +540,6 @@
 
         /// Set title
         const title = queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] );
-        console.log(title);
         chart.querySelector('.title').firstChild.data = title;
     }
 
