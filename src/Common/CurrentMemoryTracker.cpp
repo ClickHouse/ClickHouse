@@ -35,12 +35,9 @@ MemoryTracker * getMemoryTracker()
 
 }
 
-namespace CurrentMemoryTracker
-{
-
 using DB::current_thread;
 
-void allocImpl(Int64 size, bool throw_if_memory_exceeded)
+void CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
     if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
@@ -73,31 +70,31 @@ void allocImpl(Int64 size, bool throw_if_memory_exceeded)
     }
 }
 
-void check()
+void CurrentMemoryTracker::check()
 {
     if (auto * memory_tracker = getMemoryTracker())
         memory_tracker->allocImpl(0, true);
 }
 
-void alloc(Int64 size)
+void CurrentMemoryTracker::alloc(Int64 size)
 {
     bool throw_if_memory_exceeded = true;
     allocImpl(size, throw_if_memory_exceeded);
 }
 
-void allocNoThrow(Int64 size)
+void CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
     bool throw_if_memory_exceeded = false;
     allocImpl(size, throw_if_memory_exceeded);
 }
 
-void realloc(Int64 old_size, Int64 new_size)
+void CurrentMemoryTracker::realloc(Int64 old_size, Int64 new_size)
 {
     Int64 addition = new_size - old_size;
     addition > 0 ? alloc(addition) : free(-addition);
 }
 
-void free(Int64 size)
+void CurrentMemoryTracker::free(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -118,4 +115,3 @@ void free(Int64 size)
     }
 }
 
-}

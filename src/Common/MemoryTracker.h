@@ -4,7 +4,6 @@
 #include <chrono>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/VariableContext.h>
 
 #if !defined(NDEBUG)
@@ -85,10 +84,7 @@ private:
     void setOrRaiseProfilerLimit(Int64 value);
 
     /// allocImpl(...) and free(...) should not be used directly
-    friend void CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded);
-    friend void CurrentMemoryTracker::free(Int64 size);
-    friend void CurrentMemoryTracker::check();
-
+    friend struct CurrentMemoryTracker;
     void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
     void free(Int64 size);
 public:
