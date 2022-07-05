@@ -1,8 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <cerrno>
 
-#include <map>
 #include <optional>
 
 #include <Common/escapeForFileName.h>
@@ -12,7 +10,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
@@ -21,11 +18,8 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Columns/ColumnArray.h>
-
 #include <Interpreters/Context.h>
 
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>

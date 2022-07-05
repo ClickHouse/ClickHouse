@@ -200,6 +200,13 @@ class PRInfo:
                     ]
                 else:
                     self.diff_urls.append(pull_request["diff_url"])
+                if "release" in self.labels:
+                    # For release PRs we must get not only files changed in the PR
+                    # itself, but as well files changed since we branched out
+                    self.diff_urls.append(
+                        f"https://github.com/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master.diff"
+                    )
         else:
             print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))

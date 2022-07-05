@@ -1011,6 +1011,8 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
 
+String fieldTypeToString(Field::Types::Which type);
+
 }
 
 template <>
