@@ -262,9 +262,6 @@
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl.git
-[submodule "contrib/nasm"]
-	path = contrib/nasm
-	url = https://github.com/netwide-assembler/nasm.git
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash.git
