@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Storages/NATS/ReadBufferFromNATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
 
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class NATSSource : public SourceWithProgress
+class NATSSource : public ISource
 {
 public:
     NATSSource(
@@ -27,7 +27,11 @@ public:
 
     bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
 
+    void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
+
 private:
+    bool checkTimeLimit() const;
+
     StorageNATS & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
@@ -39,6 +43,9 @@ private:
     const Block virtual_header;
 
     ConsumerBufferPtr buffer;
+
+    Poco::Timespan max_execution_time = 0;
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     NATSSource(
         StorageNATS & storage_,

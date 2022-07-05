@@ -1,7 +1,12 @@
-option (ENABLE_KAFKA "Enable kafka" ${ENABLE_LIBRARIES})
+option (ENABLE_NATS "Enable NATS" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_KAFKA)
-    message(STATUS "Not using librdkafka")
+if (OS_FREEBSD)
+    set(ENABLE_NATS OFF)
+    message (STATUS "Using internal nats-io library on FreeBSD is not supported")
+endif()
+
+if (NOT ENABLE_NATS)
+    message(STATUS "Not using nats-io")
     return()
 endif()
 

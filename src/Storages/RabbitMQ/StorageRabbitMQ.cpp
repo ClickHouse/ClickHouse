@@ -1086,9 +1086,6 @@ bool StorageRabbitMQ::streamToViews()
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
-        // Limit read batch to maximum block size to allow DDL
-        StreamLocalLimits limits;
-
         Poco::Timespan max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
                                           ? rabbitmq_settings->rabbitmq_flush_interval_ms
                                           : getContext()->getSettingsRef().stream_flush_interval_ms;

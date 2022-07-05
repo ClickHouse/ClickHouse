@@ -42,7 +42,7 @@ NATSSource::NATSSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_)
-    : SourceWithProgress(getSampleBlock(headers.first, headers.second))
+    : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -64,6 +64,19 @@ NATSSource::~NATSSource()
 
     buffer->allowNext();
     storage.pushReadBuffer(buffer);
+}
+
+bool NATSSource::checkTimeLimit() const
+{
+    if (max_execution_time != 0)
+    {
+        auto elapsed_ns = total_stopwatch.elapsed();
+
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            return false;
+    }
+
+    return true;
 }
 
 Chunk NATSSource::generate()

@@ -1,12 +1,15 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/NATS/NATSSink.h>
 #include <Storages/NATS/NATSSource.h>
@@ -14,6 +17,7 @@
 #include <Storages/NATS/WriteBufferToNATSProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <QueryPipeline/Pipe.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
@@ -261,20 +265,21 @@ size_t StorageNATS::getMaxBlockSize() const
 }
 
 
-Pipe StorageNATS::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum /* processed_stage */,
-    size_t /* max_block_size */,
-    unsigned /* num_streams */)
+void StorageNATS::read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum /* processed_stage */,
+        size_t /* max_block_size */,
+        unsigned /* num_streams */)
 {
     if (!consumers_ready)
         throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);
 
     if (num_created_consumers == 0)
-        return {};
+        return;
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
         throw Exception(
@@ -317,9 +322,19 @@ Pipe StorageNATS::read(
         startLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    auto united_pipe = Pipe::unitePipes(std::move(pipes));
-    united_pipe.addInterpreterContext(modified_context);
-    return united_pipe;
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    if (pipe.empty())
+    {
+        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+    }
+    else
+    {
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
+        query_plan.addStep(std::move(read_step));
+        query_plan.addInterpreterContext(modified_context);
+    }
 }
 
 
@@ -617,16 +632,11 @@ bool StorageNATS::streamToViews()
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
-        // Limit read batch to maximum block size to allow DDL
-        StreamLocalLimits limits;
-
-        limits.speed_limits.max_execution_time = nats_settings->nats_flush_interval_ms.changed
+        Poco::Timespan max_execution_time = nats_settings->nats_flush_interval_ms.changed
             ? nats_settings->nats_flush_interval_ms
             : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-        limits.timeout_overflow_mode = OverflowMode::BREAK;
-
-        source->setLimits(limits);
+        source->setTimeLimit(max_execution_time);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
