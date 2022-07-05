@@ -159,7 +159,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    ContextPtr context_,
+    const ContextPtr & context_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
@@ -167,7 +167,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    ContextMutablePtr context_,
+    const ContextMutablePtr & context_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
@@ -175,7 +175,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         Pipe input_pipe_,
         const SelectQueryOptions & options_)
         : InterpreterSelectQuery(query_ptr_, context_, std::move(input_pipe_), nullptr, options_.copy().noSubquery())
@@ -183,7 +183,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    ContextPtr context_,
+    const ContextPtr & context_,
     const StoragePtr & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const SelectQueryOptions & options_)
@@ -192,7 +192,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    ContextPtr context_,
+    const ContextPtr & context_,
     const SelectQueryOptions & options_,
     SubqueriesForSets subquery_for_sets_,
     PreparedSets prepared_sets_)
@@ -282,7 +282,7 @@ static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    ContextPtr context_,
+    const ContextPtr & context_,
     std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
@@ -304,7 +304,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    ContextMutablePtr context_,
+    const ContextMutablePtr & context_,
     std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
