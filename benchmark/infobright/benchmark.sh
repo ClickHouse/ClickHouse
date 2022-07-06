@@ -30,3 +30,9 @@ sudo docker exec mysql_ib du -bcs /mnt/mysql_data/ /usr/local/infobright-4.0.7-x
 # 13 760 341 294
 
 ./run.sh 2>&1 | log
+
+cat log.txt |
+  grep -P 'rows? in set|Empty set|^ERROR' |
+  sed -r -e 's/^ERROR.*$/null/; s/^.*?\((([0-9.]+) days? )?(([0-9.]+) hours? )?(([0-9.]+) min )?([0-9.]+) sec\).*?$/\2 \4 \6 \7/' |
+  awk '{ if ($4) { print $1 * 86400 + $2 * 3600 + $3 * 60 + $4 } else if ($3) { print $1 * 3600 + $2 * 60 + $3 } else if ($2) { print $1 * 60 + $2 } else { print $1 } }' |
+  awk '{ if (i % 3 == 0) { printf "[" }; printf $1; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
