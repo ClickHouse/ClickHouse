@@ -501,6 +501,8 @@ void AggregatingTransform::work()
 
 Processors AggregatingTransform::expandPipeline()
 {
+    if (processors.empty())
+        throw Exception("Can not expandPipeline in AggregatingTransform. This is a bug.", ErrorCodes::LOGICAL_ERROR);
     auto & out = processors.back()->getOutputs().front();
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());
