@@ -1017,6 +1017,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             }
         }
 
+        if (!create.cluster.empty())
+            return executeQueryOnCluster(create);
+
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
@@ -1152,6 +1155,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
         }
     }
+
+    if (!create.cluster.empty())
+        return executeQueryOnCluster(create);
 
     if (create.replace_table)
         return doCreateOrReplaceTable(create, properties);
@@ -1543,16 +1549,25 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     }
 }
 
+BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
+{
+    prepareOnClusterQuery(create, getContext(), create.cluster);
+    DDLQueryOnClusterParams params;
+    params.access_to_check = getRequiredAccess();
+    return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+}
+
 BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
+
+    bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty())
     {
-        prepareOnClusterQuery(create, getContext(), create.cluster);
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        auto on_cluster_version = getContext()->getSettingsRef().distributed_ddl_entry_format_version;
+        if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+            return executeQueryOnCluster(create);
     }
 
     getContext()->checkAccess(getRequiredAccess());
@@ -1560,7 +1575,7 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
-    if (create.database && !create.table)
+    if (is_create_database)
         return createDatabase(create);
     else
         return createTable(create);

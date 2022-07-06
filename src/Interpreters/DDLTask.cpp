@@ -58,7 +58,12 @@ void DDLLogEntry::assertVersion() const
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef().distributed_ddl_entry_format_version;
-    if (version == 2)
+
+    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
+    if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        version = SETTINGS_IN_ZK_VERSION;
+
+    if (version == SETTINGS_IN_ZK_VERSION)
         settings.emplace(context->getSettingsRef().changes());
 }
 
@@ -69,7 +74,7 @@ String DDLLogEntry::toString() const
     wb << "version: " << version << "\n";
     wb << "query: " << escape << query << "\n";
 
-    bool write_hosts = version == 1 || !hosts.empty();
+    bool write_hosts = version == OLDEST_VERSION || !hosts.empty();
     if (write_hosts)
     {
         Strings host_id_strings(hosts.size());
@@ -79,7 +84,7 @@ String DDLLogEntry::toString() const
 
     wb << "initiator: " << initiator << "\n";
 
-    bool write_settings = 1 <= version && settings && !settings->empty();
+    bool write_settings = SETTINGS_IN_ZK_VERSION <= version && settings && !settings->empty();
     if (write_settings)
     {
         ASTSetQuery ast;
