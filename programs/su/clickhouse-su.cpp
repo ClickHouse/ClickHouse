@@ -59,7 +59,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
                 throwFromErrno(fmt::format("Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
-                throw Exception("Group {} is not found in the system", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is not found in the system", arg_gid);
 
             gid = entry.gr_gid;
         }
@@ -84,7 +84,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
                 throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
-                throw Exception("User {} is not found in the system", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
 
             uid = entry.pw_uid;
         }
