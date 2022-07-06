@@ -66,6 +66,10 @@ struct HostID
 
 struct DDLLogEntry
 {
+    static constexpr const UInt64 OLDEST_VERSION = 1;
+    static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
+    static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
+
     UInt64 version = 1;
     String query;
     std::vector<HostID> hosts;
