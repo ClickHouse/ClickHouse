@@ -186,7 +186,9 @@ static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, s
 
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = data[i] & (num_shards - 1);
+        /// Apply intHash64 to mix bits in data.
+        /// HashTable internally uses WeakHash32, and we need to get different lower bits not to cause collisions.
+        selector[i] = intHash64(data[i]) & (num_shards - 1);
     return selector;
 }
 
