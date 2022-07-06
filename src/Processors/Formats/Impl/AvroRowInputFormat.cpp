@@ -737,26 +737,26 @@ private:
                 request.setHost(url.getHost());
 
                 if (!url.getUserInfo().empty()) {
-                    Poco::Net::HTTPCredentials httpCredentials;
-                    Poco::Net::HTTPBasicCredentials httpBasicCredentials;
+                    Poco::Net::HTTPCredentials http_credentials;
+                    Poco::Net::HTTPBasicCredentials http_basic_credentials;
                     std::string decoded_username;
                     std::string decoded_password;
 
-                    httpCredentials.fromUserInfo(url.getUserInfo());
+                    http_credentials.fromUserInfo(url.getUserInfo());
 
-                    if (!httpCredentials.getPassword().empty()) {
-                        Poco::URI::decode(httpCredentials.getUsername(), decoded_username);
-                        Poco::URI::decode(httpCredentials.getPassword(), decoded_password);
+                    if (!http_credentials.getPassword().empty()) {
+                        Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                        Poco::URI::decode(http_credentials.getPassword(), decoded_password);
 
-                        httpBasicCredentials.setUsername(decoded_username);
-                        httpBasicCredentials.setPassword(decoded_password);
+                        http_basic_credentials.setUsername(decoded_username);
+                        http_basic_credentials.setPassword(decoded_password);
                     }
                     else {
-                        Poco::URI::decode(httpCredentials.getUsername(), decoded_username);
-                        httpBasicCredentials.setUsername(decoded_username);
+                        Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                        http_basic_credentials.setUsername(decoded_username);
                     }
 
-                    httpBasicCredentials.authenticate(request);
+                    http_basic_credentials.authenticate(request);
                 }
 
                 auto session = makePooledHTTPSession(url, timeouts, 1);
