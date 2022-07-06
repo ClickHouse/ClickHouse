@@ -11,7 +11,7 @@ from env_helper import (
     RUNNER_TEMP,
     GITHUB_WORKSPACE,
     GITHUB_REPOSITORY,
-    GITHUB_SERVER_URL
+    GITHUB_SERVER_URL,
 )
 from s3_helper import S3Helper
 from pr_info import PRInfo, SKIP_SIMPLE_CHECK_LABEL
@@ -135,6 +135,6 @@ if __name__ == "__main__":
                 context="Simple Check",
                 description=f"{NAME} failed",
                 state="failed",
-                target_url=url
+                target_url=url,
             )
         sys.exit(1)

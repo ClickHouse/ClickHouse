@@ -229,6 +229,6 @@ if __name__ == "__main__":
                     context="Simple Check",
                     description=f"{NAME} failed",
                     state="failed",
-                    target_url=url
+                    target_url=url,
                 )
             sys.exit(1)
