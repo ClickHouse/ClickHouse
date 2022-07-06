@@ -3,6 +3,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/getRandomASCIIString.h>
 #include <ranges>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -277,6 +278,8 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 {
     std::string path;
     std::string blob_path;
+    size_t size;
+    std::function<void(MetadataTransactionPtr)> on_execute;
 
     WriteFileObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -288,9 +291,15 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         , blob_path(blob_path_)
     {}
 
-    void execute(MetadataTransactionPtr) override
+    void setOnExecute(std::function<void(MetadataTransactionPtr)> && on_execute_)
     {
+        on_execute = on_execute_;
+    }
 
+    void execute(MetadataTransactionPtr tx) override
+    {
+        if (on_execute)
+            on_execute(tx);
     }
 
     void undo() override
@@ -368,6 +377,7 @@ void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 
 void DiskObjectStorageTransaction::createDirectories(const std::string & path)
 {
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CREATE DIRECTORIES TRANSACTION FOR PATH {}", path);
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
@@ -499,19 +509,47 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     auto blob_path = fs::path(remote_fs_root_path) / blob_name;
 
+    auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, path, blob_path);
+    std::function<void(size_t count)> create_metadata_callback;
 
-    auto create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name, autocommit] (size_t count)
+    if  (autocommit)
     {
-        if (mode == WriteMode::Rewrite)
-            tx->metadata_transaction->createMetadataFile(path, blob_name, count);
-        else
-            tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
+        create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
+        {
+            if (mode == WriteMode::Rewrite)
+                tx->metadata_transaction->createMetadataFile(path, blob_name, count);
+            else
+                tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
 
-        if (autocommit)
             tx->metadata_transaction->commit();
-    };
+        };
+    }
+    else
+    {
+        create_metadata_callback = [write_op = write_operation.get(), mode, path, blob_name] (size_t count)
+        {
+            /// This callback called in WriteBuffer finalize method -- only there we actually know
+            /// how many bytes were written. We don't control when this finalize method will be called
+            /// so here we just modify operation itself, but don't execute anything (and don't modify metadata transaction).
+            /// Otherwise it's possible to get reorder of operations, like:
+            /// tx->createDirectory(xxx) -- will add metadata operation in execute
+            /// buf1 = tx->writeFile(xxx/yyy.bin)
+            /// buf2 = tx->writeFile(xxx/zzz.bin)
+            /// ...
+            /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
+            /// tx->commit()
+            write_op->setOnExecute([mode, path, blob_name, count](MetadataTransactionPtr tx)
+            {
+                if (mode == WriteMode::Rewrite)
+                    tx->createMetadataFile(path, blob_name, count);
+                else
+                    tx->addBlobToMetadata(path, blob_name, count);
+            });
+        };
 
-    operations_to_execute.emplace_back(std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, path, blob_path));
+    }
+
+    operations_to_execute.emplace_back(std::move(write_operation));
 
     /// We always use mode Rewrite because we simulate append using metadata and different files
     return object_storage.writeObject(
@@ -569,7 +607,6 @@ void DiskObjectStorageTransaction::commit()
         try
         {
             operations_to_execute[i]->execute(metadata_transaction);
-
         }
         catch (Exception & ex)
         {

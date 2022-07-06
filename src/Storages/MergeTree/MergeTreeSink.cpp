@@ -139,6 +139,9 @@ void MergeTreeSink::finishDelayedChunk()
 
         bool added = false;
 
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
+        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
             auto lock = storage.lockParts();
             storage.fillNewPartName(part, lock);
@@ -155,19 +158,15 @@ void MergeTreeSink::finishDelayedChunk()
                 }
                 else
                 {
-                    MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                    added = storage.renameTempPartAndAdd(part, transaction, lock);
+                    added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
                     transaction.commit(&lock);
-
                 }
             }
             else
             {
-                MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                added = storage.renameTempPartAndAdd(part, transaction, lock);
+                added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
                 transaction.commit(&lock);
             }
-
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
