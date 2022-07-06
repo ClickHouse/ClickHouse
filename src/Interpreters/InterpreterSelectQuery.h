@@ -52,27 +52,27 @@ public:
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextMutablePtr context_,
+        const ContextMutablePtr & context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         Pipe input_pipe_,
         const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
@@ -81,7 +81,7 @@ public:
     /// TODO: Find a general way of sharing sets among different interpreters, such as subqueries.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const SelectQueryOptions &,
         SubqueriesForSets subquery_for_sets_,
         PreparedSets prepared_sets_);
@@ -112,7 +112,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_);
+        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
 
     Names getRequiredColumns() { return required_columns; }
 
@@ -129,12 +129,12 @@ public:
     void setProperClientInfo(size_t replica_num, size_t replica_count);
 
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
-    static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context);
+    static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
@@ -145,7 +145,7 @@ private:
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextMutablePtr context_,
+        const ContextMutablePtr & context_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
