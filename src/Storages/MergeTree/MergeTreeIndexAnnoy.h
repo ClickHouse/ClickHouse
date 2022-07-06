@@ -7,7 +7,6 @@
 #include <annoylib.h>
 #include <kissrandom.h>
 
-///TODO:Arrays
 namespace DB
 {
 

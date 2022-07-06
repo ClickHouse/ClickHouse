@@ -133,6 +133,9 @@ private:
             //tuple(0.1, ..., 0.1)
             FUNCTION_TUPLE,
 
+            //array(0.1, ..., 0.1)
+            FUNCTION_ARRAY,
+
             // Operators <, >, <=, >=
             FUNCTION_COMPARISON,
 
@@ -150,6 +153,9 @@ private:
 
             // (0.1, ...., 0.1) vector without word 'tuple'
             FUNCTION_LITERAL_TUPLE,
+
+            // [0.1, ...., 0.1] vector without word 'array'
+            FUNCTION_LITERAL_ARRAY,
         };
 
         explicit RPNElement(Function function_ = FUNCTION_UNKNOWN)
@@ -161,7 +167,10 @@ private:
         std::optional<float> float_literal;
         std::optional<String> identifier;
         std::optional<int64_t> int_literal;
+
+        ///TODO:better save?
         std::optional<Tuple> tuple_literal;
+        std::optional<Array> array_literal;
 
         UInt32 dim = 0;
     };

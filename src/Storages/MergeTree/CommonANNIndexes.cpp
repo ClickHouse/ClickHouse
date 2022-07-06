@@ -180,6 +180,10 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
         {
             out.function = RPNElement::FUNCTION_TUPLE;
         }
+        else if (function->name == "array")
+        {
+            out.function = RPNElement::FUNCTION_ARRAY;
+        }
         else if (function->name == "less" ||
                  function->name == "greater" ||
                  function->name == "lessOrEquals" ||
@@ -248,6 +252,14 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
             out.func_name = "Tuple literal";
             return true;
         }
+
+        if (const_value.getType() == Field::Types::Array)
+        {
+            out.function = RPNElement::FUNCTION_LITERAL_ARRAY;
+            out.array_literal = const_value.get<Array>();
+            out.func_name = "Array literal";
+            return true;
+        }
     }
 
     return false;
@@ -268,7 +280,7 @@ void ANNCondition::traverseOrderByAST(const ASTPtr & node, RPN & rpn)
 bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
 {
     // WHERE section must have at least 5 expressions
-    // Operator->Distance(float)->DistanceFunc->Column->TupleFunc(TargetVector(floats))
+    // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(TargetVector(floats))
     if (rpn.size() < 5)
     {
         return false;
@@ -361,7 +373,7 @@ bool ANNCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
 /* Matches dist function, target vector, column name */
 bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr, bool & identifier_found)
 {
-    // Matches DistanceFunc->[Column]->[TupleFunc]->TargetVector(floats)->[Column]
+    // Matches DistanceFunc->[Column]->[Tuple(array)Func]->TargetVector(floats)->[Column]
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
     {
         return false;
@@ -389,14 +401,24 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANN
         ++iter;
     }
 
-    if (iter->function == RPNElement::FUNCTION_TUPLE)
+    if (iter->function == RPNElement::FUNCTION_TUPLE || iter->function == RPNElement::FUNCTION_ARRAY)
     {
         ++iter;
     }
 
+    ///TODO: refactor
     if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
     {
         for (const auto & value : iter->tuple_literal.value())
+        {
+            expr.target.emplace_back(value.get<float>());
+        }
+        ++iter;
+    }
+
+    if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
+    {
+        for (const auto & value : iter->array_literal.value())
         {
             expr.target.emplace_back(value.get<float>());
         }

@@ -1,4 +1,4 @@
-#ifdef ENABLE_ANNOY
+// #ifdef ENABLE_ANNOY
 
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 
@@ -6,6 +6,10 @@
 #include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/castColumn.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -62,6 +66,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int INCORRECT_DATA;
 }
 
 MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)
@@ -87,6 +92,7 @@ bool MergeTreeIndexGranuleAnnoy::empty() const
 void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
     writeIntBinary(index_base->getNumOfDimensions(), ostr); // write dimension
+    std::cout << "DIMS " << index_base->getNumOfDimensions() << std::endl;
     index_base->serialize(ostr);
 }
 
@@ -95,6 +101,7 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
     int dimension;
     readIntBinary(dimension, istr);
     index_base = std::make_shared<AnnoyIndex>(dimension);
+    std::cout << "DIMS " << dimension << std::endl;
     index_base->deserialize(istr);
 }
 
@@ -115,6 +122,7 @@ bool MergeTreeIndexAggregatorAnnoy::empty() const
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
 {
+    ///TODO: move?
     index_base->build(index_param);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
     index_base = nullptr;
@@ -138,26 +146,60 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
-    const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
-    const auto & columns = column_tuple->getColumns();
-
-    std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
-    for (const auto& column : columns)
+    const auto & column_array = typeid_cast<const ColumnArray*>(column_cut.get());
+    if (column_array)
     {
-        const auto& pod_array = typeid_cast<const ColumnFloat32*>(column.get())->getData();
-        for (size_t i = 0; i < pod_array.size(); ++i)
+        const auto & data = column_array->getData();
+        const auto & array = typeid_cast<const ColumnFloat32&>(data).getData();
+        const auto & offsets = column_array->getOffsets();
+        size_t num_rows = column_array->size();
+
+        /// All sizes are the same
+        size_t size = offsets[1] - offsets[0];
+        for (size_t i = 0; i < num_rows - 1; ++ i)
         {
-            data[i].push_back(pod_array[i]);
+            if (offsets[i + 1] - offsets[i] != size)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays should have same length");
+            }
+        }
+        index_base = std::make_shared<AnnoyIndex>(size);
+
+        for (size_t current_row = 0; current_row < num_rows; ++current_row)
+        {
+            index_base->add_item(index_base->get_n_items(), &array[offsets[current_row]]);
         }
     }
-    assert(!data.empty());
-    if (!index_base)
+    else
     {
-        index_base = std::make_shared<AnnoyIndex>(data[0].size());
-    }
-    for (const auto& item : data)
-    {
-        index_base->add_item(index_base->get_n_items(), &item[0]);
+        /// Other possible type of column is Tuple
+        const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
+    
+        ///TODO: error
+        if (!column_tuple)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type was given to index.");
+    
+        const auto & columns = column_tuple->getColumns();
+
+        ///TODO swap iteration for less memory
+        std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
+        for (const auto& column : columns)
+        {
+            const auto& pod_array = typeid_cast<const ColumnFloat32*>(column.get())->getData();
+            for (size_t i = 0; i < pod_array.size(); ++i)
+            {
+                data[i].push_back(pod_array[i]);
+            }
+        }
+        assert(!data.empty());
+        if (!index_base)
+        {
+            index_base = std::make_shared<AnnoyIndex>(data[0].size());
+        }
+        for (const auto& item : data)
+        {
+            index_base->add_item(index_base->get_n_items(), &item[0]);
+        }
     }
 
     *pos += rows_read;
@@ -199,6 +241,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         throw Exception("Granule has the wrong type", ErrorCodes::LOGICAL_ERROR);
     }
     auto annoy = granule->index_base;
+    std::cout << "DIMS " << annoy->getNumOfDimensions() << std::endl;
 
     if (condition.getNumOfDimensions() != annoy->getNumOfDimensions())
     {
@@ -232,6 +275,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         {
             continue;
         }
+        /// TODO: granularity from context
         result.insert(items[i] / 8192);
     }
 
@@ -290,4 +334,4 @@ void AnnoyIndexValidator(const IndexDescription & index, bool /* attach */)
 }
 
 }
-#endif // ENABLE_ANNOY
+// #endif // ENABLE_ANNOY
