@@ -1232,7 +1232,7 @@ protected:
 
     /// Restores the parts of this table from backup.
     void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
-    void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup);
+    void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;

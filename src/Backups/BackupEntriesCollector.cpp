@@ -710,10 +710,10 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
     if (backup_settings.structure_only)
         return;
 
-    const auto & table_info = table_infos.at(table_name); 
+    const auto & table_info = table_infos.at(table_name);
     const auto & storage = table_info.storage;
     const auto & data_path_in_backup = table_info.data_path_in_backup;
-    
+
     if (!storage)
     {
         /// If storage == null that means this storage exists on other replicas but it has not been created on this replica yet.
@@ -726,7 +726,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
     }
 
     LOG_TRACE(log, "Collecting data of {} for backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
-    
+
     try
     {
         storage->backupData(*this, data_path_in_backup, table_info.partitions);
