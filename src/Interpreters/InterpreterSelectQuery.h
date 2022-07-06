@@ -92,12 +92,12 @@ public:
     BlockIO execute() override;
 
     /// Builds QueryPlan for current query.
-    virtual void buildQueryPlan(QueryPlan & query_plan) override;
+    void buildQueryPlan(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    virtual void ignoreWithTotals() override;
+    void ignoreWithTotals() override;
 
     ASTPtr getQuery() const { return query_ptr; }
 

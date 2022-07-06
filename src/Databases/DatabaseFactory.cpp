@@ -344,9 +344,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
         }
 
-        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            context->getSettingsRef().postgresql_connection_pool_size,
-            context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+        const auto & settings = context->getSettingsRef();
+        auto pool = std::make_shared<postgres::PoolWithFailover>(
+            configuration,
+            settings.postgresql_connection_pool_size,
+            settings.postgresql_connection_pool_wait_timeout,
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, configuration, pool, use_table_cache);
