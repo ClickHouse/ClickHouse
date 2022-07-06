@@ -136,10 +136,11 @@ target_compile_definitions(isal PUBLIC
                            NDEBUG)
 
 # [SUBDIR]core-sw
-#
-# Create avx512 library
-#
-#set(CMAKE_INCLUDE_CURRENT_DIR ON)
+# Two libraries:qplcore_avx512/qplcore_px for SW fallback will be created which are implemented by AVX512 and non-AVX512 instructions respectively.
+# The upper level QPL API will check SIMD capabilities of the target system at runtime and decide to call AVX512 function or non-AVX512 function.
+# Hence, here we don't need put qplcore_avx512 under an ENABLE_AVX512 CMake switch. 
+# Actually, if we do that, some undefined symbols errors would happen because both of AVX512 function and non-AVX512 function are referenced by QPL API.
+# PLATFORM=2 means AVX512 implementation; PLATFORM=0 means non-AVX512 implementation.
 
 # Find Core Sources
 file(GLOB SOURCES
@@ -151,11 +152,9 @@ file(GLOB SOURCES
 file(GLOB DATA_SOURCES
      ${QPL_SRC_DIR}/core-sw/src/data/*.c)
 
-# Create library
+# Create avx512 library
 add_library(qplcore_avx512 OBJECT ${SOURCES})
-# Two libraries will be created which implemented by AVX512 and non-AVX512 respectively.
-# The Program will check SIMD capabilities of the target system at runtime and use up to AVX512 if available.
-# PLATFORM=2 means AVX512 implementation; PLATFORM=0 means non-AVX512 implementation.
+
 target_compile_definitions(qplcore_avx512 PRIVATE PLATFORM=2)
 
 target_include_directories(qplcore_avx512
