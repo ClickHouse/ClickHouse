@@ -791,6 +791,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (data_part_storage->exists(TXN_VERSION_METADATA_FILE_NAME))
         result.emplace(TXN_VERSION_METADATA_FILE_NAME);
 
+    if (data_part_storage->exists(DELETED_ROWS_MARK_FILE_NAME))
+        result.emplace(DELETED_ROWS_MARK_FILE_NAME);
+
     return result;
 }
 
@@ -1216,8 +1219,6 @@ void IMergeTreeDataPart::loadDeletedMask()
 
     if (data_part_storage->exists(deleted_mask.name))
     {
-        has_lightweight_delete = true;
-
         data_part_storage->loadDeletedRowsMask(deleted_mask);
 
         if (deleted_mask.getDeletedRows().size() != rows_count)
@@ -1232,7 +1233,6 @@ void IMergeTreeDataPart::loadDeletedMask()
 void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask)
 {
     deleted_mask.setDeletedRows(new_mask);
-    has_lightweight_delete = true;
     data_part_storage->writeDeletedRowsMask(deleted_mask);
 }
 

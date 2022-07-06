@@ -1,7 +1,13 @@
 99
+1
 95
+1
 0
+1
 -----lightweight mutation type-----
+1
+1
+1
 1	DELETE WHERE (c % 5) = 1	1
 1	DELETE WHERE c = 4	1
 0	MATERIALIZE INDEX i_c	1
@@ -27,5 +33,7 @@ t_light	2	2_3_3_1_10	2
 t_light	3	3_4_4_1_10	2
 t_light	4	4_5_5_1_10	1
 -----Test lightweight delete in multi blocks-----
+1
+1
 1000	-2
 1005	-2

@@ -89,7 +89,7 @@ public:
 
     /// Support lightweight delete.
     void mutate(const MutationCommands & commands, ContextPtr context, MutationType type);
-    bool hasLightweightDelete() const override;
+    bool hasLightweightDeletedMask() const override;
 
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -184,7 +184,7 @@ private:
 
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
-    Int64 startMutation(const MutationCommands & commands, ContextPtr query_context, MutationType type = MutationType::Ordinary);
+    Int64 startMutation(const MutationCommands & commands, ContextPtr query_context, MutationType type);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version);
     void waitForMutation(const String & mutation_id) override;
