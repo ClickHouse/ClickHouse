@@ -525,16 +525,26 @@ try
                 out_file = out_file_node.value.safeGet<std::string>();
 
                 std::string compression_method;
+                UInt64 compression_level = 3;
                 if (query_with_output->compression)
                 {
                     const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
+
+                    if (query_with_output->compression_level)
+                    {
+                        const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
+                        bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
+
+                        if (!res || compression_level < 1 || compression_level > 9)
+                            throw Exception("Invalid compression level, must be positive integer in range 1-9", ErrorCodes::BAD_ARGUMENTS);
+                    }
                 }
 
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ 3
+                    compression_level
                 );
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
