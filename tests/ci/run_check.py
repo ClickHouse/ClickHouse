@@ -224,7 +224,10 @@ if __name__ == "__main__":
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
     commit.create_status(
-        context="Simple Check", description="Skipped", state="success", target_url=GITHUB_RUN_URL
+        context="Simple Check",
+        description="Skipped",
+        state="success",
+        target_url=GITHUB_RUN_URL
     )
 
     if description_error:
