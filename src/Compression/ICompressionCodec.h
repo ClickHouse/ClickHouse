@@ -53,7 +53,7 @@ public:
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
-    UInt32 decompress(const char * source, UInt32 source_size, char * dest);
+    UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 
     CodecMode getDecompressMode() const
     {
