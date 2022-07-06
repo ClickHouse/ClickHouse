@@ -47,4 +47,3 @@ last_exception:
 
 -   [Distributed table engine](../../engines/table-engines/special/distributed.md)
 
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/distribution_queue) <!--hide-->

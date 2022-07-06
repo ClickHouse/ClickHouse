@@ -260,6 +260,14 @@ auto constructWithReserveIfPossible(size_t size_hint)
     else
         return std::make_unique<Method>();
 }
+
+DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
+{
+    DB::ColumnNumbers keys_positions(params.keys_size);
+    for (size_t i = 0; i < params.keys_size; ++i)
+        keys_positions[i] = header.getPositionByName(params.keys[i]);
+    return keys_positions;
+}
 }
 
 namespace DB
@@ -356,21 +364,25 @@ Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
 
 Block Aggregator::getHeader(bool final) const
 {
-    return params.getHeader(final);
+    return params.getHeader(header, final);
 }
 
 Block Aggregator::Params::getHeader(
-    const Block & src_header,
-    const Block & intermediate_header,
-    const ColumnNumbers & keys,
-    const AggregateDescriptions & aggregates,
-    bool final)
+    const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final)
 {
     Block res;
 
-    if (intermediate_header)
+    if (only_merge)
     {
-        res = intermediate_header.cloneEmpty();
+        NameSet needed_columns(keys.begin(), keys.end());
+        for (const auto & aggregate : aggregates)
+            needed_columns.emplace(aggregate.column_name);
+
+        for (const auto & column : header)
+        {
+            if (needed_columns.contains(column.name))
+                res.insert(column.cloneEmpty());
+        }
 
         if (final)
         {
@@ -386,14 +398,14 @@ Block Aggregator::Params::getHeader(
     else
     {
         for (const auto & key : keys)
-            res.insert(src_header.safeGetByPosition(key).cloneEmpty());
+            res.insert(header.getByName(key).cloneEmpty());
 
         for (const auto & aggregate : aggregates)
         {
-            size_t arguments_size = aggregate.arguments.size();
+            size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
             for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = src_header.safeGetByPosition(aggregate.arguments[j]).type;
+                argument_types[j] = header.getByName(aggregate.argument_names[j]).type;
 
             DataTypePtr type;
             if (final)
@@ -434,9 +446,6 @@ Aggregator::AggregateColumnsConstData Aggregator::Params::makeAggregateColumnsDa
 void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 {
     Strings res;
-    const auto & header = src_header ? src_header
-                                     : intermediate_header;
-
     String prefix(indent, ' ');
 
     {
@@ -444,16 +453,13 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
         out << prefix << "Keys: ";
 
         bool first = true;
-        for (auto key : keys)
+        for (const auto & key : keys)
         {
             if (!first)
                 out << ", ";
             first = false;
 
-            if (key >= header.columns())
-                out << "unknown position " << key;
-            else
-                out << header.getByPosition(key).name;
+            out << key;
         }
 
         out << '\n';
@@ -470,18 +476,10 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
 {
-    const auto & header = src_header ? src_header
-                                     : intermediate_header;
-
     auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
 
-    for (auto key : keys)
-    {
-        if (key >= header.columns())
-            keys_array->add("");
-        else
-            keys_array->add(header.getByPosition(key).name);
-    }
+    for (const auto & key : keys)
+        keys_array->add(key);
 
     map.add("Keys", std::move(keys_array));
 
@@ -526,7 +524,8 @@ public:
 
 #endif
 
-Aggregator::Aggregator(const Params & params_) : params(params_)
+Aggregator::Aggregator(const Block & header_, const Params & params_)
+    : header(header_), keys_positions(calculateKeysPositions(header, params_)), params(params_)
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -672,9 +671,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     bool has_nullable_key = false;
     bool has_low_cardinality = false;
 
-    for (const auto & pos : params.keys)
+    for (const auto & key : params.keys)
     {
-        DataTypePtr type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(pos).type;
+        DataTypePtr type = header.getByName(key).type;
 
         if (type->lowCardinality())
         {
@@ -1277,11 +1276,15 @@ void NO_INLINE Aggregator::mergeOnIntervalWithoutKeyImpl(
 }
 
 
-void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns & aggregate_columns, Columns & materialized_columns,
-    AggregateFunctionInstructions & aggregate_functions_instructions, NestedColumnsHolder & nested_columns_holder) const
+void Aggregator::prepareAggregateInstructions(
+    Columns columns,
+    AggregateColumns & aggregate_columns,
+    Columns & materialized_columns,
+    AggregateFunctionInstructions & aggregate_functions_instructions,
+    NestedColumnsHolder & nested_columns_holder) const
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
-        aggregate_columns[i].resize(params.aggregates[i].arguments.size());
+        aggregate_columns[i].resize(params.aggregates[i].argument_names.size());
 
     aggregate_functions_instructions.resize(params.aggregates_size + 1);
     aggregate_functions_instructions[params.aggregates_size].that = nullptr;
@@ -1293,7 +1296,8 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            materialized_columns.push_back(columns.at(params.aggregates[i].arguments[j])->convertToFullColumnIfConst());
+            const auto pos = header.getPositionByName(params.aggregates[i].argument_names[j]);
+            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             auto full_column = allow_sparse_arguments
@@ -1382,7 +1386,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        materialized_columns.push_back(recursiveRemoveSparse(columns.at(params.keys[i]))->convertToFullColumnIfConst());
+        materialized_columns.push_back(recursiveRemoveSparse(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back().get();
 
         if (!result.isLowCardinality())
@@ -1954,11 +1958,11 @@ Block Aggregator::prepareBlockAndFill(
     MutableColumns final_aggregate_columns(params.aggregates_size);
     AggregateColumnsData aggregate_columns_data(params.aggregates_size);
 
-    Block header = getHeader(final);
+    Block res_header = getHeader(final);
 
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = header.safeGetByPosition(i).type->createColumn();
+        key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
         key_columns[i]->reserve(rows);
     }
 
@@ -1967,7 +1971,7 @@ Block Aggregator::prepareBlockAndFill(
         if (!final)
         {
             const auto & aggregate_column_name = params.aggregates[i].column_name;
-            aggregate_columns[i] = header.getByName(aggregate_column_name).type->createColumn();
+            aggregate_columns[i] = res_header.getByName(aggregate_column_name).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
@@ -2003,7 +2007,7 @@ Block Aggregator::prepareBlockAndFill(
 
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
-    Block res = header.cloneEmpty();
+    Block res = res_header.cloneEmpty();
 
     for (size_t i = 0; i < params.keys_size; ++i)
         res.getByPosition(i).column = std::move(key_columns[i]);
@@ -2018,7 +2022,7 @@ Block Aggregator::prepareBlockAndFill(
     }
 
     /// Change the size of the columns-constants in the block.
-    size_t columns = header.columns();
+    size_t columns = res_header.columns();
     for (size_t i = 0; i < columns; ++i)
         if (isColumnConst(*res.getByPosition(i).column))
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
