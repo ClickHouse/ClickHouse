@@ -3,10 +3,10 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <cerrno>
 #include <memory>
 #include <iostream>
 
