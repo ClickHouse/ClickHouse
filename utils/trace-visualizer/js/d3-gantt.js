@@ -37,6 +37,7 @@
             .on("zoom", function() {
                 if (tipShown != null) {
                     tip.hide(tipShown);
+                    tipShown = null;
                 }
                 var tr = d3.event.transform;
                 xZoomed = tr.rescaleX(x);
@@ -50,8 +51,6 @@
 
                 zoomContainer1.attr("transform", "translate(" + tr.x + ",0) scale(" + tr.k + ",1)");
                 zoomContainer2.attr("transform", "translate(" + tr.x + ",0) scale(" + tr.k + ",1)");
-
-                render();
             })
             .on("start", function() {
                 zoom.startScreenY = d3.event.sourceEvent.screenY;
@@ -114,6 +113,12 @@
             .attr("transform", "translate(0, " + (height - margin.top - margin.bottom) + ")")
           .transition()
             .call(xAxis)
+        ;
+
+        // ruler should be drawn above x axis and under y axis
+        ruler = fixedContainer.append("g")
+            .attr("id", "ruler")
+            .attr("transform", "translate(0, 0)")
         ;
 
         // create y axis
@@ -186,10 +191,6 @@
         ;
 
         // ruler
-        ruler = fixedContainer.append("g")
-            .attr("id", "ruler")
-            .attr("transform", "translate(0, 0)")
-        ;
         ruler.append("rect")
             .attr("id", "ruler-line")
             .attr("x", 0)
@@ -218,10 +219,9 @@
 
         // scroll handling
         window.onscroll = function myFunction() {
-            documentBodyScrollLeft(document.body.scrollLeft);
-            documentBodyScrollTop(document.body.scrollTop);
+            documentBodyScrollLeft(window.scrollX);
+            documentBodyScrollTop(window.scrollY);
             var scroll = scrollParams();
-
             svgChartContainer
                 .attr("transform", "translate(" + margin.left
                                          + ", " + (margin.top + scroll.y1) + ")");
@@ -262,10 +262,6 @@
         return "translate(" + x(d.t1) + "," + y(d.band) + ")";
     }
 
-    var xPixel = function(d) {
-        return xZoomed.invert(1) - xZoomed.invert(0);
-    }
-
     var render = function(t0, smooth) {
         // Save/restore last t0 value
         if (!arguments.length || t0 == -1) {
@@ -282,7 +278,7 @@
             .attr("class", "bar")
             .attr("vector-effect", "non-scaling-stroke")
             .style("fill", d => d.color)
-            .on('click', function(d) {
+            .on('mouseover', function(d) {
                 if (tipShown != d) {
                     tipShown = d;
                     tip.show(d);
@@ -296,7 +292,7 @@
             .attr("y", 0)
             .attr("transform", bandTransform)
             .attr("height", y.bandwidth())
-            .attr("width", d => Math.max(1*xPixel(), x(d.t2) - x(d.t1)))
+            .attr("width", d => x(d.t2) - x(d.t1))
         ;
 
         var emptyMarker = bandsSvg.selectAll("text")
@@ -314,12 +310,11 @@
             //.clamp(true); // dosn't work with zoom/pan
         xZoomed = x;
         y = d3.scaleBand()
-            .domain(Object.values(data).map(d => d.band).sort())
-            .rangeRound([0, height - margin.top - margin.bottom])
-            .padding(0.5);
+            .domain([...data.bands])
+            .range([1, height - margin.top - margin.bottom])
+            .padding(1/8);
         xAxis = d3.axisBottom()
             .scale(x)
-            //.tickSubdivide(true)
             .tickSize(8)
             .tickPadding(8);
         yAxis = d3.axisLeft()
@@ -331,7 +326,7 @@
     var documentBodyScrollLeft = function(value) {
         if (!arguments.length) {
             if (documentBodyScrollLeft.value === undefined) {
-                documentBodyScrollLeft.value = document.body.scrollLeft;
+                documentBodyScrollLeft.value = window.scrollX;
             }
             return documentBodyScrollLeft.value;
         } else {
@@ -343,7 +338,7 @@
     var documentBodyScrollTop = function(value) {
         if (!arguments.length) {
             if (!documentBodyScrollTop.value === undefined) {
-                documentBodyScrollTop.value = document.body.scrollTop;
+                documentBodyScrollTop.value = window.scrollY;
             }
             return documentBodyScrollTop.value;
         } else {
@@ -353,7 +348,7 @@
 
     var scrollParams = function() {
         var y1 = documentBodyScrollTop();
-        var y2 = y1 + window.innerHeight - margin.footer;
+        var y2 = y1 + view_height;
         y2 = Math.min(y2, height - margin.top - margin.bottom);
         var h = y2 - y1;
         return {
@@ -401,7 +396,7 @@
         var textWidth = 10 * posText.length;
         ruler.select("#bgrect")
             .attr("x", -textWidth/2 - xpadding)
-            .attr("y", positionRuler.bbox.y - ypadding)
+            .attr("y", positionRuler.bbox.y - ypadding + window.scrollY)
             .attr("width", textWidth + (xpadding*2))
             .attr("height", positionRuler.bbox.height + (ypadding*2))
         ;
@@ -425,6 +420,13 @@
         return gantt;
     }
 
+    gantt.view_height = function(value) {
+        if (!arguments.length)
+            return view_height;
+        view_height = +value;
+        return gantt;
+    }
+
     gantt.selector = function(value) {
         if (!arguments.length)
             return selector;
@@ -444,12 +446,18 @@
         return data;
     }
 
+    gantt.destroy = function() {
+        tip.destroy();
+        d3.select(selector).selectAll("svg").remove();
+    }
+
     // constructor
 
     // Config
-    var margin = { top: 20, right: 40, bottom: 20, left: 200, footer: 100 },
+    var margin = { top: 0, right: 30, bottom: 20, left: 150 },
         height = document.body.clientHeight - margin.top - margin.bottom - 5,
         width = document.body.clientWidth - margin.right - margin.left - 5,
+        view_height = window.innerHeight,
         selector = 'body',
         timeDomainStart = 0,
         timeDomainEnd = 1000,

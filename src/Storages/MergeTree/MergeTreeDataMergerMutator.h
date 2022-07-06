@@ -114,6 +114,7 @@ public:
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
         const IMergeTreeDataPart * parent_part = nullptr,
+        const IDataPartStorageBuilder * parent_path_storage_builder = nullptr,
         const String & suffix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
@@ -132,7 +133,8 @@ public:
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
         const MergeTreeTransactionPtr & txn,
-        MergeTreeData::Transaction * out_transaction = nullptr);
+        MergeTreeData::Transaction & out_transaction,
+        DataPartStorageBuilderPtr builder);
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.

@@ -54,9 +54,9 @@ private:
 
     bool checkSQLiteTable(const String & table_name) const;
 
-    NameSet fetchTablesList() const;
+    NameSet fetchTablesList() const TSA_REQUIRES(mutex);
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
 
 };
 

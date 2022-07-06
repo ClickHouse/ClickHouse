@@ -615,8 +615,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         auto caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache_data] : caches)
         {
-            new_values["FilesystemCacheBytes"] = cache_data.cache->getUsedCacheSize();
-            new_values["FilesystemCacheFiles"] = cache_data.cache->getFileSegmentsNum();
+            new_values["FilesystemCacheBytes"] = cache_data->cache->getUsedCacheSize();
+            new_values["FilesystemCacheFiles"] = cache_data->cache->getFileSegmentsNum();
         }
     }
 
