@@ -1100,9 +1100,9 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
             throw Exception("Full sorting merge join is supported only for single-condition joins", ErrorCodes::NOT_IMPLEMENTED);
         if (analyzed_join->isSpecialStorage())
             throw Exception("Full sorting merge join is not supported for special storage", ErrorCodes::NOT_IMPLEMENTED);
-        return std::make_shared<FullSortingMergeJoin>(analyzed_join, sample_block);
+        return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
-    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(

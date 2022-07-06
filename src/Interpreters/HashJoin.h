@@ -173,12 +173,7 @@ public:
 
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
-    /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
-      */
-    void setTotals(const Block & block) override { totals = block; }
-    const Block & getTotals() const override { return totals; }
-
-    virtual JoinPipelineType pipelineType() const override
+    JoinPipelineType pipelineType() const override
     {
         /// No need to process anything in the right stream if it's a dictionary will just join the left stream with it.
         bool is_filled = from_storage_join || data->type == Type::DICT;
