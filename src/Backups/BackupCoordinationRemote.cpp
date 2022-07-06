@@ -1,4 +1,4 @@
-#include <Backups/BackupCoordinationDistributed.h>
+#include <Backups/BackupCoordinationRemote.h>
 #include <Access/Common/AccessEntityType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -165,7 +165,7 @@ namespace
     constexpr size_t NUM_ATTEMPTS = 10;
 }
 
-BackupCoordinationDistributed::BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
+BackupCoordinationRemote::BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , status_sync(zookeeper_path_ + "/status", get_zookeeper_, &Poco::Logger::get("BackupCoordination"))
@@ -173,9 +173,9 @@ BackupCoordinationDistributed::BackupCoordinationDistributed(const String & zook
     createRootNodes();
 }
 
-BackupCoordinationDistributed::~BackupCoordinationDistributed() = default;
+BackupCoordinationRemote::~BackupCoordinationRemote() = default;
 
-void BackupCoordinationDistributed::createRootNodes()
+void BackupCoordinationRemote::createRootNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
@@ -189,30 +189,30 @@ void BackupCoordinationDistributed::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
 }
 
-void BackupCoordinationDistributed::removeAllNodes()
+void BackupCoordinationRemote::removeAllNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->removeRecursive(zookeeper_path);
 }
 
 
-void BackupCoordinationDistributed::setStatus(const String & current_host, const String & new_status, const String & message)
+void BackupCoordinationRemote::setStatus(const String & current_host, const String & new_status, const String & message)
 {
     status_sync.set(current_host, new_status, message);
 }
 
-Strings BackupCoordinationDistributed::setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
+Strings BackupCoordinationRemote::setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
 {
     return status_sync.setAndWait(current_host, new_status, message, all_hosts);
 }
 
-Strings BackupCoordinationDistributed::setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
+Strings BackupCoordinationRemote::setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
 {
     return status_sync.setAndWaitFor(current_host, new_status, message, all_hosts, timeout_ms);
 }
 
 
-void BackupCoordinationDistributed::addReplicatedPartNames(
+void BackupCoordinationRemote::addReplicatedPartNames(
     const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
@@ -220,7 +220,7 @@ void BackupCoordinationDistributed::addReplicatedPartNames(
 {
     {
         std::lock_guard lock{mutex};
-        if (replicated_parts_and_mutations)
+        if (replicated_tables)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedPartNames() must not be called after preparing");
     }
 
@@ -231,14 +231,14 @@ void BackupCoordinationDistributed::addReplicatedPartNames(
     zookeeper->create(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_name_for_logs), zkutil::CreateMode::Persistent);
 }
 
-Strings BackupCoordinationDistributed::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
+Strings BackupCoordinationRemote::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{mutex};
-    prepareReplicatedPartsAndMutations();
-    return replicated_parts_and_mutations->getPartNames(table_shared_id, replica_name);
+    prepareReplicatedTables();
+    return replicated_tables->getPartNames(table_shared_id, replica_name);
 }
 
-void BackupCoordinationDistributed::addReplicatedMutations(
+void BackupCoordinationRemote::addReplicatedMutations(
     const String & table_shared_id,
     const String & table_name_for_logs,
     const String & replica_name,
@@ -246,7 +246,7 @@ void BackupCoordinationDistributed::addReplicatedMutations(
 {
     {
         std::lock_guard lock{mutex};
-        if (replicated_parts_and_mutations)
+        if (replicated_tables)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedMutations() must not be called after preparing");
     }
 
@@ -257,57 +257,23 @@ void BackupCoordinationDistributed::addReplicatedMutations(
     zookeeper->create(path, ReplicatedMutations::serialize(mutations, table_name_for_logs), zkutil::CreateMode::Persistent);
 }
 
-std::vector<IBackupCoordination::MutationInfo> BackupCoordinationDistributed::getReplicatedMutations(const String & table_shared_id, const String & replica_name) const
+std::vector<IBackupCoordination::MutationInfo> BackupCoordinationRemote::getReplicatedMutations(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{mutex};
-    prepareReplicatedPartsAndMutations();
-    return replicated_parts_and_mutations->getMutations(table_shared_id, replica_name);
+    prepareReplicatedTables();
+    return replicated_tables->getMutations(table_shared_id, replica_name);
 }
 
 
-void BackupCoordinationDistributed::prepareReplicatedPartsAndMutations() const
-{
-    if (replicated_parts_and_mutations)
-        return;
-
-    replicated_parts_and_mutations.emplace();
-    auto zookeeper = get_zookeeper();
-
-    {
-        String path = zookeeper_path + "/repl_part_names";
-        for (const String & escaped_table_zk_path : zookeeper->getChildren(path))
-        {
-            String table_zk_path = unescapeForFileName(escaped_table_zk_path);
-            String path2 = path + "/" + escaped_table_zk_path;
-            for (const String & escaped_replica_name : zookeeper->getChildren(path2))
-            {
-                String replica_name = unescapeForFileName(escaped_replica_name);
-                auto part_names = ReplicatedPartNames::deserialize(zookeeper->get(path2 + "/" + escaped_replica_name));
-                replicated_parts_and_mutations->addPartNames(table_zk_path, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums);
-            }
-        }
-    }
-
-    {
-        String path = zookeeper_path + "/repl_mutations";
-        for (const String & escaped_table_zk_path : zookeeper->getChildren(path))
-        {
-            String table_zk_path = unescapeForFileName(escaped_table_zk_path);
-            String path2 = path + "/" + escaped_table_zk_path;
-            for (const String & escaped_replica_name : zookeeper->getChildren(path2))
-            {
-                String replica_name = unescapeForFileName(escaped_replica_name);
-                auto mutations = ReplicatedMutations::deserialize(zookeeper->get(path2 + "/" + escaped_replica_name));
-                replicated_parts_and_mutations->addMutations(table_zk_path, mutations.table_name_for_logs, replica_name, mutations.mutations);
-            }
-        }
-    }
-}
-
-
-void BackupCoordinationDistributed::addReplicatedDataPath(
+void BackupCoordinationRemote::addReplicatedDataPath(
     const String & table_shared_id, const String & data_path)
 {
+    {
+        std::lock_guard lock{mutex};
+        if (replicated_tables)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedDataPath() must not be called after preparing");
+    }
+    
     auto zookeeper = get_zookeeper();
     String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
     zookeeper->createIfNotExists(path, "");
@@ -315,21 +281,76 @@ void BackupCoordinationDistributed::addReplicatedDataPath(
     zookeeper->createIfNotExists(path, "");
 }
 
-Strings BackupCoordinationDistributed::getReplicatedDataPaths(const String & table_shared_id) const
+Strings BackupCoordinationRemote::getReplicatedDataPaths(const String & table_shared_id) const
 {
-    auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
-    Strings children = zookeeper->getChildren(path);
-    Strings data_paths;
-    data_paths.reserve(children.size());
-    for (const String & child : children)
-        data_paths.push_back(unescapeForFileName(child));
-    return data_paths;
+    std::lock_guard lock{mutex};
+    prepareReplicatedTables();
+    return replicated_tables->getDataPaths(table_shared_id);
 }
 
 
-void BackupCoordinationDistributed::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
+void BackupCoordinationRemote::prepareReplicatedTables() const
 {
+    if (replicated_tables)
+        return;
+
+    replicated_tables.emplace();
+    auto zookeeper = get_zookeeper();
+
+    {
+        String path = zookeeper_path + "/repl_part_names";
+        for (const String & escaped_table_shared_id : zookeeper->getChildren(path))
+        {
+            String table_shared_id = unescapeForFileName(escaped_table_shared_id);
+            String path2 = path + "/" + escaped_table_shared_id;
+            for (const String & escaped_replica_name : zookeeper->getChildren(path2))
+            {
+                String replica_name = unescapeForFileName(escaped_replica_name);
+                auto part_names = ReplicatedPartNames::deserialize(zookeeper->get(path2 + "/" + escaped_replica_name));
+                replicated_tables->addPartNames(table_shared_id, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums);
+            }
+        }
+    }
+
+    {
+        String path = zookeeper_path + "/repl_mutations";
+        for (const String & escaped_table_shared_id : zookeeper->getChildren(path))
+        {
+            String table_shared_id = unescapeForFileName(escaped_table_shared_id);
+            String path2 = path + "/" + escaped_table_shared_id;
+            for (const String & escaped_replica_name : zookeeper->getChildren(path2))
+            {
+                String replica_name = unescapeForFileName(escaped_replica_name);
+                auto mutations = ReplicatedMutations::deserialize(zookeeper->get(path2 + "/" + escaped_replica_name));
+                replicated_tables->addMutations(table_shared_id, mutations.table_name_for_logs, replica_name, mutations.mutations);
+            }
+        }
+    }
+
+    {
+        String path = zookeeper_path + "/repl_data_paths";
+        for (const String & escaped_table_shared_id : zookeeper->getChildren(path))
+        {
+            String table_shared_id = unescapeForFileName(escaped_table_shared_id);
+            String path2 = path + "/" + escaped_table_shared_id;
+            for (const String & escaped_data_path : zookeeper->getChildren(path2))
+            {
+                String data_path = unescapeForFileName(escaped_data_path);
+                replicated_tables->addDataPath(table_shared_id, data_path);
+            }
+        }
+    }
+}
+
+
+void BackupCoordinationRemote::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
+{
+    {
+        std::lock_guard lock{mutex};
+        if (replicated_access)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedAccessFilePath() must not be called after preparing");
+    }
+    
     auto zookeeper = get_zookeeper();
     String path = zookeeper_path + "/repl_access/" + escapeForFileName(access_zk_path);
     zookeeper->createIfNotExists(path, "");
@@ -339,14 +360,14 @@ void BackupCoordinationDistributed::addReplicatedAccessFilePath(const String & a
     zookeeper->createIfNotExists(path, file_path);
 }
 
-Strings BackupCoordinationDistributed::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const
+Strings BackupCoordinationRemote::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const
 {
     std::lock_guard lock{mutex};
     prepareReplicatedAccess();
     return replicated_access->getFilePaths(access_zk_path, access_entity_type, host_id);
 }
 
-void BackupCoordinationDistributed::prepareReplicatedAccess() const
+void BackupCoordinationRemote::prepareReplicatedAccess() const
 {
     if (replicated_access)
         return;
@@ -354,7 +375,7 @@ void BackupCoordinationDistributed::prepareReplicatedAccess() const
     replicated_access.emplace();
     auto zookeeper = get_zookeeper();
     
-    String path = zookeeper_path + "/repl_access/";
+    String path = zookeeper_path + "/repl_access";
     for (const String & escaped_access_zk_path : zookeeper->getChildren(path))
     {
         String access_zk_path = unescapeForFileName(escaped_access_zk_path);
@@ -373,7 +394,7 @@ void BackupCoordinationDistributed::prepareReplicatedAccess() const
 }
 
 
-void BackupCoordinationDistributed::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
+void BackupCoordinationRemote::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
     auto zookeeper = get_zookeeper();
 
@@ -395,7 +416,7 @@ void BackupCoordinationDistributed::addFileInfo(const FileInfo & file_info, bool
     is_data_file_required = (code == Coordination::Error::ZOK) && (file_info.size > file_info.base_size);
 }
 
-void BackupCoordinationDistributed::updateFileInfo(const FileInfo & file_info)
+void BackupCoordinationRemote::updateFileInfo(const FileInfo & file_info)
 {
     if (!file_info.size)
         return; /// we don't keep FileInfos for empty files, nothing to update
@@ -417,7 +438,7 @@ void BackupCoordinationDistributed::updateFileInfo(const FileInfo & file_info)
     }
 }
 
-std::vector<FileInfo> BackupCoordinationDistributed::getAllFileInfos() const
+std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
 {
     auto zookeeper = get_zookeeper();
     std::vector<FileInfo> file_infos;
@@ -435,7 +456,7 @@ std::vector<FileInfo> BackupCoordinationDistributed::getAllFileInfos() const
     return file_infos;
 }
 
-Strings BackupCoordinationDistributed::listFiles(const String & directory, bool recursive) const
+Strings BackupCoordinationRemote::listFiles(const String & directory, bool recursive) const
 {
     auto zookeeper = get_zookeeper();
     Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
@@ -468,7 +489,7 @@ Strings BackupCoordinationDistributed::listFiles(const String & directory, bool 
     return elements;
 }
 
-bool BackupCoordinationDistributed::hasFiles(const String & directory) const
+bool BackupCoordinationRemote::hasFiles(const String & directory) const
 {
     auto zookeeper = get_zookeeper();
     Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
@@ -487,7 +508,7 @@ bool BackupCoordinationDistributed::hasFiles(const String & directory) const
     return false;
 }
 
-std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const String & file_name) const
+std::optional<FileInfo> BackupCoordinationRemote::getFileInfo(const String & file_name) const
 {
     auto zookeeper = get_zookeeper();
     String size_and_checksum;
@@ -501,7 +522,7 @@ std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const String 
     return file_info;
 }
 
-std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const SizeAndChecksum & size_and_checksum) const
+std::optional<FileInfo> BackupCoordinationRemote::getFileInfo(const SizeAndChecksum & size_and_checksum) const
 {
     auto zookeeper = get_zookeeper();
     String file_info_str;
@@ -510,7 +531,7 @@ std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const SizeAnd
     return deserializeFileInfo(file_info_str);
 }
 
-std::optional<SizeAndChecksum> BackupCoordinationDistributed::getFileSizeAndChecksum(const String & file_name) const
+std::optional<SizeAndChecksum> BackupCoordinationRemote::getFileSizeAndChecksum(const String & file_name) const
 {
     auto zookeeper = get_zookeeper();
     String size_and_checksum;
@@ -519,7 +540,7 @@ std::optional<SizeAndChecksum> BackupCoordinationDistributed::getFileSizeAndChec
     return deserializeSizeAndChecksum(size_and_checksum);
 }
 
-String BackupCoordinationDistributed::getNextArchiveSuffix()
+String BackupCoordinationRemote::getNextArchiveSuffix()
 {
     auto zookeeper = get_zookeeper();
     String path = zookeeper_path + "/archive_suffixes/a";
@@ -530,7 +551,7 @@ String BackupCoordinationDistributed::getNextArchiveSuffix()
     return formatArchiveSuffix(extractCounterFromSequentialNodeName(path_created));
 }
 
-Strings BackupCoordinationDistributed::getAllArchiveSuffixes() const
+Strings BackupCoordinationRemote::getAllArchiveSuffixes() const
 {
     auto zookeeper = get_zookeeper();
     Strings node_names = zookeeper->getChildren(zookeeper_path + "/archive_suffixes");
@@ -539,7 +560,7 @@ Strings BackupCoordinationDistributed::getAllArchiveSuffixes() const
     return node_names;
 }
 
-void BackupCoordinationDistributed::drop()
+void BackupCoordinationRemote::drop()
 {
     removeAllNodes();
 }

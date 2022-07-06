@@ -8,8 +8,10 @@ namespace DB
 {
 enum class AccessEntityType;
 
-
-/// Keeps information about files contained in a backup.
+/// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
+/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
+/// BackupCoordinationLocal is used while executing BACKUP without ON CLUSTER and performs coordination in memory.
+/// BackupCoordinationRemote is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
 class IBackupCoordination
 {
 public:
@@ -19,6 +21,8 @@ public:
     virtual void setStatus(const String & current_host, const String & new_status, const String & message) = 0;
     virtual Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts) = 0;
     virtual Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts, UInt64 timeout_ms) = 0;
+
+    static constexpr const char * kErrorStatus = "error";
 
     struct PartNameAndChecksum
     {

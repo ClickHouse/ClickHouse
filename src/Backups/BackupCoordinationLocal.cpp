@@ -30,42 +30,39 @@ Strings BackupCoordinationLocal::setStatusAndWaitFor(const String &, const Strin
 void BackupCoordinationLocal::addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
     std::lock_guard lock{mutex};
-    replicated_parts_and_mutations.addPartNames(table_shared_id, table_name_for_logs, replica_name, part_names_and_checksums);
+    replicated_tables.addPartNames(table_shared_id, table_name_for_logs, replica_name, part_names_and_checksums);
 }
 
 Strings BackupCoordinationLocal::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{mutex};
-    return replicated_parts_and_mutations.getPartNames(table_shared_id, replica_name);
+    return replicated_tables.getPartNames(table_shared_id, replica_name);
 }
 
 
 void BackupCoordinationLocal::addReplicatedMutations(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations)
 {
     std::lock_guard lock{mutex};
-    replicated_parts_and_mutations.addMutations(table_shared_id, table_name_for_logs, replica_name, mutations);
+    replicated_tables.addMutations(table_shared_id, table_name_for_logs, replica_name, mutations);
 }
 
 std::vector<IBackupCoordination::MutationInfo> BackupCoordinationLocal::getReplicatedMutations(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{mutex};
-    return replicated_parts_and_mutations.getMutations(table_shared_id, replica_name);
+    return replicated_tables.getMutations(table_shared_id, replica_name);
 }
 
 
 void BackupCoordinationLocal::addReplicatedDataPath(const String & table_shared_id, const String & data_path)
 {
     std::lock_guard lock{mutex};
-    replicated_data_paths[table_shared_id].push_back(data_path);
+    replicated_tables.addDataPath(table_shared_id, data_path);
 }
 
 Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_shared_id) const
 {
     std::lock_guard lock{mutex};
-    auto it = replicated_data_paths.find(table_shared_id);
-    if (it == replicated_data_paths.end())
-        return {};
-    return it->second;
+    return replicated_tables.getDataPaths(table_shared_id);
 }
 
 

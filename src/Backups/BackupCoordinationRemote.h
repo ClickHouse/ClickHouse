@@ -1,18 +1,20 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
-#include <Backups/BackupCoordinationHelpers.h>
+#include <Backups/BackupCoordinationReplicatedAccess.h>
+#include <Backups/BackupCoordinationReplicatedTables.h>
+#include <Backups/BackupCoordinationStatusSync.h>
 
 
 namespace DB
 {
 
-/// Stores backup temporary information in Zookeeper, used to perform BACKUP ON CLUSTER.
-class BackupCoordinationDistributed : public IBackupCoordination
+/// Implementation of the IBackupCoordination interface performing coordination via ZooKeeper. It's necessary for "BACKUP ON CLUSTER".
+class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
-    ~BackupCoordinationDistributed() override;
+    BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
+    ~BackupCoordinationRemote() override;
 
     void setStatus(const String & current_host, const String & new_status, const String & message) override;
     Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts) override;
@@ -58,7 +60,7 @@ public:
 private:
     void createRootNodes();
     void removeAllNodes();
-    void prepareReplicatedPartsAndMutations() const;
+    void prepareReplicatedTables() const;
     void prepareReplicatedAccess() const;
 
     const String zookeeper_path;
@@ -67,7 +69,7 @@ private:
     BackupCoordinationStatusSync status_sync;
 
     mutable std::mutex mutex;
-    mutable std::optional<BackupCoordinationReplicatedPartsAndMutations> replicated_parts_and_mutations;
+    mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
 };
 
