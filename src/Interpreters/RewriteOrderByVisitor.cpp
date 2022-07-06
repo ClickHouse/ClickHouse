@@ -13,12 +13,15 @@ void RewriteOrderBy::visit(ASTPtr & ast, Data &)
     if (!query)
         return;
 
-    auto order_by = query->orderBy();
+    const ASTPtr & order_by = query->orderBy();
     if (!order_by)
         return;
 
     const auto * expr_list = order_by->as<ASTExpressionList>();
     if (!expr_list)
+        return;
+
+    if (expr_list->children.size() != 1)
         return;
 
     const auto * order_by_elem = expr_list->children.front()->as<ASTOrderByElement>();
