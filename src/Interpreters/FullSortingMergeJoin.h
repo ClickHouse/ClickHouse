@@ -11,8 +11,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
 }
 
 /// Dummy class, actual joining is done by MergeTransform
