@@ -687,6 +687,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_s3/shared", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_hdfs", String(), zkutil::CreateMode::Persistent));
         futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_hdfs/shared", String(), zkutil::CreateMode::Persistent));
+        futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_nfs", String(), zkutil::CreateMode::Persistent));
+        futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/zero_copy_nfs/shared", String(), zkutil::CreateMode::Persistent));
     }
 
     /// Part movement.

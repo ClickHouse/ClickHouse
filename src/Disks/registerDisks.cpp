@@ -25,6 +25,8 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
+void registerDiskNFS(DiskFactory & factory);
+
 void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check);
 
 void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
@@ -55,6 +57,8 @@ void registerDisks(bool global_skip_access_check)
 #if USE_HDFS
     registerDiskHDFS(factory, global_skip_access_check);
 #endif
+
+    registerDiskNFS(factory);
 
     registerDiskWebServer(factory, global_skip_access_check);
 

@@ -1,0 +1,55 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <d_nfs>
+                <type>nfs</type>
+                <path>/nfs/00/</path>
+                <data_cache_enabled>true</data_cache_enabled>
+            </d_nfs>
+            <d_local>
+                <path>./data/</path>
+            </d_local>
+        </disks>
+        <policies>
+            <p_nfs>
+                <volumes>
+                    <main>
+                        <disk>d_nfs</disk>
+                    </main>
+                </volumes>
+            </p_nfs>
+            <p_local>
+                <volumes>
+                    <main>
+                        <disk>d_local</disk>
+                    </main>
+                </volumes>
+            </p_local>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
+    </merge_tree>
+
+    <remote_servers>
+        <nfs_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </nfs_cluster>
+    </remote_servers>
+
+    <macros>
+        <cluster>nfs_cluster</cluster>
+        <shard>0</shard>
+    </macros>
+
+</clickhouse>

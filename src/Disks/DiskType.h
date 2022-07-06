@@ -13,6 +13,7 @@ enum class DataSourceType
     S3,
     S3_Plain,
     HDFS,
+    NFS,
     WebServer,
     AzureBlobStorage,
     LocalBlobStorage,
@@ -32,6 +33,8 @@ inline String toString(DataSourceType data_source_type)
             return "s3_plain";
         case DataSourceType::HDFS:
             return "hdfs";
+        case DataSourceType::NFS:
+            return "nfs";
         case DataSourceType::WebServer:
             return "web";
         case DataSourceType::AzureBlobStorage:

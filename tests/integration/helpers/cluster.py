@@ -429,6 +429,7 @@ class ClickHouseCluster:
         self.with_nats = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
+        self.with_nfs = False
         self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_mongo_secure = False
@@ -468,6 +469,9 @@ class ClickHouseCluster:
         self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
         self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
         self.hdfs_api = None  # also for kerberized hdfs
+
+        # available when with_nfs == True
+        self.nfs_dir = p.abspath(p.join(self.instances_dir, "nfs"))
 
         # available when with_kerberized_hdfs == True
         self.hdfs_kerberized_host = "kerberizedhdfs1"
@@ -1141,6 +1145,11 @@ class ClickHouseCluster:
         logging.debug("HDFS BASE CMD:{self.base_hdfs_cmd)}")
         return self.base_hdfs_cmd
 
+    def setup_nfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_nfs = True
+        self.base_nfs_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name]
+        return self.base_nfs_cmd
+
     def setup_kerberized_hdfs_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1521,6 +1530,7 @@ class ClickHouseCluster:
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_hdfs=False,
+        with_nfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
         with_mongo_secure=False,
@@ -1636,6 +1646,7 @@ class ClickHouseCluster:
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
+            shared_path=self.nfs_dir,
             with_odbc_drivers=with_odbc_drivers,
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
@@ -1786,6 +1797,9 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_hdfs_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+
+        if with_nfs and not self.with_nfs:
+            cmds.append(self.setup_nfs_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_kerberized_hdfs and not self.with_kerberized_hdfs:
             cmds.append(
@@ -2807,6 +2821,12 @@ class ClickHouseCluster:
                 self.make_hdfs_api()
                 self.wait_hdfs_to_start()
 
+            if self.with_nfs and self.base_nfs_cmd:
+                logging.debug('Setup NFS, nfs dir : %s' % self.nfs_dir)
+                os.makedirs(self.nfs_dir)
+                os.chmod(self.nfs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                self.up_called = True
+
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug("Setup kerberized HDFS")
                 os.makedirs(self.hdfs_kerberized_logs_dir)
@@ -3100,6 +3120,7 @@ services:
             - {instance_config_dir}:/etc/clickhouse-server/
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
+            - {shared_path}:/nfs/
             - /etc/passwd:/etc/passwd:ro
             {binary_volume}
             {odbc_bridge_volume}
@@ -3233,6 +3254,7 @@ class ClickHouseInstance:
         self.server_bin_path = server_bin_path
         self.odbc_bridge_bin_path = odbc_bridge_bin_path
         self.library_bridge_bin_path = library_bridge_bin_path
+        self.shared_path = shared_path
 
         self.with_mysql_client = with_mysql_client
         self.with_mysql = with_mysql
