@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Storages/IStorage.h>
+#include <Storages/IKVStorage.h>
 #include <Storages/SetSettings.h>
 
 
@@ -14,7 +14,7 @@ using SetPtr = std::shared_ptr<Set>;
 
 /** Common part of StorageSet and StorageJoin.
   */
-class StorageSetOrJoinBase : public IStorage
+class StorageSetOrJoinBase : public IKeyValueStorage
 {
     friend class SetOrJoinSink;
 
@@ -40,7 +40,7 @@ protected:
     String path;
     bool persistent;
 
-    std::atomic<UInt64> increment = 0;    /// For the backup file names.
+    std::atomic<UInt64> increment = 0; /// For the backup file names.
 
     /// Restore from backup.
     void restore();
@@ -82,6 +82,12 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
+    std::vector<String> getPrimaryKey() const override;
+
+    Chunk
+    getByKeys(const ColumnsWithTypeAndName & cols, const Block & sample_block, PaddedPODArray<UInt8> * /*null_map*/, ContextPtr /*context*/)
+        const override;
 
 private:
     SetPtr set;

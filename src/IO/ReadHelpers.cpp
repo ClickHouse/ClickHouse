@@ -313,6 +313,20 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf)
 template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 
+template <typename Vector>
+void readStringUntilCarriageReturnInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\r'>(s, buf);
+}
+
+
+void readStringUntilCarriageReturn(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCarriageReturnInto(s, buf);
+}
+
+
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol
   */
@@ -1207,6 +1221,24 @@ void skipToCarriageReturnOrEOF(ReadBuffer & buf)
         if (*buf.position() == '\r')
         {
             ++buf.position();
+            return;
+        }
+    }
+}
+
+void skipToCRLFOrEOF(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\r' && buf.available() && *(buf.position() + 1) == '\n')
+        {
+            buf.position() += 2;
             return;
         }
     }

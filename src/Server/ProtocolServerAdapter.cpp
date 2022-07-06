@@ -5,6 +5,7 @@
 #include <Server/GRPCServer.h>
 #endif
 
+#include <Server/AsyncTCPServer.h>
 
 namespace DB
 {
@@ -72,4 +73,38 @@ ProtocolServerAdapter::ProtocolServerAdapter(
 {
 }
 #endif
+
+class ProtocolServerAdapter::AsyncTCPServerAdapterImpl : public Impl
+{
+public:
+    explicit AsyncTCPServerAdapterImpl(std::unique_ptr<AsyncTCPServer> async_tcp_server_) : async_tcp_server(std::move(async_tcp_server_)) {}
+    ~AsyncTCPServerAdapterImpl() override = default;
+
+    void start() override { async_tcp_server->start(); }
+    void stop() override
+    {
+        is_stopping = true;
+        async_tcp_server->stop();
+    }
+    bool isStopping() const override { return is_stopping; }
+    UInt16 portNumber() const override { return async_tcp_server->portNumber(); }
+    size_t currentConnections() const override { return async_tcp_server->currentConnections(); }
+    size_t currentThreads() const override { return async_tcp_server->currentThreads(); }
+
+private:
+    std::unique_ptr<AsyncTCPServer> async_tcp_server;
+    bool is_stopping = false;
+};
+
+ProtocolServerAdapter::ProtocolServerAdapter(
+    const std::string & listen_host_,
+    const char * port_name_,
+    const std::string & description_,
+    std::unique_ptr<AsyncTCPServer> async_tcp_server_)
+    : listen_host(listen_host_)
+    , port_name(port_name_)
+    , description(description_)
+    , impl(std::make_unique<AsyncTCPServerAdapterImpl>(std::move(async_tcp_server_)))
+{
+}
 }

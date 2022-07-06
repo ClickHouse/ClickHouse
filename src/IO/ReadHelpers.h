@@ -551,6 +551,8 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
 
+void readStringUntilCarriageReturn(String & s, ReadBuffer & buf);
+
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -615,6 +617,9 @@ void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readStringUntilCarriageReturnInto(Vector & s, ReadBuffer & buf);
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullOutput
@@ -1405,6 +1410,9 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
+
+/// Skip to next character after next \r\n. If no \r\n in stream, skip to end.
+void skipToCRLFOrEOF(ReadBuffer & buf);
 
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);
