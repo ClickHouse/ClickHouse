@@ -861,7 +861,6 @@ std::string DataPartStorageBuilderOnDisk::getRelativePath() const
 
 void DataPartStorageBuilderOnDisk::createDirectories()
 {
-    LOG_INFO(&Poco::Logger::get("DEBUG"), "CREATING DIRECTORY {}", (fs::path(root_path) / part_dir).string());
     transaction->createDirectories(fs::path(root_path) / part_dir);
 }
 
