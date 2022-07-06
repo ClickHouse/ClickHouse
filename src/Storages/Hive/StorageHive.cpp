@@ -922,16 +922,6 @@ void StorageHive::checkAlterIsPossible(const AlterCommands & commands, ContextPt
     }
 }
 
-void StorageHive::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & /*alter_lock_holder*/)
-{
-    auto table_id = getStorageID();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    params.apply(new_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
-    setInMemoryMetadata(new_metadata);
-}
-
 std::optional<UInt64>
 StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const
 {
