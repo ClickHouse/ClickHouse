@@ -3,10 +3,6 @@
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/join.hpp>
-
 
 namespace DB
 {
@@ -81,38 +77,6 @@ void TabSeparatedRowOutputFormat::writeBeforeExtremes()
     writeChar('\n', out);
 }
 
-TabSeparatedSortedRowOutputFormat::TabSeparatedSortedRowOutputFormat(
-    WriteBuffer & out_,
-    const Block & header_,
-    const RowOutputFormatParams & params_,
-    const FormatSettings & format_settings_)
-    : TabSeparatedRowOutputFormat(tmp_buf, header_, false, false, false, params_, format_settings_)
-    , real_out(out_)
-{}
-
-static String sortLines(const String & str)
-{
-    Strings lines;
-    boost::split(lines, str, boost::is_any_of("\n"));
-    /// sort alphabetically, empty lines at the end
-    std::sort(lines.begin(), lines.end(), [](const String & a, const String & b) { return (a.empty() || b.empty()) ? b.empty() : a < b; });
-    return boost::join(lines, "\n");
-}
-
-void TabSeparatedSortedRowOutputFormat::writeSuffix()
-{
-    tmp_buf.finalize();
-    String sorted_lines = sortLines(tmp_buf.str());
-    tmp_buf.restart();
-    writeString(sorted_lines, real_out);
-}
-
-void TabSeparatedSortedRowOutputFormat::finalizeImpl()
-{
-    tmp_buf.finalize();
-    writeString(tmp_buf.str(), real_out);
-}
-
 void registerOutputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -136,16 +100,6 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
         if (is_raw)
             registerWithNamesAndTypes("LineAsString", register_func);
     }
-
-    /// Used in tests
-    factory.registerOutputFormat("TabSeparatedSorted", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams & params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<TabSeparatedSortedRowOutputFormat>(buf, sample, params, settings);
-    });
 }
 
 }

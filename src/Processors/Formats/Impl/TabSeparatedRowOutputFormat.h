@@ -49,21 +49,4 @@ protected:
     const FormatSettings format_settings;
 };
 
-class TabSeparatedSortedRowOutputFormat : public TabSeparatedRowOutputFormat
-{
-public:
-    TabSeparatedSortedRowOutputFormat(
-        WriteBuffer & out_,
-        const Block & header_,
-        const RowOutputFormatParams & params_,
-        const FormatSettings & format_settings_);
-
-    void writeSuffix() override;
-    void finalizeImpl() override;
-
-private:
-    WriteBufferFromOwnString tmp_buf;
-    WriteBuffer & real_out;
-};
-
 }
