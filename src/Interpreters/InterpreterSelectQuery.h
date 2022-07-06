@@ -112,7 +112,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_);
+        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
 
     Names getRequiredColumns() { return required_columns; }
 
@@ -128,8 +128,8 @@ public:
     /// It will set shard_num and shard_count to the client_info
     void setProperClientInfo(size_t replica_num, size_t replica_count);
 
-    static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context);
-    static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context);
+    static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
+    static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
 private:
     InterpreterSelectQuery(
