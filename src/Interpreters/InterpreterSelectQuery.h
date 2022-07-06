@@ -92,12 +92,12 @@ public:
     BlockIO execute() override;
 
     /// Builds QueryPlan for current query.
-    virtual void buildQueryPlan(QueryPlan & query_plan) override;
+    void buildQueryPlan(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    virtual void ignoreWithTotals() override;
+    void ignoreWithTotals() override;
 
     ASTPtr getQuery() const { return query_ptr; }
 
@@ -127,6 +127,9 @@ public:
 
     /// It will set shard_num and shard_count to the client_info
     void setProperClientInfo(size_t replica_num, size_t replica_count);
+
+    static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context);
+    static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context);
 
 private:
     InterpreterSelectQuery(

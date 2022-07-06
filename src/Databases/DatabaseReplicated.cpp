@@ -24,7 +24,10 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/formatAST.h>
+#include <Backups/IRestoreCoordination.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Common/Macros.h>
+#include <base/chrono_io.h>
 
 namespace DB
 {
@@ -41,6 +44,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int NO_ACTIVE_REPLICAS;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 static constexpr const char * DROPPED_MARK = "DROPPED";
@@ -144,7 +149,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         if (hosts.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
                             "It's possible if the first replica is not fully created yet "
-                            "or if the last replica was just dropped or due to logical error", database_name);
+                            "or if the last replica was just dropped or due to logical error", zookeeper_path);
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
@@ -209,7 +214,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         /*priority=*/1,
-        database_name,
+        TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret);
 }
 
@@ -584,7 +589,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->makeQueryContext();
         query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         query_context->getClientInfo().is_replicated_database_internal = true;
-        query_context->setCurrentDatabase(database_name);
+        query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId("");
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
@@ -604,6 +609,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// and make possible creation of new table with the same UUID.
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
+        query_context->setSetting("allow_deprecated_database_ordinary", 1);
         executeQuery(query, query_context, true);
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
@@ -807,7 +813,7 @@ void DatabaseReplicated::shutdown()
 }
 
 
-void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
+void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
@@ -816,7 +822,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
-    DatabaseAtomic::dropTable(local_context, table_name, no_delay);
+    DatabaseAtomic::dropTable(local_context, table_name, sync);
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -915,6 +921,80 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
     ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
     readStringUntilEOF(statement, in);
     return statement;
+}
+
+
+std::vector<std::pair<ASTPtr, StoragePtr>>
+DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const
+{
+    /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
+    /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+    auto zookeeper = getContext()->getZooKeeper();
+    auto escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
+    for (const auto & escaped_table_name : escaped_table_names)
+    {
+        String table_name = unescapeForFileName(escaped_table_name);
+        if (!filter(table_name))
+            continue;
+        String zk_metadata;
+        if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
+
+        ParserCreateQuery parser;
+        auto create_table_query = parseQuery(parser, zk_metadata, 0, getContext()->getSettingsRef().max_parser_depth);
+
+        auto & create = create_table_query->as<ASTCreateQuery &>();
+        create.attach = false;
+        create.setTable(table_name);
+        create.setDatabase(getDatabaseName());
+
+        StoragePtr storage;
+        if (create.uuid != UUIDHelpers::Nil)
+        {
+            storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
+            if (storage)
+                storage->adjustCreateQueryForBackup(create_table_query);
+        }
+        res.emplace_back(create_table_query, storage);
+    }
+
+    return res;
+}
+
+
+void DatabaseReplicated::createTableRestoredFromBackup(
+    const ASTPtr & create_table_query,
+    ContextMutablePtr local_context,
+    std::shared_ptr<IRestoreCoordination> restore_coordination,
+    UInt64 timeout_ms)
+{
+    /// Because of the replication multiple nodes can try to restore the same tables again and failed with "Table already exists"
+    /// because of some table could be restored already on other node and then replicated to this node.
+    /// To solve this problem we use the restore coordination: the first node calls
+    /// IRestoreCoordination::acquireCreatingTableInReplicatedDatabase() and then for other nodes this function returns false which means
+    /// this table is already being created by some other node.
+    String table_name = create_table_query->as<const ASTCreateQuery &>().getTable();
+    if (restore_coordination->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name))
+    {
+        DatabaseAtomic::createTableRestoredFromBackup(create_table_query, local_context, restore_coordination, timeout_ms);
+    }
+
+    /// Wait until the table is actually created no matter if it's created by the current or another node and replicated to the
+    /// current node afterwards. We have to wait because `RestorerFromBackup` is going to restore data of the table then.
+    /// TODO: The following code doesn't look very reliable, probably we need to rewrite it somehow.
+    auto timeout = std::chrono::milliseconds{timeout_ms};
+    auto start_time = std::chrono::steady_clock::now();
+    while (!isTableExist(table_name, local_context))
+    {
+        waitForReplicaToProcessAllEntries(50);
+
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed > timeout)
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                            "Couldn't restore table {}.{} on other node or sync it (elapsed {})",
+                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), to_string(elapsed));
+    }
 }
 
 }
