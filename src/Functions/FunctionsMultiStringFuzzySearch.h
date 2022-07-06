@@ -70,7 +70,7 @@ public:
         const ColumnPtr & needles_ptr = arguments[2].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
-        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*haystack_ptr);
+        const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
         assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         UInt32 edit_distance = 0;
