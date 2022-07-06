@@ -290,14 +290,14 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
 }
 
 
-void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum, UInt8 req_type)
+void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
-    codec->decompress(compressed_buffer, size_compressed_without_checksum, to, req_type);
+    codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
 }
 
 
-void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum, UInt8 req_type)
+void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
 
@@ -315,7 +315,7 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }
     else
-        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin(), req_type);
+        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
 void CompressedReadBufferBase::decompressFlush() const
@@ -326,6 +326,13 @@ void CompressedReadBufferBase::decompressFlush() const
     }
 }
 
+void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode)
+{
+    if (codec)
+    {
+        codec->setDecompressMode(mode);
+    }
+}
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
 CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_)
     : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_)

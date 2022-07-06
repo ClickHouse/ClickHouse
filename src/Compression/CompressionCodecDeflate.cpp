@@ -291,11 +291,6 @@ uint8_t CompressionCodecDeflate::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Deflate);
 }
 
-bool CompressionCodecDeflate::isAsyncSupported() const
-{
-    return hwCodec->hwEnabled;
-}
-
 void CompressionCodecDeflate::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash);
@@ -324,25 +319,30 @@ uint32_t CompressionCodecDeflate::doCompressData(const char * source, uint32_t s
 
 void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const
 {
-    uint32_t res = 0;
-    if (hwCodec->hwEnabled)
-        res = hwCodec->doDecompressData(source, source_size, dest, uncompressed_size);
-    if (0 == res)
-        swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
-}
-
-void CompressionCodecDeflate::doDecompressDataSW(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const
-{
-    return swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
-}
-
-void CompressionCodecDeflate::doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size)
-{
-    uint32_t res = 0;
-    if (hwCodec->hwEnabled)
-        res = hwCodec->doDecompressDataReq(source, source_size, dest, uncompressed_size);
-    if (0 == res)
-        swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+    switch (getDecompressMode())
+    {
+        case CodecMode::Synchronous:
+        {
+            uint32_t res = 0;
+            if (hwCodec->hwEnabled)
+                res = hwCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+            if (0 == res)
+                swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+            break;
+        }
+        case CodecMode::Asynchronous:
+        {
+            uint32_t res = 0;
+            if (hwCodec->hwEnabled)
+                res = hwCodec->doDecompressDataReq(source, source_size, dest, uncompressed_size);
+            if (0 == res)
+                swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+            break;
+        }
+        case CodecMode::SoftwareFallback:
+            swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+            break;
+    }
 }
 
 void CompressionCodecDeflate::doDecompressDataFlush()

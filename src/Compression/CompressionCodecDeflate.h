@@ -218,7 +218,6 @@ public:
     //~CompressionCodecDeflate() ;
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
-    bool isAsyncSupported() const override;
 
 protected:
     bool isCompression() const override
@@ -232,8 +231,6 @@ protected:
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest) const override;
     uint32_t doCompressDataSW(const char * source, uint32_t source_size, char * dest) const;
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
-    void doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) override;
-    void doDecompressDataSW(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
     void doDecompressDataFlush() override;
 
 private:

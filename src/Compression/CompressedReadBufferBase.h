@@ -40,13 +40,15 @@ protected:
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy);
     size_t readCompressedDataBlockHold(size_t & size_decompressed, size_t & size_compressed_without_checksum);
     /// Decompress into memory pointed by `to`
-    void decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum, UInt8 req_type=0);
+    void decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
     /// This method can change location of `to` to avoid unnecessary copy if data is uncompressed.
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
-    void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum, UInt8 req_type=0);
+    void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
     /// Flush all asynchronous decompress request
     void decompressFlush() const;
+    void setDecompressMode(ICompressionCodec::CodecMode mode);
+
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false);

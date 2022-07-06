@@ -91,7 +91,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
 size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 {
     size_t bytes_read = 0;
-    UInt8 req_type = 0;
+    ICompressionCodec::CodecMode decompress_mode = ICompressionCodec::CodecMode::Synchronous;
     bool read_tail = false;
 
     /// If there are unread bytes in the buffer, then we copy needed to `to`.
@@ -108,13 +108,13 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
         if (new_size_compressed)
         {
-            req_type = 1;
+            decompress_mode = ICompressionCodec::CodecMode::Asynchronous;
         }
         else
         {
             decompressFlush(); /// here switch to unhold block in compress_in, we must flush for previous blocks completely hold in compress_in
             new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
-            req_type = 0;
+            decompress_mode = ICompressionCodec::CodecMode::Synchronous;
         }
         size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 
@@ -127,7 +127,8 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         /// need to skip some bytes in decompressed data (seek happened before readBig call).
         if (nextimpl_working_buffer_offset == 0 && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
-            decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum, req_type); //Async req
+            setDecompressMode(decompress_mode);
+            decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
             bytes += size_decompressed;
         }
@@ -141,6 +142,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
+            setDecompressMode(ICompressionCodec::CodecMode::Synchronous);
             decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
             /// Read partial data from first block. Won't run here at second block.
@@ -160,8 +162,8 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
-
-            decompress(working_buffer, size_decompressed, size_compressed_without_checksum, 1);
+            setDecompressMode(ICompressionCodec::CodecMode::Asynchronous);
+            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
             read_tail = true;
             break;
         }
