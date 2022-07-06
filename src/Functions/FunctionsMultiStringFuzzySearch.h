@@ -65,26 +65,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column_haystack = arguments[0].column;
-        const ColumnPtr & num_ptr = arguments[1].column;
-        const ColumnPtr & arr_ptr = arguments[2].column;
+        const ColumnPtr & haystack_ptr = arguments[0].column;
+        const ColumnPtr & edit_distance_ptr = arguments[1].column;
+        const ColumnPtr & needles_ptr = arguments[2].column;
 
-        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
-        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
+        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
+        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*haystack_ptr);
         assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         UInt32 edit_distance = 0;
-        if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(num_ptr.get()))
+        if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(edit_distance_ptr.get()))
             edit_distance = col_const_uint8->getValue<UInt8>();
-        else if (const auto * col_const_uint16 = checkAndGetColumnConst<ColumnUInt16>(num_ptr.get()))
+        else if (const auto * col_const_uint16 = checkAndGetColumnConst<ColumnUInt16>(edit_distance_ptr.get()))
             edit_distance = col_const_uint16->getValue<UInt16>();
-        else if (const auto * col_const_uint32 = checkAndGetColumnConst<ColumnUInt32>(num_ptr.get()))
+        else if (const auto * col_const_uint32 = checkAndGetColumnConst<ColumnUInt32>(edit_distance_ptr.get()))
             edit_distance = col_const_uint32->getValue<UInt32>();
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}. The number is not const or does not fit in UInt32", arguments[1].column->getName());
 
-        const ColumnArray * col_needles = checkAndGetColumn<ColumnArray>(arr_ptr.get());
-        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
+        const ColumnArray * col_needles = checkAndGetColumn<ColumnArray>(needles_ptr.get());
+        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
         assert(static_cast<bool>(col_needles) ^ static_cast<bool>(col_needles_const));
 
         if (col_haystack_const && col_needles)
