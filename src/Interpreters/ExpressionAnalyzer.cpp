@@ -1539,7 +1539,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
     if (optimize_read_in_order)
     {
-        for (auto & child : select_query->orderBy()->children)
+        for (const auto & child : select_query->orderBy()->children)
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
