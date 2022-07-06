@@ -32,7 +32,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     }
     std::string escaped_with_globs = buf_for_escaping.str();
 
-    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without {}*,
+    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
     re2::StringPiece input(escaped_with_globs);
     re2::StringPiece matched;
     std::ostringstream oss_for_replacing;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -50,25 +50,32 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             char point;
             ReadBufferFromString buf_range(buffer);
             buf_range >> range_begin >> point >> point >> range_end;
-            bool leading_zeros = buffer[0] == '0';
 
             size_t range_begin_width = buffer.find('.');
             size_t range_end_width = buffer.size() - buffer.find_last_of('.') - 1;
-            //Scenarios {0..10} {0..999}  
-            size_t num_len = 0;
+            bool leading_zeros = buffer[0] == '0';
+            size_t output_width = 0;
+
+            if (range_begin > range_end)    //Descending Sequence {20..15} {9..01}
+            {
+                std::swap(range_begin,range_end);
+                leading_zeros = buffer[buffer.find_last_of('.')+1]=='0';
+                std::swap(range_begin_width,range_end_width);
+            }
             if (range_begin_width == 1 && leading_zeros)
-                num_len = 1;
-            //Scenarios {00..99} {00..099} 
+                output_width = 1;   ///Special Case: {0..10} {0..999}
             else
-                num_len = range_begin_width < range_end_width ? range_end_width : range_begin_width;
+                output_width = std::max(range_begin_width, range_end_width);
+
             if (leading_zeros)
-                oss_for_replacing << std::setfill('0') << std::setw(num_len);
+                oss_for_replacing << std::setfill('0') << std::setw(output_width);
             oss_for_replacing << range_begin;
+
             for (size_t i = range_begin + 1; i <= range_end; ++i)
             {
                 oss_for_replacing << '|';
                 if (leading_zeros)
-                    oss_for_replacing << std::setfill('0') << std::setw(num_len);
+                    oss_for_replacing << std::setfill('0') << std::setw(output_width);
                 oss_for_replacing << i;
             }
         }
