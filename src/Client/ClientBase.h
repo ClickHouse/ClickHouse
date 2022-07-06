@@ -154,6 +154,7 @@ private:
 
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
+    bool processMultiQueryFromFile(const String & file_name);
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
