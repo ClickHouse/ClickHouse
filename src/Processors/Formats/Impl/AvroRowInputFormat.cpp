@@ -739,7 +739,15 @@ private:
                 if (!url.getUserInfo().empty()) {
                     Poco::Net::HTTPCredentials httpCredentials;
                     httpCredentials.fromUserInfo(url.getUserInfo());
-                    Poco::Net::HTTPBasicCredentials httpBasicCredentials(httpCredentials.getUsername(), httpCredentials.getPassword());
+                    Poco::Net::HTTPBasicCredentials httpBasicCredentials;
+
+                    if (!httpCredentials.getPassword().empty()) {
+                        httpBasicCredentials.setUsername(httpCredentials.getUsername());
+                        httpBasicCredentials.setPassword(httpCredentials.getPassword());
+                    }
+                    else {
+                        httpBasicCredentials.setUsername(httpCredentials.getUsername());
+                    }
 
                     httpBasicCredentials.authenticate(request);
                 }
