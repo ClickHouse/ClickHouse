@@ -8,8 +8,9 @@ import sys
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
+from commit_status_helper import get_commit
+from env_helper import CACHES_PATH, TEMP_PATH, GITHUB_SERVER_URL, GITHUB_REPOSITORY
+from pr_info import FORCE_TESTS_LABEL, PRInfo, SKIP_SIMPLE_CHECK_LABEL
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
@@ -219,4 +220,13 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
+            if SKIP_SIMPLE_CHECK_LABEL not in pr_info.labels:
+                url = (
+                    f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
+                    "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
+                )
+                commit = get_commit(gh, pr_info.sha)
+                commit.create_status(
+                    context="Simple Check", description=f"{NAME} failed", state="failed", target_url=url
+                )
             sys.exit(1)
