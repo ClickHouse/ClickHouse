@@ -112,6 +112,9 @@ public:
                 allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
         }
 
+        // the combination of const haystack + const needle is not implemented because
+        // useDefaultImplementationForConstants() == true makes upper layers convert both to
+        // non-const columns
 
         if constexpr (Impl::is_column_array)
             return ColumnArray::create(std::move(col_res), std::move(col_offsets));
