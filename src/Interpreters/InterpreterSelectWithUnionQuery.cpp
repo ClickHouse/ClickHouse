@@ -341,6 +341,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
     }
 
+    addAdditionalPostFilter(query_plan);
     query_plan.addInterpreterContext(context);
 }
 

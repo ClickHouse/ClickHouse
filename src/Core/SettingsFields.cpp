@@ -338,13 +338,13 @@ String SettingFieldMap::toString() const
 
 SettingFieldMap & SettingFieldMap::operator =(const Field & f)
 {
-    value = fieldToMap(f);
+    *this = fieldToMap(f);
     return *this;
 }
 
 void SettingFieldMap::parseFromString(const String & str)
 {
-    value = stringToMap(str);
+    *this = stringToMap(str);
 }
 
 void SettingFieldMap::writeBinary(WriteBuffer & out) const
@@ -354,7 +354,9 @@ void SettingFieldMap::writeBinary(WriteBuffer & out) const
 
 void SettingFieldMap::readBinary(ReadBuffer & in)
 {
-    DB::readBinary(value, in);
+    Map map;
+    DB::readBinary(map, in);
+    *this = map;
 }
 
 

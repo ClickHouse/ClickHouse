@@ -4,7 +4,7 @@ drop table if exists v_numbers;
 drop table if exists mv_table;
 
 create table table_1 (x UInt32, y String) engine = MergeTree order by x;
-insert into table_1 values (1, 'aa'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 
 -- { echoOn }
 
@@ -25,6 +25,9 @@ select y from table_1 prewhere x != 4 where x != 3 settings additional_table_fil
 select x from table_1 where x != 2 settings additional_table_filters={'table_1' : 'x != 2'};
 select x from table_1 prewhere x != 2 settings additional_table_filters={'table_1' : 'x != 2'};
 select x from table_1 prewhere x != 2 where x != 2 settings additional_table_filters={'table_1' : 'x != 2'};
+
+select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy = 0'};
+select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy != 0'};
 
 select * from system.numbers limit 5;
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers' : 'number != 3'};
@@ -50,9 +53,9 @@ insert into table_2 values (4, 'dddd'), (5, 'eeeee'), (6, 'ffffff'), (7, 'gggggg
 
 create materialized view mv_table to table_2 (x UInt32, y String) as select * from table_1;
 
--- { echoOn }
 -- additional filter for inner tables for Materialized View does not work because it does not create internal interpreter
 -- probably it is expected
+-- { echoOn }
 select * from mv_table;
 select * from mv_table settings additional_table_filters={'mv_table' : 'x != 5'};
 select * from mv_table settings additional_table_filters={'table_1' : 'x != 5'};
@@ -62,9 +65,9 @@ select * from mv_table settings additional_table_filters={'table_2' : 'x != 5'};
 
 create table m_table (x UInt32, y String) engine = Merge(currentDatabase(), '^table_');
 
--- { echoOn }
 -- additional filter for inner tables for Merge does not work because it does not create internal interpreter
 -- probably it is expected
+-- { echoOn }
 select * from m_table order by x;
 select * from m_table order by x settings additional_table_filters={'table_1' : 'x != 2'};
 select * from m_table order by x  settings additional_table_filters={'table_2' : 'x != 5'};
@@ -74,3 +77,18 @@ select * from m_table order by x  settings additional_table_filters={'table_2' :
 select * from m_table order by x  settings additional_table_filters={'table_1' : 'x != 4', 'table_2' : 'x != 4'};
 select * from m_table order by x  settings additional_table_filters={'m_table' : 'x != 4'};
 select * from m_table order by x  settings additional_table_filters={'m_table' : 'x != 4', 'table_1' : 'x != 2', 'table_2' : 'x != 5'};
+
+-- additional_result_filter
+
+select * from table_1 settings additional_result_filter='x != 2';
+select *, x != 2 from table_1 settings additional_result_filter='x != 2';
+select * from table_1 where x != 1 settings additional_result_filter='x != 2';
+select * from table_1 where x != 1 settings additional_result_filter='x != 2 and x != 3';
+select * from table_1 prewhere x != 3 where x != 1 settings additional_result_filter='x != 2';
+
+select * from table_1 limit 3 settings additional_result_filter='x != 2';
+
+select x + 1 from table_1 settings additional_result_filter='`plus(x, 1)` != 2';
+
+select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a = 3';
+select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a != 3';
