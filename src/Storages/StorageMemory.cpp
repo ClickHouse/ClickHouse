@@ -465,7 +465,7 @@ namespace
                     num_rows += block.rows();
                 backup_entries[count_txt_pos] = {file_paths[count_txt_pos], std::make_shared<BackupEntryFromMemory>(toString(num_rows))};
             }
-                
+
             /// Writing sizes.json
             {
                 auto sizes_json_path = temp_dir / fs::path{file_paths[sizes_json_pos]}.filename();
@@ -522,7 +522,7 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         { storage->restoreDataImpl(backup, data_path_in_backup, temp_disk); });
 }
 
-void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temp_disk)
+void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk)
 {
     /// Our data are in the StripeLog format.
 
@@ -555,7 +555,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         std::optional<TemporaryFileOnDisk> temp_data_file;
         if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
         {
-            temp_data_file.emplace(temp_disk);
+            temp_data_file.emplace(temporary_disk);
             auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getPath());
             copyData(*in, *out);
             out.reset();

@@ -172,7 +172,7 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
 {
     WriteBufferFromOwnString out;
     out << "block number: " << block_number << "\n";
-    
+
     out << "commands: ";
     commands.writeText(out);
     out << "\n";

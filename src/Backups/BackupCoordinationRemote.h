@@ -33,7 +33,7 @@ public:
         const String & table_name_for_logs,
         const String & replica_name,
         const std::vector<MutationInfo> & mutations) override;
-    
+
     std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const override;
 
     void addReplicatedDataPath(const String & table_shared_id, const String & data_path) override;

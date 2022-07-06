@@ -83,7 +83,7 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
-    
+
     void runPostTasks();
 
     Strings setStatus(const String & new_status, const String & message = "");

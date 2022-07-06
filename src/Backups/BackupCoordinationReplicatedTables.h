@@ -23,7 +23,7 @@ namespace DB
 /// /shards/1/replicas/1/data/mydb/mytable/all_2_2_0
 /// /shards/1/replicas/2/data/mydb/mytable/all_1_1_0
 /// /shards/1/replicas/2/data/mydb/mytable/all_2_2_0
-/// 
+///
 /// Example 2: Let's consider two replicas again, and let the first replica contain parts all_1_1_0 and all_2_2_0 and
 /// the second replica contain part all_1_2_1 (i.e. the second replica have those parts merged).
 /// In this case the files in the backup will look like this:
@@ -61,8 +61,8 @@ public:
         const String & table_name_for_logs,
         const String & replica_name,
         const std::vector<MutationInfo> & mutations);
-        
-    /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames(). 
+
+    /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
     std::vector<MutationInfo> getMutations(const String & table_shared_id, const String & replica_name) const;
 
     /// Adds a data path in backup for a replicated table.

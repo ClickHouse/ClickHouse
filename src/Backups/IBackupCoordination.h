@@ -51,8 +51,8 @@ public:
     /// Adds information about mutations of a replicated table.
     virtual void addReplicatedMutations(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations) = 0;
 
-    /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames(). 
-    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const = 0; 
+    /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
+    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const = 0;
 
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
@@ -65,7 +65,7 @@ public:
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
     virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
     virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
- 
+
     struct FileInfo
     {
         String file_name;

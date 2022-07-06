@@ -273,7 +273,7 @@ void BackupCoordinationRemote::addReplicatedDataPath(
         if (replicated_tables)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedDataPath() must not be called after preparing");
     }
-    
+
     auto zookeeper = get_zookeeper();
     String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_shared_id);
     zookeeper->createIfNotExists(path, "");
@@ -350,7 +350,7 @@ void BackupCoordinationRemote::addReplicatedAccessFilePath(const String & access
         if (replicated_access)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedAccessFilePath() must not be called after preparing");
     }
-    
+
     auto zookeeper = get_zookeeper();
     String path = zookeeper_path + "/repl_access/" + escapeForFileName(access_zk_path);
     zookeeper->createIfNotExists(path, "");
@@ -374,7 +374,7 @@ void BackupCoordinationRemote::prepareReplicatedAccess() const
 
     replicated_access.emplace();
     auto zookeeper = get_zookeeper();
-    
+
     String path = zookeeper_path + "/repl_access";
     for (const String & escaped_access_zk_path : zookeeper->getChildren(path))
     {

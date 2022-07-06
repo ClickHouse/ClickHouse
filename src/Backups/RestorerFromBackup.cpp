@@ -385,7 +385,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     {
         if (!access_restorer)
             access_restorer = std::make_unique<AccessRestorerFromBackup>(backup, restore_settings);
-        
+
         try
         {
             /// addDataPath() will parse access*.txt files and extract access entities from them.
@@ -601,9 +601,9 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         create_database_query = create_database_query->clone();
         create_database_query->as<ASTCreateQuery &>().if_not_exists = true;
     }
-    
+
     LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), serializeAST(*create_database_query));
-    
+
     try
     {
         /// Execute CREATE DATABASE query.
@@ -625,7 +625,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     {
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
         database_info.database = database;
-        
+
         if (!restore_settings.allow_different_database_def && !database_info.is_predefined_database)
         {
             /// Check that the database's definition is the same as expected.
@@ -756,7 +756,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 {
     if (restore_settings.structure_only)
         return;
-        
+
     auto & table_info = table_infos.at(table_name);
     auto storage = table_info.storage;
 

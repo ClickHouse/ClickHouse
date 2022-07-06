@@ -203,16 +203,16 @@ void BackupCoordinationReplicatedTables::addPartNames(
 Strings BackupCoordinationReplicatedTables::getPartNames(const String & table_shared_id, const String & replica_name) const
 {
     prepare();
-    
+
     auto it = table_infos.find(table_shared_id);
     if (it == table_infos.end())
         return {};
-    
+
     const auto & part_names_by_replica_name = it->second.part_names_by_replica_name;
     auto it2 = part_names_by_replica_name.find(replica_name);
     if (it2 == part_names_by_replica_name.end())
         return {};
-    
+
     return it2->second;
 }
 
@@ -238,11 +238,11 @@ std::vector<MutationInfo>
 BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id, const String & replica_name) const
 {
     prepare();
-    
+
     auto it = table_infos.find(table_shared_id);
     if (it == table_infos.end())
         return {};
-    
+
     const auto & table_info = it->second;
     if (table_info.replica_name_to_store_mutations != replica_name)
         return {};
@@ -264,7 +264,7 @@ Strings BackupCoordinationReplicatedTables::getDataPaths(const String & table_sh
     auto it = table_infos.find(table_shared_id);
     if (it == table_infos.end())
         return {};
-    
+
     const auto & table_info = it->second;
     return Strings{table_info.data_paths.begin(), table_info.data_paths.end()};
 }
@@ -284,7 +284,7 @@ void BackupCoordinationReplicatedTables::prepare() const
             for (const auto & [part_name, part_replicas] : table_info.replicas_by_part_name)
             {
                 auto part_info = MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
-                
+
                 auto & min_data_versions_by_partition = table_info.min_data_versions_by_partition;
                 auto it2 = min_data_versions_by_partition.find(part_info.partition_id);
                 if (it2 == min_data_versions_by_partition.end())

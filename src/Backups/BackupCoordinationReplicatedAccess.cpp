@@ -22,7 +22,7 @@ Strings BackupCoordinationReplicatedAccess::getFilePaths(const String & access_z
     if (it == file_paths_by_zk_path.end())
         return {};
 
-    auto & file_paths = it->second;
+    const auto & file_paths = it->second;
     if (file_paths.host_to_store_access != host_id)
         return {};
 
