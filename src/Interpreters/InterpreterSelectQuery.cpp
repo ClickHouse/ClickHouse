@@ -596,19 +596,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     analyze(shouldMoveToPrewhere());
 
-    bool analyze_overflow = false;
-    if (context->hasQueryContext())
-    {
-        /// if we analyze to many times, give up analyzing a second time not to get stuck in the loop
-        /// the threshold is `max_pipeline_depth / 10` to disable the second analyze and `max_pipeline_depth` to cancel the query at all
-        const size_t & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
-        analyze_overflow = settings.max_pipeline_depth && current_query_analyze_count >= settings.max_pipeline_depth / 10;
-    }
-
     bool need_analyze_again = false;
 
-    bool prewhere_always_const = analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true;
-    if (!analyze_overflow && prewhere_always_const)
+    if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
     {
         if (analysis_result.prewhere_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
@@ -617,8 +607,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         need_analyze_again = true;
     }
 
-    bool where_always_const = analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true;
-    if (!analyze_overflow && where_always_const)
+    if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
     {
         if (analysis_result.where_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
