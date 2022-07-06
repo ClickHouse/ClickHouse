@@ -91,7 +91,7 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
     return header_size + compressed_bytes_written;
 }
 
-UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest, UInt8 req_type)
+UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest)
 {
     assert(source != nullptr && dest != nullptr);
 
@@ -105,18 +105,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Can't decompress data with codec byte {} using codec with byte {}", method, our_method);
 
     UInt32 decompressed_size = readDecompressedBlockSize(source);
-    switch (req_type)
-    {
-        case 0:
-            doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
-            break;
-        case 1:
-            doDecompressDataReq(&source[header_size], source_size - header_size, dest, decompressed_size);
-            break;
-        case 2:
-            doDecompressDataSW(&source[header_size], source_size - header_size, dest, decompressed_size);
-            break;
-    }
+    doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
 
     return decompressed_size;
 }
@@ -124,6 +113,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
 void ICompressionCodec::decompressFlush()
 {
     doDecompressDataFlush();
+    decompressMode = CodecMode::Synchronous;
 }
 
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)

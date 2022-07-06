@@ -26,6 +26,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 class ICompressionCodec : private boost::noncopyable
 {
 public:
+    enum class CodecMode
+    {
+        Synchronous,  //synchronous request by default;
+        Asynchronous, //asynchronous request, must be used in pair with decompressFlush;
+        SoftwareFallback  //Fallback to SW decompressor;
+    };
+
     virtual ~ICompressionCodec() = default;
 
     /// Byte which indicates codec in compressed file
@@ -46,20 +53,20 @@ public:
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
-    // reqType is specific for HW decompressor:
-    //0 means synchronous request by default;
-    //1 means asynchronous request, must be used in pair with decompressFlush;
-    //2 means SW decompressor instead of HW
-    UInt32 decompress(const char * source, UInt32 source_size, char * dest, UInt8 req_type = 0);
+    UInt32 decompress(const char * source, UInt32 source_size, char * dest);
+
+    CodecMode getDecompressMode() const
+    {
+        return decompressMode;
+    }
+
+    void setDecompressMode(CodecMode mode)
+    {
+        decompressMode = mode;
+    }
 
     /// Flush all asynchronous request for decompression
     void decompressFlush(void);
-
-    /// Some codecs (QPL_deflate, for example) support asynchronous request
-    virtual bool isAsyncSupported() const
-    {
-        return false;
-    }
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
     virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const
@@ -111,18 +118,6 @@ protected:
     /// Actually decompress data without header
     virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
-    /// Asynchronous decompression request to HW decompressor
-    virtual void doDecompressDataReq(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
-    {
-        doDecompressData(source, source_size, dest, uncompressed_size);
-    }
-
-    /// SW decompressor instead of HW
-    virtual void doDecompressDataSW(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
-    {
-        doDecompressData(source, source_size, dest, uncompressed_size);
-    }
-
     /// Flush asynchronous request for decompression
     virtual void doDecompressDataFlush()
     {
@@ -132,6 +127,7 @@ protected:
 
 private:
     ASTPtr full_codec_desc;
+    CodecMode decompressMode{CodecMode::Synchronous};
 };
 
 }
