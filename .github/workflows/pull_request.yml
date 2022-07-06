@@ -179,17 +179,6 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  SimpleCheck:
-    needs: [StyleCheck, FastTest]
-    runs-on: ubuntu-latest
-    if: ${{ always() }}
-    steps:
-      - name: Allow simple fail
-        if: ${{ contains(github.event.pull_request.labels.*.name, 'skip simple check') }}
-        run: exit 0
-      - name: Simple failed
-        if: ${{ (needs.StyleCheck.result != 'success' || needs.FastTest.result != 'success') && !contains(github.event.pull_request.labels.*.name, 'skip simple check') }}
-        run: exit 1
   CompatibilityCheck:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
