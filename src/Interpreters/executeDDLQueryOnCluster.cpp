@@ -538,4 +538,26 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
 }
 
 
+bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
+{
+    const auto * query = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
+    if (!query || !query->table)
+        return false;
+
+    String database_name = query->getDatabase();
+    if (database_name.empty())
+        database_name = context->getCurrentDatabase();
+
+    auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
+    if (database_name != query_on_cluster->cluster)
+        return false;
+
+    auto db = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (!db || db->getEngineName() != "Replicated")
+        return false;
+
+    query_on_cluster->cluster.clear();
+    return true;
+}
+
 }

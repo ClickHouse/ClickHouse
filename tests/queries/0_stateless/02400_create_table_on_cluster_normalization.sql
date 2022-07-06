@@ -1,3 +1,7 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: ON CLUSTER is not allowed
+
+set distributed_ddl_entry_format_version=3;
 
 create table local_t_l5ydey on cluster test_shard_localhost (
     c_qv5rv INTEGER ,

@@ -1563,7 +1563,7 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
     bool is_create_database = create.database && !create.table;
-    if (!create.cluster.empty())
+    if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         auto on_cluster_version = getContext()->getSettingsRef().distributed_ddl_entry_format_version;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
