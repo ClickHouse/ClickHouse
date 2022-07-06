@@ -83,11 +83,11 @@ public:
         const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
         assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
-        const ColumnArray * col_needles = checkAndGetColumn<ColumnArray>(needles_ptr.get());
+        const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
         const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
-        assert(static_cast<bool>(col_needles) ^ static_cast<bool>(col_needles_const));
+        assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
 
-        if (col_haystack_const && col_needles)
+        if (col_haystack_const && col_needles_vector)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);
 
         using ResultType = typename Impl::ResultType;
@@ -108,7 +108,7 @@ public:
         else
         {
             Impl::vectorVector(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), *col_needles, vec_res, offsets_res,
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), *col_needles_vector, vec_res, offsets_res,
                 allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
         }
 
