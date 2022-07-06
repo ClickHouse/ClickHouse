@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 DROP TABLE IF EXISTS A;
 DROP TABLE IF EXISTS B;
 
