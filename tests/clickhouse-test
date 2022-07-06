@@ -912,9 +912,6 @@ class TestCase:
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
-        if "ignore-order" in self.tags:
-            client = client + " --format=TabSeparatedSorted"
-
         params = {
             "client": client + " --database=" + database,
             "logs_level": server_logs_level,
@@ -925,8 +922,12 @@ class TestCase:
             "secure": "--secure" if args.secure else "",
         }
 
-        pattern = "{test} > {stdout} 2> {stderr}"
-
+        # >> append to stderr (but not stdout since it is not used there),
+        # because there are also output of per test database creation
+        if not args.database:
+            pattern = "{test} > {stdout} 2> {stderr}"
+        else:
+            pattern = "{test} > {stdout} 2> {stderr}"
 
         if self.ext == ".sql":
             pattern = (
