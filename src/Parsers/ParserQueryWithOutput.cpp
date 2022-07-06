@@ -96,6 +96,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             ParserStringLiteral compression;
             if (!compression.parse(pos, query_with_output.compression, expected))
                 return false;
+
+            ParserNumber compression_level;
+            compression_level.parse(pos, query_with_output.compression_level, expected);
         }
 
         query_with_output.children.push_back(query_with_output.out_file);
