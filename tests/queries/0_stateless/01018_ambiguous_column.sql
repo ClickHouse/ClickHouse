@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 select * from system.one cross join system.one; -- { serverError 352 }
 select * from system.one cross join system.one r;
 select * from system.one l cross join system.one;

@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 DROP TABLE IF EXISTS one;
 CREATE TABLE one(dummy UInt8) ENGINE = Memory;
 

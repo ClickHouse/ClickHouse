@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 set joined_subquery_requires_alias = 0;
 
 drop table if exists t_00725_2;

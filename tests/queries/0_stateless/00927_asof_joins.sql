@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 DROP TABLE IF EXISTS md;
 DROP TABLE IF EXISTS tv;
 
