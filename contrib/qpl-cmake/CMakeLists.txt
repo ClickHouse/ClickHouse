@@ -32,6 +32,10 @@ GetLibraryVersion("${HEADER_CONTENT}" QPL_VERSION)
 
 message(STATUS "Intel QPL version: ${QPL_VERSION}")
 
+# There are 5 source subdirectories under $QPL_SRC_DIR: isal, c_api, core-sw, middle-layer, c_api.
+# Generate 7 library targets: middle_layer_lib, isal, isal_asm, qplcore_px, qplcore_avx512, core_iaa, middle_layer_lib.
+# Output ch_contrib::qpl by linking with 7 library targets.
+
 include("${QPL_PROJECT_DIR}/cmake/CompileOptions.cmake")
 
 # check nasm compiler
@@ -106,6 +110,8 @@ target_compile_options(isal PRIVATE
                        "$<$<CONFIG:Debug>:>"
                        "$<$<CONFIG:Release>:>")
 
+# AS_FEATURE_LEVEL=10 means "Check SIMD capabilities of the target system at runtime and use up to AVX512 if available".
+# HAVE_KNOWS_AVX512 means rely on AVX512 being available on the target system.
 target_compile_options(isal_asm PUBLIC "-I${QPL_SRC_DIR}/isal/include/"
                        PUBLIC "-I${QPL_SRC_DIR}/isal/igzip/"
                        PUBLIC "-I${QPL_SRC_DIR}/isal/crc/"
@@ -115,6 +121,8 @@ if (ENABLE_AVX512)
     target_compile_options(isal_asm PUBLIC "-DHAVE_AS_KNOWS_AVX512")
 endif()
 
+# Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
+# Otherwise nasm compiler would fail to proceed due to unrecognition of "-fno-sanitize=undefined"
 if (SANITIZE STREQUAL "undefined")
     get_target_property(target_options isal_asm COMPILE_OPTIONS)
     list(REMOVE_ITEM target_options "-fno-sanitize=undefined")
@@ -225,8 +233,6 @@ target_compile_definitions(core_iaa PRIVATE QPL_BADARG_CHECK
         PRIVATE $<$<BOOL:${LOG_HW_INIT}>:LOG_HW_INIT>)
 
 # [SUBDIR]middle-layer
-enable_language(CXX)
-
 generate_unpack_kernel_arrays(${QPL_BINARY_DIR})
 
 file(GLOB MIDDLE_LAYER_SRC
@@ -276,9 +282,8 @@ target_include_directories(middle_layer_lib
         PUBLIC $<TARGET_PROPERTY:core_iaa,INTERFACE_INCLUDE_DIRECTORIES>)
 
 target_compile_definitions(middle_layer_lib PUBLIC -DQPL_LIB)
-# [SUBDIR]c_api
-enable_language(C CXX)
 
+# [SUBDIR]c_api
 file(GLOB_RECURSE QPL_C_API_SRC 
         ${QPL_SRC_DIR}/c_api/*.c
         ${QPL_SRC_DIR}/c_api/*.cpp)
