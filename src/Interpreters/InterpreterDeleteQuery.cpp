@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -30,6 +31,9 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
+    if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight delete mutate is experimental. Set `allow_experimental_lightweight_delete` setting to enable it");
+
     FunctionNameNormalizer().visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
@@ -60,8 +64,7 @@ BlockIO InterpreterDeleteQuery::execute()
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    /// Currently do similar as alter table delete.
-    /// TODO: Mark this delete as lightweight.
+    /// Convert to MutationCommand
     MutationCommands mutation_commands;
     MutationCommand mut_command;
 
@@ -76,12 +79,9 @@ BlockIO InterpreterDeleteQuery::execute()
 
     mutation_commands.emplace_back(mut_command);
 
-    if (!mutation_commands.empty())
-    {
-        table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        storage_merge_tree->mutate(mutation_commands, getContext(), MutationType::Lightweight);
-    }
+    table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
+    MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false, false).validate();
+    storage_merge_tree->mutate(mutation_commands, getContext(), MutationType::Lightweight);
 
     return {};
 }

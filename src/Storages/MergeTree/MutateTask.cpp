@@ -432,6 +432,10 @@ NameSet collectFilesToSkip(
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
+    /// Remove deleted rows mask file name to create hard link for it when mutate some columns.
+    if (files_to_skip.contains(IMergeTreeDataPart::DELETED_ROWS_MARK_FILE_NAME))
+        files_to_skip.erase(IMergeTreeDataPart::DELETED_ROWS_MARK_FILE_NAME);
+
     /// Skip updated files
     for (const auto & entry : updated_header)
     {
@@ -1355,6 +1359,9 @@ private:
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
 
+/// LightweightDeleteTask works for lightweight delete mutate.
+/// The MutationsInterpreter returns a simple select like "select _part_offset where predicates".
+/// The prepare() and execute() has special logics for LWD mutate.
 class LightweightDeleteTask : public IExecutableTask
 {
 public:
@@ -1665,7 +1672,7 @@ bool MutateTask::prepare()
         /// Skip to apply deleted mask when reading for MutateSomePartColumns.
         need_mutate_all_columns = need_mutate_all_columns || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter->isAffectingAllColumns());
         if (!need_mutate_all_columns && ctx->source_part->hasLightweightDelete() && !ctx->is_lightweight_mutation)
-            ctx->interpreter->SetSkipDeletedMask(true);
+            ctx->interpreter->setSkipDeletedMask(true);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
@@ -1733,9 +1740,6 @@ bool MutateTask::prepare()
     else if (ctx->is_lightweight_mutation)
     {
         ctx->files_to_skip = ctx->source_part->getFileNamesWithoutChecksums();
-        /// Skip to create hardlink for deleted_rows_mask.bin
-        if (ctx->source_part->hasLightweightDelete())
-            ctx->files_to_skip.insert("deleted_rows_mask.bin");
 
         /// We will modify or create only deleted_row_mask for lightweight delete. Other columns and key values are copied as-is.
         task = std::make_unique<LightweightDeleteTask>(ctx);

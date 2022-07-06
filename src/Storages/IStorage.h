@@ -235,8 +235,8 @@ public:
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
 
-    /// Return true if there are lightweight parts.
-    virtual bool hasLightweightDelete() const { return false; }
+    /// Return true if there are at least one part containing lightweight deleted mask.
+    virtual bool hasLightweightDeletedMask() const { return false; }
 
 private:
 

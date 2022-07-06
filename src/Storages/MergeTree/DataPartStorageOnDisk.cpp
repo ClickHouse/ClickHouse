@@ -665,7 +665,7 @@ void DataPartStorageOnDisk::loadDeletedRowsMask(MergeTreeDataPartDeletedMask & d
     }
 }
 
-void DataPartStorageOnDisk::writeDeletedRowsMask(MergeTreeDataPartDeletedMask & deleted_mask) const
+void DataPartStorageOnDisk::writeDeletedRowsMask(const MergeTreeDataPartDeletedMask & deleted_mask) const
 {
     const String final_path = fs::path(getRelativePath()) / deleted_mask.name;
     const String tmp_path = final_path + ".tmp";

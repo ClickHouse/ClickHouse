@@ -44,7 +44,7 @@ public:
         MutationCommands commands_,
         ContextPtr context_,
         bool can_execute_,
-        bool is_lightweight_ = false);
+        bool is_lightweight_);
 
     void validate();
 
@@ -79,7 +79,7 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
-    void SetSkipDeletedMask(bool skip) { skip_deleted_mask = skip; }
+    void setSkipDeletedMask(bool skip) { skip_deleted_mask = skip; }
 
 private:
     ASTPtr prepare(bool dry_run);

@@ -328,9 +328,6 @@ public:
 
     mutable VersionMetadata version;
 
-    /// True if the part has deleted_rows_mask.bin file used for lightweight delete.
-    bool has_lightweight_delete = false;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -408,6 +405,8 @@ public:
 
     static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
+    static inline constexpr auto DELETED_ROWS_MARK_FILE_NAME = "deleted_rows_mask.bin";
+
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
     /// for zero copy replication. Sadly it's very complex.
@@ -460,8 +459,8 @@ public:
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
 
-    /// True if here is light weight bitmap file in part.
-    bool hasLightweightDelete() const { return has_lightweight_delete; }
+    /// True if here is lightweight deleted mask file in part.
+    bool hasLightweightDelete() const { return deleted_mask.getDeletedRows().size() > 0; }
 
     const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
     void writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask);

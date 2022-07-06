@@ -332,7 +332,7 @@ void StorageMergeTree::alter(
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 
             if (!maybe_mutation_commands.empty())
-                mutation_version = startMutation(maybe_mutation_commands, local_context);
+                mutation_version = startMutation(maybe_mutation_commands, local_context, MutationType::Ordinary);
         }
 
         /// Always execute required mutations synchronously, because alters
@@ -555,7 +555,12 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
-    mutate(commands, query_context, MutationType::Ordinary);
+    /// Make ordinary ALTER DELETE queries lightweight to check all tests.
+    if (query_context->getSettingsRef().lightweight_delete_mutation
+        && commands.size() == 1 && commands.begin()->type == MutationCommand::DELETE)
+        mutate(commands, query_context, MutationType::Lightweight);
+    else
+        mutate(commands, query_context, MutationType::Ordinary);
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, MutationType type)
@@ -569,7 +574,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
         waitForMutation(version);
 }
 
-bool StorageMergeTree::hasLightweightDelete() const
+bool StorageMergeTree::hasLightweightDeletedMask() const
 {
     return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
@@ -1065,7 +1070,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                     fake_query_context->makeQueryContext();
                     fake_query_context->setCurrentQueryId("");
                     MutationsInterpreter interpreter(
-                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, false);
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, false, false);
                     commands_size += interpreter.evaluateCommandsSize();
                 }
                 catch (...)

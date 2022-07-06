@@ -11,15 +11,15 @@ namespace DB
 {
 class IBackupEntry;
 
+/// Type of Mutate. Used to control different mutates during mutates
+/// assignment. Also allows to apply special logic during mutate process
+/// Stored in FutureMergedMutatedPart and MergeTreeMutationEntry.
 enum class MutationType { Ordinary, Lightweight };
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
 struct MergeTreeMutationEntry
 {
-    /// Type of mutation, used for lightweight delete.
-    MutationType type;
-
     time_t create_time = 0;
     MutationCommands commands;
 
@@ -40,6 +40,9 @@ struct MergeTreeMutationEntry
     /// CSN of transaction which has created mutation
     /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or PrehistoricCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
+
+    /// Type of mutation, used for lightweight delete.
+    MutationType type;
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
