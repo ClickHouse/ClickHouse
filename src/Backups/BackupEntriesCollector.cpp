@@ -1,7 +1,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupCoordination.h>
-#include <Backups/BackupCoordinationHelpers.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/IDatabase.h>
@@ -47,7 +46,7 @@ namespace
     constexpr const char * kWritingBackupStatus = "writing backup";
 
     /// Error status.
-    constexpr const char * kErrorStatus = BackupCoordinationStatusSync::kErrorStatus;
+    constexpr const char * kErrorStatus = IBackupCoordination::kErrorStatus;
 
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)

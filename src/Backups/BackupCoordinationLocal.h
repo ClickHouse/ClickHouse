@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
-#include <Backups/BackupCoordinationHelpers.h>
+#include <Backups/BackupCoordinationReplicatedAccess.h>
+#include <Backups/BackupCoordinationReplicatedTables.h>
 #include <base/defines.h>
 #include <map>
 #include <mutex>
@@ -12,7 +13,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-/// Stores backup contents information in memory.
+/// Implementation of the IBackupCoordination interface performing coordination in memory.
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
@@ -52,21 +53,13 @@ public:
     Strings getAllArchiveSuffixes() const override;
 
 private:
-    struct ReplicatedAccessPath
-    {
-        Strings file_paths;
-        String host_to_store_access;
-    };
-
     mutable std::mutex mutex;
-    BackupCoordinationReplicatedPartsAndMutations replicated_parts_and_mutations TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, Strings> replicated_data_paths TSA_GUARDED_BY(mutex);
+    BackupCoordinationReplicatedTables replicated_tables TSA_GUARDED_BY(mutex);
     BackupCoordinationReplicatedAccess replicated_access TSA_GUARDED_BY(mutex);
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
     Strings archive_suffixes TSA_GUARDED_BY(mutex);
     size_t current_archive_suffix TSA_GUARDED_BY(mutex) = 0;
 };
-
 
 }
