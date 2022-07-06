@@ -81,7 +81,7 @@ public:
         const ColumnPtr & needles_ptr = arguments[1].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
-        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*haystack_ptr);
+        const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
         assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         const ColumnArray * col_needles = checkAndGetColumn<ColumnArray>(needles_ptr.get());
