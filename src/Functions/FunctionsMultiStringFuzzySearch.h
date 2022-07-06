@@ -100,15 +100,20 @@ public:
 
         if (col_needles_const)
         {
-            Array needles_arr = col_needles_const->getValue<Array>();
             Impl::vectorConstant(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needles_arr, vec_res, offsets_res, edit_distance,
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
+                col_needles_const->getValue<Array>(),
+                vec_res, offsets_res,
+                edit_distance,
                 allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
         }
         else
         {
             Impl::vectorVector(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), *col_needles_vector, vec_res, offsets_res, edit_distance,
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
+                col_needles_vector->getData(), col_needles_vector->getOffsets(),
+                vec_res, offsets_res,
+                edit_distance,
                 allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
         }
 

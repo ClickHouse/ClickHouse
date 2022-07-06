@@ -81,7 +81,8 @@ struct MultiSearchFirstPositionImpl
     static void vectorVector(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const ColumnArray & needles_col,
+        const IColumn & needles_data,
+        const ColumnArray::Offsets & needles_offsets,
         PaddedPODArray<ResultType> & res,
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
@@ -93,6 +94,15 @@ struct MultiSearchFirstPositionImpl
 
         size_t prev_offset = 0;
 
+        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
+        const ColumnString::Offsets & needles_data_string_offsets = needles_data_string->getOffsets();
+        const ColumnString::Chars & needles_data_string_chars = needles_data_string->getChars();
+
+        std::vector<std::string_view> needles;
+
+        size_t prev_needles_offsets_offset = 0;
+        size_t prev_needles_data_offset = 0;
+
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
             return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
@@ -100,13 +110,15 @@ struct MultiSearchFirstPositionImpl
 
         for (size_t i = 0; i < haystack_size; ++i)
         {
-            Field field = needles_col[i];
-            const Array & needles_arr = DB::get<Array &>(field);
+            needles.reserve(needles_offsets[i] - prev_needles_offsets_offset);
 
-            std::vector<std::string_view> needles;
-            needles.reserve(needles_arr.size());
-            for (const auto & needle : needles_arr)
-                needles.emplace_back(needle.get<String>());
+            for (size_t j = prev_needles_offsets_offset; j < needles_offsets[i]; ++j)
+            {
+                const auto * p = reinterpret_cast<const char *>(needles_data_string_chars.data()) + prev_needles_data_offset;
+                auto sz = needles_data_string_offsets[j] - prev_needles_data_offset - 1;
+                needles.emplace_back(std::string_view(p, sz));
+                prev_needles_data_offset = needles_data_string_offsets[j];
+            }
 
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal
 
@@ -134,7 +146,10 @@ struct MultiSearchFirstPositionImpl
             {
                 res[i] = 0;
             }
+
             prev_offset = haystack_offsets[i];
+            prev_needles_offsets_offset = needles_offsets[i];
+            needles.clear();
         }
     }
 };

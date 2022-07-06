@@ -71,7 +71,8 @@ struct MultiSearchImpl
     static void vectorVector(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const ColumnArray & needles_col,
+        const IColumn & needles_data,
+        const ColumnArray::Offsets & needles_offsets,
         PaddedPODArray<ResultType> & res,
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
@@ -83,23 +84,34 @@ struct MultiSearchImpl
 
         size_t prev_offset = 0;
 
+        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
+        const ColumnString::Offsets & needles_data_string_offsets = needles_data_string->getOffsets();
+        const ColumnString::Chars & needles_data_string_chars = needles_data_string->getChars();
+
+        std::vector<std::string_view> needles;
+
+        size_t prev_needles_offsets_offset = 0;
+        size_t prev_needles_data_offset = 0;
+
         for (size_t i = 0; i < haystack_size; ++i)
         {
+            needles.reserve(needles_offsets[i] - prev_needles_offsets_offset);
+
+            for (size_t j = prev_needles_offsets_offset; j < needles_offsets[i]; ++j)
+            {
+                const auto * p = reinterpret_cast<const char *>(needles_data_string_chars.data()) + prev_needles_data_offset;
+                auto sz = needles_data_string_offsets[j] - prev_needles_data_offset - 1;
+                needles.emplace_back(std::string_view(p, sz));
+                prev_needles_data_offset = needles_data_string_offsets[j];
+            }
+
             const auto * const haystack = &haystack_data[prev_offset];
             const size_t haystack_length = haystack_offsets[i] - prev_offset - 1;
 
-            Field field = needles_col[i];
-            const Array & needles_arr = DB::get<Array &>(field);
-
-            std::vector<std::string_view> needles;
-            needles.reserve(needles_arr.size());
-            for (const auto & needle : needles_arr)
-                needles.emplace_back(needle.get<String>());
-
             size_t iteration = 0;
-            for (size_t j = 0; j < needles_arr.size(); ++j)
+            for (const auto & needle : needles)
             {
-                auto searcher = Impl::createSearcherInSmallHaystack(needles[j].data(), needles[j].size());
+                auto searcher = Impl::createSearcherInSmallHaystack(needle.data(), needle.size());
                 if (iteration == 0 || !res[i])
                 {
                     const auto * match = searcher.search(haystack, haystack_length);
@@ -109,7 +121,10 @@ struct MultiSearchImpl
             }
             if (iteration == 0)
                 res[i] = 0;
+
             prev_offset = haystack_offsets[i];
+            prev_needles_offsets_offset = needles_offsets[i];
+            needles.clear();
         }
     }
 };
