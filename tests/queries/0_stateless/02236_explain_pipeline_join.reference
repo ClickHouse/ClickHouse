@@ -1,20 +1,17 @@
 (Expression)
-ExpressionTransform × 16
+ExpressionTransform
   (Join)
-  JoiningTransform × 16 2 → 1
-    Resize 1 → 16
-      (Expression)
+  JoiningTransform 2 → 1
+    (Expression)
+    ExpressionTransform
+      (Limit)
+      Limit
+        (ReadFromStorage)
+        Numbers 0 → 1
+    (Expression)
+    FillingRightJoinSide
       ExpressionTransform
         (Limit)
         Limit
           (ReadFromStorage)
           Numbers 0 → 1
-      (Expression)
-      Resize × 2 16 → 1
-        FillingRightJoinSide × 16
-          Resize 1 → 16
-            ExpressionTransform
-              (Limit)
-              Limit
-                (ReadFromStorage)
-                Numbers 0 → 1
