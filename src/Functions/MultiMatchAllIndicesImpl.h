@@ -162,6 +162,7 @@ struct MultiMatchAllIndicesImpl
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
 #if USE_VECTORSCAN
+        offsets.resize(haystack_offsets.size());
         size_t prev_haystack_offset = 0;
         for (size_t i = 0; i < haystack_offsets.size(); ++i)
         {
@@ -174,8 +175,6 @@ struct MultiMatchAllIndicesImpl
                 needles.emplace_back(needle.get<String>());
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
-
-            offsets.resize(haystack_offsets.size());
 
             const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
             hs_scratch_t * scratch = nullptr;
