@@ -110,15 +110,17 @@ target_compile_options(isal PRIVATE
                        "$<$<CONFIG:Debug>:>"
                        "$<$<CONFIG:Release>:>")
 
-# AS_FEATURE_LEVEL=10 means "Check SIMD capabilities of the target system at runtime and use up to AVX512 if available".
-# HAVE_KNOWS_AVX512 means rely on AVX512 being available on the target system.
 target_compile_options(isal_asm PUBLIC "-I${QPL_SRC_DIR}/isal/include/"
                        PUBLIC "-I${QPL_SRC_DIR}/isal/igzip/"
                        PUBLIC "-I${QPL_SRC_DIR}/isal/crc/"
-                       PUBLIC "-DAS_FEATURE_LEVEL=10"
                        PUBLIC "-DQPL_LIB")
+
+# AS_FEATURE_LEVEL=10 means "Check SIMD capabilities of the target system at runtime and use up to AVX512 if available".
+# HAVE_KNOWS_AVX512 means rely on AVX512 being available on the target system.
 if (ENABLE_AVX512)
-    target_compile_options(isal_asm PUBLIC "-DHAVE_AS_KNOWS_AVX512")
+    target_compile_options(isal_asm PUBLIC "-DHAVE_AS_KNOWS_AVX512" "-DAS_FEATURE_LEVEL=10")
+else()
+    target_compile_options(isal_asm PUBLIC "-DAS_FEATURE_LEVEL=5")
 endif()
 
 # Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
