@@ -77,15 +77,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column_haystack = arguments[0].column;
-        const ColumnPtr & arr_ptr = arguments[1].column;
+        const ColumnPtr & haystack_ptr = arguments[0].column;
+        const ColumnPtr & needles_ptr = arguments[1].column;
 
-        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
-        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
+        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
+        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*haystack_ptr);
         assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
-        const ColumnArray * col_needles = checkAndGetColumn<ColumnArray>(arr_ptr.get());
-        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
+        const ColumnArray * col_needles = checkAndGetColumn<ColumnArray>(needles_ptr.get());
+        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
         assert(static_cast<bool>(col_needles) ^ static_cast<bool>(col_needles_const));
 
         if (col_haystack_const && col_needles)
