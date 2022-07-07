@@ -1,0 +1,17 @@
+{
+  "tableName": "hits",
+  "tableType": "OFFLINE",
+  "segmentsConfig": {
+    "segmentPushType": "APPEND",
+    "segmentAssignmentStrategy": "BalanceNumSegmentAssignmentStrategy",
+    "schemaName": "hitsSchema",
+    "replication": "1"
+  },
+  "tableIndexConfig":{},
+  "metadata":{},
+  "tenants":
+  {
+	  "server": "DefaultTenant",
+	  "broker": "DefaultTenant"
+  }
+}

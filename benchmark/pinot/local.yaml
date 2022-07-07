@@ -1,0 +1,38 @@
+executionFrameworkSpec:
+  name: 'standalone'
+  segmentGenerationJobRunnerClassName: 'org.apache.pinot.plugin.ingestion.batch.standalone.SegmentGenerationJobRunner'
+  segmentTarPushJobRunnerClassName: 'org.apache.pinot.plugin.ingestion.batch.standalone.SegmentTarPushJobRunner'
+  segmentUriPushJobRunnerClassName: 'org.apache.pinot.plugin.ingestion.batch.standalone.SegmentUriPushJobRunner'
+  segmentMetadataPushJobRunnerClassName: 'org.apache.pinot.plugin.ingestion.batch.standalone.SegmentMetadataPushJobRunner'
+jobType: SegmentCreationAndTarPush
+inputDirURI: 'PWD_DIR_PLACEHOLDER'
+includeFileNamePattern: 'glob:PWD_DIR_PLACEHOLDER/hits.tsv'
+outputDirURI: 'batch/hits/segments'
+overwriteOutput: true
+segmentCreationJobParallelism: 10
+pinotFSSpecs:
+  - scheme: file
+    className: org.apache.pinot.spi.filesystem.LocalPinotFS
+recordReaderSpec:
+  dataFormat: 'csv'
+  className: 'org.apache.pinot.plugin.inputformat.csv.CSVRecordReader'
+  configClassName: 'org.apache.pinot.plugin.inputformat.csv.CSVRecordReaderConfig'
+  configs:
+    fileFormat: 'default'
+    delimiter: '	'
+    multiValueDelimiter: ''
+    header: 'WatchID	JavaEnable	Title	GoodEvent	EventTime	EventDate	CounterID	ClientIP	RegionID	UserID	CounterClass	OS	UserAgent	URL	Referer	IsRefresh	RefererCategoryID	RefererRegionID	URLCategoryID	URLRegionID	ResolutionWidth	ResolutionHeight	ResolutionDepth	FlashMajor	FlashMinor	FlashMinor2	NetMajor	NetMinor	UserAgentMajor	UserAgentMinor	CookieEnable	JavascriptEnable	IsMobile	MobilePhone	MobilePhoneModel	Params	IPNetworkID	TraficSourceID	SearchEngineID	SearchPhrase	AdvEngineID	IsArtifical	WindowClientWidth	WindowClientHeight	ClientTimeZone	ClientEventTime	SilverlightVersion1	SilverlightVersion2	SilverlightVersion3	SilverlightVersion4	PageCharset	CodeVersion	IsLink	IsDownload	IsNotBounce	FUniqID	OriginalURL	HID	IsOldCounter	IsEvent	IsParameter	DontCountHits	WithHash	HitColor	LocalEventTime	Age	Sex	Income	Interests	Robotness	RemoteIP	WindowName	OpenerName	HistoryLength	BrowserLanguage	BrowserCountry	SocialNetwork	SocialAction	HTTPError	SendTiming	DNSTiming	ConnectTiming	ResponseStartTiming	ResponseEndTiming	FetchTiming	SocialSourceNetworkID	SocialSourcePage	ParamPrice	ParamOrderID	ParamCurrency	ParamCurrencyID	OpenstatServiceName	OpenstatCampaignID	OpenstatAdID	OpenstatSourceID	UTMSource	UTMMedium	UTMCampaign	UTMContent	UTMTerm	FromTag	HasGCLID	RefererHash	URLHash'
+
+
+tableSpec:
+  tableName: 'hits'
+  schemaURI: 'http://localhost:9000/tables/hits/schema'
+  tableConfigURI: 'http://localhost:9000/tables/hits'
+
+pinotClusterSpecs:
+  - controllerURI: 'http://localhost:9000'
+
+pushJobSpec:
+  pushAttempts: 10
+  pushRetryIntervalMillis: 1000
+  segmentUriPrefix: 'file://'
