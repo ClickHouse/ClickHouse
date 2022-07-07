@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <queue>
 
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -15,7 +16,9 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
+#include <Common/parseGlobs.h>
 
+#include <re2/re2.h>
 
 static void setupLogging(const std::string & log_level)
 {
@@ -27,32 +30,50 @@ static void setupLogging(const std::string & log_level)
     Poco::Logger::root().setLevel(log_level);
 }
 
-/// This function will work only if key has exactly one glob {*}
-/// because .keys() method of Poco::AbstractConfiguration returns only keys
-/// from one layer after this prefix. You can't retrieve all possible paths
-/// in a configuration tree with standart methods.
+
 static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool try_get)
 {
-    auto pattern_prefix = pattern.substr(0, pattern.find(".{*}."));
+    auto pattern_prefix = pattern.substr(0, pattern.find_first_of("*?{"));
+    boost::algorithm::trim_if(pattern_prefix, [](char s){ return s == '.'; });
 
-    Poco::Util::AbstractConfiguration::Keys keys;
-    configuration->keys(pattern_prefix, keys);
+    auto matcher = std::make_unique<re2::RE2>(DB::makeRegexpPatternFromGlobs(pattern));
 
     std::vector<std::string> result;
-    result.reserve(keys.size());
-    for (const auto & key: keys)
+    std::queue<std::string> working_queue;
+    working_queue.emplace(pattern_prefix);
+
+    while (!working_queue.empty())
     {
-        auto disclosed_key = boost::algorithm::replace_first_copy(pattern, "{*}", key);
-        if (try_get)
+        auto node = working_queue.front();
+        working_queue.pop();
+
+        /// Disclose one more layer
+        Poco::Util::AbstractConfiguration::Keys keys;
+        configuration->keys(node, keys);
+
+        /// This is a leave
+        if (keys.empty())
         {
-            auto value = configuration->getString(disclosed_key, "");
-            if (!value.empty())
-                result.emplace_back(value);
+            if (!re2::RE2::FullMatch(node, *matcher))
+                continue;
+
+
+            if (try_get)
+            {
+                auto value = configuration->getString(node, "");
+                if (!value.empty())
+                    result.emplace_back(value);
+            }
+            else
+            {
+                result.emplace_back(configuration->getString(node));
+            }
+            continue;
         }
-        else
-        {
-            result.emplace_back(configuration->getString(disclosed_key));
-        }
+
+        /// Add new nodes to working queue
+        for (const auto & key : keys)
+            working_queue.emplace(fmt::format("{}.{}", node, key));
     }
 
     return result;
@@ -76,7 +97,7 @@ static std::vector<std::string> extractFromConfig(
     DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
     /// Check if a key has globs.
-    if (key.find(".{*}.") != std::string::npos)
+    if (key.find_first_of("*?{") != std::string::npos)
         return extactFromConfigAccordingToGlobs(configuration, key, try_get);
 
     /// Do not throw exception if not found.
