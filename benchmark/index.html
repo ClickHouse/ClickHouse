@@ -61,12 +61,12 @@
         a, a:visited {
             text-decoration: none;
             color: #08F;
+            cursor: pointer;
         }
 
         a:hover {
             color: #F40;
             font-weight: bold;
-            cursor: pointer;
         }
 
         .selector:hover {
@@ -1920,7 +1920,10 @@ const data = [
     <tr>
         <th>Metric: </th>
         <td id="selectors_run">
-            <a class="selector">Cold Run</a><a class="selector selector-active">Hot Run</a><a class="selector">Load Time</a><a class="selector">Storage Size</a>
+            <a class="selector" id="selector-metric-cold-run">Cold Run</a>
+            <a class="selector" id="selector-metric-hot-run">Hot Run</a>
+            <a class="selector" id="selector-metric-load-time">Load Time</a>
+            <a class="selector" id="selector-metric-storage-size">Storage Size</a>
         </td>
     </tr>
 </table>
@@ -2047,7 +2050,7 @@ function clearElement(elem)
 }
 
 function selectRun(timings) {
-    return selectors.metric == 'cold' ? timings[0] : timings[1] && timings[2] ? Math.min(timings[1], timings[2]) : null
+    return selectors.metric == 'cold' ? timings[0] : (timings[1] !== null && timings[2] !== null ? Math.min(timings[1], timings[2]) : null)
 }
 
 function renderSummary(filtered_data) {
@@ -2089,7 +2092,7 @@ function renderSummary(filtered_data) {
             }
         }
 
-        return Math.exp(accumulator / num_queries);
+        return Math.exp(accumulator / used_queries);
     });
 
     const sorted_indices = [...summaries.keys()].sort((a, b) => summaries[a] - summaries[b]);
@@ -2213,7 +2216,7 @@ function render() {
             const ratio = (constant_time_add + curr_timing) / (constant_time_add + baseline_timing);
 
             let td = document.createElement('td');
-            td.appendChild(document.createTextNode(curr_timing ? `${curr_timing.toFixed(2)} (×${ratio.toFixed(2)})` : '☠'));
+            td.appendChild(document.createTextNode(curr_timing !== null ? `${curr_timing.toFixed(2)} (×${ratio.toFixed(2)})` : '☠'));
 
             let [r, g, b] = [0, 0, 0];
 
@@ -2222,8 +2225,12 @@ function render() {
             /// ratio from 10 to 100 - orange to red
             /// ratio from 100 to 1000 to infinity - red to brown to black
 
-            if (curr_timing) {
-                if (ratio <= 1) {
+            if (curr_timing !== null) {
+                if (ratio < 1) {
+                    r = 232;
+                    g = 255;
+                    b = 232;
+                } else if (ratio <= 1) {
                     g = 255;
                 } else if (ratio <= 2) {
                     g = 255;
@@ -2237,7 +2244,7 @@ function render() {
             }
 
             td.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-            if (!curr_timing || ratio > 10) {
+            if (curr_timing === null || ratio > 10) {
                 td.style.color = 'white';
             }
 
