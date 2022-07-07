@@ -26,11 +26,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 class ICompressionCodec : private boost::noncopyable
 {
 public:
+    /// Three kinds of codec mode:
+    /// Synchronous mode which is commonly used by default;
+    /// --- For the codec with HW decompressor, it means submit request to HW and busy wait till complete.
+    /// Asynchronous mode which required HW decompressor support;
+    /// --- For the codec with HW decompressor, it means submit request to HW and return immeditately.
+    /// --- Must be used in pair with flushAsynchronousDecompressRequests.
+    /// SoftwareFallback mode is exclusively defined for the codec with HW decompressor, enable its capability of "fallback to SW codec".
     enum class CodecMode
     {
-        Synchronous,  //synchronous request by default;
-        Asynchronous, //asynchronous request, must be used in pair with flushAsynchronousDecompressRequests;
-        SoftwareFallback  //Fallback to SW decompressor;
+        Synchronous,
+        Asynchronous,
+        SoftwareFallback
     };
 
     virtual ~ICompressionCodec() = default;
@@ -65,7 +72,12 @@ public:
         decompressMode = mode;
     }
 
-    /// Flush all asynchronous request for decompression
+    /// Flush result for previous asynchronous decompression requests.
+    /// This function must be called following several requests offload to HW.
+    /// To make sure asynchronous results have been flushed into target buffer completely.
+    /// Meanwhile, source and target buffer for decompression should not be overwritten until this function execute completely.
+    /// Otherwise it would conflict with HW offloading and cause exception.
+    /// For QPL deflate, it support the maximum number of requests equal to DeflateJobHWPool::jobPoolSize
     void flushAsynchronousDecompressRequests();
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
