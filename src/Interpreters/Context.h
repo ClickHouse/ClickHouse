@@ -368,7 +368,19 @@ public:
     /// Most of them are workarounds and should be removed in the future.
     struct KitchenSink
     {
-        size_t analyze_counter = 0;
+        std::atomic<size_t> analyze_counter = 0;
+
+        KitchenSink() = default;
+
+        KitchenSink(const KitchenSink & rhs)
+            : analyze_counter(rhs.analyze_counter.load())
+        {}
+
+        KitchenSink & operator=(const KitchenSink & rhs)
+        {
+            analyze_counter = rhs.analyze_counter.load();
+            return *this;
+        }
     };
 
     KitchenSink kitchen_sink;
