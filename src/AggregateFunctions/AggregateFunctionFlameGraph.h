@@ -319,6 +319,8 @@ struct AggregateFunctionFlameGraphData
                             node->allocated -= deallocation.size;
                             node = node->parent;
                         }
+
+                        break;
                     }
                 }
             }
