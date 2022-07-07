@@ -38,7 +38,14 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
             std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
 
     return QueryPipelineBuilder::joinPipelinesRightLeft(
-        std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, max_streams, keep_left_read_in_order, &processors);
+        std::move(pipelines[0]),
+        std::move(pipelines[1]),
+        join,
+        output_stream->header,
+        max_block_size,
+        max_streams,
+        keep_left_read_in_order,
+        &processors);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
