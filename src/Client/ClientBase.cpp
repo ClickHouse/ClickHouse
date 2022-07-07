@@ -543,7 +543,7 @@ try
                     auto range = getCompressionLevelRange(compression_method);
                     if (!res || compression_level < range.first || compression_level > range.second)
                         throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, 
+                            ErrorCodes::BAD_ARGUMENTS,
                             "Invalid compression level, must be positive integer in range {}-{}",
                             range.first,
                             range.second);
