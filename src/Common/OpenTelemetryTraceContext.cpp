@@ -15,7 +15,7 @@ void OpenTelemetrySpan::addAttribute(const std::string & name, UInt64 value)
     if (trace_id == UUID() || name.empty())
         return;
 
-    this->attributes.push_back(Tuple{name, toString(value)});
+    this->attributes.push_back(Tuple{name, std::to_string(value)});
 }
 
 void OpenTelemetrySpan::addAttribute(const std::string & name, const std::string & value)
@@ -35,8 +35,7 @@ void OpenTelemetrySpan::addAttribute(const std::string & name, std::function<std
     if (value.empty())
         return;
 
-    this->attribute_names.push_back(name);
-    this->attribute_values.push_back(value);
+    this->attributes.push_back(Tuple{name, value});
 }
 
 void OpenTelemetrySpan::addAttribute(const Exception & e)
@@ -254,7 +253,6 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
             _parent_trace_context.trace_id.toUnderType().items[1] = thread_local_rng(); //-V656
         }
         _parent_trace_context.span_id = 0;
-        _parent_trace_context.trace_flags = 1;
     }
 
     this->root_span.trace_id = _parent_trace_context.trace_id;
@@ -267,6 +265,7 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
     /// set up trace context on current thread
     current_thread_trace_context = _parent_trace_context;
     current_thread_trace_context.span_id = this->root_span.span_id;
+    current_thread_trace_context.trace_flags = 1;
     current_thread_trace_context.span_log = _span_log;
 }
 
@@ -284,7 +283,7 @@ OpenTelemetryThreadTraceContextScope::~OpenTelemetryThreadTraceContextScope()
             shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
         }
 
-        this->root_span.trace_id = UUD();
+        this->root_span.trace_id = UUID();
     }
 
     if (this->is_context_owner)
