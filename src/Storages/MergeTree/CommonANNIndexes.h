@@ -98,22 +98,23 @@ public:
     float getComparisonDistanceForWhereQuery() const;
 
     // distance should be calculated regarding to targetVector
-    std::vector<float> getTargetVector() const { return query_information->target; }
+    std::vector<float> getTargetVector() const;
 
     // targetVector dimension size
-    size_t getNumOfDimensions() const { return query_information->target.size(); }
+    size_t getNumOfDimensions() const;
 
-    ///TODO: nullptr
-    String getColumnName() const { return query_information->column_name; }
+    String getColumnName() const;
 
-    String getMetricName() const { return query_information->metric_name; }
+    String getMetricName() const;
 
     // the P- value if the metric is 'LpDistance'
-    float getPValueForLpDistance() const { return query_information->p_for_lp_dist; }
+    float getPValueForLpDistance() const;
 
-    bool queryHasOrderByClause() const { return query_information->query_type == ANNQueryInformation::Type::OrderByQuery; }
+    bool queryHasOrderByClause() const;
 
-    bool queryHasWhereClause() const { return query_information->query_type == ANNQueryInformation::Type::WhereQuery; }
+    bool queryHasWhereClause() const;
+
+    UInt64 getIndexGranularity() const { return index_granularity; }
 
     // length's value from LIMIT clause, nullopt if not any
     UInt64 getLimitCount() const;
@@ -168,7 +169,6 @@ private:
         std::optional<String> identifier;
         std::optional<int64_t> int_literal;
 
-        ///TODO:better save?
         std::optional<Tuple> tuple_literal;
         std::optional<Array> array_literal;
 
@@ -202,10 +202,8 @@ private:
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
     /* Matches dist function, target vector, column name */
+    ///TODO: identifier_found
     static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr, bool & identifier_found);
-
-    // Util methods
-    static void panicIfWrongBuiltRPN [[noreturn]] ();
 
     // Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(RPN::iterator& iter);
@@ -217,6 +215,7 @@ private:
 
     // Get from settings ANNIndex parameters
     String ann_index_params;
+    UInt64 index_granularity;
     bool index_is_useful = false;
 };
 

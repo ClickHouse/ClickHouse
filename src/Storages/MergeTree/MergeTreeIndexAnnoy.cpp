@@ -1,4 +1,4 @@
-// #ifdef ENABLE_ANNOY
+#ifdef ENABLE_ANNOY
 
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 
@@ -9,13 +9,12 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-namespace Annoy
+namespace ApproximateNearestNeighbour
 {
 
 template<typename Dist>
@@ -92,7 +91,6 @@ bool MergeTreeIndexGranuleAnnoy::empty() const
 void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
     writeIntBinary(index_base->getNumOfDimensions(), ostr); // write dimension
-    std::cout << "DIMS " << index_base->getNumOfDimensions() << std::endl;
     index_base->serialize(ostr);
 }
 
@@ -101,7 +99,6 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
     int dimension;
     readIntBinary(dimension, istr);
     index_base = std::make_shared<AnnoyIndex>(dimension);
-    std::cout << "DIMS " << dimension << std::endl;
     index_base->deserialize(istr);
 }
 
@@ -122,7 +119,6 @@ bool MergeTreeIndexAggregatorAnnoy::empty() const
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
 {
-    ///TODO: move?
     index_base->build(index_param);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
     index_base = nullptr;
@@ -174,8 +170,7 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
     {
         /// Other possible type of column is Tuple
         const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
-    
-        ///TODO: error
+
         if (!column_tuple)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type was given to index.");
     
@@ -227,6 +222,7 @@ bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
     UInt64 limit = condition.getLimitCount();
+    UInt64 index_granularity = condition.getIndexGranularity();
     std::optional<float> comp_dist
         = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
 
@@ -241,7 +237,6 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         throw Exception("Granule has the wrong type", ErrorCodes::LOGICAL_ERROR);
     }
     auto annoy = granule->index_base;
-    std::cout << "DIMS " << annoy->getNumOfDimensions() << std::endl;
 
     if (condition.getNumOfDimensions() != annoy->getNumOfDimensions())
     {
@@ -275,8 +270,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         {
             continue;
         }
-        /// TODO: granularity from context
-        result.insert(items[i] / 8192);
+        result.insert(items[i] / index_granularity);
     }
 
     std::vector<size_t> result_vector;
@@ -334,4 +328,4 @@ void AnnoyIndexValidator(const IndexDescription & index, bool /* attach */)
 }
 
 }
-// #endif // ENABLE_ANNOY
+#endif // ENABLE_ANNOY

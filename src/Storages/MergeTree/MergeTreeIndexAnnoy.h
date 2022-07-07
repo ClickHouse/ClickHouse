@@ -12,7 +12,7 @@ namespace DB
 
 // auxiliary namespace for working with spotify-annoy library
 // mainly for serialization and deserialization of the index
-namespace Annoy
+namespace ApproximateNearestNeighbour
 {
     using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexSingleThreadedBuildPolicy;
     // TODO: Support different metrics. List of available metrics can be taken from here:
@@ -32,7 +32,7 @@ namespace Annoy
 
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
-    using AnnoyIndex = Annoy::AnnoyIndexSerialize<>;
+    using AnnoyIndex = ANN::AnnoyIndexSerialize<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
@@ -56,7 +56,7 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 {
-    using AnnoyIndex = Annoy::AnnoyIndexSerialize<>;
+    using AnnoyIndex = ANN::AnnoyIndexSerialize<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, int index_param);
