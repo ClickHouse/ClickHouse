@@ -1,7 +1,7 @@
 {
     "system": "ClickHouse",
     "date": "2022-07-01",
-    "machine": "c6a.4xlarge, 500gb gp2",
+    "machine": "c6a.metal, 500gb gp2",
     "cluster_size": "1",
     "comment": "",
 

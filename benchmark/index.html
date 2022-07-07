@@ -198,29 +198,19 @@ const queries = [
 ];
 
 const data = [
-
-/* Example:
 {
-    "system": "shitholedb",             // name of the system, exactly as directory name
-    "date": "2022-01-02",               // date when the results were added, should be determined automatically
-    "machine": "c6a.4xlarge, gp2 500G", // server hardware type, or "serverless"
-    "cluster_size": 1,                  // the number of servers in a cluster, or "serverless"
-    "comment": "",                      // optional, freeform text
+    "system": "Athena (partitioned)",
+    "date": "2022-07-01",
+    "machine": "serverless",
+    "cluster_size": "serverless",
+    "comment": "",
 
-    "tags": ["Embedded", "In-memory", "Stateless", "Managed", "Based on ClickHouse", "SQL", "NoSQL", "Search", "Document", "Time-series"],
+    "tags": ["stateless", "managed", "SQL", "Java", "column-oriented"],
 
-    "load_time": 123.456,
-    "data_size": 1234567890,
+    "load_time": 0,
+    "data_size": 13800000000,
 
     "result": [
-        [1, 2, 3],
-        [4, 5, 6],
-        ...
-    ]
-}
-*/
-
-{"system": "athena (partitioned)", "machine": "serverless", "time": "2022-07-04", "result": [
 [2.777,3.275,2.925],
 [1.503,3.136,4.003],
 [4.544,3.833,3.64],
@@ -264,8 +254,22 @@ const data = [
 [2.589,2.613,3.231],
 [1.926,3.617,1.82],
 [1.506,2.404,2.343]
-]},
-{"system": "athena", "machine": "serverless", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Athena (single)",
+    "date": "2022-07-01",
+    "machine": "serverless",
+    "cluster_size": "serverless",
+    "comment": "",
+
+    "tags": ["stateless", "managed", "SQL", "Java", "column-oriented"],
+
+    "load_time": 0,
+    "data_size": 13800000000,
+
+    "result": [
 [2.268,1.327,2.137],
 [3.427,2.248,3.605],
 [3.254,2.548,2.316],
@@ -309,8 +313,22 @@ const data = [
 [1.791,2.082,2.481],
 [3.757,2.6,1.946],
 [2.608,1.994,3.967]
-]},
-{"system": "aurora-mysql", "machine": "16acu", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Aurora for MySQL",
+    "date": "2022-07-01",
+    "machine": "16acu",
+    "cluster_size": "1",
+    "comment": "Some queries cannot run due to ERROR 1114 (HY000) at line 1: The table '/rdsdbdata/tmp/#sqlaff_e5_0' is full",
+
+    "tags": ["managed", "SQL", "C++", "MySQL compatible", "row-oriented"],
+
+    "load_time": 7687.318,
+    "data_size": 89614492631,
+
+    "result": [
 [740.42,739.91,746.65],
 [828.2,835.67,832.87],
 [830.08,830.98,832.38],
@@ -354,8 +372,22 @@ const data = [
 [0.95,0.94,0.94],
 [0.90,0.92,0.91],
 [1.69,1.72,1.69]
-]},
-{"system": "aurora-postgresql", "machine": "16acu", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Aurora for PostgreSQL",
+    "date": "2022-07-01",
+    "machine": "16acu",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["managed", "SQL", "C", "PostgreSQL compatible", "row-oriented"],
+
+    "load_time": 2127,
+    "data_size": 52183852646,
+
+    "result": [
 [12.8361,5.71812,5.8241],
 [61.2565,62.1402,63.7173],
 [68.0578,68.1218,67.609],
@@ -399,8 +431,22 @@ const data = [
 [0.299746,0.297532,0.30334],
 [0.275732,0.279817,0.27766],
 [0.332107,0.324387,0.320099]
-]},
-{"system": "bigquery", "machine": "serverless", "time": "", "result": [
+]
+}
+,
+{
+    "system": "BigQuery",
+    "date": "2022-07-01",
+    "machine": "serverless",
+    "cluster_size": "serverless",
+    "comment": "Looks like it shows uncompressed (billable) data size, and it is higher than CSV size",
+
+    "tags": ["managed", "SQL", "column-oriented"],
+
+    "load_time": 519.485,
+    "data_size": 94410000000,
+
+    "result": [
 [1.451,1.284,1.272],
 [1.462,1.23,1.318],
 [1.394,1.338,1.248],
@@ -444,8 +490,22 @@ const data = [
 [1.173,1.122,1.124],
 [1.164,1.162,1.098],
 [1.292,1.226,1.274]
-]},
-{"system": "citus", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "BigQuery",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C", "PostgreSQL compatible", "column-oriented"],
+
+    "load_time": 1579,
+    "data_size": 18980918899,
+
+    "result": [
 [7.58503,6.70447,6.52499],
 [6.33941,5.06063,5.00238],
 [11.7488,9.86417,9.93223],
@@ -489,8 +549,22 @@ const data = [
 [0.929845,0.642076,0.638478],
 [0.866536,0.683567,0.680218],
 [0.937823,0.784747,0.765929]
-]},
-{"system": "clickhouse-local (partitioned)", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "clickhouse-local (partitioned)",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C++", "column-oriented", "embedded", "stateless"],
+
+    "load_time": 0,
+    "data_size": 14737666736,
+
+    "result": [
 [0.850, 0.102, 0.114],
 [1.342, 0.090, 0.099],
 [2.547, 0.179, 0.189],
@@ -534,8 +608,22 @@ const data = [
 [7.212, 0.836, 0.838],
 [7.863, 0.716, 0.718],
 [5.120, 0.587, 0.574]
-]},
-{"system": "clickhouse-local", "machine": "c6a.4xlarge.single", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "clickhouse-local (partitioned)",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C++", "column-oriented", "embedded", "stateless"],
+
+    "load_time": 0,
+    "data_size": 14779976446,
+
+    "result": [
 [1.176, 0.251, 0.249],
 [1.037, 0.134, 0.111],
 [1.609, 0.403, 0.369],
@@ -579,8 +667,22 @@ const data = [
 [6.490, 1.548, 1.522],
 [6.413, 1.474, 1.416],
 [3.796, 1.339, 1.316]
-]},
-{"system": "clickhouse", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "ClickHouse",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C++", "column-oriented"],
+
+    "load_time": 475.529,
+    "data_size": 14345515782,
+
+    "result": [
 [0.027, 0.001, 0.001],
 [0.035, 0.015, 0.021],
 [0.083, 0.034, 0.033],
@@ -624,8 +726,22 @@ const data = [
 [0.044, 0.019, 0.020],
 [0.030, 0.023, 0.012],
 [0.030, 0.018, 0.013]
-]},
-{"system": "clickhouse", "machine": "c6a.metal", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "ClickHouse",
+    "date": "2022-07-01",
+    "machine": "c6a.metal, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C++", "column-oriented"],
+
+    "load_time": 136.869,
+    "data_size": 14571706777,
+
+    "result": [
 [0.011, 0.001, 0.001],
 [0.040, 0.015, 0.013],
 [0.045, 0.021, 0.023],
@@ -669,8 +785,22 @@ const data = [
 [0.028, 0.018, 0.017],
 [0.027, 0.019, 0.014],
 [0.018, 0.026, 0.015]
-]},
-{"system": "cratedb", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "CrateDB",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "For some queries it gives \"Data too large\".",
+
+    "tags": ["SQL", "Java", "column-oriented"],
+
+    "load_time": 10687,
+    "data_size": 109636633416,
+
+    "result": [
 [0.008162,0.005118,0.002553],
 [0.350014,0.39977,0.133775],
 [2.58426,2.47192,2.59779],
@@ -714,8 +844,22 @@ const data = [
 [0.23764,0.139109,0.134472],
 [0.110253,0.057695,0.056073],
 [0.124285,0.150479,0.066226]
-]},
-{"system": "databend", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Databend",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "Only 90% of data successfully loaded. For some queries it gives \"Data too large\".",
+
+    "tags": ["SQL", "Rust", "column-oriented", "ClickHouse derivative"],
+
+    "load_time": 484,
+    "data_size": 43016643271,
+
+    "result": [
 [0.010087, 0.002961, 0.003271],
 [0.127964, 0.080012, 0.075741],
 [0.162388, 0.143967, 0.144762],
@@ -759,8 +903,22 @@ const data = [
 [0.485363, 0.420291, 0.416819],
 [0.372131, 0.322068, 0.323578],
 [null, null, null]
-]},
-{"system": "druid", "machine": "c6a.4xlarge", "time": "2022-07-05", "result": [
+]
+}
+,
+{
+    "system": "Druid",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "Java", "column-oriented"],
+
+    "load_time": null,
+    "data_size": null,
+
+    "result": [
 [0.179351, 0.040782, 0.026180],
 [0.305672, 0.123548, 0.112512],
 [0.187141, 0.072973, 0.071330],
@@ -788,14 +946,14 @@ const data = [
 [0.111474, 0.019374, 0.027832],
 [0.016728, 0.015407, 0.013660],
 [0.013881, 0.012076, 0.012084],
-[300.155122, 300.081168, 300.067467],
+[null, null, null],
 [0.006903, 0.004498, 0.003752],
 [1.758529, 1.328889, 1.393226],
 [2.106015, 1.906621, 1.653751],
 [2.708141, 2.064777, 1.868830],
 [7.690441, 7.650803, 7.350766],
 [17.321933, 18.088249, 18.109673],
-[300.088064, 300.153875, 300.069589],
+[null, null, null],
 [4.378734, 3.495874, 3.754953],
 [0.623633, 0.603495, 0.580749],
 [0.551690, 0.483025, 0.494859],
@@ -804,8 +962,22 @@ const data = [
 [0.375339, 0.276121, 0.264940],
 [0.207965, 0.187909, 0.183420],
 [0.176383, 0.107790, 0.106120]
-]},
-{"system": "duckdb", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "DuckDB",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "Many queries triggered OOM",
+
+    "tags": ["SQL", "C", "column-oriented", "embedded"],
+
+    "load_time": 4217,
+    "data_size": 27241492480,
+
+    "result": [
 [0.005694353996659629,0.003944558004150167,0.003837226002360694],
 [0.16991353100456763,0.03919722700084094,0.03835860399703961],
 [0.44898432699847035,0.04947217500011902,0.04852217998995911],
@@ -849,8 +1021,22 @@ const data = [
 [0.03759863799496088,0.008373684002435766,0.007633563989656977],
 [0.025631797994719818,0.008081699008471332,0.007858585988287814],
 [0.034359957004198804,0.025543516996549442,0.02533275399764534]
-]},
-{"system": "greenplum", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Greenplum",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C", "column-oriented", "PostgreSQL compatible"],
+
+    "load_time": 1080,
+    "data_size": 42000000000,
+
+    "result": [
 [2.20009,1.45883,1.13573],
 [1.28661,1.07897,1.01856],
 [2.2582,2.42193,2.59693],
@@ -894,8 +1080,22 @@ const data = [
 [0.154522,0.107654,0.10529],
 [0.158957,0.117284,0.119068],
 [0.193756,0.144787,0.145485]
-]},
-{"system": "heavyai", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "HeavyAI",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "Previous names: OmniSci, mapD. Many queries cannot run due to errors and limitations.",
+
+    "tags": ["SQL", "C++", "column-oriented"],
+
+    "load_time": 572.633,
+    "data_size": 50887437386,
+
+    "result": [
 [6.525,0.022,0.029],
 [0.301,0.042,0.04],
 [0.287,0.095,0.093],
@@ -939,8 +1139,81 @@ const data = [
 [3.992,0.112,0.112],
 [1.031,0.116,0.116],
 [1.365,0.089,0.088]
-]},
-{"system": "mariadb-columnstore", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Infobright",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "Only 90% of data successfully loaded. Some queries run for days.",
+
+    "tags": ["SQL", "C++", "column-oriented", "MySQL compatible"],
+
+    "load_time": 2317,
+    "data_size": 13760341294,
+
+    "result": [
+[0.01, 0, 0],
+[2.39, 2.4, 2.44],
+[0, 0, 0],
+[7.21, 6.04, 6.91],
+[16.09, 16.86, 15.69],
+[48.8, 42.37, 48.63],
+[0, 0, 0],
+[3.48, 2.42, 2.42],
+[23.56, 24.78, 22.21],
+[32.87, 31.71, 34.48],
+[14.8, 14.83, 14.11],
+[16.7, 16.53, 17.37],
+[1752.91, 1999.88, 1961.4],
+[1193.43, 1167, 1220.47],
+[2184.81, 2316.12, 2224.14],
+[32.58, 30.69, 31.58],
+[300.17, 16221.33, 16168.44],
+[122.4, 120.49, 124.67],
+[78927.44, 79250.44, 78504.89],
+[3.38, 1.22, 1.21],
+[289.73, 302.3, 285.83],
+[415.82, 389.23, 403.28],
+[573.82, 590.81, 575.06],
+[300.13, 293.96, 285.64],
+[41.42, 37.48, 39.64],
+[75.2, 75.37, 72.07],
+[39.22, 41.52, 40.11],
+[449.56, 445.03, 448.68],
+[null, null, null],
+[450.87, 488.3, 453.83],
+[58.69, 59.29, 58.07],
+[84.47, 78.92, 79.38],
+[517.97, 520.29, 504.96],
+[182468.89, 182468.89, 182468.89],
+[182468.89, 182468.89, 182468.89],
+[68.43, 66.93, 67.68],
+[8.3, 3.62, 3.61],
+[1.04, 0.62, 0.62],
+[0.22, 0.18, 0.18],
+[567.78, 566.52, 563.02],
+[0.29, 0.14, 0.11],
+[0.17, 0.08, 0.08],
+[1.37, 1.34, 1.32]
+]
+}
+,
+{
+    "system": "MariaDB ColumnStore",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "Previous name: InfiniDB.",
+
+    "tags": ["SQL", "C++", "column-oriented", "MySQL compatible"],
+
+    "load_time": 2507.8,
+    "data_size": 19712857022,
+
+    "result": [
 [0.151,0.158,0.148],
 [0.100,0.101,0.106],
 [1.221,1.233,1.226],
@@ -984,8 +1257,22 @@ const data = [
 [0.114,0.063,0.062],
 [0.100,0.062,0.061],
 [null,null,null]
-]},
-{"system": "monetdb", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "MonetDB",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C", "column-oriented"],
+
+    "load_time": 939,
+    "data_size": 49696606499,
+
+    "result": [
 [0.000218,0.000157,0.000155],
 [0.101903,0.019908,0.018439],
 [0.282431,0.035987,0.034938],
@@ -1029,8 +1316,22 @@ const data = [
 [0.106465,0.10638,0.102692],
 [0.154871,0.153752,0.155782],
 [0.11459,0.09639,0.095594]
-]},
-{"system": "mysql-myisam", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "MySQL (MyISAM)",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C++", "row-oriented", "MySQL compatible"],
+
+    "load_time": 2512,
+    "data_size": 121588958061,
+
+    "result": [
 [0.00,0.00,0.00],
 [283.32,276.83,274.52],
 [276.93,278.29,283.27],
@@ -1074,8 +1375,22 @@ const data = [
 [1.60,1.41,1.41],
 [1.56,1.42,1.39],
 [7.04,1.17,1.13]
-]},
-{"system": "mysql", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "MySQL",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C++", "row-oriented", "MySQL compatible"],
+
+    "load_time": 9472,
+    "data_size": 171953585825,
+
+    "result": [
 [339.77,339.88,339.77],
 [364.91,371.86,367.55],
 [366.2,368.91,389.66],
@@ -1119,8 +1434,22 @@ const data = [
 [4.82,0.76,0.74],
 [4.46,0.77,0.75],
 [7.04,1.17,1.13]
-]},
-{"system": "postgresql", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "PostgreSQL",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "C", "row-oriented", "PostgreSQL compatible"],
+
+    "load_time": 2342,
+    "data_size": 77797067741,
+
+    "result": [
 [439.753,309.785,282.017],
 [317.874,254.238,254.941],
 [262.883,263.072,263.090],
@@ -1157,15 +1486,29 @@ const data = [
 [462.576,446.962,439.779],
 [429.930,417.696,416.704],
 [296.875,297.283,295.140],
-[3.461,.842,.794],
-[2.179,.564,.558],
-[2.258,.566,.416],
+[3.461,0.842,0.794],
+[2.179,0.564,0.558],
+[2.258,0.566,0.416],
 [2.805,1.311,1.317],
-[2.936,.820,.615],
-[2.197,.736,.535],
-[1.983,.320,.312]
-]},
-{"system": "questdb", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+[2.936,0.820,0.615],
+[2.197,0.736,0.535],
+[1.983,0.320,0.312]
+]
+}
+,
+{
+    "system": "QuestDB",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": "1",
+    "comment": "Many queries cannot run. It also crashes and hangs.",
+
+    "tags": ["SQL", "Java", "time-series"],
+
+    "load_time": 1667.5,
+    "data_size": 126680518680,
+
+    "result": [
 [0.0155878,0.000283657,0.000328587],
 [0.586734,0.0486348,0.0485346],
 [6.41881,5.57954,6.25638],
@@ -1209,8 +1552,22 @@ const data = [
 [0.567887,0.394619,0.438952],
 [0.508977,0.441015,0.40528],
 [null,null,null]
-]},
-{"system": "redshift", "machine": "4x.ra3.xplus", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Redshift",
+    "date": "2022-07-01",
+    "machine": "ra3.xplus",
+    "cluster_size": "4",
+    "comment": "One query did not run due to overflow check and another due to missing regexp function.",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2136,
+    "data_size": 30794579968,
+
+    "result": [
 [0.081437,0.022376,0.022491],
 [2.54868,0.024112,0.024072],
 [2.62053,0.049948,0.049768],
@@ -1254,8 +1611,22 @@ const data = [
 [4.03108,0.054134,0.058568],
 [4.35647,0.061157,0.053367],
 [5.23605,0.037217,0.036335]
-]},
-{"system": "redshift", "machine": "serverless", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Redshift",
+    "date": "2022-07-01",
+    "machine": "serverless",
+    "cluster_size": "serverless",
+    "comment": "One query did not run due to overflow check and another due to missing regexp function.",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 1933,
+    "data_size": 30300000000,
+
+    "result": [
 [0.436955,0.390225,0.387823],
 [2.74529,0.280571,0.198074],
 [7.24569,0.295612,0.386568],
@@ -1299,8 +1670,22 @@ const data = [
 [4.86561,0.595546,0.534209],
 [4.34256,0.433804,0.414541],
 [4.19814,0.288269,0.415328]
-]},
-{"system": "singlestore", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "SingleStore",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": 1,
+    "comment": "Previous name: MemSQL. Some queries did not run due to memory limits",
+
+    "tags": ["SQL", "MySQL compatible", "column-oriented"],
+
+    "load_time": 690,
+    "data_size": 29836263469,
+
+    "result": [
 [0.09,0.00,0.00],
 [0.23,0.04,0.01],
 [0.47,0.15,0.15],
@@ -1344,8 +1729,22 @@ const data = [
 [0.29,0.03,0.03],
 [0.22,0.06,0.02],
 [0.27,0.11,0.12]
-]},
-{"system": "snowflake", "machine": "2xl", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "2XL",
+    "cluster_size": "32",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.177,0.052,0.090],
 [0.903,0.324,0.782],
 [0.458,2.909,0.275],
@@ -1389,8 +1788,22 @@ const data = [
 [0.212,0.197,0.170],
 [0.223,0.174,0.177],
 [0.172,0.172,0.172]
-]},
-{"system": "snowflake", "machine": "3xl", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "3XL",
+    "cluster_size": "64",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.165,0.061,0.049],
 [1.356,1.252,1.502],
 [1.287,0.470,0.325],
@@ -1434,8 +1847,22 @@ const data = [
 [0.200,0.154,0.144],
 [0.191,0.121,0.125],
 [0.137,0.233,0.148]
-]},
-{"system": "snowflake", "machine": "4xl", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "4XL",
+    "cluster_size": "128",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.164,0.061,0.078],
 [2.471,2.436,1.927],
 [1.656,0.222,0.639],
@@ -1479,8 +1906,22 @@ const data = [
 [0.236,0.138,0.132],
 [0.193,0.124,0.139],
 [0.146,0.145,0.139]
-]},
-{"system": "snowflake", "machine": "l", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "L",
+    "cluster_size": "8",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.067,0.054,0.051],
 [1.158,1.409,0.190],
 [1.470,0.566,0.715],
@@ -1524,8 +1965,22 @@ const data = [
 [0.196,0.129,0.227],
 [0.201,0.128,0.143],
 [0.176,0.129,0.146]
-]},
-{"system": "snowflake", "machine": "m", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "M",
+    "cluster_size": "4",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.054,0.062,0.064],
 [0.698,0.563,0.407],
 [0.586,0.412,0.266],
@@ -1569,8 +2024,22 @@ const data = [
 [0.203,0.137,0.119],
 [0.200,0.312,0.137],
 [0.149,0.130,0.214]
-]},
-{"system": "snowflake", "machine": "s", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "S",
+    "cluster_size": "2",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.186,0.060,0.062],
 [0.980,0.574,0.311],
 [0.977,0.554,0.426],
@@ -1614,8 +2083,22 @@ const data = [
 [0.166,0.133,0.141],
 [0.166,0.120,0.140],
 [0.120,0.119,0.126]
-]},
-{"system": "snowflake", "machine": "xl", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "XL",
+    "cluster_size": "16",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.071,0.053,0.057],
 [0.998,0.610,0.240],
 [0.420,1.138,1.051],
@@ -1659,8 +2142,22 @@ const data = [
 [0.173,0.214,0.138],
 [0.189,0.150,0.159],
 [0.135,0.149,0.138]
-]},
-{"system": "snowflake", "machine": "xs", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "Snowflake",
+    "date": "2022-07-01",
+    "machine": "XS",
+    "cluster_size": "1",
+    "comment": "",
+
+    "tags": ["SQL", "managed", "column-oriented"],
+
+    "load_time": 2524,
+    "data_size": 12300000000,
+
+    "result": [
 [0.169,0.055,0.056],
 [1.184,0.582,0.386],
 [1.350,0.560,0.568],
@@ -1704,8 +2201,22 @@ const data = [
 [0.166,0.133,0.155],
 [0.218,0.140,0.135],
 [0.140,0.152,0.158]
-]},
-{"system": "sqlite", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "SQLite",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": 1,
+    "comment": "",
+
+    "tags": ["SQL", "C", "embedded", "row-oriented"],
+
+    "load_time": 2608,
+    "data_size": 75776589824,
+
+    "result": [
 [752.739,2.003,1.2],
 [304.302,291.521,286.965],
 [293.964,287.619,287.219],
@@ -1749,8 +2260,22 @@ const data = [
 [1.274,0.303,0.283],
 [1.322,0.317,0.314],
 [1.498,0.602,0.613]
-]},
-{"system": "timescaledb (compression)", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "TimescaleDB (compression)",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": 1,
+    "comment": "",
+
+    "tags": ["SQL", "C", "PostgreSQL compatible", "column-oriented", "time-series"],
+
+    "load_time": 4605,
+    "data_size": 20333747165,
+
+    "result": [
 [2.28686,1.63642,1.64263],
 [32.6848,1.63476,1.40052],
 [60.8633,3.70484,3.59342],
@@ -1794,8 +2319,22 @@ const data = [
 [0.563764,0.14192,0.138234],
 [0.372428,0.122989,0.123709],
 [0.448574,0.159092,0.154687]
-]},
-{"system": "timescaledb", "machine": "c6a.4xlarge", "time": "2022-07-04", "result": [
+]
+}
+,
+{
+    "system": "TimescaleDB",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": 1,
+    "comment": "",
+
+    "tags": ["SQL", "C", "PostgreSQL compatible", "row-oriented", "time-series"],
+
+    "load_time": 1620,
+    "data_size": 72882392030,
+
+    "result": [
 [437.700,215.793,176.420],
 [327.026,259.568,244.578],
 [262.978,263.090,263.083],
@@ -1839,8 +2378,22 @@ const data = [
 [19.615,1.965,1.966],
 [18.970,1.435,1.430],
 [18.330,1.153,0.952]
-]},
-{"system": "vertica", "machine": "c6a.4xlarge", "time": "", "result": [
+]
+}
+,
+{
+    "system": "Vertica",
+    "date": "2022-07-01",
+    "machine": "c6a.4xlarge, 500gb gp2",
+    "cluster_size": 1,
+    "comment": "",
+
+    "tags": ["SQL", "column-oriented"],
+
+    "load_time": 12239,
+    "data_size": 22597367016,
+
+    "result": [
 [0.031357,0.020759,0.019373],
 [0.156612,0.033543,0.032149],
 [0.404881,0.124383,0.124252],
@@ -1884,7 +2437,8 @@ const data = [
 [0.096018,0.052062,0.053813],
 [0.058647,0.046352,0.045415],
 [0.106915,0.077122,0.076134]
-]}
+]
+}
 ];
     </script>
 </head>
