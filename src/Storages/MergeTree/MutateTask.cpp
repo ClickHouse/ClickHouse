@@ -46,6 +46,7 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
     return true;
 }
 
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -690,8 +691,7 @@ public:
         MergeTreeData::MutableDataPartsVector && parts_,
         const ProjectionDescription & projection_,
         size_t & block_num_,
-        MutationContextPtr ctx_
-        )
+        MutationContextPtr ctx_)
         : name(std::move(name_))
         , parts(std::move(parts_))
         , projection(projection_)
@@ -736,9 +736,11 @@ public:
             if (next_level_parts.empty())
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-                selected_parts[0]->renameTo(projection.name + ".proj", true);
+                auto builder = selected_parts[0]->data_part_storage->getBuilder();
+                selected_parts[0]->renameTo(projection.name + ".proj", true, builder);
                 selected_parts[0]->name = projection.name;
                 selected_parts[0]->is_temp = false;
+                builder->commit();
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
                 /// Task is finished
@@ -944,6 +946,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
+                tmp_part.builder->commit();
                 tmp_part.finalize();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
             }
@@ -966,6 +969,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
+            temp_part.builder->commit();
             temp_part.finalize();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
         }
@@ -1552,5 +1556,9 @@ const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
     return ctx->hardlinked_files;
 }
 
+DataPartStorageBuilderPtr MutateTask::getBuilder() const
+{
+    return ctx->data_part_storage_builder;
+}
 
 }

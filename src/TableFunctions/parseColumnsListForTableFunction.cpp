@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, ContextPtr context)
 {
-    ParserColumnDeclarationList parser;
+    ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
     ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
@@ -30,7 +30,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, Con
 
 bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, ContextPtr context)
 {
-    ParserColumnDeclarationList parser;
+    ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
     String error;
