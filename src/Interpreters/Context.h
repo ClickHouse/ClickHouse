@@ -361,8 +361,7 @@ private:
     inline static ContextPtr global_context_instance;
 
 public:
-    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
-    OpenTelemetryTraceContext query_trace_context;
+    OpenTelemetryThreadTraceContextScopePtr startTracing(const std::string& name);
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;

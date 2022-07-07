@@ -134,7 +134,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -1328,29 +1327,6 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != UUID())
-    {
-        // Use the OpenTelemetry trace context we received from the client, and
-        // create a new span for the query.
-        query_trace_context = client_info.client_trace_context;
-        query_trace_context.span_id = thread_local_rng();
-    }
-    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        // If this is an initial query without any parent OpenTelemetry trace, we
-        // might start the trace ourselves, with some configurable probability.
-        std::bernoulli_distribution should_start_trace{
-            settings.opentelemetry_start_trace_probability};
-
-        if (should_start_trace(thread_local_rng))
-        {
-            // Use the randomly generated default query id as the new trace id.
-            query_trace_context.trace_id = random.uuid;
-            query_trace_context.span_id = thread_local_rng();
-            // Mark this trace as sampled in the flags.
-            query_trace_context.trace_flags = 1;
-        }
-    }
 
     String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
@@ -3447,6 +3423,54 @@ WriteSettings Context::getWriteSettings() const
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
 
     return res;
+}
+
+OpenTelemetryThreadTraceContextScopePtr Context::startTracing(const std::string& name)
+{
+    OpenTelemetryThreadTraceContextScopePtr trace_context;
+    if (this->client_info.client_trace_context.trace_id != UUID())
+    {
+        // Use the OpenTelemetry trace context we received from the client, and
+        // initialize the tracing context for this query on current thread
+        return std::make_unique<OpenTelemetryThreadTraceContextScope>(name,
+                                                                      this->client_info.client_trace_context,
+                                                                      this->getOpenTelemetrySpanLog());
+    }
+
+    // start the trace ourselves, with some configurable probability.
+    std::bernoulli_distribution should_start_trace{settings.opentelemetry_start_trace_probability};
+    if (!should_start_trace(thread_local_rng))
+    {
+        return trace_context;
+    }
+
+    /// Generate random UUID, but using lower quality RNG,
+    ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
+    /// NOTE: Actually we don't need to use UUIDs for query identifiers.
+    /// We could use any suitable string instead.
+    union
+    {
+        char bytes[16];
+        struct
+        {
+            UInt64 a;
+            UInt64 b;
+        } words;
+        UUID uuid{};
+    } random;
+    random.words.a = thread_local_rng(); //-V656
+    random.words.b = thread_local_rng(); //-V656
+
+    OpenTelemetryTraceContext query_trace_context;
+    query_trace_context.trace_id = random.uuid;
+    query_trace_context.span_id = 0;
+    // Mark this trace as sampled in the flags.
+    query_trace_context.trace_flags = 1;
+
+    return std::make_unique<OpenTelemetryThreadTraceContextScope>(name,
+                                                                  query_trace_context,
+                                                                  this->getOpenTelemetrySpanLog());
+
 }
 
 }

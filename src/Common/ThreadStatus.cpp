@@ -3,7 +3,6 @@
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
