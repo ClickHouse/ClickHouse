@@ -9,6 +9,7 @@ clientA1 = cluster.add_instance("clientA1", hostname="clientA1.com")
 clientA2 = cluster.add_instance("clientA2", hostname="clientA2.com")
 clientA3 = cluster.add_instance("clientA3", hostname="clientA3.com")
 
+
 def check_clickhouse_is_ok(client_node, server_node):
     assert (
         client_node.exec_in_container(
@@ -82,6 +83,7 @@ def test_allowed_host():
             )
             == "5\n"
         )
+
 
 def test_denied_host():
     expected_to_fail = [clientA2]
