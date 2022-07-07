@@ -11,6 +11,7 @@ class Logger;
 namespace DB
 {
 
+/// DeflateJobHWPool is resource pool for provide the job objects which is required to save context infomation during offload asynchronous compression to IAA.
 class DeflateJobHWPool
 {
 public:
@@ -21,11 +22,11 @@ public:
     static constexpr qpl_path_t PATH = qpl_path_hardware;
     static qpl_job * jobPool[JOB_POOL_SIZE];
     static std::atomic_bool jobLocks[JOB_POOL_SIZE];
-    bool jobPoolEnabled = false;
+    bool job_pool_ready = false;
 
     bool jobPoolReady() const
     {
-        return jobPoolEnabled;
+        return job_pool_ready;
     }
 
     qpl_job * acquireJob(uint32_t * job_id)
@@ -66,19 +67,6 @@ public:
         }
     }
 
-    qpl_job * getJobPtr(uint32_t job_id) const
-    {
-        if (jobPoolReady())
-        {
-            uint32_t index = JOB_POOL_SIZE - job_id;
-            return jobPool[index];
-        }
-        else
-        {
-            return nullptr;
-        }
-    }
-
 private:
     /// Returns true if Job pool initialization succeeded, otherwise false
     bool initJobPool();
@@ -92,34 +80,6 @@ private:
         return (static_cast<size_t>((tsc * 44485709377909ULL) >> 4)) % pool_size;
     }
 
-    int32_t get_job_size_helper() const
-    {
-        static uint32_t size = 0;
-        if (size == 0)
-        {
-            const auto status = qpl_get_job_size(PATH, &size);
-            if (status != QPL_STS_OK)
-            {
-                return -1;
-            }
-        }
-        return size;
-    }
-
-    int32_t init_job_helper(qpl_job * qpl_job_ptr)
-    {
-        if (qpl_job_ptr == nullptr)
-        {
-            return -1;
-        }
-        auto status = qpl_init_job(PATH, qpl_job_ptr);
-        if (status != QPL_STS_OK)
-        {
-            return -1;
-        }
-        return 0;
-    }
-
     bool tryLockJob(size_t index)
     {
         bool expected = false;
@@ -128,12 +88,11 @@ private:
 
     void destroyJobPool()
     {
-        const uint32_t size = get_job_size_helper();
+        uint32_t size = 0;
+        qpl_get_job_size(PATH, &size);
         for (uint32_t i = 0; i < JOB_POOL_SIZE && size > 0; ++i)
         {
-            while (tryLockJob(i) == false)
-            {
-            }
+            while (tryLockJob(i) == false);
             if (jobPool[i])
             {
                 qpl_fini_job(jobPool[i]);

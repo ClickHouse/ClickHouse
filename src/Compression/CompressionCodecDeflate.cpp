@@ -15,29 +15,29 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
 }
-//DeflateJobHWPool
+/// DeflateJobHWPool is resource pool for provide the job objects which is required to save context infomation during offload asynchronous compression to IAA. 
 qpl_job * DeflateJobHWPool::jobPool[JOB_POOL_SIZE];
 std::atomic_bool DeflateJobHWPool::jobLocks[JOB_POOL_SIZE];
 
 bool DeflateJobHWPool::initJobPool()
 {
-    if (jobPoolEnabled == false)
+    if (job_pool_ready == false)
     {
-        const int32_t size = get_job_size_helper();
-        if (size < 0)
+        uint32_t size = 0;
+        if (qpl_get_job_size(PATH, &size) != QPL_STS_OK)
             return false;
+
         for (int i = 0; i < JOB_POOL_SIZE; ++i)
         {
-            jobPool[i] = nullptr;
             qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(new uint8_t[size]);
-            if (init_job_helper(qpl_job_ptr) < 0)
+            if ((nullptr == qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
                 return false;
             jobPool[i] = qpl_job_ptr;
             jobLocks[i].store(false);
         }
-        jobPoolEnabled = true;
+        job_pool_ready = true;
     }
-    return jobPoolEnabled;
+    return job_pool_ready;
 }
 
 DeflateJobHWPool & DeflateJobHWPool::instance()
@@ -46,7 +46,7 @@ DeflateJobHWPool & DeflateJobHWPool::instance()
     return ret;
 }
 
-DeflateJobHWPool::DeflateJobHWPool():jobPoolEnabled(false)
+DeflateJobHWPool::DeflateJobHWPool():job_pool_ready(false)
 {
     log = &Poco::Logger::get("DeflateJobHWPool");
     if (!initJobPool())
