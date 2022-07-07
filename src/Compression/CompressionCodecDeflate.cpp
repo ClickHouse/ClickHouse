@@ -19,27 +19,45 @@ namespace ErrorCodes
 qpl_job * DeflateJobHWPool::jobPool[JOB_POOL_SIZE];
 std::atomic_bool DeflateJobHWPool::jobLocks[JOB_POOL_SIZE];
 
+bool DeflateJobHWPool::initJobPool()
+{
+    if (jobPoolEnabled == false)
+    {
+        const int32_t size = get_job_size_helper();
+        if (size < 0)
+            return false;
+        for (int i = 0; i < JOB_POOL_SIZE; ++i)
+        {
+            jobPool[i] = nullptr;
+            qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(new uint8_t[size]);
+            if (init_job_helper(qpl_job_ptr) < 0)
+                return false;
+            jobPool[i] = qpl_job_ptr;
+            jobLocks[i].store(false);
+        }
+        jobPoolEnabled = true;
+    }
+    return jobPoolEnabled;
+}
+
 DeflateJobHWPool & DeflateJobHWPool::instance()
 {
     static DeflateJobHWPool ret;
     return ret;
 }
 
-DeflateJobHWPool::DeflateJobHWPool()
+DeflateJobHWPool::DeflateJobHWPool():jobPoolEnabled(false)
 {
     log = &Poco::Logger::get("DeflateJobHWPool");
-    if (initJobPool() < 0)
-    {
-        jobPoolEnabled = false;
+    if (!initJobPool())
         LOG_WARNING(log, "DeflateJobHWPool is not ready. Please check if IAA hardware support.Auto switch to deflate software codec here");
-    }
-    else
-        jobPoolEnabled = true;
 }
+
 DeflateJobHWPool::~DeflateJobHWPool()
 {
     destroyJobPool();
 }
+
 //HardwareCodecDeflate
 HardwareCodecDeflate::HardwareCodecDeflate()
 {
@@ -159,7 +177,7 @@ uint32_t HardwareCodecDeflate::doDecompressDataReq(const char * source, uint32_t
     }
 }
 
-void HardwareCodecDeflate::doFlushAsynchronousDecompressRequests()
+void HardwareCodecDeflate::flushAsynchronousDecompressRequests()
 {
     uint32_t job_id = 0;
     qpl_job * job_ptr = nullptr;
@@ -193,10 +211,9 @@ void HardwareCodecDeflate::doFlushAsynchronousDecompressRequests()
         }
     }
 }
-//SoftwareCodecDeflate
-SoftwareCodecDeflate::SoftwareCodecDeflate()
+
+SoftwareCodecDeflate::SoftwareCodecDeflate():jobSWPtr(nullptr)
 {
-    jobSWPtr = nullptr;
 }
 
 SoftwareCodecDeflate::~SoftwareCodecDeflate()
@@ -279,11 +296,11 @@ void SoftwareCodecDeflate::doDecompressData(const char * source, uint32_t source
 }
 
 //CompressionCodecDeflate
-CompressionCodecDeflate::CompressionCodecDeflate()
+CompressionCodecDeflate::CompressionCodecDeflate():
+    hw_codec(std::make_unique<HardwareCodecDeflate>()),
+    sw_codec(std::make_unique<SoftwareCodecDeflate>())
 {
     setCodecDescription("DEFLATE");
-    hwCodec = std::make_unique<HardwareCodecDeflate>();
-    swCodec = std::make_unique<SoftwareCodecDeflate>();
 }
 
 uint8_t CompressionCodecDeflate::getMethodByte() const
@@ -296,24 +313,19 @@ void CompressionCodecDeflate::updateHash(SipHash & hash) const
     getCodecDesc()->updateTreeHash(hash);
 }
 
-#define DEFLATE_COMPRESSBOUND(isize) ((isize) + ((isize) >> 12) + ((isize) >> 14) + ((isize) >> 25) + 13) //Aligned with ZLIB
 uint32_t CompressionCodecDeflate::getMaxCompressedDataSize(uint32_t uncompressed_size) const
 {
-    return DEFLATE_COMPRESSBOUND(uncompressed_size);
-}
-
-uint32_t CompressionCodecDeflate::doCompressDataSW(const char * source, uint32_t source_size, char * dest) const
-{
-    return swCodec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
+    /// Aligned with ZLIB
+    return ((uncompressed_size) + ((uncompressed_size) >> 12) + ((uncompressed_size) >> 14) + ((uncompressed_size) >> 25) + 13);
 }
 
 uint32_t CompressionCodecDeflate::doCompressData(const char * source, uint32_t source_size, char * dest) const
 {
     uint32_t res = 0;
-    if (hwCodec->hwEnabled)
-        res = hwCodec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
+    if (hw_codec->hwEnabled)
+        res = hw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
     if (0 == res)
-        res = swCodec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
+        res = sw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
     return res;
 }
 
@@ -324,31 +336,32 @@ void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t sou
         case CodecMode::Synchronous:
         {
             uint32_t res = 0;
-            if (hwCodec->hwEnabled)
-                res = hwCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+            if (hw_codec->hwEnabled)
+                res = hw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             if (0 == res)
-                swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+                sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             break;
         }
         case CodecMode::Asynchronous:
         {
             uint32_t res = 0;
-            if (hwCodec->hwEnabled)
-                res = hwCodec->doDecompressDataReq(source, source_size, dest, uncompressed_size);
+            if (hw_codec->hwEnabled)
+                res = hw_codec->doDecompressDataReq(source, source_size, dest, uncompressed_size);
             if (0 == res)
-                swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+                sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             break;
         }
         case CodecMode::SoftwareFallback:
-            swCodec->doDecompressData(source, source_size, dest, uncompressed_size);
+            sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             break;
     }
 }
 
-void CompressionCodecDeflate::doFlushAsynchronousDecompressRequests()
+void CompressionCodecDeflate::flushAsynchronousDecompressRequests()
 {
-    if (hwCodec->hwEnabled)
-        hwCodec->doFlushAsynchronousDecompressRequests();
+    if (hw_codec->hwEnabled)
+        hw_codec->flushAsynchronousDecompressRequests();
+    setDecompressMode(CodecMode::Synchronous);
 }
 void registerCodecDeflate(CompressionCodecFactory & factory)
 {

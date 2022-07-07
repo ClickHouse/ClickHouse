@@ -110,12 +110,6 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
     return decompressed_size;
 }
 
-void ICompressionCodec::flushAsynchronousDecompressRequests()
-{
-    doFlushAsynchronousDecompressRequests();
-    decompressMode = CodecMode::Synchronous;
-}
-
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)
 {
     UInt32 compressed_block_size = unalignedLoad<UInt32>(&source[1]);

@@ -26,20 +26,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 class ICompressionCodec : private boost::noncopyable
 {
 public:
-    /// Three kinds of codec mode:
-    /// Synchronous mode which is commonly used by default;
-    /// --- For the codec with HW decompressor, it means submit request to HW and busy wait till complete.
-    /// Asynchronous mode which required HW decompressor support;
-    /// --- For the codec with HW decompressor, it means submit request to HW and return immeditately.
-    /// --- Must be used in pair with flushAsynchronousDecompressRequests.
-    /// SoftwareFallback mode is exclusively defined for the codec with HW decompressor, enable its capability of "fallback to SW codec".
-    enum class CodecMode
-    {
-        Synchronous,
-        Asynchronous,
-        SoftwareFallback
-    };
-
     virtual ~ICompressionCodec() = default;
 
     /// Byte which indicates codec in compressed file
@@ -62,6 +48,20 @@ public:
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 
+    /// Three kinds of codec mode:
+    /// Synchronous mode which is commonly used by default;
+    /// --- For the codec with HW decompressor, it means submit request to HW and busy wait till complete.
+    /// Asynchronous mode which required HW decompressor support;
+    /// --- For the codec with HW decompressor, it means submit request to HW and return immeditately.
+    /// --- Must be used in pair with flushAsynchronousDecompressRequests.
+    /// SoftwareFallback mode is exclusively defined for the codec with HW decompressor, enable its capability of "fallback to SW codec".
+    enum class CodecMode
+    {
+        Synchronous,
+        Asynchronous,
+        SoftwareFallback
+    };
+
     /// Get current decompression mode
     CodecMode getDecompressMode() const
     {
@@ -80,7 +80,7 @@ public:
     /// Meanwhile, source and target buffer for decompression should not be overwritten until this function execute completely.
     /// Otherwise it would conflict with HW offloading and cause exception.
     /// For QPL deflate, it support the maximum number of requests equal to DeflateJobHWPool::jobPoolSize
-    void flushAsynchronousDecompressRequests();
+    virtual void flushAsynchronousDecompressRequests(){}
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
     virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const
@@ -131,9 +131,6 @@ protected:
 
     /// Actually decompress data without header
     virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
-
-    /// Flush asynchronous request for decompression
-    virtual void doFlushAsynchronousDecompressRequests(){}
 
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
     void setCodecDescription(const String & name, const ASTs & arguments = {});
