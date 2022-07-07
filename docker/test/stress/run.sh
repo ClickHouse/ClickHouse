@@ -300,6 +300,8 @@ then
 
     # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
     rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+    # FIXME Temporarily disable writes into opentelemetry_span_log in BC check, it's broken in 22.6
+    rm -f /etc/clickhouse-server/users.d/opentelemetry.xml ||:
 
     start
 
