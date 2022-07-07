@@ -71,7 +71,7 @@ private:
     /// Returns true if Job pool initialization succeeded, otherwise false
     bool initJobPool();
 
-    size_t random(uint32_t pool_size) const
+    static size_t random(uint32_t pool_size)
     {
         size_t tsc = 0;
         unsigned lo, hi;

@@ -15,7 +15,6 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
 }
-/// DeflateJobHWPool is resource pool for provide the job objects which is required to save context infomation during offload asynchronous compression to IAA. 
 qpl_job * DeflateJobHWPool::jobPool[JOB_POOL_SIZE];
 std::atomic_bool DeflateJobHWPool::jobLocks[JOB_POOL_SIZE];
 
@@ -24,9 +23,8 @@ bool DeflateJobHWPool::initJobPool()
     if (job_pool_ready == false)
     {
         uint32_t size = 0;
-        if (qpl_get_job_size(PATH, &size) != QPL_STS_OK)
-            return false;
-
+        /// get total size required for saving qpl job context
+        qpl_get_job_size(PATH, &size);
         for (int i = 0; i < JOB_POOL_SIZE; ++i)
         {
             qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(new uint8_t[size]);
@@ -226,20 +224,13 @@ qpl_job * SoftwareCodecDeflate::getJobCodecPtr()
 {
     if (nullptr == jobSWPtr)
     {
-        qpl_status status;
         uint32_t size = 0;
-        // Job initialization
-        status = qpl_get_job_size(qpl_path_software, &size);
-        if (status != QPL_STS_OK)
-        {
-            throw Exception(
-                "SoftwareCodecDeflate::getJobCodecPtr -> qpl_get_job_size fail:" + std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
-        }
+        qpl_get_job_size(qpl_path_software, &size);
 
         jobSWbuffer = std::make_unique<uint8_t[]>(size);
         jobSWPtr = reinterpret_cast<qpl_job *>(jobSWbuffer.get());
-
-        status = qpl_init_job(qpl_path_software, jobSWPtr);
+        // Job initialization
+        auto status = qpl_init_job(qpl_path_software, jobSWPtr);
         if (status != QPL_STS_OK)
         {
             throw Exception(
