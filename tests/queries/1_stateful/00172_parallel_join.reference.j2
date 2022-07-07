@@ -1,3 +1,5 @@
+{% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge'] -%}
+--- {{ join_algorithm }} ---
 2014-03-17	1406958	265108
 2014-03-19	1405797	261624
 2014-03-18	1383658	258723
@@ -22,6 +24,7 @@ mail.ru	87949	22225
 best.ru	58537	55
 korablitz.ru	51844	0
 hurpass.com	49671	1251
+{% if join_algorithm != 'full_sorting_merge' -%}
 37292	0	35642
 92887	252214	0
 7842	196036	0
@@ -287,6 +290,7 @@ hurpass.com	49671	1251
 4	4	2
 6	6	3
 8	8	4
+{% endif -%}
 0	0	0
 0	0	1
 1	1	2
@@ -297,3 +301,4 @@ hurpass.com	49671	1251
 3	3	7
 4	4	8
 4	4	9
+{% endfor -%}
