@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 DictionaryJoinAdapter::DictionaryJoinAdapter(
     std::shared_ptr<const IDictionary> dictionary_, const Names & result_column_names)
     : IKeyValueStorage(StorageID::createEmpty())
@@ -78,6 +83,7 @@ Chunk DictionaryJoinAdapter::getByKeys(const ColumnsWithTypeAndName & keys, Padd
         /// Dictinonary may have non-standart default values specified
         default_cols[i] = result_types[i]->createColumnConstWithDefaultValue(out_null_map.size());
 
+    /// Result block consists of key columns and then attributes
     Columns result_columns = dictionary->getColumns(attribute_names, result_types, key_columns, key_types, default_cols);
 
     for (const auto & key_col : key_columns)

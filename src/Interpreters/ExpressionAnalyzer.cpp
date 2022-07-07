@@ -1163,7 +1163,10 @@ std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analy
     {
         if (col.name == right_key)
             continue;
-        attr_names.push_back(analyzed_join->getOriginalName(col.name));
+
+        const auto & original_name = analyzed_join->getOriginalName(col.name);
+        if (dictionary->getStructure().hasAttribute(original_name))
+            attr_names.push_back(original_name);
     }
 
     auto dict_reader = std::make_shared<DictionaryJoinAdapter>(dictionary, attr_names);

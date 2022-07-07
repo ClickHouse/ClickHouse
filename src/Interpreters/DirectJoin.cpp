@@ -30,6 +30,11 @@ static MutableColumns convertBlockStructure(
     MutableColumns result_columns;
     for (const auto & out_sample_col : result_sample_block)
     {
+        /// Some coulumns from result_sample_block may not be in source_sample_block,
+        /// e.g. if they will be calculated later based on joined columns
+        if (!source_sample_block.has(out_sample_col.name))
+            continue;
+
         auto i = source_sample_block.getPositionByName(out_sample_col.name);
         if (columns[i] == nullptr)
         {
@@ -111,7 +116,7 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
     NullMap null_map;
     Chunk joined_chunk = storage->getByKeys({key_col}, null_map);
 
-    /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all columns.
+    /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block original_right_block = originalRightBlock(right_sample_block, *table_join);
     Block sample_storage_block = storage->getInMemoryMetadataPtr()->getSampleBlock();
     MutableColumns result_columns = convertBlockStructure(sample_storage_block, original_right_block, joined_chunk.mutateColumns(), null_map);
