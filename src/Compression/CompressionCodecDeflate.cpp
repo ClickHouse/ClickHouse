@@ -25,11 +25,17 @@ bool DeflateJobHWPool::initJobPool()
         uint32_t size = 0;
         /// get total size required for saving qpl job context
         qpl_get_job_size(PATH, &size);
+        /// allocate buffer for storing all job objects
+        jobPoolBufferPtr = std::make_unique<uint8_t[]>(size * JOB_POOL_SIZE);
+        memset(jobPool, 0, JOB_POOL_SIZE*sizeof(qpl_job *));
         for (int i = 0; i < JOB_POOL_SIZE; ++i)
         {
-            qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(new uint8_t[size]);
+            qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(jobPoolBufferPtr.get() + i*JOB_POOL_SIZE);
             if ((nullptr == qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
+            {
+                destroyJobPool();
                 return false;
+            }
             jobPool[i] = qpl_job_ptr;
             jobLocks[i].store(false);
         }
@@ -227,8 +233,7 @@ qpl_job * SoftwareCodecDeflate::getJobCodecPtr()
         uint32_t size = 0;
         qpl_get_job_size(qpl_path_software, &size);
 
-        jobSWbuffer = std::make_unique<uint8_t[]>(size);
-        jobSWPtr = reinterpret_cast<qpl_job *>(jobSWbuffer.get());
+        jobSWPtr = reinterpret_cast<qpl_job *>((std::make_unique<uint8_t[]>(size)).get());
         // Job initialization
         auto status = qpl_init_job(qpl_path_software, jobSWPtr);
         if (status != QPL_STS_OK)
