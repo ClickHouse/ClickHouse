@@ -35,11 +35,10 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->pipelineType() == JoinPipelineType::YShaped)
         return QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]),
-            join, output_stream->header,
-            max_block_size, &processors);
+            std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
 
-    return QueryPipelineBuilder::joinPipelinesRightLeft(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, max_streams, keep_left_read_in_order, &processors);
+    return QueryPipelineBuilder::joinPipelinesRightLeft(
+        std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, max_streams, keep_left_read_in_order, &processors);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -50,7 +49,8 @@ void JoinStep::describePipeline(FormatSettings & settings) const
 void JoinStep::updateLeftStream(const DataStream & left_stream_)
 {
     input_streams = {left_stream_, input_streams.at(1)};
-    output_stream = DataStream{
+    output_stream = DataStream
+    {
         .header = JoiningTransform::transformHeader(left_stream_.header, join),
     };
 }
@@ -107,6 +107,5 @@ void FilledJoinStep::updateOutputStream()
     output_stream = createOutputStream(
         input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
 }
-
 
 }
