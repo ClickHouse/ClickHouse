@@ -321,7 +321,7 @@ AccessRestorerFromBackup::AccessRestorerFromBackup(
 
 AccessRestorerFromBackup::~AccessRestorerFromBackup() = default;
 
-void AccessRestorerFromBackup::addDataPath(const String & data_path, const QualifiedTableName & table_name_for_logs)
+void AccessRestorerFromBackup::addDataPath(const String & data_path)
 {
     if (!data_paths.emplace(data_path).second)
         return;
@@ -334,8 +334,8 @@ void AccessRestorerFromBackup::addDataPath(const String & data_path, const Quali
     for (const String & filename : filenames)
     {
         if (!filename.starts_with("access") || !filename.ends_with(".txt"))
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File name {} doesn't match the wildcard \"access*.txt\"",
-                            table_name_for_logs.getFullName(), String{data_path_in_backup_fs / filename});
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} doesn't match the wildcard \"access*.txt\"",
+                            String{data_path_in_backup_fs / filename});
     }
 
     ::sort(filenames.begin(), filenames.end());
