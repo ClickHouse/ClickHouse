@@ -539,30 +539,34 @@ class ClickHouseCluster:
             logging.debug(f"Removed :{self.instances_dir}")
         os.mkdir(self.instances_dir)
 
-
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
             f"docker network ls --filter name='{self.project_name}*'",
             shell=True,
             universal_newlines=True,
         )
-        logging.debug(f"Docker networks for project {self.project_name} are {res_networks}")
+        logging.debug(
+            f"Docker networks for project {self.project_name} are {res_networks}"
+        )
         res_containers = subprocess.check_output(
             f"docker container ls -a --filter name='{self.project_name}*'",
             shell=True,
             universal_newlines=True,
         )
-        logging.debug(f"Docker containers for project {self.project_name} are {res_containers}")
+        logging.debug(
+            f"Docker containers for project {self.project_name} are {res_containers}"
+        )
         res_volumes = subprocess.check_output(
             f"docker volume ls --filter name='{self.project_name}*'",
             shell=True,
             universal_newlines=True,
         )
-        logging.debug(f"Docker volumes for project {self.project_name} are {res_volumes}")
-
+        logging.debug(
+            f"Docker volumes for project {self.project_name} are {res_volumes}"
+        )
 
     def cleanup(self):
-        logging.debug('Cleanup called')
+        logging.debug("Cleanup called")
         self.print_all_docker_pieces()
 
         if (
@@ -608,7 +612,7 @@ class ClickHouseCluster:
             ).splitlines()
             if list_networks:
                 logging.debug(f"Trying to remove networks: {list_networks}")
-                subprocess.check_call(f"docker network rm {' '.join(list_networks)}", shell=True)
+                run_and_check(f"docker network rm {' '.join(list_networks)}")
                 logging.debug(f"Networks removed: {list_networks}")
         except:
             pass
@@ -617,7 +621,7 @@ class ClickHouseCluster:
         try:
             logging.debug("Trying to prune unused images...")
 
-            run_and_check(['docker', 'image', 'prune', '-f'])
+            run_and_check(["docker", "image", "prune", "-f"])
             logging.debug("Images pruned")
         except:
             pass
@@ -663,9 +667,7 @@ class ClickHouseCluster:
             f"docker container list --all --filter name='{filter_name}' --format '{format}'",
             shell=True,
         )
-        containers = dict(
-            line.split(":", 1) for line in containers.splitlines()
-        )
+        containers = dict(line.split(":", 1) for line in containers.splitlines())
         return containers
 
     def copy_file_from_container_to_container(
@@ -3551,14 +3553,14 @@ class ClickHouseInstance:
                     "bash",
                     "-c",
                     "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
-                ],
+                ]
             )
             self.exec_in_container(
                 [
                     "bash",
                     "-c",
                     "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
-                ],
+                ]
             )
         self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],

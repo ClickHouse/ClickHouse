@@ -120,7 +120,9 @@ def generate_dict_configs():
         for source in sources:
             for layout in LAYOUTS:
                 if not source.compatible_with_layout(layout):
-                    logging.debug(f"Source {source.name} incompatible with layout {layout.name}")
+                    logging.debug(
+                        f"Source {source.name} incompatible with layout {layout.name}"
+                    )
                     continue
 
                 fields = KEY_FIELDS[layout.layout_type] + [field]
