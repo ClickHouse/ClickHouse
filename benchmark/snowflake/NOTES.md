@@ -3,9 +3,7 @@ It is using "credits" for pricing.
 
 Storage cost: $23 USD per compressed TB per month
 One credit is: $2.016/hour
-X-Large: 16 credits/hour = $64/hour
-
-> Compute costs are $0.00056 per second for each credit consumed on Snowflake Standard Edition
+X-Large: 16 credits/hour = $32/hour
 
 It is very expensive, so let's touch it with a ten-foot pole and run away as quickly as possible.
 
