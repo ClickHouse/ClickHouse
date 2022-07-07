@@ -273,6 +273,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         /// Move the best condition to PREWHERE if it is viable.
 
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
+
         if (!it->viable)
             break;
 
@@ -290,6 +291,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
             moved_enough = total_number_of_moved_columns > 0
                 && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
         }
+
         if (moved_enough)
             break;
 
