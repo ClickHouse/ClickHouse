@@ -62,7 +62,7 @@ def pre_build(repo_path: str, env_variables: List[str]):
                 f"git -C {repo_path} fetch --no-recurse-submodules "
                 "--no-tags origin master:master"
             )
-            logging.info("Getting master branch for performance artifact: ''%s'", cmd)
+            logging.info("Getting master branch for performance artifact: '%s'", cmd)
             subprocess.check_call(cmd, shell=True)
 
 

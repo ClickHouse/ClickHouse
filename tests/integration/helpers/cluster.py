@@ -237,14 +237,22 @@ def enable_consistent_hash_plugin(rabbitmq_id):
     return p.returncode == 0
 
 
-def get_instances_dir():
-    if (
-        "INTEGRATION_TESTS_RUN_ID" in os.environ
-        and os.environ["INTEGRATION_TESTS_RUN_ID"]
-    ):
-        return "_instances_" + shlex.quote(os.environ["INTEGRATION_TESTS_RUN_ID"])
-    else:
-        return "_instances"
+def get_instances_dir(name):
+    instances_dir_name = "_instances"
+
+    worker_name = os.environ.get("PYTEST_XDIST_WORKER", "")
+    run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
+
+    if worker_name:
+        instances_dir_name += "_" + worker_name
+
+    if name:
+        instances_dir_name += "_" + name
+
+    if run_id:
+        instances_dir_name += "_" + shlex.quote(run_id)
+
+    return instances_dir_name
 
 
 class ClickHouseCluster:
@@ -270,6 +278,7 @@ class ClickHouseCluster:
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
     ):
+        logging.debug(f"INIT CALLED")
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
@@ -306,19 +315,8 @@ class ClickHouseCluster:
         )
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
-        instances_dir_name = "_instances"
-        if self.name:
-            instances_dir_name += "_" + self.name
-
-        if (
-            "INTEGRATION_TESTS_RUN_ID" in os.environ
-            and os.environ["INTEGRATION_TESTS_RUN_ID"]
-        ):
-            instances_dir_name += "_" + shlex.quote(
-                os.environ["INTEGRATION_TESTS_RUN_ID"]
-            )
-
-        self.instances_dir = p.join(self.base_dir, instances_dir_name)
+        self.instances_dir_name = get_instances_dir(self.name)
+        self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
@@ -536,8 +534,37 @@ class ClickHouseCluster:
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
+        if p.exists(self.instances_dir):
+            shutil.rmtree(self.instances_dir, ignore_errors=True)
+            logging.debug(f"Removed :{self.instances_dir}")
+        os.mkdir(self.instances_dir)
+
+
+    def print_all_docker_pieces(self):
+        res_networks = subprocess.check_output(
+            f"docker network ls --filter name='{self.project_name}*'",
+            shell=True,
+            universal_newlines=True,
+        )
+        logging.debug(f"Docker networks for project {self.project_name} are {res_networks}")
+        res_containers = subprocess.check_output(
+            f"docker container ls -a --filter name='{self.project_name}*'",
+            shell=True,
+            universal_newlines=True,
+        )
+        logging.debug(f"Docker containers for project {self.project_name} are {res_containers}")
+        res_volumes = subprocess.check_output(
+            f"docker volume ls --filter name='{self.project_name}*'",
+            shell=True,
+            universal_newlines=True,
+        )
+        logging.debug(f"Docker volumes for project {self.project_name} are {res_volumes}")
+
 
     def cleanup(self):
+        logging.debug('Cleanup called')
+        self.print_all_docker_pieces()
+
         if (
             os.environ
             and "DISABLE_CLEANUP" in os.environ
@@ -549,12 +576,16 @@ class ClickHouseCluster:
         # Just in case kill unstopped containers from previous launch
         try:
             unstopped_containers = self.get_running_containers()
-            if unstopped_containers:
+            logging.debug(f"Unstopped containers: {unstopped_containers}")
+            if len(unstopped_containers):
                 logging.debug(
                     f"Trying to kill unstopped containers: {unstopped_containers}"
                 )
                 for id in unstopped_containers:
-                    run_and_check(f"docker kill {id}", shell=True, nothrow=True)
+                    try:
+                        run_and_check(f"docker kill {id}", shell=True, nothrow=True)
+                    except:
+                        pass
                     run_and_check(f"docker rm {id}", shell=True, nothrow=True)
                 unstopped_containers = self.get_running_containers()
                 if unstopped_containers:
@@ -563,26 +594,33 @@ class ClickHouseCluster:
                     logging.debug(f"Unstopped containers killed.")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
+        except Exception as ex:
+            logging.debug(f"Got exception removing containers {str(ex)}")
+
+        # # Just in case remove unused networks
+        try:
+            logging.debug("Trying to prune unused networks...")
+
+            list_networks = subprocess.check_output(
+                f"docker network ls -q --filter name='{self.project_name}'",
+                shell=True,
+                universal_newlines=True,
+            ).splitlines()
+            if list_networks:
+                logging.debug(f"Trying to remove networks: {list_networks}")
+                subprocess.check_call(f"docker network rm {' '.join(list_networks)}", shell=True)
+                logging.debug(f"Networks removed: {list_networks}")
         except:
             pass
 
-        # # Just in case remove unused networks
-        # try:
-        #     logging.debug("Trying to prune unused networks...")
-
-        #     run_and_check(['docker', 'network', 'prune', '-f'])
-        #     logging.debug("Networks pruned")
-        # except:
-        #     pass
-
         # Remove unused images
-        # try:
-        #     logging.debug("Trying to prune unused images...")
+        try:
+            logging.debug("Trying to prune unused images...")
 
-        #     run_and_check(['docker', 'image', 'prune', '-f'])
-        #     logging.debug("Images pruned")
-        # except:
-        #     pass
+            run_and_check(['docker', 'image', 'prune', '-f'])
+            logging.debug("Images pruned")
+        except:
+            pass
 
         # Remove unused volumes
         try:
@@ -626,7 +664,7 @@ class ClickHouseCluster:
             shell=True,
         )
         containers = dict(
-            line.split(":", 1) for line in containers.decode("utf8").splitlines()
+            line.split(":", 1) for line in containers.splitlines()
         )
         return containers
 
@@ -1767,7 +1805,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(0.5)
 
-        run_and_check(["docker-compose", "ps", "--services", "--all"])
+        run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
@@ -1789,7 +1827,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to MySQL 8 " + str(ex))
                 time.sleep(0.5)
 
-        run_and_check(["docker-compose", "ps", "--services", "--all"])
+        run_and_check(["docker", "ps", "--all"])
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_mysql_cluster_to_start(self, timeout=180):
@@ -1814,7 +1852,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(0.5)
 
-        run_and_check(["docker-compose", "ps", "--services", "--all"])
+        run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
@@ -2087,7 +2125,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to MeiliSearch " + str(ex))
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=180, secure=False):
+    def wait_minio_to_start(self, timeout=10, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
 
@@ -2128,6 +2166,14 @@ class ClickHouseCluster:
             except Exception as ex:
                 logging.debug("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
+
+        try:
+            with open(os.path.join(self.minio_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_minio_cmd + ["logs"], stdout=f
+                )
+        except Exception as e:
+            logging.debug("Unable to get logs from docker.")
 
         raise Exception("Can't wait Minio to start")
 
@@ -2199,15 +2245,13 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Cassandra to start")
 
-    def start(self, destroy_dirs=True):
+    def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
 
-        logging.debug(
-            "Cluster start called. is_up={}, destroy_dirs={}".format(
-                self.is_up, destroy_dirs
-            )
-        )
+        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        self.print_all_docker_pieces()
+
         if self.is_up:
             return
 
@@ -2217,23 +2261,9 @@ class ClickHouseCluster:
             logging.warning("Cleanup failed:{e}")
 
         try:
-            # clickhouse_pull_cmd = self.base_cmd + ['pull']
-            # print(f"Pulling images for {self.base_cmd}")
-            # retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
-
-            if destroy_dirs and p.exists(self.instances_dir):
-                logging.debug(f"Removing instances dir {self.instances_dir}")
-                shutil.rmtree(self.instances_dir)
-
             for instance in list(self.instances.values()):
-                logging.debug(
-                    (
-                        "Setup directory for instance: {} destroy_dirs: {}".format(
-                            instance.name, destroy_dirs
-                        )
-                    )
-                )
-                instance.create_dir(destroy_dir=destroy_dirs)
+                logging.debug(f"Setup directory for instance: {instance.name}")
+                instance.create_dir()
 
             _create_env_file(os.path.join(self.env_file), self.env_variables)
             self.docker_client = docker.DockerClient(
@@ -2627,12 +2657,8 @@ class ClickHouseCluster:
     def pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
-    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGSTOP', instance_name])
-
     def unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
-
-    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGCONT', instance_name])
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
@@ -3687,13 +3713,8 @@ class ClickHouseInstance:
             ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
 
-    def create_dir(self, destroy_dir=True):
+    def create_dir(self):
         """Create the instance directory and all the needed files there."""
-
-        if destroy_dir:
-            self.destroy_dir()
-        elif p.exists(self.path):
-            return
 
         os.makedirs(self.path)
 
@@ -3952,10 +3973,6 @@ class ClickHouseInstance:
                     net_alias1=net_alias1,
                 )
             )
-
-    def destroy_dir(self):
-        if p.exists(self.path):
-            shutil.rmtree(self.path)
 
     def wait_for_path_exists(self, path, seconds):
         while seconds > 0:

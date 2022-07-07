@@ -5,7 +5,7 @@ import string
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
 
 
 COMMON_CONFIGS = ["configs/config.d/clusters.xml"]
