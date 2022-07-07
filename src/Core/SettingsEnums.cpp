@@ -30,12 +30,13 @@ IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
      {"ANY", JoinStrictness::ANY}})
 
 
-IMPLEMENT_SETTING_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
+IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
     {{"auto",                 JoinAlgorithm::AUTO},
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
      {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
-     {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH}})
+     {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
+     {"direct",               JoinAlgorithm::DIRECT}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
