@@ -146,7 +146,6 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
-    extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
     extern const int CANNOT_ASSIGN_ALTER;
