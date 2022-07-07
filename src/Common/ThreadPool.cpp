@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/setThreadName.h>
 
 #include <cassert>
 #include <iostream>

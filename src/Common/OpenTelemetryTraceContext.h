@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -23,7 +24,7 @@ struct OpenTelemetrySpan
     }
 
     void addAttribute(const std::string& name, const std::string& value);
-    void addAttribute(const std::string& name, std::function<std::string> value_supplier);
+    void addAttribute(const std::string& name, std::function<std::string()> value_supplier);
     void addAttribute(const Exception & e);
     void addAttribute(std::exception_ptr e);
 
@@ -84,23 +85,54 @@ struct OpenTelemetryThreadTraceContextScope
 
     OpenTelemetryThreadTraceContextScope(const std::string& _operation_name,
                                          const OpenTelemetryTraceContext& _parent_trace_context,
-                                         const std::weak_ptr<OpenTelemetrySpanLog>& _log);
+                                         const std::weak_ptr<OpenTelemetrySpanLog>& _log)
+        : OpenTelemetryThreadTraceContextScope(_operation_name,
+                                               _parent_trace_context,
+                                               nullptr,
+                                               _log)
+    {
+    }
 
+    /// Initialize a tracing context on a child thread based on the context from the parent thread
     OpenTelemetryThreadTraceContextScope(const std::string& _operation_name,
                                          const OpenTelemetryThreadTraceContext& _parent_thread_trace_context)
         : OpenTelemetryThreadTraceContextScope(_operation_name,
                                                _parent_thread_trace_context,
+                                               nullptr,
                                                _parent_thread_trace_context.span_log)
     {
     }
 
+    /// For Servers like HTTP/TCP/GRPC to initialize tracing context on thread that process requests from clients
+    OpenTelemetryThreadTraceContextScope(const std::string& _operation_name,
+                                         OpenTelemetryTraceContext _parent_trace_context,
+                                         const Settings& _settings,
+                                         const std::weak_ptr<OpenTelemetrySpanLog>& _log)
+        : OpenTelemetryThreadTraceContextScope(_operation_name,
+                                               _parent_trace_context,
+                                               &_settings,
+                                               _log)
+    {
+    }
+
+    OpenTelemetryThreadTraceContextScope(const std::string& _operation_name,
+                                         OpenTelemetryTraceContext _parent_trace_context,
+                                         const Settings* settings_ptr,
+                                         const std::weak_ptr<OpenTelemetrySpanLog>& _log);
+
     ~OpenTelemetryThreadTraceContextScope();
-
-
 
     OpenTelemetrySpan root_span;
 };
 
 using OpenTelemetryThreadTraceContextScopePtr = std::unique_ptr<OpenTelemetryThreadTraceContextScope>;
+
+struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
+{
+    OpenTelemetrySpanHolder(const std::string & _operation_name);
+
+    void finish();
+    ~OpenTelemetrySpanHolder();
+};
 
 }

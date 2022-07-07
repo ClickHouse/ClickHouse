@@ -360,9 +360,6 @@ private:
 
     inline static ContextPtr global_context_instance;
 
-public:
-    OpenTelemetryThreadTraceContextScopePtr startTracing(const std::string& name);
-
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;

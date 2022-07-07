@@ -932,6 +932,12 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     bool with_stacktrace = false;
 
     OpenTelemetryThreadTraceContextScopePtr thread_trace_context;
+    SCOPE_EXIT({
+        // make sure the response status is recorded
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+    });
+
     try
     {
         if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
@@ -953,15 +959,17 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_info.client_trace_context.tracestate = request.get("tracestate", "");
         }
 
-        thread_trace_context = request_context->startTracing("HTTPHandler::handleRequest()");
-        if (thread_trace_context)
+        // Setup tracing context for this thread
+        auto context = session->sessionOrGlobalContext();
+        thread_trace_context = std::make_unique<OpenTelemetryThreadTraceContextScope>("HTTPHandler::handleRequest()",
+                                                                                      client_info.client_trace_context,
+                                                                                      context->getSettingsRef(),
+                                                                                      context->getOpenTelemetrySpanLog());
+        if (!client_info.client_trace_context.tracestate.empty())
         {
-            if (!client_info.client_trace_context.tracestate.empty())
-            {
-                thread_trace_context->root_span.addAttribute("clickhouse.tracestate", client_info.client_trace_context.tracestate);
-            }
-            thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+            thread_trace_context->root_span.addAttribute("clickhouse.tracestate", client_info.client_trace_context.tracestate);
         }
+        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
@@ -998,6 +1006,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// cannot write in it anymore. So, just log this exception.
         if (used_output.isFinalized())
         {
+            if (thread_trace_context)
+                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
+
             tryLogCurrentException(log, "Cannot flush data to client");
             return;
         }
@@ -1011,11 +1022,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         int exception_code = getCurrentExceptionCode();
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
-    }
 
-    if (thread_trace_context)
-    {
-        thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.exception_code", exception_code);
     }
 
     used_output.finalize();

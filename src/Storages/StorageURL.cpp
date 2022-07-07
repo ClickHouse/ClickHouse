@@ -106,11 +106,11 @@ namespace
         auto& current_trace_context = OpenTelemetryThreadTraceContext::current();
         if (current_trace_context.isTraceEnabled())
         {
-            header.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
+            headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
 
             if (!current_trace_context.tracestate.empty())
             {
-                header.emplace_back("tracestate",current_trace_context.tracestate);
+                headers.emplace_back("tracestate", current_trace_context.tracestate);
             }
         }
 
