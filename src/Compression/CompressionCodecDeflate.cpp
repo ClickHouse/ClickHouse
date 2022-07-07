@@ -17,6 +17,7 @@ namespace ErrorCodes
 }
 qpl_job * DeflateJobHWPool::jobPool[JOB_POOL_SIZE];
 std::atomic_bool DeflateJobHWPool::jobLocks[JOB_POOL_SIZE];
+bool DeflateJobHWPool::job_pool_ready;
 
 DeflateJobHWPool & DeflateJobHWPool::instance()
 {
@@ -67,6 +68,7 @@ DeflateJobHWPool::~DeflateJobHWPool()
         jobPool[i] = nullptr;
         jobLocks[i].store(false);
     }
+    jobPoolReady() = false;
 }
 
 //HardwareCodecDeflate

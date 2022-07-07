@@ -22,7 +22,7 @@ public:
     static constexpr qpl_path_t PATH = qpl_path_hardware;
     static qpl_job * jobPool[JOB_POOL_SIZE];
     static std::atomic_bool jobLocks[JOB_POOL_SIZE];
-    bool job_pool_ready = false;
+    static bool job_pool_ready;
 
     bool & jobPoolReady() { return job_pool_ready;}
 
