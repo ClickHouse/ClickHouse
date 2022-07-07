@@ -533,20 +533,7 @@ void HTTPHandler::processQuery(
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
 
-    // Parse the OpenTelemetry traceparent header.
-    ClientInfo client_info = session->getClientInfo();
-    if (request.has("traceparent"))
-    {
-        std::string opentelemetry_traceparent = request.get("traceparent");
-        std::string error;
-        if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
-        {
-            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
-        }
-        client_info.client_trace_context.tracestate = request.get("tracestate", "");
-    }
-
-    auto context = session->makeQueryContext(std::move(client_info));
+    auto context = session->makeQueryContext(session->getClientInfo());
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -944,6 +931,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
 
+    OpenTelemetryThreadTraceContextScopePtr thread_trace_context;
     try
     {
         if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
@@ -951,6 +939,26 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             processOptionsRequest(response, server.config());
             return;
         }
+
+        // Parse the OpenTelemetry traceparent header.
+        ClientInfo& client_info = session->getClientInfo();
+        if (request.has("traceparent"))
+        {
+            std::string opentelemetry_traceparent = request.get("traceparent");
+            std::string error;
+            if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            {
+                LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+            }
+            client_info.client_trace_context.tracestate = request.get("tracestate", "");
+        }
+
+        thread_trace_context = request_context->startTracing("HTTPHandler::handleRequest()");
+        if (thread_trace_context)
+        {
+            thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        }
+
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
@@ -999,6 +1007,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         int exception_code = getCurrentExceptionCode();
 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
+    }
+
+    if (thread_trace_context)
+    {
+        thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
     }
 
     used_output.finalize();
