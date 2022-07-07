@@ -110,6 +110,15 @@ bool isUserError(Error code);
 const char * errorMessage(Error code);
 
 
+enum KeeperApiVersion : uint8_t
+{
+    V0 = 0, // ZooKeeper compatible version
+    V1      // added FilteredList request
+};
+
+inline constexpr auto current_keeper_api_version = KeeperApiVersion::V1;
+inline constexpr auto * keeper_api_version_path = "/keeper-api-version";
+
 struct Request;
 using RequestPtr = std::shared_ptr<Request>;
 using Requests = std::vector<RequestPtr>;
@@ -515,6 +524,8 @@ public:
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
+
+    virtual Coordination::KeeperApiVersion getApiVersion() = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;

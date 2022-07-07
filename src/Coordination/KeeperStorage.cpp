@@ -232,6 +232,11 @@ KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, 
     Node root_node;
     container.insert("/", root_node);
     nodes_digest += root_node.getDigest("/");
+
+    Node version_node;
+    version_node.setData(std::to_string(static_cast<uint8_t>(Coordination::current_keeper_api_version)));
+    container.insert(Coordination::keeper_api_version_path, version_node);
+    nodes_digest += version_node.getDigest(Coordination::keeper_api_version_path);
 }
 
 template <class... Ts>
@@ -1187,7 +1192,9 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
                 auto list_request_type = ALL;
                 if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
+                {
                     list_request_type = filtered_list->list_request_type;
+                }
 
                 if (list_request_type == ALL)
                     return true;
@@ -1794,6 +1801,9 @@ void KeeperStorage::preprocessRequest(
 {
     int64_t last_zxid = getNextZXID() - 1;
 
+    if (new_last_zxid == 108367)
+        std::abort();
+
     if (uncommitted_transactions.empty())
     {
         // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
@@ -1879,6 +1889,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 {
     if (new_last_zxid)
     {
+        if (*new_last_zxid == 108366)
+            LOG_INFO(&Poco::Logger::get("LOGGER"), "Processing {}", *new_last_zxid);
         if (uncommitted_transactions.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
 
