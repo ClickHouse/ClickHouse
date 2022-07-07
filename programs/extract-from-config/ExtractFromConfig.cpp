@@ -1,6 +1,10 @@
 #include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
 
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string.hpp>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
@@ -23,7 +27,39 @@ static void setupLogging(const std::string & log_level)
     Poco::Logger::root().setLevel(log_level);
 }
 
-static std::string extractFromConfig(
+/// This function will work only if key has exactly one glob {*}
+/// because .keys() method of Poco::AbstractConfiguration returns only keys
+/// from one layer after this prefix. You can't retrieve all possible paths
+/// in a configuration tree with standart methods.
+static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool try_get)
+{
+    auto pattern_prefix = pattern.substr(0, pattern.find(".{*}."));
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    configuration->keys(pattern_prefix, keys);
+
+    std::vector<std::string> result;
+    result.reserve(keys.size());
+    for (const auto & key: keys)
+    {
+        auto disclosed_key = boost::algorithm::replace_first_copy(pattern, "{*}", key);
+        if (try_get)
+        {
+            auto value = configuration->getString(disclosed_key, "");
+            if (!value.empty())
+                result.emplace_back(value);
+        }
+        else
+        {
+            result.emplace_back(configuration->getString(disclosed_key));
+        }
+    }
+
+    return result;
+}
+
+
+static std::vector<std::string> extractFromConfig(
         const std::string & config_path, const std::string & key, bool process_zk_includes, bool try_get = false)
 {
     DB::ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
@@ -38,10 +74,15 @@ static std::string extractFromConfig(
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }
     DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
-    // do not throw exception if not found
+
+    /// Check if a key has globs.
+    if (key.find(".{*}.") != std::string::npos)
+        return extactFromConfigAccordingToGlobs(configuration, key, try_get);
+
+    /// Do not throw exception if not found.
     if (try_get)
-        return configuration->getString(key, "");
-    return configuration->getString(key);
+        return {configuration->getString(key, "")};
+    return {configuration->getString(key)};
 }
 
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -91,7 +132,8 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::notify(options);
 
         setupLogging(log_level);
-        std::cout << extractFromConfig(config_path, key, process_zk_includes, try_get) << std::endl;
+        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, try_get))
+            std::cout << value << std::endl;
     }
     catch (...)
     {
