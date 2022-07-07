@@ -66,7 +66,7 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        TraceCollector::collect(trace_type, stack_trace, 0);
+        TraceCollector::collect(trace_type, stack_trace, 0, nullptr);
         ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;

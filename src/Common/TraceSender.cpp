@@ -14,7 +14,7 @@ namespace
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 128;
+    constexpr size_t QUERY_ID_MAX_LEN = 120;
     static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
 }
 
@@ -23,7 +23,7 @@ namespace DB
 
 LazyPipeFDs TraceSender::pipe;
 
-void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int64 size)
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int64 size, void * ptr)
 {
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
@@ -32,7 +32,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
         + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
-        + sizeof(Int64);                     /// size
+        + sizeof(Int64)                      /// size
+        + sizeof(void *);                    /// ptr
 
     /// Write should be atomic to avoid overlaps
     /// (since recursive collect() is possible)
@@ -71,6 +72,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
     writePODBinary(size, out);
+    writePODBinary(UInt64(ptr), out);
 
     out.next();
 }

@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
+#include <Common/AllocationTrace.h>
 
 #if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
@@ -63,6 +64,8 @@ private:
 
     /// To randomly sample allocations and deallocations in trace_log.
     double sample_probability = 0;
+    /// Sample probability for the whole chain.
+    std::atomic<double> total_sample_probability = 0;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -83,6 +86,8 @@ private:
 
     void setOrRaiseProfilerLimit(Int64 value);
 
+    void updateTotalSampleProbability(MemoryTracker * parent_elem);
+
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
@@ -96,24 +101,17 @@ public:
 
     /** Call the following functions before calling of corresponding operations with memory allocators.
       */
-    void alloc(Int64 size);
+    [[nodiscard]] AllocationTrace alloc(Int64 size);
 
-    void allocNoThrow(Int64 size);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
 
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
+    [[nodiscard]] AllocationTrace allocNoThrow(Int64 size);
 
-    void realloc(Int64 old_size, Int64 new_size)
-    {
-        Int64 addition = new_size - old_size;
-        if (addition > 0)
-            alloc(addition);
-        else
-            free(-addition);
-    }
+    [[nodiscard]] AllocationTrace realloc(Int64 old_size, Int64 new_size);
 
     /** This function should be called after memory deallocation.
       */
-    void free(Int64 size);
+    [[nodiscard]] AllocationTrace free(Int64 size);
 
     Int64 get() const
     {
@@ -150,6 +148,12 @@ public:
     void setSampleProbability(double value)
     {
         sample_probability = value;
+        updateTotalSampleProbability(parent.load());
+    }
+
+    double getSampleProbabilityTotal()
+    {
+        return total_sample_probability.load(std::memory_order_relaxed);
     }
 
     void setProfilerStep(Int64 value)
@@ -163,6 +167,7 @@ public:
     void setParent(MemoryTracker * elem)
     {
         parent.store(elem, std::memory_order_relaxed);
+        updateTotalSampleProbability(elem);
     }
 
     MemoryTracker * getParent()
