@@ -467,7 +467,7 @@ void TCPHandler::runImpl()
             if (exception)
             {
                 if (thread_trace_context)
-                    thread_trace_context->root_span.addAttribute(exception.value());
+                    thread_trace_context->root_span.addAttribute(*exception);
 
                 try
                 {
