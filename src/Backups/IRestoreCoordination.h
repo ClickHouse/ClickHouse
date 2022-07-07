@@ -7,7 +7,10 @@ namespace DB
 {
 using DatabaseAndTableName = std::pair<String, String>;
 
-/// Keeps information about files contained in a backup.
+/// Replicas use this class to coordinate what they're reading from a backup while executing RESTORE ON CLUSTER.
+/// There are two implementation of this interface: RestoreCoordinationLocal and RestoreCoordinationRemote.
+/// RestoreCoordinationLocal is used while executing RESTORE without ON CLUSTER and performs coordination in memory.
+/// RestoreCoordinationRemote is used while executing RESTORE with ON CLUSTER and performs coordination via ZooKeeper.
 class IRestoreCoordination
 {
 public:
@@ -17,6 +20,8 @@ public:
     virtual void setStatus(const String & current_host, const String & new_status, const String & message) = 0;
     virtual Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts) = 0;
     virtual Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & other_hosts, UInt64 timeout_ms) = 0;
+
+    static constexpr const char * kErrorStatus = "error";
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;
