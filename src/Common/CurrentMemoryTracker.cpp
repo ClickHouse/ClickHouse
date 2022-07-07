@@ -4,6 +4,18 @@
 #include <Common/CurrentMemoryTracker.h>
 
 
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
+#endif
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
+
 namespace
 {
 
@@ -23,68 +35,70 @@ MemoryTracker * getMemoryTracker()
 
 }
 
-namespace CurrentMemoryTracker
-{
-
 using DB::current_thread;
 
-namespace
+AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
-    AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded)
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+    if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
     {
-        if (auto * memory_tracker = getMemoryTracker())
+        memory_tracker_always_throw_logical_error_on_allocation = false;
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
+    }
+#endif
+
+    if (auto * memory_tracker = getMemoryTracker())
+    {
+        if (current_thread)
         {
-            if (current_thread)
-            {
-                current_thread->untracked_memory += size;
+            current_thread->untracked_memory += size;
 
-                if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
-                {
-                    /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
-                    /// more. It could be useful to enlarge Exception message in rethrow logic.
-                    Int64 tmp = current_thread->untracked_memory;
-                    current_thread->untracked_memory = 0;
-                    return memory_tracker->allocImpl(tmp, throw_if_memory_exceeded);
-                }
-            }
-            /// total_memory_tracker only, ignore untracked_memory
-            else
+            if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
             {
-                return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
+                /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
+                /// more. It could be useful to enlarge Exception message in rethrow logic.
+                Int64 tmp = current_thread->untracked_memory;
+                current_thread->untracked_memory = 0;
+                return memory_tracker->allocImpl(tmp, throw_if_memory_exceeded);
             }
-
-            return AllocationTrace(memory_tracker->getSampleProbabilityTotal());
+        }
+        /// total_memory_tracker only, ignore untracked_memory
+        else
+        {
+            return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
         }
 
-        return AllocationTrace(0);
+        return AllocationTrace(memory_tracker->getSampleProbabilityTotal());
     }
+
+    return AllocationTrace(0);
 }
 
-void check()
+void CurrentMemoryTracker::check()
 {
     if (auto * memory_tracker = getMemoryTracker())
         std::ignore = memory_tracker->allocImpl(0, true);
 }
 
-AllocationTrace alloc(Int64 size)
+AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
     bool throw_if_memory_exceeded = true;
     return allocImpl(size, throw_if_memory_exceeded);
 }
 
-AllocationTrace allocNoThrow(Int64 size)
+AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
     bool throw_if_memory_exceeded = false;
     return allocImpl(size, throw_if_memory_exceeded);
 }
 
-AllocationTrace realloc(Int64 old_size, Int64 new_size)
+AllocationTrace CurrentMemoryTracker::realloc(Int64 old_size, Int64 new_size)
 {
     Int64 addition = new_size - old_size;
     return addition > 0 ? alloc(addition) : free(-addition);
 }
 
-AllocationTrace free(Int64 size)
+AllocationTrace CurrentMemoryTracker::free(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -110,4 +124,3 @@ AllocationTrace free(Int64 size)
     return AllocationTrace(0);
 }
 
-}

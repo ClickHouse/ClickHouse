@@ -3,7 +3,7 @@ add_headers_and_sources(clickhouse_functions_url .)
 add_library(clickhouse_functions_url ${clickhouse_functions_url_sources} ${clickhouse_functions_url_headers})
 target_link_libraries(clickhouse_functions_url PRIVATE dbms)
 
-if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_url PRIVATE "-g0")
 endif()
 

@@ -3,6 +3,7 @@
 
 #include <Core/Block.h>
 #include <Storages/StorageGenerateRandom.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
@@ -58,20 +59,20 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     }
 
     /// Parsing first argument as table structure and creating a sample block
-    structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();
+    structure = checkAndGetLiteralArgument<String>(args[0], "structure");
 
     if (args.size() >= 2)
     {
-        const Field & value = args[1]->as<const ASTLiteral &>().value;
-        if (!value.isNull())
-            random_seed = value.safeGet<UInt64>();
+        const auto & literal = args[1]->as<const ASTLiteral &>();
+        if (!literal.value.isNull())
+            random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }
 
     if (args.size() >= 3)
-        max_string_length = args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
+        max_string_length = checkAndGetLiteralArgument<UInt64>(args[2], "max_string_length");
 
     if (args.size() == 4)
-        max_array_length = args[3]->as<const ASTLiteral &>().value.safeGet<UInt64>();
+        max_array_length = checkAndGetLiteralArgument<UInt64>(args[3], "max_string_length");
 }
 
 ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
