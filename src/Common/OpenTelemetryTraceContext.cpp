@@ -195,7 +195,7 @@ const OpenTelemetryThreadTraceContext & OpenTelemetryThreadTraceContext::current
 
 void OpenTelemetryThreadTraceContext::reset()
 {
-    this->trace_id = {};
+    this->trace_id = UUID();
     this->span_id = 0;
     this->trace_flags = 0;
     this->tracestate = "";
@@ -208,7 +208,31 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
     const Settings * settings_ptr,
     const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
 {
-    this->root_span.trace_id = {};
+    if (current_thread_trace_context.isTraceEnabled())
+    {
+        ///
+        /// This is not the normal case,
+        /// it means that construction of current object is not at the start of current thread.
+        /// Usually this is due to:
+        ///    1. bad design
+        ///    2. right design but code changes so that original point where this object is constructing is not the new start execution of current thread
+        ///
+        /// In such case, we should use current context as parent of this new constructing object,
+        /// So this branch ensures this class can be instantiated multiple times on one same thread safely.
+        ///
+        this->is_context_owner = false;
+        this->root_span.trace_id = current_thread_trace_context.trace_id;
+        this->root_span.parent_span_id = current_thread_trace_context.span_id;
+        this->root_span.span_id = thread_local_rng();
+        this->root_span.operation_name = _operation_name;
+        this->root_span.start_time_us
+            = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+        current_thread_trace_context.span_id = this->root_span.span_id;
+        return;
+    }
+
+    this->root_span.trace_id = UUID();
     this->root_span.span_id = 0;
 
     if (!_parent_trace_context.isTraceEnabled())
@@ -260,11 +284,18 @@ OpenTelemetryThreadTraceContextScope::~OpenTelemetryThreadTraceContextScope()
             shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
         }
 
-        this->root_span.trace_id = {};
+        this->root_span.trace_id = UUD();
     }
 
-    // restore thread local variables
-    current_thread_trace_context.reset();
+    if (this->is_context_owner)
+    {
+        // clear the context on current thread
+        current_thread_trace_context.reset();
+    }
+    else
+    {
+        current_thread_trace_context.span_id = this->root_span.parent_span_id;
+    }
 }
 
 
