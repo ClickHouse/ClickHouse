@@ -2,7 +2,7 @@
     "system": "HeavyAI",
     "date": "2022-07-01",
     "machine": "c6a.4xlarge, 500gb gp2",
-    "cluster_size": "1",
+    "cluster_size": 1,
     "comment": "Previous names: OmniSci, mapD. Many queries cannot run due to errors and limitations.",
 
     "tags": ["SQL", "C++", "column-oriented"],

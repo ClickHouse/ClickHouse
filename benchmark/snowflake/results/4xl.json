@@ -2,7 +2,7 @@
     "system": "Snowflake",
     "date": "2022-07-01",
     "machine": "4XL",
-    "cluster_size": "128",
+    "cluster_size": 128,
     "comment": "",
 
     "tags": ["SQL", "managed", "column-oriented"],

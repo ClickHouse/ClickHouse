@@ -2,7 +2,7 @@
     "system": "CrateDB",
     "date": "2022-07-01",
     "machine": "c6a.4xlarge, 500gb gp2",
-    "cluster_size": "1",
+    "cluster_size": 1,
     "comment": "For some queries it gives \"Data too large\".",
 
     "tags": ["SQL", "Java", "column-oriented"],

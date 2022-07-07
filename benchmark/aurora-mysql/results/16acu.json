@@ -2,7 +2,7 @@
     "system": "Aurora for MySQL",
     "date": "2022-07-01",
     "machine": "16acu",
-    "cluster_size": "1",
+    "cluster_size": 1,
     "comment": "Some queries cannot run due to ERROR 1114 (HY000) at line 1: The table '/rdsdbdata/tmp/#sqlaff_e5_0' is full",
 
     "tags": ["managed", "SQL", "C++", "MySQL compatible", "row-oriented"],

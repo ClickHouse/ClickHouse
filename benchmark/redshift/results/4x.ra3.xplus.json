@@ -2,7 +2,7 @@
     "system": "Redshift",
     "date": "2022-07-01",
     "machine": "ra3.xplus",
-    "cluster_size": "4",
+    "cluster_size": 4,
     "comment": "One query did not run due to overflow check and another due to missing regexp function.",
 
     "tags": ["SQL", "managed", "column-oriented"],
