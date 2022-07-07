@@ -20,11 +20,20 @@ class ConnectionHolder
 {
 
 public:
-    ConnectionHolder(PoolPtr pool_, ConnectionPtr connection_) : pool(pool_), connection(std::move(connection_)) {}
+    ConnectionHolder(PoolPtr pool_, ConnectionPtr connection_, bool auto_close_)
+        : pool(pool_)
+        , connection(std::move(connection_))
+        , auto_close(auto_close_)
+    {}
 
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
-    ~ConnectionHolder() { pool->returnObject(std::move(connection)); }
+    ~ConnectionHolder()
+    {
+        if (auto_close)
+            connection.reset();
+        pool->returnObject(std::move(connection));
+    }
 
     pqxx::connection & get()
     {
@@ -39,6 +48,7 @@ public:
 private:
     PoolPtr pool;
     ConnectionPtr connection;
+    bool auto_close;
 };
 
 using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;
