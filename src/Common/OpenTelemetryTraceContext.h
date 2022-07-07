@@ -34,8 +34,6 @@ struct OpenTelemetrySpan
     }
 };
 
-struct OpenTelemetrySpanHolder;
-
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -61,7 +59,7 @@ struct OpenTelemetryTraceContext
     }
 };
 
-// tracing context kept on thread local
+/// tracing context kept on thread local
 struct OpenTelemetryThreadTraceContext : OpenTelemetryTraceContext
 {
     OpenTelemetryThreadTraceContext& operator =(const OpenTelemetryTraceContext& context)
@@ -77,6 +75,11 @@ struct OpenTelemetryThreadTraceContext : OpenTelemetryTraceContext
     std::weak_ptr<OpenTelemetrySpanLog> span_log;
 };
 
+/// A scoped tracing context, is used to hold the tracing context at the beginning of each thread execution and clear the context automatically when the scope exists.
+/// It should be the root of all span logs for one tracing.
+///
+/// It's SAFE to construct this object multiple times on one same thread,
+/// but it's not encourage to do so because this is only a protection in case of code changes.
 struct OpenTelemetryThreadTraceContextScope
 {
     // forbidden copy ctor and assignment to make the destructor safe
@@ -123,16 +126,20 @@ struct OpenTelemetryThreadTraceContextScope
     ~OpenTelemetryThreadTraceContextScope();
 
     OpenTelemetrySpan root_span;
+
+private:
+    bool is_context_owner = true;
 };
 
 using OpenTelemetryThreadTraceContextScopePtr = std::unique_ptr<OpenTelemetryThreadTraceContextScope>;
 
+/// A span holder is usually used in a function scope
 struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
 {
     OpenTelemetrySpanHolder(const std::string & _operation_name);
+    ~OpenTelemetrySpanHolder();
 
     void finish();
-    ~OpenTelemetrySpanHolder();
 };
 
 }
