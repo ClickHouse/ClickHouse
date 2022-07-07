@@ -7,8 +7,8 @@
 
     "tags": ["SQL", "Java", "column-oriented"],
 
-    "load_time": null,
-    "data_size": null,
+    "load_time": 19620,
+    "data_size": 45188608472,
 
     "result": [
 [0.179351, 0.040782, 0.026180],

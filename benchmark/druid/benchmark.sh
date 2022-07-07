@@ -29,6 +29,8 @@ gzip -d hits.tsv.gz
 
 ./apache-druid-${VERSION}/bin/post-index-task --file ingest.json --url http://localhost:8081
 
+# The loading time should be checked from the logs
+
 # Run the queries
 ./run.sh
 
