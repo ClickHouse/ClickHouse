@@ -71,11 +71,18 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
         throw DB::Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Not supported by direct JOIN");
     }
 
-    if (table_join->strictness() != JoinStrictness::All &&
-        table_join->strictness() != JoinStrictness::Any &&
-        table_join->strictness() != JoinStrictness::RightAny)
+    bool allowed_inner = isInner(table_join->kind()) && (table_join->strictness() == ASTTableJoin::Strictness::All ||
+                                                         table_join->strictness() == ASTTableJoin::Strictness::Any ||
+                                                         table_join->strictness() != JoinStrictness::RightAny);
+
+    bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == ASTTableJoin::Strictness::Any ||
+                                                       table_join->strictness() == ASTTableJoin::Strictness::All ||
+                                                       table_join->strictness() == ASTTableJoin::Strictness::Semi ||
+                                                       table_join->strictness() == ASTTableJoin::Strictness::Anti);
+    if (!allowed_inner && !allowed_left)
     {
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported by direct JOIN");
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Strictness {} and kind {} is not supported by direct JOIN",
+            table_join->strictness(), table_join->kind());
     }
 
     LOG_TRACE(log, "Using direct join");
@@ -116,7 +123,18 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         block.insert(std::move(col));
     }
 
-    if (!isLeftOrFull(table_join->kind()))
+    bool is_semi_join = table_join->strictness() == ASTTableJoin::Strictness::Semi;
+    bool is_anti_join = table_join->strictness() == ASTTableJoin::Strictness::Anti;
+
+    if (is_anti_join)
+    {
+        /// invert null_map
+        for (auto & val : null_map)
+            val = !val;
+    }
+
+    /// Filter non joined rows
+    if (isInner(table_join->kind()) || (isLeft(table_join->kind()) && (is_semi_join || is_anti_join)))
     {
         MutableColumns dst_columns = block.mutateColumns();
         for (auto & col : dst_columns)

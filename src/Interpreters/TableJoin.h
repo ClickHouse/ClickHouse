@@ -29,6 +29,7 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryReader;
+class DictionaryJoinAdapter;
 class StorageJoin;
 class StorageDictionary;
 class IKeyValueStorage;
@@ -144,6 +145,8 @@ private:
     std::shared_ptr<DictionaryReader> dictionary_reader;
 
     std::shared_ptr<IKeyValueStorage> right_kv_storage;
+
+    std::string right_storage_name;
 
     Names requiredJoinedNames() const;
 
@@ -300,6 +303,10 @@ public:
     void resetToCross();
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
+
+    /// Remember storage name in case of joining with dictionary or another special storage
+    void setRightStorageName(const std::string & storage_name);
+    const std::string & getRightStorageName() const;
 
     void setStorageJoin(std::shared_ptr<IKeyValueStorage> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);

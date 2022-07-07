@@ -179,36 +179,6 @@ namespace JoinStuff
     }
 }
 
-static ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false)
-{
-    ColumnPtr column = src_column->convertToFullColumnIfConst();
-    MutableColumnPtr mut_column = column->cloneEmpty();
-    mut_column->reserve(column->size());
-
-    if (inverse_filter)
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertDefault();
-            else
-                mut_column->insertFrom(*column, row);
-        }
-    }
-    else
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertFrom(*column, row);
-            else
-                mut_column->insertDefault();
-        }
-    }
-
-    return mut_column;
-}
-
 static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
 {
     if (nullable)
@@ -220,7 +190,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
             if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column))
-                column.column = filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
+                column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
 
         JoinCommon::removeColumnNullability(column);
     }
@@ -1607,7 +1577,7 @@ void HashJoin::joinBlockImpl(
                 const auto & col = block.getByName(left_name);
                 bool is_nullable = JoinCommon::isNullable(right_key.type);
 
-                ColumnPtr thin_column = filterWithBlanks(col.column, filter);
+                ColumnPtr thin_column = JoinCommon::filterWithBlanks(col.column, filter);
 
                 ColumnWithTypeAndName right_col(thin_column, col.type, right_col_name);
                 if (right_col.type->lowCardinality() != right_key.type->lowCardinality())

@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/DictionaryReader.h>
+#include <Interpreters/DictionaryJoinAdapter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -40,7 +41,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
-
+#include <Functions/FunctionsExternalDictionaries.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 
@@ -1014,19 +1015,15 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
-        if (JoinPtr kvjoin = tryKeyValueJoin(analyzed_join, right_sample_block))
-        {
-            /// Do not need to execute plan for right part
-            joined_plan.reset();
-            return kvjoin;
-        }
+        JoinPtr direct_join = nullptr;
+        direct_join = direct_join ? direct_join : tryKeyValueJoin(analyzed_join, right_sample_block);
+        direct_join = direct_join ? direct_join : tryDictJoin(analyzed_join, right_sample_block, getContext());
 
-        /// It's not a hash join actually, that's why we check JoinAlgorithm::DIRECT
-        /// It's would be fixed in https://github.com/ClickHouse/ClickHouse/pull/38956
-        if (analyzed_join->tryInitDictJoin(right_sample_block, context))
+        if (direct_join)
         {
+            /// Do not need to execute plan for right part, it's ready.
             joined_plan.reset();
-            return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+            return direct_join;
         }
     }
 
@@ -1113,6 +1110,66 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     return joined_plan;
 }
 
+std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context)
+{
+    using Strictness = ASTTableJoin::Strictness;
+
+    bool allowed_inner = isInner(analyzed_join->kind()) && analyzed_join->strictness() == Strictness::All;
+    bool allowed_left = isLeft(analyzed_join->kind()) && (analyzed_join->strictness() == Strictness::Any ||
+                                                          analyzed_join->strictness() == Strictness::All ||
+                                                          analyzed_join->strictness() == Strictness::Semi ||
+                                                          analyzed_join->strictness() == Strictness::Anti);
+    if (!allowed_inner && !allowed_left)
+    {
+        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: {} {} is not supported",
+            analyzed_join->kind(), analyzed_join->strictness());
+        return nullptr;
+    }
+
+    if (analyzed_join->getClauses().size() != 1 || analyzed_join->getClauses()[0].key_names_right.size() != 1)
+    {
+        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: only one key is supported");
+        return nullptr;
+    }
+
+    const auto & right_key = analyzed_join->getOnlyClause().key_names_right[0];
+
+    const auto & dictionary_name = analyzed_join->getRightStorageName();
+    if (dictionary_name.empty())
+    {
+        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: dictionary was not found");
+        return nullptr;
+    }
+
+    FunctionDictHelper dictionary_helper(context);
+
+    auto dictionary = dictionary_helper.getDictionary(dictionary_name);
+    if (!dictionary)
+    {
+        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: dictionary was not found");
+        return nullptr;
+    }
+
+    const auto & dict_keys = dictionary->getStructure().getKeysNames();
+    if (dict_keys.size() != 1 || dict_keys[0] != analyzed_join->getOriginalName(right_key))
+    {
+        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: join key '{}' doesn't natch to dictionary key ({})",
+            right_key, fmt::join(dict_keys, ", "));
+        return nullptr;
+    }
+
+    Names attr_names;
+    for (const auto & col : right_sample_block)
+    {
+        if (col.name == right_key)
+            continue;
+        attr_names.push_back(analyzed_join->getOriginalName(col.name));
+    }
+
+    auto dict_reader = std::make_shared<DictionaryJoinAdapter>(dictionary, attr_names);
+    return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, dict_reader);
+}
+
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block)
 {
     if (!analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
@@ -1192,7 +1249,6 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
     }
 
     JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan, getContext());
-
     return join;
 }
 

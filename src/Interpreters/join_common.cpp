@@ -573,6 +573,36 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
+{
+    ColumnPtr column = src_column->convertToFullColumnIfConst();
+    MutableColumnPtr mut_column = column->cloneEmpty();
+    mut_column->reserve(column->size());
+
+    if (inverse_filter)
+    {
+        for (size_t row = 0; row < filter.size(); ++row)
+        {
+            if (filter[row])
+                mut_column->insertDefault();
+            else
+                mut_column->insertFrom(*column, row);
+        }
+    }
+    else
+    {
+        for (size_t row = 0; row < filter.size(); ++row)
+        {
+            if (filter[row])
+                mut_column->insertFrom(*column, row);
+            else
+                mut_column->insertDefault();
+        }
+    }
+
+    return mut_column;
+}
+
 }
 
 NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
