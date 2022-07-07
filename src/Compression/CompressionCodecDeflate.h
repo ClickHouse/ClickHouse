@@ -205,7 +205,7 @@ public:
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
     uint32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
     uint32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
-    void doDecompressDataFlush();
+    void doFlushAsynchronousDecompressRequests();
 
 private:
     std::map<uint32_t, qpl_job *> jobDecompAsyncMap;
@@ -231,7 +231,7 @@ protected:
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest) const override;
     uint32_t doCompressDataSW(const char * source, uint32_t source_size, char * dest) const;
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
-    void doDecompressDataFlush() override;
+    void doFlushAsynchronousDecompressRequests() override;
 
 private:
     uint32_t getMaxCompressedDataSize(uint32_t uncompressed_size) const override;

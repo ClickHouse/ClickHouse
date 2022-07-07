@@ -112,7 +112,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         }
         else
         {
-            decompressFlush(); /// here switch to unhold block in compress_in, we must flush for previous blocks completely hold in compress_in
+            flushAsynchronousDecompressRequests(); /// here switch to unhold block in compress_in, we must flush for previous blocks completely hold in compress_in
             new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
             decompress_mode = ICompressionCodec::CodecMode::Synchronous;
         }
@@ -169,7 +169,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         }
     }
 
-    decompressFlush();
+    flushAsynchronousDecompressRequests();
 
     if (read_tail)
     {

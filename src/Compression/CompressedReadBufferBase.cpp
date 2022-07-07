@@ -318,11 +318,11 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
-void CompressedReadBufferBase::decompressFlush() const
+void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
 {
     if (codec)
     {
-        codec->decompressFlush();
+        codec->flushAsynchronousDecompressRequests();
     }
 }
 

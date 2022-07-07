@@ -159,7 +159,7 @@ uint32_t HardwareCodecDeflate::doDecompressDataReq(const char * source, uint32_t
     }
 }
 
-void HardwareCodecDeflate::doDecompressDataFlush()
+void HardwareCodecDeflate::doFlushAsynchronousDecompressRequests()
 {
     uint32_t job_id = 0;
     qpl_job * job_ptr = nullptr;
@@ -345,10 +345,10 @@ void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t sou
     }
 }
 
-void CompressionCodecDeflate::doDecompressDataFlush()
+void CompressionCodecDeflate::doFlushAsynchronousDecompressRequests()
 {
     if (hwCodec->hwEnabled)
-        hwCodec->doDecompressDataFlush();
+        hwCodec->doFlushAsynchronousDecompressRequests();
 }
 void registerCodecDeflate(CompressionCodecFactory & factory)
 {

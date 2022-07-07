@@ -46,7 +46,7 @@ protected:
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
     /// Flush all asynchronous decompress request
-    void decompressFlush() const;
+    void flushAsynchronousDecompressRequests() const;
     void setDecompressMode(ICompressionCodec::CodecMode mode);
 
 public:
