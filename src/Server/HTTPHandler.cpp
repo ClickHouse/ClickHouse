@@ -956,6 +956,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context = request_context->startTracing("HTTPHandler::handleRequest()");
         if (thread_trace_context)
         {
+            if (!client_info.client_trace_context.tracestate.empty())
+            {
+                thread_trace_context->root_span.addAttribute("clickhouse.tracestate", client_info.client_trace_context.tracestate);
+            }
             thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
         }
 
