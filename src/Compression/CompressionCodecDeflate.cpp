@@ -16,8 +16,8 @@ namespace ErrorCodes
     extern const int CANNOT_DECOMPRESS;
 }
 //DeflateJobHWPool
-qpl_job * DeflateJobHWPool::jobPool[jobPoolSize];
-std::atomic_bool DeflateJobHWPool::jobLock[jobPoolSize];
+qpl_job * DeflateJobHWPool::jobPool[JOB_POOL_SIZE];
+std::atomic_bool DeflateJobHWPool::jobLocks[JOB_POOL_SIZE];
 
 DeflateJobHWPool & DeflateJobHWPool::instance()
 {
