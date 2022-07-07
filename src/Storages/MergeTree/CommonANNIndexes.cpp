@@ -8,6 +8,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -26,6 +28,7 @@ ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
                                  ContextPtr context) :
     block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
     ann_index_params{context->getSettings().get("ann_index_params").get<String>()},
+    index_granularity{context->getMergeTreeSettings().get("index_granularity").get<UInt64>()},
     index_is_useful{checkQueryStructure(query_info)} {}
 
 bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
@@ -38,11 +41,10 @@ bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
     return !(metric_name == query_information->metric_name);
 }
 
-///TODO: check for all getters?
 float ANNCondition::getComparisonDistanceForWhereQuery() const
 {
-    ///TODO: query_information->???
-    if (query_information->query_type == ANNQueryInformation::Type::WhereQuery)
+    if (index_is_useful && query_information.has_value()
+        && query_information->query_type == ANNQueryInformation::Type::WhereQuery)
     {
         return query_information->distance;
     }
@@ -51,11 +53,74 @@ float ANNCondition::getComparisonDistanceForWhereQuery() const
 
 UInt64 ANNCondition::getLimitCount() const
 {
-    if (index_is_useful)
+    if (index_is_useful && query_information.has_value())
     {
         return query_information->limit;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No LIMIT section in query, not supported");
+}
+
+std::vector<float> ANNCondition::getTargetVector() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->target;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Target vector was requested for useless or uninitialized index.");
+}
+
+size_t ANNCondition::getNumOfDimensions() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->target.size();
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of dimensions was requested for useless or uninitialized index.");
+}
+
+String ANNCondition::getColumnName() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->column_name;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
+}
+
+String ANNCondition::getMetricName() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->metric_name; 
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
+}
+
+float ANNCondition::getPValueForLpDistance() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->p_for_lp_dist; 
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
+}
+
+bool ANNCondition::queryHasOrderByClause() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->query_type == ANNQueryInformation::Type::OrderByQuery;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
+}
+
+bool ANNCondition::queryHasWhereClause() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->query_type == ANNQueryInformation::Type::WhereQuery;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
 }
 
 bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
@@ -228,7 +293,6 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
             return true;
         }
 
-        /// TODO: Uint?
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = RPNElement::FUNCTION_INT_LITERAL;
@@ -406,7 +470,6 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANN
         ++iter;
     }
 
-    ///TODO: refactor
     if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
     {
         for (const auto & value : iter->tuple_literal.value())
