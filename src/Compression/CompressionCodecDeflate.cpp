@@ -18,55 +18,62 @@ namespace ErrorCodes
 qpl_job * DeflateJobHWPool::jobPool[JOB_POOL_SIZE];
 std::atomic_bool DeflateJobHWPool::jobLocks[JOB_POOL_SIZE];
 
-bool DeflateJobHWPool::initJobPool()
-{
-    if (job_pool_ready == false)
-    {
-        uint32_t size = 0;
-        /// get total size required for saving qpl job context
-        qpl_get_job_size(PATH, &size);
-        /// allocate buffer for storing all job objects
-        jobPoolBufferPtr = std::make_unique<uint8_t[]>(size * JOB_POOL_SIZE);
-        memset(jobPool, 0, JOB_POOL_SIZE*sizeof(qpl_job *));
-        for (int i = 0; i < JOB_POOL_SIZE; ++i)
-        {
-            qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(jobPoolBufferPtr.get() + i*JOB_POOL_SIZE);
-            if ((nullptr == qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
-            {
-                destroyJobPool();
-                return false;
-            }
-            jobPool[i] = qpl_job_ptr;
-            jobLocks[i].store(false);
-        }
-        job_pool_ready = true;
-    }
-    return job_pool_ready;
-}
-
 DeflateJobHWPool & DeflateJobHWPool::instance()
 {
     static DeflateJobHWPool ret;
     return ret;
 }
 
-DeflateJobHWPool::DeflateJobHWPool():job_pool_ready(false)
+DeflateJobHWPool::DeflateJobHWPool():log(&Poco::Logger::get("DeflateJobHWPool"))
 {
-    log = &Poco::Logger::get("DeflateJobHWPool");
-    if (!initJobPool())
-        LOG_WARNING(log, "DeflateJobHWPool is not ready. Please check if IAA hardware support.Auto switch to deflate software codec here");
+    uint32_t size = 0;
+    uint32_t index = 0;
+    /// get total size required for saving qpl job context
+    qpl_get_job_size(PATH, &size);
+    /// allocate buffer for storing all job objects
+    jobPoolBufferPtr = std::make_unique<uint8_t[]>(size * JOB_POOL_SIZE);
+    memset(jobPool, 0, JOB_POOL_SIZE*sizeof(qpl_job *));
+    for (index = 0; index < JOB_POOL_SIZE; ++index)
+    {
+        qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(jobPoolBufferPtr.get() + index*JOB_POOL_SIZE);
+        if ((nullptr == qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
+            break;
+        jobPool[index] = qpl_job_ptr;
+        jobLocks[index].store(false);
+    }
+
+    const char * qpl_version = qpl_get_library_version();
+    if(JOB_POOL_SIZE == index)
+    {
+        jobPoolReady() = true;
+        LOG_DEBUG(log, "QPL deflate HW codec is ready! QPL Version:{}",qpl_version);
+    }
+    else
+    {
+        jobPoolReady() = false;
+        LOG_WARNING(log, "QPL deflate HW codec is not ready! Please check if IAA hardware support. Will fallback to software codec here. QPL Version:{}.",qpl_version);
+    }
 }
 
 DeflateJobHWPool::~DeflateJobHWPool()
 {
-    destroyJobPool();
+    for (uint32_t i = 0; i < JOB_POOL_SIZE; ++i)
+    {
+        if (jobPool[i] != nullptr)
+        {
+            while (!tryLockJob(i));
+            qpl_fini_job(jobPool[i]);
+        }
+        jobPool[i] = nullptr;
+        jobLocks[i].store(false);
+    }
 }
 
 //HardwareCodecDeflate
-HardwareCodecDeflate::HardwareCodecDeflate()
+HardwareCodecDeflate::HardwareCodecDeflate():
+    hwEnabled(DeflateJobHWPool::instance().jobPoolReady()),
+    log(&Poco::Logger::get("HardwareCodecDeflate"))
 {
-    log = &Poco::Logger::get("HardwareCodecDeflate");
-    hwEnabled = DeflateJobHWPool::instance().jobPoolReady();
 }
 
 HardwareCodecDeflate::~HardwareCodecDeflate()

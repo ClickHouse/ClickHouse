@@ -24,10 +24,7 @@ public:
     static std::atomic_bool jobLocks[JOB_POOL_SIZE];
     bool job_pool_ready = false;
 
-    bool jobPoolReady() const
-    {
-        return job_pool_ready;
-    }
+    bool & jobPoolReady() { return job_pool_ready;}
 
     qpl_job * acquireJob(uint32_t * job_id)
     {
@@ -68,9 +65,6 @@ public:
     }
 
 private:
-    /// Returns true if Job pool initialization succeeded, otherwise false
-    bool initJobPool();
-
     static size_t random(uint32_t pool_size)
     {
         size_t tsc = 0;
@@ -83,30 +77,17 @@ private:
     bool tryLockJob(size_t index)
     {
         bool expected = false;
+        assert(index < JOB_POOL_SIZE);
         return jobLocks[index].compare_exchange_strong(expected, true);
     }
 
-    void destroyJobPool()
-    {
-        for (uint32_t i = 0; i < JOB_POOL_SIZE; ++i)
-        {
-            if (jobPool[i] != nullptr)
-            {
-                while (tryLockJob(i) == false);
-                qpl_fini_job(jobPool[i]);
-            }
-            jobPool[i] = nullptr;
-            jobLocks[i].store(false);
-        }
-    }
-
-    struct ReleaseJobObjectGuard
+    class ReleaseJobObjectGuard
     {
         uint32_t index;
         ReleaseJobObjectGuard() = delete;
 
     public:
-        ReleaseJobObjectGuard(const uint32_t i) : index(i)
+        ReleaseJobObjectGuard(const uint32_t index_) : index(index_)
         {
         }
 
