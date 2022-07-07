@@ -1183,6 +1183,8 @@ void Client::readArguments(
             }
             else if (arg == "--allow_repeated_settings")
                 allow_repeated_settings = true;
+            else if (arg == "--allow_merge_tree_settings")
+                allow_merge_tree_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }

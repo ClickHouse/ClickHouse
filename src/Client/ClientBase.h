@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/NamePrompter.h"
+#include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
@@ -14,6 +15,7 @@
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace po = boost::program_options;
 
@@ -151,6 +153,7 @@ private:
     void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
+    bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
@@ -193,6 +196,7 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
+    MergeTreeSettings cmd_merge_tree_settings;
 
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
@@ -270,6 +274,7 @@ protected:
     std::vector<HostAndPort> hosts_and_ports{};
 
     bool allow_repeated_settings = false;
+    bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
 

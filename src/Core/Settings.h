@@ -12,12 +12,6 @@ namespace Poco::Util
     class AbstractConfiguration;
 }
 
-namespace boost::program_options
-{
-    class options_description;
-}
-
-
 namespace DB
 {
 class IColumn;
@@ -803,24 +797,11 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     /// Dumps profile events to column of type Map(String, String)
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
-    /// Adds program options to set the settings from a command line.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptions(boost::program_options::options_description & options);
-
-    /// Adds program options as to set the settings from a command line.
-    /// Allows to set one setting multiple times, the last value will be used.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
-
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
     std::vector<String> getAllRegisteredNames() const override;
-
-    void addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field);
-
-    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
 };
 
 /*
