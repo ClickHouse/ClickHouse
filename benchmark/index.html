@@ -22,6 +22,10 @@
             padding: 1% 3% 0 3%;
         }
 
+        table {
+             border-spacing: 1px;
+        }
+
         .stick-left {
             position: sticky;
             left: 0px;
@@ -126,6 +130,7 @@
 
         .shadow:hover {
             box-shadow: 0 0 1rem gray;
+            position: relative;
         }
 
         #legend {
@@ -135,6 +140,13 @@
             margin-bottom: 1rem;
             background: #FED;
             border: 1px solid #FFCB80;
+        }
+
+        #nothing-selected {
+            display: none;
+            font-size: 32pt;
+            font-weight: bold;
+            color: #CCC;
         }
     </style>
     <script type="text/javascript">
@@ -1884,25 +1896,25 @@ const data = [
     <tr>
         <th>System: </th>
         <td id="selectors_system">
-            <a class="selector selector-active">All</a>
+            <a id="select-all-systems" class="selector selector-active">All</a>
         </td>
     </tr>
     <tr>
         <th>Type: </th>
         <td id="selectors_type">
-            <a class="selector selector-active">All</a>
+            <a id="select-all-types" class="selector selector-active">All</a>
         </td>
     </tr>
     <tr>
         <th>Machine: </th>
         <td id="selectors_machine">
-            <a class="selector selector-active">All</a>
+            <a id="select-all-machines" class="selector selector-active">All</a>
         </td>
     </tr>
     <tr>
         <th>Cluster size: </th>
         <td id="selectors_cluster_size">
-            <a class="selector selector-active">All</a>
+            <a id="select-all-cluster-sizes" class="selector selector-active">All</a>
         </td>
     </tr>
     <tr>
@@ -1913,7 +1925,7 @@ const data = [
     </tr>
 </table>
 
-<table class="stick-left">
+<table class="stick-left comparison">
     <thead>
         <tr>
             <th class="summary-name">
@@ -1928,7 +1940,9 @@ const data = [
     </tbody>
 </table>
 
-<div class="stick-left">
+<div id="nothing-selected" class="stick-left">Nothing selected</div>
+
+<div class="stick-left comparison">
     <h2>Detailed Comparison</h2>
 </div>
 
@@ -1941,9 +1955,13 @@ const data = [
     </tbody>
 </table>
 
-<div id="legend" class="stick-left"></div>
+<div id="legend" class="stick-left comparison"></div>
 
 <script type="text/javascript">
+
+const constant_time_add = 0.01;
+const missing_result_penalty = 2;
+const missing_result_time = 300;
 
 let selectors = {
     "system": {},
@@ -1951,6 +1969,7 @@ let selectors = {
     "machine": {},
     "cluster_size": {},
     "metric": "hot",
+    "queries": [],
 };
 
 /// Generate selectors
@@ -1965,6 +1984,15 @@ let unique_systems = [... new Set(data.map(elem => elem.system))];
 function toggle(e, elem, selectors_map) {
     selectors_map[elem] = !selectors_map[elem];
     e.target.className = selectors_map[elem] ? 'selector selector-active' : 'selector';
+    render();
+}
+
+function toggleAll(e, selectors_map) {
+    const new_value = Object.keys(selectors_map).filter(k => selectors_map[k]).length * 2 < Object.keys(selectors_map).length;
+    [...e.target.parentElement.querySelectorAll('a')].map(
+        elem => { elem.className = new_value ? 'selector selector-active' : 'selector' });
+
+    Object.keys(selectors_map).map(k => { selectors_map[k] = new_value });
     render();
 }
 
@@ -1983,6 +2011,7 @@ unique_systems.map(elem => {
     selector.appendChild(document.createTextNode(elem));
     types.appendChild(selector);
     if (!(elem in selectors.type)) { selectors.type[elem] = true; }
+    selector.addEventListener('click', e => toggle(e, elem, selectors.type));
 });
 
 [... new Set(data.map(elem => elem.machine))].map(elem => {
@@ -2000,7 +2029,15 @@ unique_systems.map(elem => {
     selector.appendChild(document.createTextNode(elem));
     cluster_sizes.appendChild(selector);
     if (!(elem in selectors.cluster_size)) { selectors.cluster_size[elem] = true; }
+    selector.addEventListener('click', e => toggle(e, elem, selectors.cluster_size));
 });
+
+document.getElementById('select-all-systems').addEventListener('click', e => toggleAll(e, selectors.system));
+document.getElementById('select-all-types').addEventListener('click', e => toggleAll(e, selectors.type));
+document.getElementById('select-all-machines').addEventListener('click', e => toggleAll(e, selectors.machine));
+document.getElementById('select-all-cluster-sizes').addEventListener('click', e => toggleAll(e, selectors.cluster_size));
+
+selectors.queries = [...data[0].result.keys()].map(k => true);
 
 function clearElement(elem)
 {
@@ -2009,15 +2046,13 @@ function clearElement(elem)
     }
 }
 
-function render() {
+function selectRun(timings) {
+    return selectors.metric == 'cold' ? timings[0] : timings[1] && timings[2] ? Math.min(timings[1], timings[2]) : null
+}
 
-    let filtered_data = data.filter(elem =>
-        selectors.system[elem.system] &&
-        selectors.machine[elem.machine] /*&&
-        selectors.cluster_size[elem.cluster_size] &&
-        elem.types.filter(type => selectors.type[type]).length > 0*/);
-
-    console.log(filtered_data);
+function renderSummary(filtered_data) {
+    let table = document.getElementById('summary');
+    clearElement(table);
 
     /// Generate summary
 
@@ -2030,40 +2065,36 @@ function render() {
 
     const num_queries = filtered_data[0].result.length;
 
-    const baseline_data = [...Array(num_queries).keys()].map(query_num =>
+    const baseline_data = [...filtered_data[0].result.keys()].map(query_num =>
         [...Array(3).keys()].map(run_num =>
             Math.min(...filtered_data.map(elem => elem.result[query_num][run_num]).filter(x => x))));
-
-    console.log(baseline_data);
-
-    const constant_time_add = 0.01;
-    const missing_result_penalty = 2;
-
-    function selectRun(timings) { return selectors.metric == 'cold' ? timings[0] : timings[1] && timings[2] ? Math.min(timings[1], timings[2]) : null }
 
     const summaries = filtered_data.map(elem => {
         console.log(elem.system);
 
-        const fallback_timing = missing_result_penalty * Math.max(300, ...elem.result.map(timings => selectRun(timings)));
+        const fallback_timing = missing_result_penalty * Math.max(missing_result_time, ...elem.result.map(timings => selectRun(timings)));
 
         let accumulator = 0;
+        let used_queries = 0;
+
+        const no_queries_selected = selectors.queries.filter(x => x).length == 0;
+
         for (let i = 0; i < num_queries; ++i) {
-            const curr_timing = selectRun(elem.result[i]) ?? fallback_timing;
-            const baseline_timing = selectRun(baseline_data[i]);
-            const ratio = (constant_time_add + curr_timing) / (constant_time_add + baseline_timing);
-            accumulator += Math.log(ratio);
+            if (no_queries_selected || selectors.queries[i]) {
+                const curr_timing = selectRun(elem.result[i]) ?? fallback_timing;
+                const baseline_timing = selectRun(baseline_data[i]);
+                const ratio = (constant_time_add + curr_timing) / (constant_time_add + baseline_timing);
+                accumulator += Math.log(ratio);
+                ++used_queries;
+            }
         }
 
         return Math.exp(accumulator / num_queries);
     });
 
-    console.log(summaries);
-
     const sorted_indices = [...summaries.keys()].sort((a, b) => summaries[a] - summaries[b]);
     const max_ratio = summaries[sorted_indices[sorted_indices.length - 1]];
 
-    let table = document.getElementById('summary');
-    clearElement(table);
     sorted_indices.map(idx => {
         const elem = filtered_data[idx];
         let tr = document.createElement('tr');
@@ -2102,10 +2133,50 @@ function render() {
         table.appendChild(tr);
     });
 
-    /// Generate details
+    return [sorted_indices, baseline_data];
+}
+
+function render() {
+    let details_head = document.getElementById('details_head');
+    let details_body = document.getElementById('details_body');
 
     clearElement(details_head);
-    details_head.appendChild(document.createElement('th'));
+    clearElement(details_body);
+
+    let filtered_data = data.filter(elem =>
+        selectors.system[elem.system] &&
+        selectors.machine[elem.machine] /*&&
+        selectors.cluster_size[elem.cluster_size] &&
+        elem.types.filter(type => selectors.type[type]).length > 0*/);
+
+    let nothing_selected_elem = document.getElementById('nothing-selected');
+    if (filtered_data.length == 0) {
+        nothing_selected_elem.style.display = 'block';
+        [...document.querySelectorAll('.comparison')].map(e => e.style.display = 'none');
+        return;
+    }
+    nothing_selected_elem.style.display = 'none';
+    [...document.querySelectorAll('.comparison')].map(e => e.style.display = 'block');
+
+    const [sorted_indices, baseline_data] = renderSummary(filtered_data);
+
+    /// Generate details
+
+    {
+        let th_checkbox = document.createElement('th');
+        let checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = true;
+        checkbox.addEventListener('change', e => {
+            [...document.querySelectorAll('.query-checkbox')].map(elem => { elem.checked = e.target.checked });
+            selectors.queries.map((_, i) => { selectors.queries[i] = e.target.checked });
+            renderSummary(filtered_data);
+        });
+        th_checkbox.appendChild(checkbox);
+        details_head.appendChild(th_checkbox);
+        details_head.appendChild(document.createElement('th'));
+    }
+
     sorted_indices.map(idx => {
         const elem = filtered_data[idx];
         let th = document.createElement('th');
@@ -2113,11 +2184,23 @@ function render() {
         details_head.appendChild(th);
     });
 
-    let details_body = document.getElementById('details_body');
-    clearElement(details_body);
+    const num_queries = filtered_data[0].result.length;
+
     for (let query_num = 0; query_num < num_queries; ++query_num) {
         let tr = document.createElement('tr');
         tr.className = 'shadow';
+
+        let td_checkbox = document.createElement('td');
+        let checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'query-checkbox';
+        checkbox.checked = true;
+        checkbox.addEventListener('change', e => {
+            selectors.queries[query_num] = e.target.checked;
+            renderSummary(filtered_data);
+        });
+        td_checkbox.appendChild(checkbox);
+        tr.appendChild(td_checkbox);
 
         let td_query_num = document.createElement('td');
         td_query_num.appendChild(document.createTextNode(`Q${query_num}. `));
