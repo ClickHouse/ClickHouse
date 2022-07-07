@@ -236,7 +236,7 @@ static const inline Aarch64VecVariant DISTPACHED_VARIANT
     = runtimeHasSVE2() ? Aarch64VecVariant::SVE2 : (runtimeHasSVE() ? Aarch64VecVariant::SVE : Aarch64VecVariant::Default);
 /**
  * @brief Define a function that can be dispatched in runtime.
- * A few of extra branches will be introduced but it should be acceptable if the operation body is relatively large.
+ * A few of extra instructions to locate the function will be introduced but it should be acceptable if the operation body is relatively large.
  */
 #    define MICROARCHITECTURE_DISPATCHED(RETURN_TYPE, NAME, ARG_LIST, BODY) \
         namespace MicroArchitecture::RuntimeDispatch::NAME \
@@ -246,21 +246,18 @@ static const inline Aarch64VecVariant DISTPACHED_VARIANT
                 MICROARCHITECTURE_AARCH64_SVE_ATTRIBUTE static inline RETURN_TYPE dispatchSVE ARG_LIST BODY); \
             MICROARCHITECTURE_AARCH64_SVE2_CODE( \
                 MICROARCHITECTURE_AARCH64_SVE2_ATTRIBUTE static inline RETURN_TYPE dispatchSVE2 ARG_LIST BODY); \
-        } \
-        template <typename... Args> \
-        static inline RETURN_TYPE NAME(Args &&... args) \
-        { \
-            switch (::MicroArchitecture::DISTPACHED_VARIANT) \
+            static inline decltype(dispatchDefault) & getDispatchedFunction() \
             { \
-                MICROARCHITECTURE_AARCH64_SVE2_CODE( \
-                    case ::MicroArchitecture::Aarch64VecVariant::SVE2 \
-                    : return MicroArchitecture::RuntimeDispatch::NAME::dispatchSVE2(::std::forward<Args>(args)...);) \
-                MICROARCHITECTURE_AARCH64_SVE_CODE( \
-                    case ::MicroArchitecture::Aarch64VecVariant::SVE \
-                    : return MicroArchitecture::RuntimeDispatch::NAME::dispatchSVE(::std::forward<Args>(args)...);) \
-                default: \
-                    return MicroArchitecture::RuntimeDispatch::NAME::dispatchDefault(::std::forward<Args>(args)...); \
+                switch (::MicroArchitecture::DISTPACHED_VARIANT) \
+                { \
+                    MICROARCHITECTURE_AARCH64_SVE2_CODE(case ::MicroArchitecture::Aarch64VecVariant::SVE2 : return dispatchSVE2;) \
+                    MICROARCHITECTURE_AARCH64_SVE_CODE(case ::MicroArchitecture::Aarch64VecVariant::SVE : return dispatchSVE;) \
+                    default: \
+                        return dispatchDefault; \
+                } \
             } \
-        }
+        } \
+        static inline decltype(MicroArchitecture::RuntimeDispatch::NAME::dispatchDefault) & NAME \
+            = MicroArchitecture::RuntimeDispatch::NAME::getDispatchedFunction();
 #endif
 }

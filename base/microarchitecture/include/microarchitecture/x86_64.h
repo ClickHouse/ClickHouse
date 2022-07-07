@@ -135,7 +135,7 @@ static const inline X86_64Level DISTPACHED_LEVEL
     = runtimeHasV4Support() ? X86_64Level::V4 : (runtimeHasV3Support() ? X86_64Level::V3 : X86_64Level::Default);
 /**
  * @brief Define a function that can be dispatched in runtime.
- * A few of extra branches will be introduced but it should be acceptable if the operation body is relative large.
+ * A few of extra instructions to locate the function will be introduced but it should be acceptable if the operation body is relative large.
  */
 #    define MICROARCHITECTURE_DISPATCHED(RETURN_TYPE, NAME, ARG_LIST, BODY) \
         namespace MicroArchitecture::RuntimeDispatch::NAME \
@@ -143,21 +143,18 @@ static const inline X86_64Level DISTPACHED_LEVEL
             static inline RETURN_TYPE dispatchDefault ARG_LIST BODY; \
             MICROARCHITECTURE_X86_64_V3_CODE(MICROARCHITECTURE_X86_64_V3_ATTRIBUTE static inline RETURN_TYPE dispatchV3 ARG_LIST BODY); \
             MICROARCHITECTURE_X86_64_V4_CODE(MICROARCHITECTURE_X86_64_V4_ATTRIBUTE static inline RETURN_TYPE dispatchV4 ARG_LIST BODY); \
-        } \
-        template <typename... Args> \
-        static inline RETURN_TYPE NAME(Args &&... args) \
-        { \
-            switch (::MicroArchitecture::DISTPACHED_LEVEL) \
+            static inline decltype(dispatchDefault) & getDispatchedFunction() \
             { \
-                MICROARCHITECTURE_X86_64_V4_CODE( \
-                    case ::MicroArchitecture::X86_64Level::V4 \
-                    : return MicroArchitecture::RuntimeDispatch::NAME::dispatchV4(::std::forward<Args>(args)...);) \
-                MICROARCHITECTURE_X86_64_V3_CODE( \
-                    case ::MicroArchitecture::X86_64Level::V3 \
-                    : return MicroArchitecture::RuntimeDispatch::NAME::dispatchV3(::std::forward<Args>(args)...);) \
-                default: \
-                    return MicroArchitecture::RuntimeDispatch::NAME::dispatchDefault(::std::forward<Args>(args)...); \
+                switch (::MicroArchitecture::DISTPACHED_LEVEL) \
+                { \
+                    MICROARCHITECTURE_X86_64_V3_CODE(case ::MicroArchitecture::X86_64Level::V4 : return dispatchV4;) \
+                    MICROARCHITECTURE_X86_64_V4_CODE(case ::MicroArchitecture::X86_64Level::V3 : return dispatchV3;) \
+                    default: \
+                        return dispatchDefault; \
+                } \
             } \
-        }
+        } \
+        static inline decltype(MicroArchitecture::RuntimeDispatch::NAME::dispatchDefault) & NAME \
+            = MicroArchitecture::RuntimeDispatch::NAME::getDispatchedFunction();
 #endif
 }
