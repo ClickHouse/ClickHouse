@@ -290,10 +290,10 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         if (auto query_log = context->getQueryLog())
             query_log->add(elem);
 
-    query_span->attribute_names.addAttribute("clickhouse.exception_code", elem.exception_code);
-    query_span->attribute_names.addAttribute("clickhouse.exception", elem.exception);
-    query_span->attribute_names.addAttribute("db.statement", elem.query);
-    query_span->attribute_names.addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+    query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
+    query_span->addAttribute("clickhouse.exception", elem.exception);
+    query_span->addAttribute("db.statement", elem.query);
+    query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
     query_span->finish();
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);

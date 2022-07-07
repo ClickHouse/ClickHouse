@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 namespace DB
 {
@@ -25,21 +26,6 @@ class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
 {
 public:
     using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
-};
-
-typedef std::shared_ptr<OpenTelemetrySpanLog> OpenTelemetrySpanLogPtr;
-
-struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
-{
-    OpenTelemetrySpanHolder(const OpenTelemetryTraceContext& _trace_context, OpenTelemetrySpanLogPtr _span_log, const std::string & _operation_name);
-    explicit OpenTelemetrySpanHolder(const std::string & _operation_name);
-    void addAttribute(const std::string& name, UInt64 value);
-    void addAttribute(const std::string& name, const std::string& value);
-    void addAttribute(const Exception & e);
-    void addAttribute(std::exception_ptr e);
-
-    void finish();
-    ~OpenTelemetrySpanHolder();
 };
 
 }

@@ -843,7 +843,11 @@ namespace
         query_context->setCurrentQueryId(query_info.query_id());
         query_scope.emplace(query_context);
 
-        thread_trace_context = query_context->startTracing("GRPCServer");
+        /// Set up tracing context for this query on current thread
+        thread_trace_context = std::make_unique<OpenTelemetryThreadTraceContextScope>("GRPCServer",
+                                                                                      query_context->getClientInfo().client_trace_context,
+                                                                                      query_context->getSettingsRef(),
+                                                                                      query_context->getOpenTelemetrySpanLog());
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();

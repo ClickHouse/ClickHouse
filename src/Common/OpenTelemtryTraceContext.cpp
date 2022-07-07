@@ -1,25 +1,16 @@
 #include "Interpreters/OpenTelemetrySpanLog.h"
 
 #include <random>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeUUID.h>
-
-#include <Common/hex.h>
+#include <base/getThreadId.h>
 #include <Common/Exception.h>
-#include <common/getThreadId.h>
-
+#include <Common/hex.h>
 
 namespace DB
 {
 
 thread_local OpenTelemetryThreadTraceContext current_thread_trace_context;
 
-void OpenTelemetrySpan::addAttribute(const std::string& name, UInt64 value)
+void OpenTelemetrySpan::addAttribute(const std::string & name, UInt64 value)
 {
     if (trace_id == UUID() || name.empty())
         return;
@@ -27,7 +18,7 @@ void OpenTelemetrySpan::addAttribute(const std::string& name, UInt64 value)
     this->attributes.push_back(Tuple{name, toString(value)});
 }
 
-void OpenTelemetrySpan::addAttribute(const std::string& name, const std::string& value)
+void OpenTelemetrySpan::addAttribute(const std::string & name, const std::string & value)
 {
     if (trace_id == UUID() || name.empty() || value.empty())
         return;
@@ -35,7 +26,7 @@ void OpenTelemetrySpan::addAttribute(const std::string& name, const std::string&
     this->attributes.push_back(Tuple{name, value});
 }
 
-void OpenTelemetrySpan::addAttribute(const std::string& name, std::function<std::string> value_supplier)
+void OpenTelemetrySpan::addAttribute(const std::string & name, std::function<std::string()> value_supplier)
 {
     if (!this->isTraceEnabled() || !value_supplier)
         return;
@@ -78,7 +69,8 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_
         this->parent_span_id = current_thread_trace_context.span_id;
         this->span_id = thread_local_rng(); // create a new id for this span
         this->operation_name = _operation_name;
-        this->start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        this->start_time_us
+            = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
         // set current span id to this
         current_thread_trace_context.span_id = this->span_id;
@@ -103,7 +95,8 @@ void OpenTelemetrySpanHolder::finish()
             return;
         }
 
-        this->finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        this->finish_time_us
+            = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
         log->add(OpenTelemetrySpanLogElement(*this));
     }
@@ -121,25 +114,7 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 }
 
 
-template <typename T>
-static T readHex(const char * data)
-{
-    T x{};
-
-    const char * end = data + sizeof(T) * 2;
-    while (data < end)
-    {
-        x *= 16;
-        x += unhex(*data);
-        ++data;
-    }
-
-    return x;
-}
-
-
-bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
-    std::string & error)
+bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent, std::string & error)
 {
     trace_id = 0;
 
@@ -148,8 +123,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     const int expected_length = strlen("xx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxx-xx");
     if (traceparent.length() != expected_length)
     {
-        error = fmt::format("unexpected length {}, expected {}",
-            traceparent.length(), expected_length);
+        error = fmt::format("unexpected length {}, expected {}", traceparent.length(), expected_length);
         return false;
     }
 
@@ -204,7 +178,8 @@ std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.
-   return fmt::format("00-{:016x}{:016x}-{:016x}-{:02x}",
+    return fmt::format(
+        "00-{:016x}{:016x}-{:016x}-{:02x}",
         trace_id.toUnderType().items[0],
         trace_id.toUnderType().items[1],
         span_id,
@@ -213,39 +188,59 @@ std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
         static_cast<uint8_t>(trace_flags));
 }
 
-const OpenTelemetryThreadTraceContext& OpenTelemetryThreadTraceContext::current()
+const OpenTelemetryThreadTraceContext & OpenTelemetryThreadTraceContext::current()
 {
     return current_thread_trace_context;
 }
 
 void OpenTelemetryThreadTraceContext::reset()
 {
-    this->trace_id = 0;
+    this->trace_id = {};
     this->span_id = 0;
     this->trace_flags = 0;
     this->tracestate = "";
     this->span_log.reset();
 }
 
-OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(const std::string& _operation_name,
-                                                                           const OpenTelemetryTraceContext& _parent_trace_context,
-                                                                           const std::weak_ptr<OpenTelemetrySpanLog>& _span_log)
+OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
+    const std::string & _operation_name,
+    OpenTelemetryTraceContext _parent_trace_context,
+    const Settings * settings_ptr,
+    const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
 {
-    if (_parent_trace_context.isTraceEnabled())
+    this->root_span.trace_id = {};
+    this->root_span.span_id = 0;
+
+    if (!_parent_trace_context.isTraceEnabled())
     {
-        this->root_span.trace_id = _parent_trace_context.trace_id;
-        this->root_span.parent_span_id = _parent_trace_context.span_id;
-        this->root_span.span_id = thread_local_rng();
-        this->root_span.operation_name = _operation_name;
-        this->root_span.start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    }
-    else
-    {
-        this->root_span.trace_id = 0;
-        this->root_span.span_id = 0;
+        if (settings_ptr == nullptr)
+            /// skip tracing context initialization on current thread
+            return;
+
+        // start the trace ourselves, with some configurable probability.
+        std::bernoulli_distribution should_start_trace{settings_ptr->opentelemetry_start_trace_probability};
+        if (!should_start_trace(thread_local_rng))
+            /// skip tracing context initialization on current thread
+            return;
+
+        while(_parent_trace_context.trace_id == UUID())
+        {
+            // make sure the random generated trace_id is not 0 which is an invalid id
+            _parent_trace_context.trace_id.toUnderType().items[0] = thread_local_rng(); //-V656
+            _parent_trace_context.trace_id.toUnderType().items[1] = thread_local_rng(); //-V656
+        }
+        _parent_trace_context.span_id = 0;
+        _parent_trace_context.trace_flags = 1;
     }
 
-    // set trace context on the thread local
+    this->root_span.trace_id = _parent_trace_context.trace_id;
+    this->root_span.parent_span_id = _parent_trace_context.span_id;
+    this->root_span.span_id = thread_local_rng();
+    this->root_span.operation_name = _operation_name;
+    this->root_span.start_time_us
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    /// set up trace context on current thread
     current_thread_trace_context = _parent_trace_context;
     current_thread_trace_context.span_id = this->root_span.span_id;
     current_thread_trace_context.span_log = _span_log;
@@ -253,18 +248,19 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(const
 
 OpenTelemetryThreadTraceContextScope::~OpenTelemetryThreadTraceContextScope()
 {
-    if (this->root_span.trace_id != UUID())
+    if (this->root_span.isTraceEnabled())
     {
         auto shared_span_log = current_thread_trace_context.span_log.lock();
         if (shared_span_log)
         {
             this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
-            this->root_span.finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            this->root_span.finish_time_us
+                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
         }
 
-        this->root_span.trace_id = 0;
+        this->root_span.trace_id = {};
     }
 
     // restore thread local variables
@@ -273,4 +269,3 @@ OpenTelemetryThreadTraceContextScope::~OpenTelemetryThreadTraceContextScope()
 
 
 }
-
