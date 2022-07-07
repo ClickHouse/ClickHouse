@@ -44,9 +44,17 @@ namespace
     }
 
 
-    AccessRights addImplicitAccessRights(const AccessRights & access)
+    AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
     {
-        auto modifier = [&](const AccessFlags & flags, const AccessFlags & min_flags_with_children, const AccessFlags & max_flags_with_children, std::string_view database, std::string_view table, std::string_view column) -> AccessFlags
+        AccessFlags max_flags;
+
+        auto modifier = [&](const AccessFlags & flags,
+                            const AccessFlags & min_flags_with_children,
+                            const AccessFlags & max_flags_with_children,
+                            std::string_view database,
+                            std::string_view table,
+                            std::string_view column,
+                            bool /* grant_option */) -> AccessFlags
         {
             size_t level = !database.empty() + !table.empty() + !column.empty();
             AccessFlags res = flags;
@@ -115,17 +123,55 @@ namespace
                 res |= show_databases;
             }
 
+            max_flags |= max_flags_with_children;
+
             return res;
         };
 
         AccessRights res = access;
         res.modifyFlags(modifier);
-        res.modifyFlagsWithGrantOption(modifier);
 
-        /// Anyone has access to the "system" and "information_schema" database.
-        res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+        if (access_control.doesSelectFromSystemDatabaseRequireGrant())
+        {
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "one");
+
+            if (max_flags.contains(AccessType::SHOW_USERS))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
+            
+            if (max_flags.contains(AccessType::SHOW_ROLES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "roles");
+
+            if (max_flags.contains(AccessType::SHOW_ROW_POLICIES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "row_policies");
+
+            if (max_flags.contains(AccessType::SHOW_SETTINGS_PROFILES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "settings_profiles");
+
+            if (max_flags.contains(AccessType::SHOW_QUOTAS))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+
+            if (max_flags.contains(AccessType::SHOW_COLUMNS))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "columns");
+
+            if (max_flags.contains(AccessType::SHOW_TABLES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "tables");
+
+            if (max_flags.contains(AccessType::SHOW_DATABASES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "databases");
+        }
+        else
+        {
+            /// Anyone has access to the "system" database.
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+        }
+
+        if (!access_control.doesSelectFromInformationSchemaDatabaseRequireGrant())
+        {
+            /// Anyone has access to the "information_schema" database.
+            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
+            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+        }
+
         return res;
     }
 
@@ -247,7 +293,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 void ContextAccess::calculateAccessRights() const
 {
     access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access));
+    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
 
     if (trace_log)
     {
@@ -342,7 +388,7 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
         auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
         full_access->is_full_access = true;
         full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*full_access->access));
+        full_access->access_with_implicit = full_access->access;
         return full_access;
     }();
     return res;
