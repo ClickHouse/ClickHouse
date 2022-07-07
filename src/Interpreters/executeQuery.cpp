@@ -344,6 +344,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
+    std::shared_ptr<OpenTelemetrySpanHolder> query_span = std::make_shared<OpenTelemetrySpanHolder>("query");
+
     const auto current_time = std::chrono::system_clock::now();
 
     auto & client_info = context->getClientInfo();
@@ -445,7 +447,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!internal)
         {
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast);
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
         }
 
         throw;
