@@ -1168,11 +1168,13 @@ void ZooKeeper::set(
 
 void ZooKeeper::list(
     const String & path,
+    ListRequestType list_request_type,
     ListCallback callback,
     WatchCallback watch)
 {
-    ZooKeeperListRequest request;
+    ZooKeeperFilteredListRequest request;
     request.path = path;
+    request.list_request_type = list_request_type;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));

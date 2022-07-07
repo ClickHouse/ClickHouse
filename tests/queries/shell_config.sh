@@ -143,3 +143,9 @@ function wait_for_queries_to_finish()
         fi
     done
 }
+
+function random_str()
+{
+    local n=$1 && shift
+    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
+}
