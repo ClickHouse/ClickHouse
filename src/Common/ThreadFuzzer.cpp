@@ -39,6 +39,8 @@
     #    define GLIBC_SYMVER "GLIBC_2.27"
     #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     #    define GLIBC_SYMVER "GLIBC_2.17"
+    #elif (defined(__S390X__) || defined(__s390x__))
+    #    define GLIBC_SYMVER "GLIBC_2.2"
     #else
     #    error Your platform is not supported.
     #endif

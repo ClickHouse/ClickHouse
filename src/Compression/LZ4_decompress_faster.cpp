@@ -81,7 +81,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined(__riscv)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__riscv) || defined(__s390x__)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -272,7 +272,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined (__riscv)
+#if defined(__x86_64__) || defined(__PPC__) || defined (__riscv) || defined (__s390x__)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
