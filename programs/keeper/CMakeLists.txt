@@ -75,7 +75,6 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecMultiple.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecNone.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecZSTD.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecDeflate.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionFactory.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/ICompressionCodec.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/LZ4_decompress_faster.cpp
@@ -104,11 +103,6 @@ if (BUILD_STANDALONE_KEEPER)
 
     # Remove some redundant dependencies
     target_compile_definitions (clickhouse-keeper PRIVATE -DKEEPER_STANDALONE_BUILD)
-    if (ENABLE_QPL)
-        set_source_files_properties(
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecDeflate.cpp
-            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-    endif ()
     target_include_directories(clickhouse-keeper PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../src") # uses includes from src directory
     target_include_directories(clickhouse-keeper PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/../../src/Core/include") # uses some includes from core
     target_include_directories(clickhouse-keeper PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/../../src") # uses some includes from common
@@ -132,9 +126,7 @@ if (BUILD_STANDALONE_KEEPER)
 
         ${LINK_RESOURCE_LIB_STANDALONE_KEEPER}
     )
-    if (TARGET ch_contrib::qpl)
-        target_link_libraries(clickhouse-keeper PRIVATE ch_contrib::qpl ${LINK_RESOURCE_LIB_STANDALONE_KEEPER})
-    endif ()
+
     add_dependencies(clickhouse-keeper clickhouse_keeper_configs)
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)
 
