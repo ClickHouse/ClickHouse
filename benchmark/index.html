@@ -101,6 +101,7 @@
             font-family: monospace;
             text-align: right;
             padding-left: 1rem;
+            white-space: nowrap;
         }
 
         th {
@@ -612,10 +613,10 @@ const data = [
 }
 ,
 {
-    "system": "clickhouse-local (partitioned)",
+    "system": "clickhouse-local (single)",
     "date": "2022-07-01",
     "machine": "c6a.4xlarge, 500gb gp2",
-    "cluster_size": "1",
+    "cluster_size": 1,
     "comment": "",
 
     "tags": ["SQL", "C++", "column-oriented", "embedded", "stateless", "ClickHouse derivative"],
@@ -915,8 +916,8 @@ const data = [
 
     "tags": ["SQL", "Java", "column-oriented"],
 
-    "load_time": null,
-    "data_size": null,
+    "load_time": 19620,
+    "data_size": 45188608472,
 
     "result": [
 [0.179351, 0.040782, 0.026180],
@@ -2446,7 +2447,7 @@ const data = [
 
 <div class="header stick-left">
     <h1>ClickBench — a Benchmark For Analytical DBMS</h1>
-    <a href="https://github.com/ClickHouse/ClickBench/">Methodology</a> | <a href="https://github.com/ClickHouse/ClickBench/">Reproduce and Validate the Results</a> | <a href="https://github.com/ClickHouse/ClickBench/">Add a System</a> | <a href="https://github.com/ClickHouse/ClickBench/">Report Mistake</a>
+    <a href="https://github.com/ClickHouse/ClickBench/">Methodology</a> | <a href="https://github.com/ClickHouse/ClickBench/">Reproduce and Validate the Results</a> | <a href="https://github.com/ClickHouse/ClickBench/">Add a System</a> | <a href="https://github.com/ClickHouse/ClickBench/">Report Mistake</a> | <a href="https://clickhouse.com/benchmark/hardware/">Hardware Benchmark</a>
 </div>
 
 <table class="selectors-container stick-left">
@@ -2477,10 +2478,10 @@ const data = [
     <tr>
         <th>Metric: </th>
         <td id="selectors_run">
-            <a class="selector" id="selector-metric-cold-run">Cold Run</a>
-            <a class="selector" id="selector-metric-hot-run">Hot Run</a>
-            <a class="selector" id="selector-metric-load-time">Load Time</a>
-            <a class="selector" id="selector-metric-storage-size">Storage Size</a>
+            <a class="selector" id="selector-metric-cold">Cold Run</a>
+            <a class="selector" id="selector-metric-hot">Hot Run</a>
+            <a class="selector" id="selector-metric-load">Load Time</a>
+            <a class="selector" id="selector-metric-size">Storage Size</a>
         </td>
     </tr>
 </table>
@@ -2492,7 +2493,7 @@ const data = [
                 System &amp; Machine
             </th>
             <th colspan="2">
-                Relative time (lower is better)
+                Relative <span id="time-or-size">time</span> (lower is better)
             </th>
         </tr>
     </thead>
@@ -2545,6 +2546,7 @@ function toggle(e, elem, selectors_map) {
     selectors_map[elem] = !selectors_map[elem];
     e.target.className = selectors_map[elem] ? 'selector selector-active' : 'selector';
     render();
+    updateHistory();
 }
 
 function toggleAll(e, selectors_map) {
@@ -2554,6 +2556,7 @@ function toggleAll(e, selectors_map) {
 
     Object.keys(selectors_map).map(k => { selectors_map[k] = new_value });
     render();
+    updateHistory();
 }
 
 unique_systems.map(elem => {
@@ -2598,7 +2601,28 @@ document.getElementById('select-all-types').addEventListener('click', e => toggl
 document.getElementById('select-all-machines').addEventListener('click', e => toggleAll(e, selectors.machine));
 document.getElementById('select-all-cluster-sizes').addEventListener('click', e => toggleAll(e, selectors.cluster_size));
 
+[...document.getElementById('selectors_run').querySelectorAll('a')].map(elem => elem.addEventListener('click', e => {
+    [...e.target.parentElement.querySelectorAll('a')].map(elem => { elem.className = elem == e.target ? 'selector selector-active' : 'selector' });
+}));
+
+document.getElementById('selector-metric-cold').addEventListener('click', e => { selectors.metric = 'cold'; render(); updateHistory(); });
+document.getElementById('selector-metric-hot').addEventListener('click', e => { selectors.metric = 'hot'; render(); updateHistory(); });
+document.getElementById('selector-metric-load').addEventListener('click', e => { selectors.metric = 'load'; render(); updateHistory(); });
+document.getElementById('selector-metric-size').addEventListener('click', e => { selectors.metric = 'size'; render(); updateHistory(); });
+
 selectors.queries = [...data[0].result.keys()].map(k => true);
+
+function updateSelectors() {
+    [...systems.childNodes].map(elem => { elem.className = selectors.system[elem.innerText] ? 'selector selector-active' : 'selector' });
+    [...types.childNodes].map(elem => { elem.className = selectors.type[elem.innerText] ? 'selector selector-active' : 'selector' });
+    [...machines.childNodes].map(elem => { elem.className = selectors.machine[elem.innerText] ? 'selector selector-active' : 'selector' });
+    [...cluster_sizes.childNodes].map(elem => { elem.className = selectors.cluster_size[elem.innerText] ? 'selector selector-active' : 'selector' });
+
+    [...document.getElementById('selectors_run').querySelectorAll('a')].map(elem => {
+        elem.className = elem.id == 'selector-metric-' + selectors.metric ? 'selector selector-active' : 'selector' });
+
+    [...document.querySelectorAll('.query-checkbox')].map((elem, i) => { elem.checked = selectors.queries[i] });
+}
 
 function clearElement(elem)
 {
@@ -2630,28 +2654,39 @@ function renderSummary(filtered_data) {
         [...Array(3).keys()].map(run_num =>
             Math.min(...filtered_data.map(elem => elem.result[query_num][run_num]).filter(x => x))));
 
-    const summaries = filtered_data.map(elem => {
-        console.log(elem.system);
+    const min_load_time = Math.min(...filtered_data.map(elem => elem.load_time).filter(x => x));
+    const min_data_size = Math.min(...filtered_data.map(elem => elem.data_size).filter(x => x));
 
-        const fallback_timing = missing_result_penalty * Math.max(missing_result_time, ...elem.result.map(timings => selectRun(timings)));
+    let summaries;
+    if (selectors.metric == 'load') {
+        summaries = filtered_data.map(elem => elem.load_time / min_load_time);
+        document.getElementById('time-or-size').innerText = 'time';
+    } else if (selectors.metric == 'size') {
+        summaries = filtered_data.map(elem => elem.data_size / min_data_size);
+        document.getElementById('time-or-size').innerText = 'size';
+    } else {
+        summaries = filtered_data.map(elem => {
+            const fallback_timing = missing_result_penalty * Math.max(missing_result_time, ...elem.result.map(timings => selectRun(timings)));
 
-        let accumulator = 0;
-        let used_queries = 0;
+            let accumulator = 0;
+            let used_queries = 0;
 
-        const no_queries_selected = selectors.queries.filter(x => x).length == 0;
+            const no_queries_selected = selectors.queries.filter(x => x).length == 0;
 
-        for (let i = 0; i < num_queries; ++i) {
-            if (no_queries_selected || selectors.queries[i]) {
-                const curr_timing = selectRun(elem.result[i]) ?? fallback_timing;
-                const baseline_timing = selectRun(baseline_data[i]);
-                const ratio = (constant_time_add + curr_timing) / (constant_time_add + baseline_timing);
-                accumulator += Math.log(ratio);
-                ++used_queries;
+            for (let i = 0; i < num_queries; ++i) {
+                if (no_queries_selected || selectors.queries[i]) {
+                    const curr_timing = selectRun(elem.result[i]) ?? fallback_timing;
+                    const baseline_timing = selectRun(baseline_data[i]);
+                    const ratio = (constant_time_add + curr_timing) / (constant_time_add + baseline_timing);
+                    accumulator += Math.log(ratio);
+                    ++used_queries;
+                }
             }
-        }
 
-        return Math.exp(accumulator / used_queries);
-    });
+            return Math.exp(accumulator / used_queries);
+        });
+        document.getElementById('time-or-size').innerText = 'time';
+    }
 
     const sorted_indices = [...summaries.keys()].sort((a, b) => summaries[a] - summaries[b]);
     const max_ratio = summaries[sorted_indices[sorted_indices.length - 1]];
@@ -2676,7 +2711,12 @@ function renderSummary(filtered_data) {
 
         let td_number = document.createElement('td');
         td_number.className = 'summary-number';
-        td_number.appendChild(document.createTextNode(`×${ratio.toFixed(2)}`));
+
+        const text = selectors.metric == 'load' ? (elem.load_time ? `${Math.round(elem.load_time)}s (×${ratio.toFixed(2)})` : 'stateless')
+            :  selectors.metric == 'size' ? `${(elem.data_size / 1024 / 1024 / 1024).toFixed(2)} GiB (×${ratio.toFixed(2)})`
+            : `×${ratio.toFixed(2)}`;
+
+        td_number.appendChild(document.createTextNode(text));
 
         let td_bar = document.createElement('td');
         td_bar.className = 'summary-bar-cell';
@@ -2695,6 +2735,42 @@ function renderSummary(filtered_data) {
     });
 
     return [sorted_indices, baseline_data];
+}
+
+function colorize(elem, ratio) {
+    let [r, g, b] = [0, 0, 0];
+
+    /// ratio less than 1 - green
+    /// ratio from 1 to 10 - green to orange
+    /// ratio from 10 to 100 - orange to red
+    /// ratio from 100 to 1000 to infinity - red to brown to black
+
+    if (ratio !== null) {
+        if (ratio < 1) {
+            r = 232;
+            g = 255;
+            b = 232;
+        } else if (ratio <= 1) {
+            g = 255;
+        } else if (ratio <= 2) {
+            g = 255;
+            r = (ratio - 1) * 255;
+        } else if (ratio <= 10) {
+            g = (10 - ratio) / 9 * 255;
+            r = 255;
+        } else {
+            r = (1 - ((ratio - 10) / ((ratio - 10) + 1000))) * 255;
+        }
+    }
+
+    elem.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+    if (ratio === null || ratio > 10) {
+        elem.style.color = 'white';
+    }
+
+    if (ratio == 1) {
+        elem.style.fontWeight = 'bold';
+    }
 }
 
 function render() {
@@ -2732,6 +2808,7 @@ function render() {
             [...document.querySelectorAll('.query-checkbox')].map(elem => { elem.checked = e.target.checked });
             selectors.queries.map((_, i) => { selectors.queries[i] = e.target.checked });
             renderSummary(filtered_data);
+            updateHistory();
         });
         th_checkbox.appendChild(checkbox);
         details_head.appendChild(th_checkbox);
@@ -2744,6 +2821,54 @@ function render() {
         th.appendChild(document.createTextNode(`${elem.system}\n(${elem.machine})`));
         details_head.appendChild(th);
     });
+
+    {
+        let tr = document.createElement('tr');
+        tr.className = 'shadow';
+
+        let td_title = document.createElement('td');
+        td_title.colSpan = 2;
+        td_title.appendChild(document.createTextNode('Load time: '));
+        tr.appendChild(td_title);
+
+        sorted_indices.map(idx => {
+            const curr_timing = filtered_data[idx].load_time;
+            const baseline_timing = Math.min(...filtered_data.map(elem => elem.load_time).filter(x => x));
+            const ratio = curr_timing / baseline_timing;
+
+            let td = document.createElement('td');
+            td.appendChild(document.createTextNode(curr_timing ? `${curr_timing.toFixed(2)} (×${ratio.toFixed(2)})` : '0'));
+
+            colorize(td, ratio);
+            tr.appendChild(td);
+        });
+
+        details_body.appendChild(tr);
+    }
+
+    {
+        let tr = document.createElement('tr');
+        tr.className = 'shadow';
+
+        let td_title = document.createElement('td');
+        td_title.colSpan = 2;
+        td_title.appendChild(document.createTextNode('Data size: '));
+        tr.appendChild(td_title);
+
+        sorted_indices.map(idx => {
+            const curr_size = filtered_data[idx].data_size;
+            const baseline_size = Math.min(...filtered_data.map(elem => elem.data_size).filter(x => x));
+            const ratio = curr_size / baseline_size;
+
+            let td = document.createElement('td');
+            td.appendChild(document.createTextNode(curr_size ? `${(curr_size / 1024 / 1024 / 1024).toFixed(2)} GiB (×${ratio.toFixed(2)})` : '0'));
+
+            colorize(td, ratio);
+            tr.appendChild(td);
+        });
+
+        details_body.appendChild(tr);
+    }
 
     const num_queries = filtered_data[0].result.length;
 
@@ -2759,57 +2884,24 @@ function render() {
         checkbox.addEventListener('change', e => {
             selectors.queries[query_num] = e.target.checked;
             renderSummary(filtered_data);
+            updateHistory();
         });
         td_checkbox.appendChild(checkbox);
         tr.appendChild(td_checkbox);
 
         let td_query_num = document.createElement('td');
         td_query_num.appendChild(document.createTextNode(`Q${query_num}. `));
-
         tr.appendChild(td_query_num);
 
         sorted_indices.map(idx => {
             const curr_timing = selectRun(filtered_data[idx].result[query_num]);
             const baseline_timing = selectRun(baseline_data[query_num]);
-            const ratio = (constant_time_add + curr_timing) / (constant_time_add + baseline_timing);
+            const ratio = curr_timing !== null ? (constant_time_add + curr_timing) / (constant_time_add + baseline_timing) : null;
 
             let td = document.createElement('td');
             td.appendChild(document.createTextNode(curr_timing !== null ? `${curr_timing.toFixed(2)} (×${ratio.toFixed(2)})` : '☠'));
 
-            let [r, g, b] = [0, 0, 0];
-
-            /// ratio less than 1 - green
-            /// ratio from 1 to 10 - green to orange
-            /// ratio from 10 to 100 - orange to red
-            /// ratio from 100 to 1000 to infinity - red to brown to black
-
-            if (curr_timing !== null) {
-                if (ratio < 1) {
-                    r = 232;
-                    g = 255;
-                    b = 232;
-                } else if (ratio <= 1) {
-                    g = 255;
-                } else if (ratio <= 2) {
-                    g = 255;
-                    r = (ratio - 1) * 255;
-                } else if (ratio <= 10) {
-                    g = (10 - ratio) / 9 * 255;
-                    r = 255;
-                } else {
-                    r = (1 - ((ratio - 10) / ((ratio - 10) + 1000))) * 255;
-                }
-            }
-
-            td.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-            if (curr_timing === null || ratio > 10) {
-                td.style.color = 'white';
-            }
-
-            if (ratio == 1) {
-                td.style.fontWeight = 'bold';
-            }
-
+            colorize(td, ratio);
             tr.appendChild(td);
         });
 
@@ -2822,7 +2914,26 @@ function render() {
     }
 }
 
+function updateHistory() {
+    history.pushState(selectors, '',
+        window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(selectors)));
+}
+
+window.onpopstate = function(event) {
+    if (!event.state) { return; }
+    selectors = event.state;
+    render();
+    updateSelectors();
+};
+
+if (window.location.hash) {
+    try {
+        selectors = JSON.parse(atob(window.location.hash.substring(1)));
+    } catch {}
+}
+
 render();
+updateSelectors();
 
 </script>
 </body>
