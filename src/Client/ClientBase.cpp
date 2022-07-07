@@ -52,6 +52,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -699,16 +700,21 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    if (fake_drop)
+    if (fake_drop && parsed_query->as<ASTDropQuery>())
+        return;
+
+    auto query = query_to_execute;
+
+    if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
     {
-        if (parsed_query->as<ASTDropQuery>())
-            return;
+        /// Rewrite query if new settings were added.
+        if (addMergeTreeSettings(*parsed_query->as<ASTCreateQuery>()))
+            query = serializeAST(*parsed_query);
     }
 
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
-    auto query = query_to_execute;
     if (!query_parameters.empty())
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -1892,6 +1898,41 @@ void ClientBase::initQueryIdFormats()
 }
 
 
+bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
+{
+    if (ast_create.attach
+        || !ast_create.storage
+        || !ast_create.storage->isExtendedStorageDefinition()
+        || !ast_create.storage->engine
+        || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
+        return false;
+
+    auto all_changed = cmd_merge_tree_settings.allChanged();
+    if (all_changed.begin() == all_changed.end())
+        return false;
+
+    if (!ast_create.storage->settings)
+    {
+        auto settings_ast = std::make_shared<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        ast_create.storage->set(ast_create.storage->settings, settings_ast);
+    }
+
+    auto & storage_settings = *ast_create.storage->settings;
+    bool added_new_setting = false;
+
+    for (const auto & setting : all_changed)
+    {
+        if (!storage_settings.changes.tryGet(setting.getName()))
+        {
+            storage_settings.changes.emplace_back(setting.getName(), setting.getValue());
+            added_new_setting = true;
+        }
+    }
+
+    return added_new_setting;
+}
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
@@ -2100,10 +2141,18 @@ void ClientBase::showClientVersion()
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    if (allow_repeated_settings)
-        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
-    else
-        cmd_settings.addProgramOptions(options_description.main_description.value());
+    auto add_program_options = [&](auto & to_settings)
+    {
+        if (allow_repeated_settings)
+            to_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+        else
+            to_settings.addProgramOptions(options_description.main_description.value());
+    };
+
+    add_program_options(cmd_settings);
+    if (allow_merge_tree_settings)
+        add_program_options(cmd_merge_tree_settings);
+
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();

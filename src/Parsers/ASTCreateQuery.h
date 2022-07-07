@@ -31,6 +31,8 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    bool isExtendedStorageDefinition() const;
 };
 
 

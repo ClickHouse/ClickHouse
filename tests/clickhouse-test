@@ -436,6 +436,18 @@ class SettingsRandomizer:
         return random_settings
 
 
+class MergeTreeSettingsRandomizer:
+    settings = {"index_granularity": lambda: random.randint(1, 65536)}
+
+    @staticmethod
+    def get_random_settings(args):
+        random_settings = []
+        for setting, generator in MergeTreeSettingsRandomizer.settings.items():
+            if setting not in args.changed_merge_tree_settings:
+                random_settings.append(f"{setting}={generator()}")
+        return random_settings
+
+
 class TestResult:
     def __init__(
         self,
@@ -542,8 +554,8 @@ class TestCase:
 
         return testcase_args
 
-    def cli_random_settings(self) -> str:
-        return " ".join([f"--{setting}" for setting in self.random_settings])
+    def cli_format_settings(self, settings_list) -> str:
+        return " ".join([f"--{setting}" for setting in settings_list])
 
     def add_random_settings(self, args, client_options):
         if self.tags and "no-random-settings" in self.tags:
@@ -558,7 +570,10 @@ class TestCase:
                 self.base_url_params + "&" + "&".join(self.random_settings)
             )
 
-        new_options = f" --allow_repeated_settings {self.cli_random_settings()}"
+        new_options = f" --allow_repeated_settings {self.cli_format_settings(self.random_settings)}"
+        if args.randomize_merge_tree_settings:
+            new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.merge_tree_random_settings)}"
+
         os.environ["CLICKHOUSE_CLIENT_OPT"] = (
             self.base_client_options + new_options + " "
         )
@@ -574,9 +589,11 @@ class TestCase:
         if args.no_random_settings:
             return description
 
-        return (
-            f"{description}\nSettings used in the test: {self.cli_random_settings()}\n"
-        )
+        description += f"\nSettings used in the test: {self.cli_format_settings(self.random_settings)}"
+        if args.randomize_merge_tree_settings:
+            description += f"\nMergeTreeSettings used in test: {self.cli_format_settings(self.merge_tree_random_settings)}"
+
+        return description + "\n"
 
     def __init__(self, suite, case: str, args, is_concurrent: bool):
         self.case: str = case  # case file name
@@ -601,11 +618,16 @@ class TestCase:
         self.runs_count = 0
 
         self.random_settings = SettingsRandomizer.get_random_settings()
+        self.merge_tree_random_settings = (
+            MergeTreeSettingsRandomizer.get_random_settings(args)
+        )
+
         self.base_url_params = (
             os.environ["CLICKHOUSE_URL_PARAMS"]
             if "CLICKHOUSE_URL_PARAMS" in os.environ
             else ""
         )
+
         self.base_client_options = (
             os.environ["CLICKHOUSE_CLIENT_OPT"]
             if "CLICKHOUSE_CLIENT_OPT" in os.environ
@@ -710,7 +732,9 @@ class TestCase:
 
         return None
 
-    def process_result_impl(self, proc, stdout: str, stderr: str, debug_log: str, total_time: float):
+    def process_result_impl(
+        self, proc, stdout: str, stderr: str, debug_log: str, total_time: float
+    ):
         description = ""
 
         if proc:
@@ -1038,7 +1062,9 @@ class TestCase:
                 server_logs_level, client_options
             )
 
-            result = self.process_result_impl(proc, stdout, stderr, debug_log, total_time)
+            result = self.process_result_impl(
+                proc, stdout, stderr, debug_log, total_time
+            )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(
@@ -1530,7 +1556,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.RELEASE)
 
     value = clickhouse_execute(
-        args, "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'"
+        args,
+        "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'",
     )
     if value == b"1":
         result.append(BuildFlags.ORDINARY_DATABASE)
@@ -1560,6 +1587,19 @@ def collect_build_flags(args):
         result.append(f"cpu-{system_processor.decode().lower()}")
 
     return result
+
+
+def collect_changed_merge_tree_settings(args):
+    changed_settings = (
+        clickhouse_execute(
+            args,
+            "SELECT name FROM system.merge_tree_settings WHERE changed",
+        )
+        .strip()
+        .splitlines()
+    )
+
+    return list(map(lambda s: s.decode(), changed_settings))
 
 
 def check_table_column(args, database, table, column):
@@ -1634,7 +1674,9 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
 
                 queue.close()
         except Full:
-            print("Couldn't put test to the queue within timeout. Server probably hung.")
+            print(
+                "Couldn't put test to the queue within timeout. Server probably hung."
+            )
             print_stacktraces()
             queue.close()
 
@@ -1691,6 +1733,7 @@ def main(args):
         raise Exception(msg)
 
     args.build_flags = collect_build_flags(args)
+    args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
     args.suppport_system_processes_is_all_data_sent = check_table_column(
         args, "system", "processes", "is_all_data_sent"
     )
@@ -2033,6 +2076,12 @@ if __name__ == "__main__":
         "--run-by-hash-total",
         type=int,
         help="Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num",
+    )
+    parser.add_argument(
+        "--randomize-merge-tree-settings",
+        action="store_true",
+        default=False,
+        help="Enable MergeTree settings randomization",
     )
 
     group = parser.add_mutually_exclusive_group(required=False)
