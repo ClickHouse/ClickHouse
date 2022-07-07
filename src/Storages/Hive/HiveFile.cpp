@@ -82,10 +82,11 @@ std::optional<size_t> IHiveFile::getRows()
     if (!has_init_rows)
     {
         std::lock_guard lock(mutex);
-        if (has_init_rows)
-            return rows;
-        rows = getRowsImpl();
-        has_init_rows = true;
+        if (!has_init_rows)
+        {
+            rows = getRowsImpl();
+            has_init_rows = true;
+        }
     }
     return rows;
 }
