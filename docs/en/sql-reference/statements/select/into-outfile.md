@@ -6,7 +6,7 @@ sidebar_label: INTO OUTFILE
 
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 
-Compressed files are supported. Compression type is detected by the extension of the file name (mode `'auto'` is used by default). Or it can be explicitly specified in a `COMPRESSION` clause. Compression level for a certain compression type can be specified in a `LEVEL` clause.
+Compressed files are supported. Compression type is detected by the extension of the file name (mode `'auto'` is used by default). Or it can be explicitly specified in a `COMPRESSION` clause. The compression level for a certain compression type can be specified in a `LEVEL` clause.
 
 **Syntax**
 

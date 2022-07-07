@@ -539,8 +539,8 @@ try
                 {
                     const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
                     bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
-
                     auto range = getCompressionLevelRange(compression_method);
+
                     if (!res || compression_level < range.first || compression_level > range.second)
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
