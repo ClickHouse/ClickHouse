@@ -16,10 +16,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <Poco/Logger.h>
-#include "Common/logger_useful.h"
-#include "Core/ColumnNumbers.h"
-#include "DataTypes/IDataType.h"
 
 namespace DB
 {
@@ -57,11 +53,8 @@ static inline void convertToNullable(Block & header, const Names & keys)
     {
         auto & column = header.getByName(key);
 
-        if (!isAggregateFunction(column.type))
-        {
-            column.type = makeNullable(column.type);
-            column.column = makeNullable(column.column);
-        }
+        column.type = makeNullableSafe(column.type);
+        column.column = makeNullableSafe(column.column);
     }
 }
 
@@ -69,18 +62,7 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 {
     auto header = appendGroupingSetColumn(input_header);
     if (use_nulls)
-    {
-        for (const auto & key : keys)
-        {
-            auto & column = header.getByName(key);
-
-            if (!isAggregateFunction(column.type))
-            {
-                column.type = makeNullable(column.type);
-                column.column = makeNullable(column.column);
-            }
-        }
-    }
+        convertToNullable(header, keys);
     return header;
 }
 
@@ -269,6 +251,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                 const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
 
+                auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
                 for (size_t i = 0; i < output_header.columns(); ++i)
                 {
                     auto & col = output_header.getByPosition(i);
@@ -286,22 +269,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     else
                     {
                         const auto * column_node = dag->getIndex()[header.getPositionByName(col.name)];
-                        if (isAggregateFunction(column_node->result_type) || !group_by_use_nulls)
-                        {
-                            index.push_back(column_node);
-                        }
+                        if (group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+                            index.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
                         else
-                        {
-                            const auto * node = &dag->addFunction(FunctionFactory::instance().get("toNullable", nullptr), { column_node }, col.name);
-                            index.push_back(node);
-                        }
+                            index.push_back(column_node);
                     }
                 }
 
                 dag->getIndex().swap(index);
                 auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
-                LOG_DEBUG(&Poco::Logger::get("AggregatingStep"), "Header for GROUPING SET #{}: {}", set_counter, transform->getOutputPort().getHeader().dumpStructure());
 
                 connect(*ports[set_counter], transform->getInputPort());
                 processors.emplace_back(std::move(transform));

@@ -582,7 +582,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
-        LOG_DEBUG(&Poco::Logger::get("InterpreterSelectQuery"), "Result header: {}", result_header.dumpStructure());
     };
 
     analyze(shouldMoveToPrewhere());
@@ -789,7 +788,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (context->getSettingsRef().group_by_use_nulls)
         {
             for (const auto & key : query_analyzer->aggregationKeys())
-                res.insert({nullptr, makeNullable(header.getByName(key.name).type), key.name});
+                res.insert({nullptr, makeNullableSafe(header.getByName(key.name).type), key.name});
         }
         else
         {

@@ -221,5 +221,6 @@ private:
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);
+ColumnPtr makeNullableSafe(const ColumnPtr & column);
 
 }

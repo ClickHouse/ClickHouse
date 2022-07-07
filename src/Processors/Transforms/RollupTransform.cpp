@@ -1,9 +1,7 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Poco/Logger.h>
-#include "Common/logger_useful.h"
-#include "Columns/ColumnNullable.h"
+#include <Columns/ColumnNullable.h>
 
 namespace DB
 {
@@ -25,7 +23,6 @@ GroupByModifierTransform::GroupByModifierTransform(Block header, AggregatingTran
         auto output_aggregator_params = params->params;
         output_aggregator = std::make_unique<Aggregator>(intermediate_header, output_aggregator_params);
     }
-    LOG_DEBUG(&Poco::Logger::get("GroupByModifierTransform"), "Intermediate header: {}", intermediate_header.dumpStructure());
 }
 
 void GroupByModifierTransform::consume(Chunk chunk)
@@ -45,7 +42,7 @@ void GroupByModifierTransform::mergeConsumed()
     if (use_nulls)
     {
         for (auto key : keys)
-            columns[key] = makeNullable(columns[key]);
+            columns[key] = makeNullableSafe(columns[key]);
     }
     current_chunk = Chunk{ columns, rows };
 

@@ -3,7 +3,6 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Aggregator.h>
-#include "Core/ColumnNumbers.h"
 
 namespace DB
 {

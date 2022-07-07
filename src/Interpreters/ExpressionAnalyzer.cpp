@@ -41,12 +41,11 @@
 
 #include <Dictionaries/DictionaryStructure.h>
 
-#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
-#include "Columns/ColumnNullable.h"
-#include "Core/ColumnsWithTypeAndName.h"
-#include "DataTypes/IDataType.h"
+#include <Columns/ColumnNullable.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
@@ -68,7 +67,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -399,7 +397,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             }
                         }
 
-                        NameAndTypePair key{column_name, use_nulls ? makeNullable(node->result_type) : node->result_type };
+                        NameAndTypePair key{column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                         grouping_set_list.push_back(key);
 
@@ -453,7 +451,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         }
                     }
 
-                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullable(node->result_type) : node->result_type };
+                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
@@ -1446,7 +1444,7 @@ void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & befor
         if (isAggregateFunction(source_column.type))
             result_columns.push_back(source_column);
         else
-            result_columns.emplace_back(makeNullable(source_column.type), source_column.name);
+            result_columns.emplace_back(makeNullableSafe(source_column.type), source_column.name);
     }
     ExpressionActionsChain::Step & step = chain.lastStep(before_aggregation->getNamesAndTypesList());
 
@@ -1632,8 +1630,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-    LOG_DEBUG(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "Before output: {}", step.actions()->getNamesAndTypesList().toString());
-
     NamesWithAliases result_columns;
 
     ASTs asts = select_query->select()->children;
@@ -1675,11 +1671,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     }
 
     auto actions = chain.getLastActions();
-    LOG_DEBUG(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "Before projection: {}", actions->getNamesAndTypesList().toString());
-
     actions->project(result_columns);
-    LOG_DEBUG(&Poco::Logger::get("SelectQueryExpressionAnalyzer"), "After projection: {}", actions->getNamesAndTypesList().toString());
-
     return actions;
 }
 
@@ -1903,7 +1895,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
-            before_aggregation_with_nullable = chain.getLastActions();
             if (settings.group_by_use_nulls)
                 query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
 
