@@ -317,14 +317,14 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
     return false;
 }
 
-AllocationTrace MemoryTracker::realloc(Int64 old_size, Int64 new_size)
-{
-    Int64 addition = new_size - old_size;
-    if (addition > 0)
-        return alloc(addition);
-    else
-        return free(-addition);
-}
+// AllocationTrace MemoryTracker::realloc(Int64 old_size, Int64 new_size)
+// {
+//     Int64 addition = new_size - old_size;
+//     if (addition > 0)
+//         return alloc(addition);
+//     else
+//         return free(-addition);
+// }
 
 AllocationTrace MemoryTracker::free(Int64 size)
 {
