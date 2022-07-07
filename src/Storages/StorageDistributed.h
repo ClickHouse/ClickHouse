@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -118,6 +119,9 @@ public:
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+
+    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
+    std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const std::shared_ptr<StorageDistributed> & src_distributed, const ASTInsertQuery & query, ContextPtr context);
 
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
