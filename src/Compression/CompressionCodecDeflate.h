@@ -17,10 +17,10 @@ public:
     DeflateJobHWPool();
     ~DeflateJobHWPool();
     static DeflateJobHWPool & instance();
-    static constexpr auto jobPoolSize = 1024;
+    static constexpr auto JOB_POOL_SIZE = 1024;
     static constexpr qpl_path_t PATH = qpl_path_hardware;
-    static qpl_job * jobPool[jobPoolSize];
-    static std::atomic_bool jobLock[jobPoolSize];
+    static qpl_job * jobPool[JOB_POOL_SIZE];
+    static std::atomic_bool jobLocks[JOB_POOL_SIZE];
     bool jobPoolEnabled;
 
     bool jobPoolReady()
@@ -32,17 +32,17 @@ public:
         if (jobPoolEnabled)
         {
             uint32_t retry = 0;
-            auto index = random(jobPoolSize);
+            auto index = random(JOB_POOL_SIZE);
             while (tryLockJob(index) == false)
             {
-                index = random(jobPoolSize);
+                index = random(JOB_POOL_SIZE);
                 retry++;
-                if (retry > jobPoolSize)
+                if (retry > JOB_POOL_SIZE)
                 {
                     return nullptr;
                 }
             }
-            *job_id = jobPoolSize - index;
+            *job_id = JOB_POOL_SIZE - index;
             return jobPool[index];
         }
         else
@@ -54,7 +54,7 @@ public:
     {
         if (jobPoolEnabled)
         {
-            uint32_t index = jobPoolSize - job_id;
+            uint32_t index = JOB_POOL_SIZE - job_id;
             ReleaseJobObjectGuard _(index);
             return jobPool[index];
         }
@@ -67,7 +67,7 @@ public:
     {
         if (jobPoolEnabled)
         {
-            uint32_t index = jobPoolSize - job_id;
+            uint32_t index = JOB_POOL_SIZE - job_id;
             return jobPool[index];
         }
         else
@@ -123,14 +123,14 @@ private:
             const int32_t size = get_job_size_helper();
             if (size < 0)
                 return -1;
-            for (int i = 0; i < jobPoolSize; ++i)
+            for (int i = 0; i < JOB_POOL_SIZE; ++i)
             {
                 jobPool[i] = nullptr;
                 qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(new uint8_t[size]);
                 if (init_job_helper(qpl_job_ptr) < 0)
                     return -1;
                 jobPool[i] = qpl_job_ptr;
-                jobLock[i].store(false);
+                jobLocks[i].store(false);
             }
             initialized = true;
         }
@@ -140,13 +140,13 @@ private:
     bool tryLockJob(size_t index)
     {
         bool expected = false;
-        return jobLock[index].compare_exchange_strong(expected, true);
+        return jobLocks[index].compare_exchange_strong(expected, true);
     }
 
     void destroyJobPool()
     {
         const uint32_t size = get_job_size_helper();
-        for (uint32_t i = 0; i < jobPoolSize && size > 0; ++i)
+        for (uint32_t i = 0; i < JOB_POOL_SIZE && size > 0; ++i)
         {
             while (tryLockJob(i) == false)
             {
@@ -157,7 +157,7 @@ private:
                 delete[] jobPool[i];
             }
             jobPool[i] = nullptr;
-            jobLock[i].store(false);
+            jobLocks[i].store(false);
         }
     }
 
@@ -172,7 +172,7 @@ private:
         }
         ~ReleaseJobObjectGuard()
         {
-            jobLock[index].store(false);
+            jobLocks[index].store(false);
         }
     };
     Poco::Logger * log;
