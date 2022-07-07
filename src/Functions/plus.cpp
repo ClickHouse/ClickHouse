@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <Common/register_objects.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
@@ -48,7 +49,7 @@ struct PlusImpl
 struct NamePlus { static constexpr auto name = "plus"; };
 using FunctionPlus = BinaryArithmeticOverloadResolver<PlusImpl, NamePlus>;
 
-void registerFunctionPlus(FunctionFactory & factory)
+REGISTER_FUNCTION(Plus)
 {
     factory.registerFunction<FunctionPlus>();
 }

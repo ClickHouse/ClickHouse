@@ -1,6 +1,7 @@
 #include "config_core.h"
 
 #include <Functions/FunctionFactory.h>
+#include <Common/register_objects.h>
 
 
 namespace DB
@@ -74,6 +75,9 @@ void registerFunctionShowCertificate(FunctionFactory &);
 void registerFunctions()
 {
     auto & factory = FunctionFactory::instance();
+
+    for (auto & [_, reg] : FunctionRegisterMap::instance())
+        reg(factory);
 
     registerFunctionsArithmetic(factory);
     registerFunctionsArray(factory);

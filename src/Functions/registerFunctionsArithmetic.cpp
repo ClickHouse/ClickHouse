@@ -3,7 +3,7 @@ namespace DB
 
 class FunctionFactory;
 
-void registerFunctionPlus(FunctionFactory & factory);
+// void registerFunctionPlus(FunctionFactory & factory);
 void registerFunctionMinus(FunctionFactory & factory);
 void registerFunctionMultiply(FunctionFactory & factory);
 void registerFunctionDivide(FunctionFactory & factory);
@@ -46,7 +46,7 @@ void registerFunctionZTest(FunctionFactory & factory);
 
 void registerFunctionsArithmetic(FunctionFactory & factory)
 {
-    registerFunctionPlus(factory);
+    // registerFunctionPlus(factory);
     registerFunctionMinus(factory);
     registerFunctionMultiply(factory);
     registerFunctionDivide(factory);
