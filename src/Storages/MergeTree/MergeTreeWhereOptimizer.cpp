@@ -38,6 +38,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
+    , pk_names{NameSet(
+          metadata_snapshot->getPrimaryKey().column_names.begin(), metadata_snapshot->getPrimaryKey().column_names.end())}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
@@ -193,8 +195,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
             && !cannotBeMoved(node, is_final)
-            /// Do not take into consideration the conditions consisting only of the first primary key column
-            && !hasPrimaryKeyAtoms(node)
+            /// Do not take into consideration the conditions consisting of column that not belong to the primary key columns
+            && isColumnAllPrimaryKey(node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
@@ -271,7 +273,6 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         /// Move the best condition to PREWHERE if it is viable.
 
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
-
         if (!it->viable)
             break;
 
@@ -289,7 +290,6 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
             moved_enough = total_number_of_moved_columns > 0
                 && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
         }
-
         if (moved_enough)
             break;
 
@@ -320,48 +320,21 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     return size;
 }
 
-
-bool MergeTreeWhereOptimizer::hasPrimaryKeyAtoms(const ASTPtr & ast) const
+bool MergeTreeWhereOptimizer::isColumnAllPrimaryKey(const ASTPtr & ast) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
-
-        if ((func->name == "not" && 1 == args.size()) || func->name == "and" || func->name == "or")
-        {
-            for (const auto & arg : args)
-                if (hasPrimaryKeyAtoms(arg))
-                    return true;
-
-            return false;
-        }
+        for (const auto & arg : args)
+            if (!isColumnAllPrimaryKey(arg))
+                return false;
+        return true;
     }
 
-    return isPrimaryKeyAtom(ast);
-}
-
-
-bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
-{
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        if (!KeyCondition::atom_map.contains(func->name))
-            return false;
-
-        const auto & args = func->arguments->children;
-        if (args.size() != 2)
-            return false;
-
-        const auto & first_arg_name = args.front()->getColumnName();
-        const auto & second_arg_name = args.back()->getColumnName();
-
-        if ((first_primary_key_column == first_arg_name && isConstant(args[1]))
-            || (first_primary_key_column == second_arg_name && isConstant(args[0]))
-            || (first_primary_key_column == first_arg_name && functionIsInOrGlobalInOperator(func->name)))
-            return true;
-    }
-
-    return false;
+    if (isConstant(ast) || pk_names.contains(ast->getColumnName()))
+        return true;
+    else
+        return false;
 }
 
 
