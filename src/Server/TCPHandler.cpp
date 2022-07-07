@@ -197,6 +197,7 @@ void TCPHandler::runImpl()
 
         /// Initialized later.
         std::optional<CurrentThread::QueryScope> query_scope;
+        OpenTelemetryThreadTraceContextScopePtr thread_trace_context;
 
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
@@ -221,6 +222,8 @@ void TCPHandler::runImpl()
               */
             if (state.empty() && state.part_uuids_to_ignore && !receivePacket())
                 continue;
+
+            thread_trace_context = query_context->startTracing("TCPHandler");
 
             query_scope.emplace(query_context);
 
@@ -396,6 +399,7 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
+            thread_trace_context.reset();
         }
         catch (const Exception & e)
         {
@@ -458,6 +462,9 @@ void TCPHandler::runImpl()
         {
             if (exception)
             {
+                if (thread_trace_context)
+                    thread_trace_context->root_span.addAttribute(exception.value());
+
                 try
                 {
                     /// Try to send logs to client, but it could be risky too
@@ -501,6 +508,7 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
+            thread_trace_context.reset();
         }
         catch (...)
         {
