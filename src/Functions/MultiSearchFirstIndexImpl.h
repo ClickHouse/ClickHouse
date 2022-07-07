@@ -53,15 +53,15 @@ struct MultiSearchFirstIndexImpl
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
-            size_t prev_offset = 0;
+            size_t prev_haystack_offset = 0;
             for (size_t j = 0; j < haystack_size; ++j)
             {
-                const auto * haystack = &haystack_data[prev_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
+                const auto * haystack = &haystack_data[prev_haystack_offset];
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
                 /// hasMoreToSearch traverse needles in increasing order
                 if (iteration == 0 || res[j] == 0)
                     res[j] = searcher.searchOneFirstIndex(haystack, haystack_end);
-                prev_offset = haystack_offsets[j];
+                prev_haystack_offset = haystack_offsets[j];
             }
             ++iteration;
         }
@@ -83,33 +83,26 @@ struct MultiSearchFirstIndexImpl
         const size_t haystack_size = haystack_offsets.size();
         res.resize(haystack_size);
 
-        size_t prev_offset = 0;
+        size_t prev_haystack_offset = 0;
+        size_t prev_needles_offset = 0;
 
         const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
-        const ColumnString::Offsets & needles_data_string_offsets = needles_data_string->getOffsets();
-        const ColumnString::Chars & needles_data_string_chars = needles_data_string->getChars();
 
         std::vector<std::string_view> needles;
 
-        size_t prev_needles_offsets_offset = 0;
-        size_t prev_needles_data_offset = 0;
-
         for (size_t i = 0; i < haystack_size; ++i)
         {
-            needles.reserve(needles_offsets[i] - prev_needles_offsets_offset);
+            needles.reserve(needles_offsets[i] - prev_needles_offset);
 
-            for (size_t j = prev_needles_offsets_offset; j < needles_offsets[i]; ++j)
+            for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                const auto * p = reinterpret_cast<const char *>(needles_data_string_chars.data()) + prev_needles_data_offset;
-                auto sz = needles_data_string_offsets[j] - prev_needles_data_offset - 1;
-                needles.emplace_back(std::string_view(p, sz));
-                prev_needles_data_offset = needles_data_string_offsets[j];
+                needles.emplace_back(needles_data_string->getDataAt(j).toView());
             }
 
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal
 
-            const auto * const haystack = &haystack_data[prev_offset];
-            const auto * haystack_end = haystack + haystack_offsets[i] - prev_offset - 1;
+            const auto * const haystack = &haystack_data[prev_haystack_offset];
+            const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset - 1;
 
             size_t iteration = 0;
             while (searcher.hasMoreToSearch())
@@ -125,8 +118,8 @@ struct MultiSearchFirstIndexImpl
                 res[i] = 0;
             }
 
-            prev_offset = haystack_offsets[i];
-            prev_needles_offsets_offset = needles_offsets[i];
+            prev_haystack_offset = haystack_offsets[i];
+            prev_needles_offset = needles_offsets[i];
             needles.clear();
         }
     }

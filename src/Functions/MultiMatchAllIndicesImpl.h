@@ -166,26 +166,19 @@ struct MultiMatchAllIndicesImpl
 #if USE_VECTORSCAN
         offsets.resize(haystack_offsets.size());
         size_t prev_haystack_offset = 0;
+        size_t prev_needles_offset = 0;
 
         const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
-        const ColumnString::Offsets & needles_data_string_offsets = needles_data_string->getOffsets();
-        const ColumnString::Chars & needles_data_string_chars = needles_data_string->getChars();
 
         std::vector<std::string_view> needles;
 
-        size_t prev_needles_offsets_offset = 0;
-        size_t prev_needles_data_offset = 0;
-
         for (size_t i = 0; i < haystack_offsets.size(); ++i)
         {
-            needles.reserve(needles_offsets[i] - prev_needles_offsets_offset);
+            needles.reserve(needles_offsets[i] - prev_needles_offset);
 
-            for (size_t j = prev_needles_offsets_offset; j < needles_offsets[i]; ++j)
+            for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                const auto * p = reinterpret_cast<const char *>(needles_data_string_chars.data()) + prev_needles_data_offset;
-                auto sz = needles_data_string_offsets[j] - prev_needles_data_offset - 1;
-                needles.emplace_back(std::string_view(p, sz));
-                prev_needles_data_offset = needles_data_string_offsets[j];
+                needles.emplace_back(needles_data_string->getDataAt(j).toView());
             }
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
@@ -230,7 +223,7 @@ struct MultiMatchAllIndicesImpl
             offsets[i] = res.size();
 
             prev_haystack_offset = haystack_offsets[i];
-            prev_needles_offsets_offset = needles_offsets[i];
+            prev_needles_offset = needles_offsets[i];
             needles.clear();
         }
 #else
