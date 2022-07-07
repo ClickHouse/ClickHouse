@@ -85,6 +85,10 @@ private:
 
     void setOrRaiseProfilerLimit(Int64 value);
 
+    /// allocImpl(...) and free(...) should not be used directly
+    friend struct CurrentMemoryTracker;
+    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
+    void free(Int64 size);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
@@ -96,26 +100,7 @@ public:
 
     VariableContext level;
 
-    /** Call the following functions before calling of corresponding operations with memory allocators.
-      */
-    void alloc(Int64 size);
-
-    void allocNoThrow(Int64 size);
-
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-
-    void realloc(Int64 old_size, Int64 new_size)
-    {
-        Int64 addition = new_size - old_size;
-        if (addition > 0)
-            alloc(addition);
-        else
-            free(-addition);
-    }
-
-    /** This function should be called after memory deallocation.
-      */
-    void free(Int64 size);
+    void adjustWithUntrackedMemory(Int64 untracked_memory);
 
     Int64 get() const
     {
