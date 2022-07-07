@@ -328,6 +328,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
         auto idx = state_machine->last_commit_index() + 1;
         for (const auto & entry : *log_entries)
         {
+            LOG_INFO(&Poco::Logger::get("LOGGER"), "Term of log {}", entry->get_term());
             if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
                 state_machine->pre_commit(idx, entry->get_buf());
 

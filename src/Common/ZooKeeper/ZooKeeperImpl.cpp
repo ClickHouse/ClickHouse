@@ -1,3 +1,4 @@
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
@@ -6,6 +7,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
@@ -351,6 +353,8 @@ ZooKeeper::ZooKeeper(
 
     send_thread = ThreadFromGlobalPool([this] { sendThread(); });
     receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
+
+    initApiVersion();
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
@@ -1057,6 +1061,37 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
+Coordination::KeeperApiVersion ZooKeeper::getApiVersion()
+{
+    return keeper_api_version;
+}
+
+void ZooKeeper::initApiVersion()
+{
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+
+    get(Coordination::keeper_api_version_path, std::move(callback), {});
+    if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
+        return;
+
+    auto response = future.get();
+
+    if (response.error != Coordination::Error::ZOK)
+        return;
+
+    uint8_t keeper_version{0}; 
+    DB::ReadBufferFromOwnString buf(response.data);
+    DB::readIntText(keeper_version, buf);
+    keeper_api_version = static_cast<Coordination::KeeperApiVersion>(keeper_version);
+}
+
+
 void ZooKeeper::executeGenericRequest(
     const ZooKeeperRequestPtr & request,
     ResponseCallback callback)
@@ -1172,12 +1207,24 @@ void ZooKeeper::list(
     ListCallback callback,
     WatchCallback watch)
 {
-    ZooKeeperFilteredListRequest request;
-    request.path = path;
-    request.list_request_type = list_request_type;
+    std::shared_ptr<ZooKeeperListRequest> request{nullptr};
+    if (keeper_api_version < Coordination::KeeperApiVersion::V1)
+    {
+        if (list_request_type != ListRequestType::ALL)
+            throw Exception("Filtered list request type cannot be used because it's not support by the server", Error::ZBADARGUMENTS);
+
+        request = std::make_shared<ZooKeeperListRequest>();
+    }
+    else
+    {
+        auto filtered_list_request = std::make_shared<ZooKeeperFilteredListRequest>();
+        filtered_list_request->list_request_type = list_request_type;
+        request = std::move(filtered_list_request);
+    }
+
+    request->path = path;
 
     RequestInfo request_info;
-    request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     request_info.watch = watch;
 

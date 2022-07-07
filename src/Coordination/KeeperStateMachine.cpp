@@ -133,6 +133,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     if (!request_for_session.zxid)
         request_for_session.zxid = log_idx;
 
+    LOG_INFO(&Poco::Logger::get("LOGGER"), "Preprocessing {} for {} of type {} xid {}", request_for_session.zxid, log_idx, request_for_session.request->getOpNum(), request_for_session.time);
+
     preprocess(request_for_session);
     return nullptr;
 }

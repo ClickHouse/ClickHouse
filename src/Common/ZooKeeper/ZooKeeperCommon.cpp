@@ -892,6 +892,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
+    registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
 }
 
 }
