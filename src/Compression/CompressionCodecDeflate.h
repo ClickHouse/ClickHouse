@@ -23,11 +23,11 @@ public:
     static std::atomic_bool jobLock[jobPoolSize];
     bool jobPoolEnabled;
 
-    bool ALWAYS_INLINE jobPoolReady()
+    bool jobPoolReady()
     {
         return jobPoolEnabled;
     }
-    qpl_job * ALWAYS_INLINE acquireJob(uint32_t * job_id)
+    qpl_job * acquireJob(uint32_t * job_id)
     {
         if (jobPoolEnabled)
         {
@@ -50,7 +50,7 @@ public:
             return nullptr;
         }
     }
-    qpl_job * ALWAYS_INLINE releaseJob(uint32_t job_id)
+    qpl_job * releaseJob(uint32_t job_id)
     {
         if (jobPoolEnabled)
         {
@@ -63,7 +63,7 @@ public:
             return nullptr;
         }
     }
-    qpl_job * ALWAYS_INLINE getJobPtr(uint32_t job_id)
+    qpl_job * getJobPtr(uint32_t job_id)
     {
         if (jobPoolEnabled)
         {
@@ -77,7 +77,7 @@ public:
     }
 
 private:
-    size_t ALWAYS_INLINE random(uint32_t pool_size)
+    size_t random(uint32_t pool_size)
     {
         size_t tsc = 0;
         unsigned lo, hi;
@@ -86,7 +86,7 @@ private:
         return (static_cast<size_t>((tsc * 44485709377909ULL) >> 4)) % pool_size;
     }
 
-    int32_t ALWAYS_INLINE get_job_size_helper()
+    int32_t get_job_size_helper()
     {
         static uint32_t size = 0;
         if (size == 0)
@@ -100,7 +100,7 @@ private:
         return size;
     }
 
-    int32_t ALWAYS_INLINE init_job_helper(qpl_job * qpl_job_ptr)
+    int32_t init_job_helper(qpl_job * qpl_job_ptr)
     {
         if (qpl_job_ptr == nullptr)
         {
@@ -114,7 +114,7 @@ private:
         return 0;
     }
 
-    int32_t ALWAYS_INLINE initJobPool()
+    int32_t initJobPool()
     {
         static bool initialized = false;
 
@@ -137,13 +137,13 @@ private:
         return 0;
     }
 
-    bool ALWAYS_INLINE tryLockJob(size_t index)
+    bool tryLockJob(size_t index)
     {
         bool expected = false;
         return jobLock[index].compare_exchange_strong(expected, true);
     }
 
-    void ALWAYS_INLINE destroyJobPool()
+    void destroyJobPool()
     {
         const uint32_t size = get_job_size_helper();
         for (uint32_t i = 0; i < jobPoolSize && size > 0; ++i)
@@ -167,10 +167,10 @@ private:
         ReleaseJobObjectGuard() = delete;
 
     public:
-        ALWAYS_INLINE ReleaseJobObjectGuard(const uint32_t i) : index(i)
+        ReleaseJobObjectGuard(const uint32_t i) : index(i)
         {
         }
-        ALWAYS_INLINE ~ReleaseJobObjectGuard()
+        ~ReleaseJobObjectGuard()
         {
             jobLock[index].store(false);
         }
