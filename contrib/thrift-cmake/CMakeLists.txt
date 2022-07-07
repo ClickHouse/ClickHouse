@@ -92,5 +92,5 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
 add_library(_thrift ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 add_library(ch_contrib::thrift ALIAS _thrift)
-target_include_directories(_thrift SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src" ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(_thrift SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src" ${CMAKE_CURRENT_BINARY_DIR} "${ClickHouse_SOURCE_DIR}/contrib/boringssl/include")
 target_link_libraries (_thrift PUBLIC boost::headers_only)
