@@ -62,11 +62,13 @@ public:
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 
+    /// Get current decompression mode
     CodecMode getDecompressMode() const
     {
         return decompressMode;
     }
 
+    /// if set mode to CodecMode::Asynchronous, must be followed with flushAsynchronousDecompressRequests
     void setDecompressMode(CodecMode mode)
     {
         decompressMode = mode;
@@ -131,9 +133,8 @@ protected:
     virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
     /// Flush asynchronous request for decompression
-    virtual void doFlushAsynchronousDecompressRequests()
-    {
-    }
+    virtual void doFlushAsynchronousDecompressRequests(){}
+
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
     void setCodecDescription(const String & name, const ASTs & arguments = {});
 

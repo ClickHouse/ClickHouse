@@ -1,13 +1,8 @@
 #pragma once
 
-#include <map>
-#include <vector>
 #include <Compression/ICompressionCodec.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/WriteBuffer.h>
-#include <Parsers/StringRange.h>
 #include <qpl/qpl.h>
-#include <x86intrin.h>
+
 namespace Poco
 {
 class Logger;
