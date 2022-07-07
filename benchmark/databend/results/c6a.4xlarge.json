@@ -2,7 +2,7 @@
     "system": "Databend",
     "date": "2022-07-01",
     "machine": "c6a.4xlarge, 500gb gp2",
-    "cluster_size": "1",
+    "cluster_size": 1,
     "comment": "Only 90% of data successfully loaded. For some queries it gives \"Data too large\".",
 
     "tags": ["SQL", "Rust", "column-oriented", "ClickHouse derivative"],

@@ -2,7 +2,7 @@
     "system": "DuckDB",
     "date": "2022-07-01",
     "machine": "c6a.4xlarge, 500gb gp2",
-    "cluster_size": "1",
+    "cluster_size": 1,
     "comment": "Many queries triggered OOM",
 
     "tags": ["SQL", "C", "column-oriented", "embedded"],

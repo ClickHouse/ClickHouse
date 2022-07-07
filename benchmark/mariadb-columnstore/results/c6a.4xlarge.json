@@ -2,7 +2,7 @@
     "system": "MariaDB ColumnStore",
     "date": "2022-07-01",
     "machine": "c6a.4xlarge, 500gb gp2",
-    "cluster_size": "1",
+    "cluster_size": 1,
     "comment": "Previous name: InfiniDB.",
 
     "tags": ["SQL", "C++", "column-oriented", "MySQL compatible"],
