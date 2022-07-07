@@ -494,7 +494,7 @@ const data = [
 }
 ,
 {
-    "system": "BigQuery",
+    "system": "Citus",
     "date": "2022-07-01",
     "machine": "c6a.4xlarge, 500gb gp2",
     "cluster_size": 1,
@@ -2706,9 +2706,9 @@ function render() {
 
     let filtered_data = data.filter(elem =>
         selectors.system[elem.system] &&
-        selectors.machine[elem.machine] /*&&
+        selectors.machine[elem.machine] &&
         selectors.cluster_size[elem.cluster_size] &&
-        elem.types.filter(type => selectors.type[type]).length > 0*/);
+        elem.tags.filter(type => selectors.type[type]).length > 0);
 
     let nothing_selected_elem = document.getElementById('nothing-selected');
     if (filtered_data.length == 0) {
