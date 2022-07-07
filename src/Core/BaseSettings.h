@@ -43,9 +43,14 @@ class BaseSettings : public TTraits::Data
 {
     using CustomSettingMap = std::unordered_map<std::string_view, std::pair<std::shared_ptr<const String>, SettingFieldCustom>>;
 public:
+    BaseSettings() = default;
+    BaseSettings(const BaseSettings &) = default;
+    BaseSettings & operator=(const BaseSettings &) = default;
+    virtual ~BaseSettings() = default;
+
     using Traits = TTraits;
 
-    void set(const std::string_view & name, const Field & value);
+    virtual void set(const std::string_view & name, const Field & value);
     Field get(const std::string_view & name) const;
 
     void setString(const std::string_view & name, const String & value);
@@ -62,6 +67,8 @@ public:
 
     /// Resets all the settings to their default values.
     void resetToDefault();
+    /// Resets specified setting to its default value.
+    void resetToDefault(const std::string_view & name);
 
     bool has(const std::string_view & name) const { return hasBuiltin(name) || hasCustom(name); }
     static bool hasBuiltin(const std::string_view & name);
@@ -313,6 +320,14 @@ void BaseSettings<TTraits>::resetToDefault()
 
     if constexpr (Traits::allow_custom_settings)
         custom_settings_map.clear();
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::resetToDefault(const std::string_view & name)
+{
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        accessor.resetValueToDefault(*this, index);
 }
 
 template <typename TTraits>
