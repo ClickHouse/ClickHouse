@@ -2,6 +2,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <cassert>
 #include <iostream>
@@ -149,7 +150,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             }
         }
 
-        jobs.emplace(std::move(job), priority);
+        // this scheduleImpl is called in the parent thread,
+        // the tracing context on this thread is used as parent context for the sub-thread that runs the job
+        auto& current_thread_context = DB::OpenTelemetryThreadTraceContext::current();
+        jobs.emplace(std::move(job), priority, current_thread_context);
         ++scheduled_jobs;
         new_job_or_shutdown.notify_one();
     }
@@ -248,6 +252,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         setThreadName("ThreadPool");
 
         Job job;
+        DB::OpenTelemetryThreadTraceContext parent_thead_trace_context; // A copy of parent trace context
         bool need_shutdown = false;
 
         {
@@ -260,6 +265,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// boost::priority_queue does not provide interface for getting non-const reference to an element
                 /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
                 job = std::move(const_cast<Job &>(jobs.top().job));
+                parent_thead_trace_context = std::move(const_cast<DB::OpenTelemetryThreadTraceContext &>(jobs.top().thread_trace_context));
                 jobs.pop();
             }
             else
@@ -272,6 +278,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
         if (!need_shutdown)
         {
+            // set up tracing context for this thread by its parent context
+            DB::OpenTelemetryThreadTraceContextScope thread_trace_context("ThreadPool::worker()" ,
+                                                                          parent_thead_trace_context);
+
             try
             {
                 ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -279,15 +289,29 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
+
+                if (thread_trace_context.root_span.isTraceEnabled())
+                {
+                    // Use the thread name as operation name so that the tracing log will be more clear.
+                    // the thread name is usually set in the jobs, we can only get the name after the job finishes
+                    std::string thread_name = getThreadName();
+                    if (!thread_name.empty())
+                        thread_trace_context.root_span.operation_name = thread_name;
+                }
+
                 /// job should be reset before decrementing scheduled_jobs to
                 /// ensure that the Job destroyed before wait() returns.
                 job = {};
+                parent_thead_trace_context.reset();
             }
             catch (...)
             {
+                thread_trace_context.root_span.addAttribute(std::current_exception());
+
                 /// job should be reset before decrementing scheduled_jobs to
                 /// ensure that the Job destroyed before wait() returns.
                 job = {};
+                parent_thead_trace_context.reset();
 
                 {
                     std::lock_guard lock(mutex);
