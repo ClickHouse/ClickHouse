@@ -14,8 +14,8 @@ mkdir "${WORKING_FOLDER_02353}"
 
 for m in gz br xz zst lz4 bz2
 do
-    ${CLICKHOUSE_CLIENT} --query "SELECT number, 'Hello, world!' FROM numbers(6000) INTO OUTFILE '${WORKING_FOLDER_02353}/${m}_1.${m}' COMPRESSION '${m}' 1"
-    ${CLICKHOUSE_CLIENT} --query "SELECT number, 'Hello, world!' FROM numbers(6000) INTO OUTFILE '${WORKING_FOLDER_02353}/${m}_9.${m}' COMPRESSION '${m}' 9"
+    ${CLICKHOUSE_CLIENT} --query "SELECT number, 'Hello, world!' FROM numbers(6000) INTO OUTFILE '${WORKING_FOLDER_02353}/${m}_1.${m}' COMPRESSION '${m}' LEVEL 1"
+    ${CLICKHOUSE_CLIENT} --query "SELECT number, 'Hello, world!' FROM numbers(6000) INTO OUTFILE '${WORKING_FOLDER_02353}/${m}_9.${m}' COMPRESSION '${m}' LEVEL 9"
 
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), max(x), avg(length(s)) FROM file('${WORKING_FOLDER_02353}/${m}_1.${m}', 'TabSeparated', 'x UInt32, s String')"
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), max(x), avg(length(s)) FROM file('${WORKING_FOLDER_02353}/${m}_9.${m}', 'TabSeparated', 'x UInt32, s String')"

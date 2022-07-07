@@ -97,8 +97,13 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!compression.parse(pos, query_with_output.compression, expected))
                 return false;
 
-            ParserNumber compression_level;
-            compression_level.parse(pos, query_with_output.compression_level, expected);
+            ParserKeyword s_compression_level("LEVEL");
+            if (s_compression_level.ignore(pos, expected))
+            {
+                ParserNumber compression_level;
+                if (!compression_level.parse(pos, query_with_output.compression_level, expected))
+                    return false;
+            }
         }
 
         query_with_output.children.push_back(query_with_output.out_file);
