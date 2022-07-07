@@ -246,7 +246,6 @@ struct ExpressionAnalysisResult
     JoinPtr join;
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
-    ActionsDAGPtr before_aggregation_with_nullable;
     ActionsDAGPtr before_having;
     String having_column_name;
     bool remove_having_filter = false;
