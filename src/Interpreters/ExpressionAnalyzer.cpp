@@ -26,6 +26,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/DirectJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 
@@ -43,9 +44,12 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/logger_useful.h>
+
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -81,6 +85,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -1066,24 +1071,24 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, ContextPtr context)
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context)
 {
     /// HashJoin with Dictionary optimisation
-    if (analyzed_join->tryInitDictJoin(sample_block, context))
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+    if (analyzed_join->tryInitDictJoin(right_sample_block, context))
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
 
     bool allow_merge_join = analyzed_join->allowMergeJoin();
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
     {
         if (analyzed_join->allowParallelHashJoin())
         {
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
+            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, right_sample_block);
         }
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
-        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
-    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+        return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1094,12 +1099,12 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
 {
     /// Actions which need to be calculated on joined block.
     auto joined_block_actions = createJoinedBlockActions(context, analyzed_join);
-    Names original_right_columns;
-
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+
+    Names original_right_column_names;
     for (auto & pr : required_columns_with_aliases)
-        original_right_columns.push_back(pr.first);
+        original_right_column_names.push_back(pr.first);
 
     /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
         * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
@@ -1110,18 +1115,18 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     auto interpreter = interpretSubquery(
         join_element.table_expression,
         context,
-        original_right_columns,
+        original_right_column_names,
         query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {
-        auto sample_block = interpreter->getSampleBlock();
-        auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
+        Block original_right_columns = interpreter->getSampleBlock();
+        auto rename_dag = std::make_unique<ActionsDAG>(original_right_columns.getColumnsWithTypeAndName());
         for (const auto & name_with_alias : required_columns_with_aliases)
         {
-            if (sample_block.has(name_with_alias.first))
+            if (name_with_alias.first != name_with_alias.second && original_right_columns.has(name_with_alias.first))
             {
-                auto pos = sample_block.getPositionByName(name_with_alias.first);
+                auto pos = original_right_columns.getPositionByName(name_with_alias.first);
                 const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
                 rename_dag->getIndex()[pos] = &alias;
             }
@@ -1137,6 +1142,52 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     joined_plan->addStep(std::move(joined_actions_step));
 
     return joined_plan;
+}
+
+std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block)
+{
+    auto error_or_null = [&](const String & msg)
+    {
+        if (analyzed_join->isForcedAlgorithm(JoinAlgorithm::DIRECT))
+            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't use '{}' join algorithm: {}", JoinAlgorithm::DIRECT, msg);
+        return nullptr;
+    };
+
+    if (!analyzed_join->isAllowedAlgorithm(JoinAlgorithm::DIRECT))
+        return nullptr;
+
+    auto storage = analyzed_join->getStorageKeyValue();
+    if (!storage)
+        return error_or_null("unsupported storage");
+
+    if (!isInnerOrLeft(analyzed_join->kind()))
+        return error_or_null("illegal kind");
+
+    if (analyzed_join->strictness() != ASTTableJoin::Strictness::All &&
+        analyzed_join->strictness() != ASTTableJoin::Strictness::Any &&
+        analyzed_join->strictness() != ASTTableJoin::Strictness::RightAny)
+        return error_or_null("illegal strictness");
+
+    const auto & clauses = analyzed_join->getClauses();
+    bool only_one_key = clauses.size() == 1 &&
+        clauses[0].key_names_left.size() == 1 &&
+        clauses[0].key_names_right.size() == 1 &&
+        !clauses[0].on_filter_condition_left &&
+        !clauses[0].on_filter_condition_right;
+
+    if (!only_one_key)
+        return error_or_null("multiple keys is not allowed");
+
+    String key_name = clauses[0].key_names_right[0];
+    String original_key_name = analyzed_join->getOriginalName(key_name);
+    const auto & storage_primary_key = storage->getPrimaryKey();
+    if (storage_primary_key.size() != 1 || storage_primary_key[0] != original_key_name)
+    {
+        return error_or_null(fmt::format("key '{}'{} doesn't match storage '{}'",
+            key_name, (key_name != original_key_name ? " (aka '" + original_key_name + "')" : ""), fmt::join(storage_primary_key, ",")));
+    }
+
+    return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
 }
 
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
@@ -1171,7 +1222,14 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+    const Block & right_sample_block = joined_plan->getCurrentDataStream().header;
+    if (JoinPtr kvjoin = tryKeyValueJoin(analyzed_join, right_sample_block))
+    {
+        joined_plan.reset();
+        return kvjoin;
+    }
+
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, right_sample_block, getContext());
 
     /// Do not make subquery for join over dictionary.
     if (analyzed_join->getDictionaryReader())
@@ -1539,7 +1597,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
     if (optimize_read_in_order)
     {
-        for (auto & child : select_query->orderBy()->children)
+        for (const auto & child : select_query->orderBy()->children)
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);

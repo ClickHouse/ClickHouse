@@ -11,6 +11,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+/// Implementation of the IRestoreCoordination interface performing coordination in memory.
 class RestoreCoordinationLocal : public IRestoreCoordination
 {
 public:

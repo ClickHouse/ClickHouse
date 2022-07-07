@@ -5,9 +5,9 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupCoordinationDistributed.h>
+#include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupCoordinationLocal.h>
-#include <Backups/RestoreCoordinationDistributed.h>
+#include <Backups/RestoreCoordinationRemote.h>
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
@@ -120,7 +120,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
             if (!backup_settings.coordination_zk_path.empty())
             {
-                backup_coordination = std::make_shared<BackupCoordinationDistributed>(
+                backup_coordination = std::make_shared<BackupCoordinationRemote>(
                     backup_settings.coordination_zk_path,
                     [global_context = context_in_use->getGlobalContext()] { return global_context->getZooKeeper(); });
             }
@@ -291,7 +291,7 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
 
             if (!restore_settings.coordination_zk_path.empty())
             {
-                restore_coordination = std::make_shared<RestoreCoordinationDistributed>(
+                restore_coordination = std::make_shared<RestoreCoordinationRemote>(
                     restore_settings.coordination_zk_path,
                     [global_context = context_in_use->getGlobalContext()] { return global_context->getZooKeeper(); });
             }

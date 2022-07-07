@@ -81,6 +81,8 @@ private:
 
     std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
 
+    bool log_peak_memory_usage_in_destructor = true;
+
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
@@ -88,6 +90,10 @@ private:
 
     void updateTotalSampleProbability(MemoryTracker * parent_elem);
 
+    /// allocImpl(...) and free(...) should not be used directly
+    friend struct CurrentMemoryTracker;
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
+    [[nodiscard]] AllocationTrace free(Int64 size);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
@@ -99,19 +105,7 @@ public:
 
     VariableContext level;
 
-    /** Call the following functions before calling of corresponding operations with memory allocators.
-      */
-    [[nodiscard]] AllocationTrace alloc(Int64 size);
-
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-
-    [[nodiscard]] AllocationTrace allocNoThrow(Int64 size);
-
-    [[nodiscard]] AllocationTrace realloc(Int64 old_size, Int64 new_size);
-
-    /** This function should be called after memory deallocation.
-      */
-    [[nodiscard]] AllocationTrace free(Int64 size);
+    void adjustWithUntrackedMemory(Int64 untracked_memory);
 
     Int64 get() const
     {
@@ -221,7 +215,7 @@ public:
     void set(Int64 to);
 
     /// Prints info about peak memory consumption into log.
-    void logPeakMemoryUsage() const;
+    void logPeakMemoryUsage();
 };
 
 extern MemoryTracker total_memory_tracker;
