@@ -18,7 +18,7 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-if (CLICKHOUSE_SPLIT_BINARY OR NOT ENABLE_UTILS)
+if (CLICKHOUSE_SPLIT_BINARY)
     option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
 else ()
     option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
