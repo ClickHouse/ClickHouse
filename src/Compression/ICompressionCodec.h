@@ -29,7 +29,7 @@ public:
     enum class CodecMode
     {
         Synchronous,  //synchronous request by default;
-        Asynchronous, //asynchronous request, must be used in pair with decompressFlush;
+        Asynchronous, //asynchronous request, must be used in pair with flushAsynchronousDecompressRequests;
         SoftwareFallback  //Fallback to SW decompressor;
     };
 
@@ -66,7 +66,7 @@ public:
     }
 
     /// Flush all asynchronous request for decompression
-    void decompressFlush(void);
+    void flushAsynchronousDecompressRequests();
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
     virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const
@@ -119,7 +119,7 @@ protected:
     virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
     /// Flush asynchronous request for decompression
-    virtual void doDecompressDataFlush()
+    virtual void doFlushAsynchronousDecompressRequests()
     {
     }
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
