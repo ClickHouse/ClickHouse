@@ -35,6 +35,19 @@ void OpenTelemetrySpan::addAttribute(const std::string& name, const std::string&
     this->attributes.push_back(Tuple{name, value});
 }
 
+void OpenTelemetrySpan::addAttribute(const std::string& name, std::function<std::string> value_supplier)
+{
+    if (!this->isTraceEnabled() || !value_supplier)
+        return;
+
+    std::string value = value_supplier();
+    if (value.empty())
+        return;
+
+    this->attribute_names.push_back(name);
+    this->attribute_values.push_back(value);
+}
+
 void OpenTelemetrySpan::addAttribute(const Exception & e)
 {
     if (trace_id == UUID())

@@ -23,6 +23,7 @@ struct OpenTelemetrySpan
     }
 
     void addAttribute(const std::string& name, const std::string& value);
+    void addAttribute(const std::string& name, std::function<std::string> value_supplier);
     void addAttribute(const Exception & e);
     void addAttribute(std::exception_ptr e);
 
