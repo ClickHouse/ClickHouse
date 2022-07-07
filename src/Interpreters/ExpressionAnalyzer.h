@@ -375,7 +375,7 @@ private:
     NameSet required_result_columns;
     SelectQueryOptions query_options;
 
-    JoinPtr makeTableJoin(
+    JoinPtr makeJoin(
         const ASTTablesInSelectQueryElement & join_element,
         const ColumnsWithTypeAndName & left_columns,
         ActionsDAGPtr & left_convert_actions);

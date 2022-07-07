@@ -1,8 +1,8 @@
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterDropIndexQuery.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/AlterCommands.h>
@@ -36,8 +36,7 @@ BlockIO InterpreterDropIndexQuery::execute()
     query_ptr->as<ASTDropIndexQuery &>().setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (typeid_cast<DatabaseReplicated *>(database.get())
-        && !current_context->getClientInfo().is_replicated_database_internal)
+    if (typeid_cast<DatabaseReplicated *>(database.get()) && !current_context->getClientInfo().is_replicated_database_internal)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();

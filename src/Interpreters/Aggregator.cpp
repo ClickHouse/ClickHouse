@@ -374,7 +374,15 @@ Block Aggregator::Params::getHeader(
 
     if (only_merge)
     {
-        res = header.cloneEmpty();
+        NameSet needed_columns(keys.begin(), keys.end());
+        for (const auto & aggregate : aggregates)
+            needed_columns.emplace(aggregate.column_name);
+
+        for (const auto & column : header)
+        {
+            if (needed_columns.contains(column.name))
+                res.insert(column.cloneEmpty());
+        }
 
         if (final)
         {

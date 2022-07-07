@@ -234,11 +234,12 @@ void DatabaseCatalog::shutdownImpl()
     view_dependencies.clear();
 }
 
-bool DatabaseCatalog::isPredefinedDatabaseName(const std::string_view & database_name)
+bool DatabaseCatalog::isPredefinedDatabase(const std::string_view & database_name)
 {
     return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
         || database_name == INFORMATION_SCHEMA_UPPERCASE;
 }
+
 
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 {
@@ -326,6 +327,48 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = nullptr;
 
     return {database, table};
+}
+
+bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
+{
+    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
+    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
+
+    auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
+    {
+        if (database_name == SYSTEM_DATABASE)
+        {
+            auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
+            return storage && storage->isSystemStorage();
+        }
+        if (database_name == INFORMATION_SCHEMA)
+        {
+            return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
+                != std::end(information_schema_views);
+        }
+        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
+        {
+            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                != std::end(information_schema_views_uppercase);
+        }
+        return false;
+    };
+
+    if (table_id.hasUUID())
+    {
+        if (auto storage = tryGetByUUID(table_id.uuid).second)
+        {
+            if (storage->isSystemStorage())
+                return true;
+            auto res_id = storage->getStorageID();
+            String database_name = res_id.getDatabaseName();
+            if (database_name != SYSTEM_DATABASE) /// If (database_name == SYSTEM_DATABASE) then we have already checked it (see isSystemStorage() above).
+                return check_database_and_table_name(database_name, res_id.getTableName());
+        }
+        return false;
+    }
+
+    return check_database_and_table_name(table_id.getDatabaseName(), table_id.getTableName());
 }
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
