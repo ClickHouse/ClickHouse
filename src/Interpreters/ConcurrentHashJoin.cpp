@@ -31,20 +31,16 @@ namespace ErrorCodes
 
 static UInt32 toPowerOfTwo(UInt32 x)
 {
-    x = x - 1;
-    for (UInt32 i = 1; i < sizeof(UInt32) * 8; i <<= 1)
-        x = x | x >> i;
-    return x + 1;
+    if (x <= 1)
+        return 1;
+    return static_cast<UInt32>(1) << (32 - __builtin_clz(x - 1));
 }
 
 ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
     : context(context_)
     , table_join(table_join_)
-    , slots(slots_)
+    , slots(toPowerOfTwo(std::min<size_t>(slots_, 256)))
 {
-    slots = std::min<size_t>(std::max<size_t>(1, slots), 255);
-    slots = toPowerOfTwo(slots);
-
     for (size_t i = 0; i < slots; ++i)
     {
         auto inner_hash_join = std::make_shared<InternalHashJoin>();
