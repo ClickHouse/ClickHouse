@@ -662,6 +662,7 @@ namespace
         std::optional<Session> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
+        OpenTelemetryThreadTraceContextScopePtr thread_trace_context;
         String query_text;
         ASTPtr ast;
         ASTInsertQuery * insert_query = nullptr;
@@ -828,6 +829,8 @@ namespace
 
         query_context = session->makeQueryContext(std::move(client_info));
 
+
+
         /// Prepare settings.
         SettingsChanges settings_changes;
         for (const auto & [key, value] : query_info.settings())
@@ -839,6 +842,8 @@ namespace
 
         query_context->setCurrentQueryId(query_info.query_id());
         query_scope.emplace(query_context);
+
+        thread_trace_context = query_context->startTracing("GRPCServer");
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
@@ -1358,6 +1363,7 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
+        thread_trace_context.reset();
         session.reset();
     }
 
