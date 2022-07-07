@@ -727,6 +727,16 @@ void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
     right_storage_join = storage;
 }
 
+void TableJoin::setRightStorageName(const std::string & storage_name)
+{
+    right_storage_name = storage_name;
+}
+
+const std::string & TableJoin::getRightStorageName() const
+{
+    return right_storage_name;
+}
+
 void TableJoin::setStorageJoin(std::shared_ptr<StorageDictionary> storage)
 {
     if (right_storage_join)

@@ -1,5 +1,7 @@
 SET send_logs_level = 'fatal';
 
+DROP TABLE IF EXISTS t1;
+
 DROP DICTIONARY IF EXISTS dict_flat;
 DROP DICTIONARY IF EXISTS dict_hashed;
 DROP DICTIONARY IF EXISTS dict_complex_cache;
