@@ -1495,13 +1495,13 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
             if (keeper_dispatcher->isServerActive())
             {
-                auto keeper_4LW_info = keeper_dispatcher -> getKeeper4LWInfo();
-                is_standalone = static_cast<size_t>(keeper_4LW_info.is_standalone);
-                is_leader = static_cast<size_t>(keeper_4LW_info.is_leader);
-                is_observer = static_cast<size_t>(keeper_4LW_info.is_observer);
-                is_follower = static_cast<size_t>(keeper_4LW_info.is_follower);
+                auto keeper_info = keeper_dispatcher -> getKeeper4LWInfo();
+                is_standalone = static_cast<size_t>(keeper_info.is_standalone);
+                is_leader = static_cast<size_t>(keeper_info.is_leader);
+                is_observer = static_cast<size_t>(keeper_info.is_observer);
+                is_follower = static_cast<size_t>(keeper_info.is_follower);
 
-                zxid = keeper_4LW_info.last_zxid;
+                zxid = keeper_info.last_zxid;
                 const auto & state_machine = keeper_dispatcher->getStateMachine();
                 znode_count = state_machine.getNodesCount();
                 watch_count = state_machine.getTotalWatchesCount();
@@ -1519,10 +1519,10 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     max_file_descriptor_count = getMaxFileDescriptorCount();
                 #endif
 
-                if (keeper_4LW_info.is_leader)
+                if (keeper_info.is_leader)
                 {
-                    followers = keeper_4LW_info.follower_count;
-                    synced_followers = keeper_4LW_info.synced_follower_count;
+                    followers = keeper_info.follower_count;
+                    synced_followers = keeper_info.synced_follower_count;
                 }
             }
 
