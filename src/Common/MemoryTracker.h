@@ -145,6 +145,11 @@ public:
         updateTotalSampleProbability(parent.load());
     }
 
+    void updateTotalSampleProbability()
+    {
+        updateTotalSampleProbability(parent.load());
+    }
+
     double getSampleProbabilityTotal()
     {
         return total_sample_probability.load(std::memory_order_relaxed);
