@@ -109,9 +109,9 @@ public:
         const AccessFlags & max_flags_with_children,
         std::string_view database,
         std::string_view table,
-        std::string_view column)>;
+        std::string_view column,
+        bool grant_option)>;
     void modifyFlags(const ModifyFlagsFunction & function);
-    void modifyFlagsWithGrantOption(const ModifyFlagsFunction & function);
 
     friend bool operator ==(const AccessRights & left, const AccessRights & right);
     friend bool operator !=(const AccessRights & left, const AccessRights & right) { return !(left == right); }
