@@ -77,6 +77,8 @@ const std::unordered_map<String, SettingChangesHistory> settings_changes_history
         {"memory_overcommit_ratio_denominator_for_user", {0, {{1073741824, "22.5"}}}},
         {"allow_settings_after_format_in_insert", {true, {{false, "22.4"}}}},
         {"cast_ipv4_ipv6_default_on_conversion_error", {true, {{false, "22.3"}}}},
+        {"input_format_ipv4_default_on_conversion_error", {true, {{false, "22.3"}}}},
+        {"input_format_ipv6_default_on_conversion_error", {true, {{false, "22.3"}}}},
         {"stream_like_engine_allow_direct_select", {true, {{false, "21.12"}}}},
         {"output_format_decimal_trailing_zeros", {true, {{false, "21.9"}}}},
         {"use_hedged_requests", {false, {{true, "21.9"}}}},
