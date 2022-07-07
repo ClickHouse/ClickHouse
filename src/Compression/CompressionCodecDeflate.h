@@ -88,15 +88,12 @@ private:
 
     void destroyJobPool()
     {
-        uint32_t size = 0;
-        qpl_get_job_size(PATH, &size);
-        for (uint32_t i = 0; i < JOB_POOL_SIZE && size > 0; ++i)
+        for (uint32_t i = 0; i < JOB_POOL_SIZE; ++i)
         {
-            while (tryLockJob(i) == false);
-            if (jobPool[i])
+            if (jobPool[i] != nullptr)
             {
+                while (tryLockJob(i) == false);
                 qpl_fini_job(jobPool[i]);
-                delete[] jobPool[i];
             }
             jobPool[i] = nullptr;
             jobLocks[i].store(false);
@@ -118,6 +115,7 @@ private:
             jobLocks[index].store(false);
         }
     };
+    std::unique_ptr<uint8_t[]> jobPoolBufferPtr;
     Poco::Logger * log;
 };
 
@@ -131,7 +129,6 @@ public:
 
 private:
     qpl_job * jobSWPtr;
-    std::unique_ptr<uint8_t[]> jobSWbuffer;
     qpl_job * getJobCodecPtr();
 };
 
