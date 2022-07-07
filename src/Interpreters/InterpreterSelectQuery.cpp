@@ -453,7 +453,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->hasQueryContext())
         {
-            size_t & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
+            std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
             ++current_query_analyze_count;
             if (settings.max_pipeline_depth && current_query_analyze_count >= settings.max_pipeline_depth)
                 throw DB::Exception(ErrorCodes::TOO_DEEP_PIPELINE, "Query analyze overflow. Try to increase `max_pipeline_depth` or simplify the query");
