@@ -85,6 +85,14 @@ struct OpenTelemetryThreadTraceContextScope
                                          const OpenTelemetryTraceContext& _parent_trace_context,
                                          const std::weak_ptr<OpenTelemetrySpanLog>& _log);
 
+    OpenTelemetryThreadTraceContextScope(const std::string& _operation_name,
+                                         const OpenTelemetryThreadTraceContext& _parent_thread_trace_context)
+        : OpenTelemetryThreadTraceContextScope(_operation_name,
+                                               _parent_thread_trace_context,
+                                               _parent_thread_trace_context.span_log)
+    {
+    }
+
     ~OpenTelemetryThreadTraceContextScope();
 
 
