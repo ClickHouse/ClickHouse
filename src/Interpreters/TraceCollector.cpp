@@ -96,6 +96,9 @@ void TraceCollector::run()
         Int64 size;
         readPODBinary(size, in);
 
+        UInt64 ptr;
+        readPODBinary(ptr, in);
+
         if (trace_log)
         {
             // time and time_in_microseconds are both being constructed from the same timespec so that the
@@ -105,7 +108,7 @@ void TraceCollector::run()
 
             UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
             UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
-            TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size};
+            TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size, ptr};
             trace_log->add(element);
         }
     }

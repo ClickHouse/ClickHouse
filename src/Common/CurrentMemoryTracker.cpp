@@ -30,7 +30,7 @@ using DB::current_thread;
 
 namespace
 {
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded)
+    AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded)
     {
         if (auto * memory_tracker = getMemoryTracker())
         {
@@ -44,43 +44,47 @@ namespace
                     /// more. It could be useful to enlarge Exception message in rethrow logic.
                     Int64 tmp = current_thread->untracked_memory;
                     current_thread->untracked_memory = 0;
-                    memory_tracker->allocImpl(tmp, throw_if_memory_exceeded);
+                    return memory_tracker->allocImpl(tmp, throw_if_memory_exceeded);
                 }
             }
             /// total_memory_tracker only, ignore untracked_memory
             else
             {
-                memory_tracker->allocImpl(size, throw_if_memory_exceeded);
+                return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
             }
+
+            return AllocationTrace(memory_tracker->getSampleProbabilityTotal());
         }
+
+        return AllocationTrace(0);
     }
 }
 
 void check()
 {
     if (auto * memory_tracker = getMemoryTracker())
-        memory_tracker->allocImpl(0, true);
+        std::ignore = memory_tracker->allocImpl(0, true);
 }
 
-void alloc(Int64 size)
+AllocationTrace alloc(Int64 size)
 {
     bool throw_if_memory_exceeded = true;
-    allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, throw_if_memory_exceeded);
 }
 
-void allocNoThrow(Int64 size)
+AllocationTrace allocNoThrow(Int64 size)
 {
     bool throw_if_memory_exceeded = false;
-    allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, throw_if_memory_exceeded);
 }
 
-void realloc(Int64 old_size, Int64 new_size)
+AllocationTrace realloc(Int64 old_size, Int64 new_size)
 {
     Int64 addition = new_size - old_size;
-    addition > 0 ? alloc(addition) : free(-addition);
+    return addition > 0 ? alloc(addition) : free(-addition);
 }
 
-void free(Int64 size)
+AllocationTrace free(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -89,16 +93,21 @@ void free(Int64 size)
             current_thread->untracked_memory -= size;
             if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
             {
-                memory_tracker->free(-current_thread->untracked_memory);
+                Int64 untracked_memory = current_thread->untracked_memory;
                 current_thread->untracked_memory = 0;
+                return memory_tracker->free(-untracked_memory);
             }
         }
         /// total_memory_tracker only, ignore untracked_memory
         else
         {
-            memory_tracker->free(size);
+            return memory_tracker->free(size);
         }
+
+        return AllocationTrace(memory_tracker->getSampleProbabilityTotal());
     }
+
+    return AllocationTrace(0);
 }
 
 }

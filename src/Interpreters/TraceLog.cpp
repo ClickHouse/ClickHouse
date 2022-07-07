@@ -36,6 +36,7 @@ NamesAndTypesList TraceLogElement::getNamesAndTypes()
         {"query_id", std::make_shared<DataTypeString>()},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"size", std::make_shared<DataTypeInt64>()},
+        {"ptr", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -53,6 +54,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
+    columns[i++]->insert(ptr);
 }
 
 }
