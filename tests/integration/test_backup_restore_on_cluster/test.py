@@ -79,7 +79,7 @@ def new_backup_name():
 
 def get_path_to_backup(backup_name):
     name = backup_name.split(",")[1].strip("')/ ")
-    return os.path.join(instance.cluster.instances_dir, "backups", name)
+    return os.path.join(node1.cluster.instances_dir, "backups", name)
 
 
 def test_replicated_table():
@@ -652,3 +652,57 @@ def test_table_in_replicated_database_with_not_synced_def():
     assert node2.query(
         "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
     ) == TSV([["x", "String"], ["y", "String"]])
+
+
+def has_mutation_in_backup(mutation_id, backup_name, database, table):
+    return (
+        os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/1/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+        or os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/2/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+        or os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/3/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+    )
+
+
+def test_mutation():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY tuple()"
+    )
+
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(5)")
+
+    node2.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(5, 5)")
+
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(10, 5)")
+
+    node1.query("ALTER TABLE tbl UPDATE x=x+1 WHERE 1")
+    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(1) WHERE 1")
+    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(2) WHERE 1")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    assert not has_mutation_in_backup("0000000000", backup_name, "default", "tbl")
+    assert has_mutation_in_backup("0000000001", backup_name, "default", "tbl")
+    assert has_mutation_in_backup("0000000002", backup_name, "default", "tbl")
+    assert not has_mutation_in_backup("0000000003", backup_name, "default", "tbl")
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
