@@ -352,7 +352,8 @@ else
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
 
     # Error messages (we should ignore some errors)
-    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38629
+    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38629 ("pp.proj, errno: 21")
+    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
     echo "Check for Error messages in server log:"
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -376,6 +377,7 @@ else
                -e "found in queue and some source parts for it was lost" \
                -e "is lost forever." \
                -e "pp.proj, errno: 21" \
+               -e "Unknown index: idx." \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
