@@ -93,6 +93,12 @@ struct MultiMatchAnyImpl
         checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         res.resize(haystack_offsets.size());
+
+        if (needles_arr.empty())
+        {
+            std::fill(res.begin(), res.end(), 0);
+            return;
+        }
 #if USE_VECTORSCAN
         const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
@@ -208,6 +214,14 @@ struct MultiMatchAnyImpl
                 needles.emplace_back(needles_data_string->getDataAt(j).toView());
             }
 
+            if (needles.empty())
+            {
+                res[i] = 0;
+                prev_haystack_offset = haystack_offsets[i];
+                prev_needles_offset = needles_offsets[i];
+                continue;
+            }
+
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
             const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
@@ -286,6 +300,13 @@ struct MultiMatchAnyImpl
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
                 needles.emplace_back(needles_data_string->getDataAt(j).toView());
+            }
+
+            if (needles.empty())
+            {
+                prev_haystack_offset = haystack_offsets[i];
+                prev_needles_offset = needles_offsets[i];
+                continue;
             }
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
