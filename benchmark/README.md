@@ -131,6 +131,35 @@ The results can be used for comparison of various systems, but always take them 
 
 We allow but do not recommend creating scoreboards from this benchmark or tell that one system is better (faster, cheaper, etc) than another.
 
+There is a web page to navigate across benchmark results and present a summary report. It allows to filter out some systems, setups, or queries. E.g. if you found some subset of the 43 queries irrelevant, you can simply exclude them from the calculation and share the report without these queries.
+
+You can select the summary metric from one of the following: "Cold Run", "Hot Run", "Load Time", and "Data Size". If you select the "Load Time" or "Data Size", the entries will be simply ordered from best to worst, and additionally, the ratio to the best non-zero result will be shown (how times one system is worse than the best system in this metric). Load time can be zero for stateless query engines like `clickhouse-local` or `Amazon Athena`.
+
+If you select "Cold Run" or "Hot Run", the aggregation across the queries is performed in the following way:
+
+1. For Cold Run, the first run for every query is selected. For Hot Run, the minimum from 2nd and 3rd run time is selected, if both runs are successful, or null if some were unsuccessful.
+
+By default, the "Hot Run" metric is selected, because it's not always possible to obtain a cold runtime for managed services, while for on-premise a quite slow EBS volume is used by default which makes the comparison slightly less interesting.
+
+2. For every query, find a system that demonstrated the best (fastest) query time and take it as a baseline.
+
+This gives us a point of comparison. Alternatively, we can take a benchmark entry like "ClickHouse on c6a.metal" as a baseline and divide all queries time by the times from a baseline. But it would be quite arbitrary and asymmetric. Instead, we take the best result for every query separately.
+
+3. For every query, if the result is present, calculate the ratio to the baseline, but add constant 10ms to the nominator and denominator, so the formula will be: `(10ms + query_time) / (10ms + baseline_query_time)`. This formula gives a value >= 1, which is equal to 1 for the best benchmark entry on this query.
+
+We are interested in relative query run times, not absolute. The benchmark has a broad set of queries, and there can be queries that typically run in 100ms (e.g. for interactive dashboards) and some queries that typically run in a minute (e.g. complex ad-hoc queries). And we want to treat these queries equally important in the benchmark, that's why we need relative values.
+
+The constant shift is needed to make the formula well-defined when query time approaches zero. E.g. some systems can get query results in 0 ms using table metadata lookup, and another in 10 ms by range scan. But this should not be treated as the infinite advantage of one system over the other. With the constant shift, we will treat it as only two times an advantage. 
+
+4. For every query, if the result is not present, substitute it with a "penalty" calculated as follows: take the maximum query runtime for this benchmark entry across other queries that have a result, but if it is less than 300 seconds, put it 300 seconds. Then multiply the value by 2. Then calculate the ratio as explained above.
+
+For example, one system is immature and crashed while trying to run a query. Or does not run a query due to limitations. If this system shows run times like 1..1000 sec. on other queries, we will substitute 2000 sec. instead of this missing result.
+
+5. Take the geometric mean of the ratios across the queries. It will be the summary rating.
+
+Why geometric mean? The ratios can only be naturally averaged in this way. Imagine there are two queries and two systems. The first system ran the first query in 1s and the second query in 20s. The second system ran the first query in 2s and the second query in 10s. So, the first system is two times faster on the first query and two times slower on the second query and vice-versa. The final score should be identical for these systems.
+
+
 ## History and Motivation
 
 The benchmark has been created in October 2013 for evaluating various DBMS to use for a web analytics system. It has been made by taking a 1/50th of one week of production pageviews (a.k.a. "hits") data and taking the first one billion, one hundred million, and ten million records from it. It has been run on a 3-node cluster of Xeon E2650v2 with 128 GiB RAM, 8x6TB HDD in md-RAID-6, and 10 Gbit network in a private datacenter in Finland.
