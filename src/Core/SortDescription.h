@@ -110,20 +110,7 @@ public:
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
 
-    bool operator==(const SortDescription & other) const
-    {
-        if (size() != other.size())
-            return false;
-
-        for (size_t i = 0; i < size(); ++i)
-        {
-            if ((*this)[i] != other[i])
-                return false;
-        }
-        return true;
-    }
-
-    bool operator!=(const SortDescription & other) const { return !(*this == other); }
+    bool hasPrefix(const SortDescription & prefix) const;
 };
 
 /** Compile sort description for header_types.

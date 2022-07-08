@@ -49,21 +49,19 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    SortDescription getSortDescription() const { return result_description; }
-
-    void convertToFinishSorting(SortDescription prefix_description);
+    const SortDescription & getSortDescription() const { return result_description; }
 
 private:
     void updateOutputStream() override;
 
-    enum class Type
-    {
-        Full,
-        FinishSorting,
-        MergingSorted,
-    };
+    // enum class Type
+    // {
+    //     Full,
+    //     FinishSorting,
+    //     MergingSorted,
+    // };
 
-    Type type;
+    // Type type;
 
     SortDescription prefix_description;
     SortDescription result_description;

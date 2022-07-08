@@ -73,8 +73,8 @@ public:
     ~SortingTransform() override;
 
 protected:
-    Status prepare() override final;
-    void work() override final;
+    Status prepare() final;
+    void work() final;
 
     virtual void consume(Chunk chunk) = 0;
     virtual void generate() = 0;
