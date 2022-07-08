@@ -64,7 +64,7 @@ private:
     double fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
-    std::optional<double> sample_probability = 0;
+    std::optional<double> sample_probability;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
