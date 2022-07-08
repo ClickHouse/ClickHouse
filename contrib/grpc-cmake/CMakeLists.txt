@@ -92,7 +92,12 @@ if(gRPC_USE_UNSECURE_LIBRARIES)
 else()
   set(gRPC_LIBRARIES grpc grpc++)
 endif()
+
+target_compile_options(c-ares PRIVATE -Wno-reserved-macro-identifier)
+
 add_library(_ch_contrib_grpc INTERFACE)
 target_link_libraries(_ch_contrib_grpc INTERFACE ${gRPC_LIBRARIES})
 target_include_directories(_ch_contrib_grpc SYSTEM INTERFACE ${gRPC_INCLUDE_DIRS})
 add_library(ch_contrib::grpc ALIAS _ch_contrib_grpc)
+
+target_compile_options(grpc PRIVATE -Wno-reserved-macro-identifier)
