@@ -15,8 +15,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
 }
-qpl_job * DeflateJobHWPool::jobPool[JOB_POOL_SIZE];
-std::atomic_bool DeflateJobHWPool::jobLocks[JOB_POOL_SIZE];
+qpl_job * DeflateJobHWPool::hw_job_pool[JOB_POOL_SIZE];
+std::atomic_bool DeflateJobHWPool::hw_job_locks[JOB_POOL_SIZE];
 bool DeflateJobHWPool::job_pool_ready;
 
 DeflateJobHWPool & DeflateJobHWPool::instance()
@@ -32,14 +32,14 @@ DeflateJobHWPool::DeflateJobHWPool():log(&Poco::Logger::get("DeflateJobHWPool"))
     /// get total size required for saving qpl job context
     qpl_get_job_size(PATH, &size);
     /// allocate buffer for storing all job objects
-    jobPoolBufferPtr = std::make_unique<uint8_t[]>(size * JOB_POOL_SIZE);
-    memset(jobPool, 0, JOB_POOL_SIZE*sizeof(qpl_job *));
+    hw_job_pool_buffer = std::make_unique<uint8_t[]>(size * JOB_POOL_SIZE);
+    memset(hw_job_pool, 0, JOB_POOL_SIZE*sizeof(qpl_job *));
     for (index = 0; index < JOB_POOL_SIZE; ++index)
     {
-        qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(jobPoolBufferPtr.get() + index*JOB_POOL_SIZE);
+        qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(hw_job_pool_buffer.get() + index*JOB_POOL_SIZE);
         if ((nullptr == qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
             break;
-        jobPool[index] = qpl_job_ptr;
+        hw_job_pool[index] = qpl_job_ptr;
         unLockJob(index);
     }
 
@@ -60,12 +60,12 @@ DeflateJobHWPool::~DeflateJobHWPool()
 {
     for (uint32_t i = 0; i < JOB_POOL_SIZE; ++i)
     {
-        if (jobPool[i] != nullptr)
+        if (hw_job_pool[i] != nullptr)
         {
             while (!tryLockJob(i));
-            qpl_fini_job(jobPool[i]);
+            qpl_fini_job(hw_job_pool[i]);
         }
-        jobPool[i] = nullptr;
+        hw_job_pool[i] = nullptr;
         unLockJob(i);
     }
     jobPoolReady() = false;
@@ -73,21 +73,21 @@ DeflateJobHWPool::~DeflateJobHWPool()
 
 //HardwareCodecDeflate
 HardwareCodecDeflate::HardwareCodecDeflate():
-    hwEnabled(DeflateJobHWPool::instance().jobPoolReady()),
+    hw_enabled(DeflateJobHWPool::instance().jobPoolReady()),
     log(&Poco::Logger::get("HardwareCodecDeflate"))
 {
 }
 
 HardwareCodecDeflate::~HardwareCodecDeflate()
 {
-    if (!jobDecompAsyncMap.empty())
+    if (!decomp_async_job_map.empty())
     {
         LOG_WARNING(log, "Find un-released job when HardwareCodecDeflate destroy");
-        for (auto it : jobDecompAsyncMap)
+        for (auto it : decomp_async_job_map)
         {
             DeflateJobHWPool::instance().releaseJob(it.first);
         }
-        jobDecompAsyncMap.clear();
+        decomp_async_job_map.clear();
     }
 }
 uint32_t HardwareCodecDeflate::doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const
@@ -168,7 +168,7 @@ uint32_t HardwareCodecDeflate::doDecompressDataReq(const char * source, uint32_t
 
     if (auto status = qpl_submit_job(job_ptr); QPL_STS_OK == status)
     {
-        jobDecompAsyncMap.insert(std::make_pair(job_id, job_ptr));
+        decomp_async_job_map.insert(std::make_pair(job_id, job_ptr));
         return job_id;
     }
     else
@@ -185,8 +185,8 @@ void HardwareCodecDeflate::flushAsynchronousDecompressRequests()
     qpl_job * job_ptr = nullptr;
 
     std::map<uint32_t, qpl_job *>::iterator it;
-    uint32_t n_jobs_processing = jobDecompAsyncMap.size();
-    it = jobDecompAsyncMap.begin();
+    uint32_t n_jobs_processing = decomp_async_job_map.size();
+    it = decomp_async_job_map.begin();
 
     while (n_jobs_processing)
     {
@@ -200,43 +200,43 @@ void HardwareCodecDeflate::flushAsynchronousDecompressRequests()
         else
         {
             DeflateJobHWPool::instance().releaseJob(job_id);
-            it = jobDecompAsyncMap.erase(it);
+            it = decomp_async_job_map.erase(it);
             n_jobs_processing--;
             if (n_jobs_processing <= 0)
                 break;
         }
-        if (it == jobDecompAsyncMap.end())
+        if (it == decomp_async_job_map.end())
         {
-            it = jobDecompAsyncMap.begin();
+            it = decomp_async_job_map.begin();
             _tpause(1, __rdtsc() + 1000);
         }
     }
 }
 
-SoftwareCodecDeflate::SoftwareCodecDeflate():jobSWPtr(nullptr)
+SoftwareCodecDeflate::SoftwareCodecDeflate():sw_job(nullptr)
 {
 }
 
 SoftwareCodecDeflate::~SoftwareCodecDeflate()
 {
-    if (nullptr != jobSWPtr)
-        qpl_fini_job(jobSWPtr);
+    if (nullptr != sw_job)
+        qpl_fini_job(sw_job);
 }
 
 qpl_job * SoftwareCodecDeflate::getJobCodecPtr()
 {
-    if (nullptr == jobSWPtr)
+    if (nullptr == sw_job)
     {
         uint32_t size = 0;
         qpl_get_job_size(qpl_path_software, &size);
 
-        jobSWPtr = reinterpret_cast<qpl_job *>((std::make_unique<uint8_t[]>(size)).get());
+        sw_job = reinterpret_cast<qpl_job *>((std::make_unique<uint8_t[]>(size)).get());
         // Job initialization
-        if (auto status = qpl_init_job(qpl_path_software, jobSWPtr); QPL_STS_OK != status)
+        if (auto status = qpl_init_job(qpl_path_software, sw_job); QPL_STS_OK != status)
             throw Exception(
                 "SoftwareCodecDeflate::getJobCodecPtr -> qpl_init_job fail:" + std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
     }
-    return jobSWPtr;
+    return sw_job;
 }
 
 uint32_t SoftwareCodecDeflate::doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size)
@@ -302,7 +302,7 @@ uint32_t CompressionCodecDeflate::getMaxCompressedDataSize(uint32_t uncompressed
 uint32_t CompressionCodecDeflate::doCompressData(const char * source, uint32_t source_size, char * dest) const
 {
     uint32_t res = 0;
-    if (hw_codec->hwEnabled)
+    if (hw_codec->hw_enabled)
         res = hw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
     if (0 == res)
         res = sw_codec->doCompressData(source, source_size, dest, getMaxCompressedDataSize(source_size));
@@ -316,7 +316,7 @@ void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t sou
         case CodecMode::Synchronous:
         {
             uint32_t res = 0;
-            if (hw_codec->hwEnabled)
+            if (hw_codec->hw_enabled)
                 res = hw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             if (0 == res)
                 sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
@@ -325,7 +325,7 @@ void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t sou
         case CodecMode::Asynchronous:
         {
             uint32_t res = 0;
-            if (hw_codec->hwEnabled)
+            if (hw_codec->hw_enabled)
                 res = hw_codec->doDecompressDataReq(source, source_size, dest, uncompressed_size);
             if (0 == res)
                 sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
@@ -339,7 +339,7 @@ void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t sou
 
 void CompressionCodecDeflate::flushAsynchronousDecompressRequests()
 {
-    if (hw_codec->hwEnabled)
+    if (hw_codec->hw_enabled)
         hw_codec->flushAsynchronousDecompressRequests();
     setDecompressMode(CodecMode::Synchronous);
 }
