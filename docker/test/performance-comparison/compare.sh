@@ -1304,7 +1304,6 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             from input('metric_name text, old_value float, new_value float, diff float,
                     ratio_display_text text, stat_threshold float,
                     test text, query_index int, query_display_name text')
-            settings date_time_input_format='best_effort'
             format TSV
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
 
