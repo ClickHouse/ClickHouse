@@ -21,7 +21,7 @@ void GTIDSet::tryMerge(size_t i)
     intervals.erase(intervals.begin() + i + 1, intervals.begin() + i + 1 + 1);
 }
 
-void GTIDSets::parse(const String gtid_format)
+void GTIDSets::parse(String gtid_format)
 {
     if (gtid_format.empty())
     {

@@ -1,6 +1,6 @@
 ---
-toc_priority: 59
-toc_title: Embedded Dictionaries
+sidebar_position: 59
+sidebar_label: Embedded Dictionaries
 ---
 
 # Functions for Working with Embedded Dictionaries
@@ -9,7 +9,7 @@ In order for the functions below to work, the server config must specify the pat
 
 For information about creating reference lists, see the section “Dictionaries”.
 
-## Multiple Geobases {#multiple-geobases}
+## Multiple Geobases
 
 ClickHouse supports working with multiple alternative geobases (regional hierarchies) simultaneously, in order to support various perspectives on which countries certain regions belong to.
 
@@ -31,11 +31,11 @@ regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_
 regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
 ```
 
-### regionToCity(id\[, geobase\]) {#regiontocityid-geobase}
+### regionToCity(id\[, geobase\])
 
 Accepts a UInt32 number – the region ID from the geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
 
-### regionToArea(id\[, geobase\]) {#regiontoareaid-geobase}
+### regionToArea(id\[, geobase\])
 
 Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as ‘regionToCity’.
 
@@ -65,7 +65,7 @@ LIMIT 15
 └──────────────────────────────────────────────────────┘
 ```
 
-### regionToDistrict(id\[, geobase\]) {#regiontodistrictid-geobase}
+### regionToDistrict(id\[, geobase\])
 
 Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as ‘regionToCity’.
 
@@ -95,17 +95,17 @@ LIMIT 15
 └──────────────────────────────────────────────────────────┘
 ```
 
-### regionToCountry(id\[, geobase\]) {#regiontocountryid-geobase}
+### regionToCountry(id\[, geobase\])
 
 Converts a region to a country. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToCountry(toUInt32(213)) = 225` converts Moscow (213) to Russia (225).
 
-### regionToContinent(id\[, geobase\]) {#regiontocontinentid-geobase}
+### regionToContinent(id\[, geobase\])
 
 Converts a region to a continent. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToContinent(toUInt32(213)) = 10001` converts Moscow (213) to Eurasia (10001).
 
-### regionToTopContinent (#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
+### regionToTopContinent(id\[, geobase\])
 
 Finds the highest continent in the hierarchy for the region.
 
@@ -127,24 +127,24 @@ regionToTopContinent(id[, geobase])
 
 Type: `UInt32`.
 
-### regionToPopulation(id\[, geobase\]) {#regiontopopulationid-geobase}
+### regionToPopulation(id\[, geobase\])
 
 Gets the population for a region.
 The population can be recorded in files with the geobase. See the section “External dictionaries”.
 If the population is not recorded for the region, it returns 0.
 In the geobase, the population might be recorded for child regions, but not for parent regions.
 
-### regionIn(lhs, rhs\[, geobase\]) {#regioninlhs-rhs-geobase}
+### regionIn(lhs, rhs\[, geobase\])
 
 Checks whether a ‘lhs’ region belongs to a ‘rhs’ region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it does not belong.
 The relationship is reflexive – any region also belongs to itself.
 
-### regionHierarchy(id\[, geobase\]) {#regionhierarchyid-geobase}
+### regionHierarchy(id\[, geobase\])
 
 Accepts a UInt32 number – the region ID from the geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
 Example: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
-### regionToName(id\[, lang\]) {#regiontonameid-lang}
+### regionToName(id\[, lang\])
 
 Accepts a UInt32 number – the region ID from the geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
 

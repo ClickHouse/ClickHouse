@@ -25,7 +25,7 @@ class QueryNormalizer
         bool prefer_column_name_to_alias;
 
         template <typename T>
-        ExtractedSettings(const T & settings)
+        ExtractedSettings(const T & settings) /// NOLINT
             : max_ast_depth(settings.max_ast_depth)
             , max_expanded_ast_elements(settings.max_expanded_ast_elements)
             , prefer_column_name_to_alias(settings.prefer_column_name_to_alias)

@@ -1,6 +1,6 @@
 ---
-toc_priority: 50
-toc_title: cluster
+sidebar_position: 50
+sidebar_label: cluster
 ---
 
 # cluster, clusterAllReplicas {#cluster-clusterallreplicas}
@@ -9,9 +9,9 @@ toc_title: cluster
 
 Функция `clusterAllReplicas` работает также как `cluster`, но каждая реплика в кластере используется как отдельный шард/отдельное соединение.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
-
+    :::
 **Синтаксис**
 
 ``` sql

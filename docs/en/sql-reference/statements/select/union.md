@@ -1,8 +1,8 @@
 ---
-toc_title: UNION
+sidebar_label: UNION
 ---
 
-# UNION Clause {#union-clause}
+# UNION Clause
 
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 

@@ -9,17 +9,15 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSource.h>
-#include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/logger_useful.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -313,7 +311,7 @@ UInt64 StorageFileLog::getInode(const String & file_name)
 
 Pipe StorageFileLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /* query_info */,
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -355,7 +353,7 @@ Pipe StorageFileLog::read(
     {
         pipes.emplace_back(std::make_shared<FileLogSource>(
             *this,
-            metadata_snapshot,
+            storage_snapshot,
             modified_context,
             column_names,
             getMaxBlockSize(),
@@ -677,7 +675,9 @@ bool StorageFileLog::streamToViews()
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads.value, file_infos.file_names.size());
     /// No files to parse
@@ -705,7 +705,7 @@ bool StorageFileLog::streamToViews()
     {
         pipes.emplace_back(std::make_shared<FileLogSource>(
             *this,
-            metadata_snapshot,
+            storage_snapshot,
             new_context,
             block_io.pipeline.getHeader().getNames(),
             getPollMaxBatchSize(),
@@ -718,9 +718,10 @@ bool StorageFileLog::streamToViews()
 
     assertBlocksHaveEqualStructure(input.getHeader(), block_io.pipeline.getHeader(), "StorageFileLog streamToViews");
 
-    size_t rows = 0;
+    std::atomic<size_t> rows = 0;
     {
         block_io.pipeline.complete(std::move(input));
+        block_io.pipeline.setNumThreads(max_streams_number);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -760,7 +761,7 @@ void registerStorageFileLog(StorageFactory & factory)
 
         if (!num_threads) /// Default
         {
-            num_threads = std::max(unsigned(1), physical_cpu_cores / 4);
+            num_threads = std::max(1U, physical_cpu_cores / 4);
             filelog_settings->set("max_threads", num_threads);
         }
         else if (num_threads > physical_cpu_cores)
@@ -802,10 +803,10 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
         auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());
 
-        auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
-        auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
+        auto path = checkAndGetLiteralArgument<String>(path_ast, "path");
+        auto format = checkAndGetLiteralArgument<String>(format_ast, "format");
 
-        return StorageFileLog::create(
+        return std::make_shared<StorageFileLog>(
             args.table_id,
             args.getContext(),
             args.columns,

@@ -1,6 +1,6 @@
 ---
-toc_priority: 48
-toc_title: "Битовые функции"
+sidebar_position: 48
+sidebar_label: "Битовые функции"
 ---
 
 # Битовые функции {#bitovye-funktsii}

@@ -50,10 +50,11 @@ public:
 
     void rethrowFirstThreadException();
 
+    void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
     void tryGetTask(ExecutionThreadContext & context);
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_);
+    void init(size_t num_threads_, bool profile_processors, ReadProgressCallback * callback);
     void fill(Queue & queue);
 
     void processAsyncTasks();

@@ -39,10 +39,9 @@ public:
 };
 
 Bzip2ReadBuffer::Bzip2ReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char *existing_memory, size_t alignment)
-        : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
-        , in(std::move(in_))
-        , bz(std::make_unique<Bzip2StateWrapper>())
-        , eof_flag(false)
+    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    , bz(std::make_unique<Bzip2StateWrapper>())
+    , eof_flag(false)
 {
 }
 
@@ -53,19 +52,25 @@ bool Bzip2ReadBuffer::nextImpl()
     if (eof_flag)
         return false;
 
-    if (!bz->stream.avail_in)
+    int ret;
+    do
     {
-        in->nextIfAtEnd();
-        bz->stream.avail_in = in->buffer().end() - in->position();
-        bz->stream.next_in = in->position();
+        if (!bz->stream.avail_in)
+        {
+            in->nextIfAtEnd();
+            bz->stream.avail_in = in->buffer().end() - in->position();
+            bz->stream.next_in = in->position();
+        }
+
+        bz->stream.avail_out = internal_buffer.size();
+        bz->stream.next_out = internal_buffer.begin();
+
+        ret = BZ2_bzDecompress(&bz->stream);
+
+        in->position() = in->buffer().end() - bz->stream.avail_in;
     }
+    while (bz->stream.avail_out == internal_buffer.size() && ret == BZ_OK && !in->eof());
 
-    bz->stream.avail_out = internal_buffer.size();
-    bz->stream.next_out = internal_buffer.begin();
-
-    int ret = BZ2_bzDecompress(&bz->stream);
-
-    in->position() = in->buffer().end() - bz->stream.avail_in;
     working_buffer.resize(internal_buffer.size() - bz->stream.avail_out);
 
     if (ret == BZ_STREAM_END)

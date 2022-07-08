@@ -1,5 +1,5 @@
 ---
-toc_title: ORDER BY
+sidebar_label: ORDER BY
 ---
 
 # Секция ORDER BY {#select-order-by}
@@ -280,6 +280,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ```sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
+[INTERPOLATE [(col [AS expr], ... colN [AS exprN])]]
 ```
 
 `WITH FILL` может быть применен к полям с числовыми (все разновидности float, int, decimal) или временными (все разновидности Date, DateTime) типами. В случае применения к полям типа `String` недостающие значения заполняются пустой строкой.
@@ -288,6 +289,8 @@ ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_
 Когда `STEP const_numeric_expr` определен, `const_numeric_expr` интерпретируется "как есть" для числовых типов, как "дни" для типа `Date` и как "секунды" для типа `DateTime`. 
 
 Когда `STEP const_numeric_expr` не указан, тогда используется `1.0` для числовых типов, `1 день` для типа Date и `1 секунда` для типа DateTime.
+
+`INTERPOLATE` может быть применен к колонкам, не участвующим в `ORDER BY WITH FILL`. Такие колонки заполняются значениями, вычисляемыми применением `expr` к предыдущему значению. Если `expr` опущен, то колонка заполняется предыдущим значением. Если список колонок не указан, то включаются все разрешенные колонки.
 
 Пример запроса без использования `WITH FILL`:
 ```sql
@@ -395,3 +398,58 @@ ORDER BY
 │ 1970-03-12 │ 1970-01-08 │ original │
 └────────────┴────────────┴──────────┘
 ```
+
+Пример запроса без `INTERPOLATE`:
+
+``` sql
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
+```
+
+Результат:
+``` text
+┌───n─┬─source───┬─inter─┐
+│   0 │          │     0 │
+│ 0.5 │          │     0 │
+│   1 │ original │     1 │
+│ 1.5 │          │     0 │
+│   2 │          │     0 │
+│ 2.5 │          │     0 │
+│   3 │          │     0 │
+│ 3.5 │          │     0 │
+│   4 │ original │     4 │
+│ 4.5 │          │     0 │
+│   5 │          │     0 │
+│ 5.5 │          │     0 │
+│   7 │ original │     7 │
+└─────┴──────────┴───────┘
+```
+
+Тот же запрос с `INTERPOLATE`:
+
+``` sql
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5 INTERPOLATE (inter AS inter + 1);
+```
+
+Результат:
+``` text
+┌───n─┬─source───┬─inter─┐
+│   0 │          │     0 │
+│ 0.5 │          │     0 │
+│   1 │ original │     1 │
+│ 1.5 │          │     2 │
+│   2 │          │     3 │
+│ 2.5 │          │     4 │
+│   3 │          │     5 │
+│ 3.5 │          │     6 │
+│   4 │ original │     4 │
+│ 4.5 │          │     5 │
+│   5 │          │     6 │
+│ 5.5 │          │     7 │
+│   7 │ original │     7 │
+└─────┴──────────┴───────┘

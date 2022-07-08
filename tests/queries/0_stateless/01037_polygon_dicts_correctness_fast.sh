@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS test_01037.points;
 CREATE TABLE test_01037.points (x Float64, y Float64) ENGINE = Memory;
 "
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "${CURDIR}/01037_point_data"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --min_chunk_bytes_for_parallel_parsing=10485760 --max_insert_block_size=100000 < "${CURDIR}/01037_point_data"
 
 rm "${CURDIR}"/01037_point_data
 
@@ -34,7 +34,7 @@ CREATE TABLE test_01037.polygons_array
 ENGINE = Memory;
 "
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEachRow" --max_insert_block_size=100000 < "${CURDIR}/01037_polygon_data"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEachRow" --min_chunk_bytes_for_parallel_parsing=10485760 --max_insert_block_size=100000 < "${CURDIR}/01037_polygon_data"
 
 rm "${CURDIR}"/01037_polygon_data
 

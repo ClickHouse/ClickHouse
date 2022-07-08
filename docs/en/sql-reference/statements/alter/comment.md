@@ -1,9 +1,9 @@
 ---
-toc_priority: 51
-toc_title: COMMENT
+sidebar_position: 51
+sidebar_label: COMMENT
 ---
 
-# ALTER TABLE … MODIFY COMMENT {#alter-modify-comment}
+# ALTER TABLE … MODIFY COMMENT
 
 Adds, modifies, or removes comment to the table, regardless if it was set before or not. Comment change is reflected in both [system.tables](../../../operations/system-tables/tables.md) and `SHOW CREATE TABLE` query.
 

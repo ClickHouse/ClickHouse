@@ -37,7 +37,8 @@ struct StringRef
     size_t size = 0;
 
     /// Non-constexpr due to reinterpret_cast.
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_)
     {
         /// Sanity check for overflowed values.
@@ -46,10 +47,12 @@ struct StringRef
 
     constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 
-    StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
+    StringRef(const std::string & s) : data(s.data()), size(s.size()) {} /// NOLINT
     constexpr explicit StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
+    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {} /// NOLINT
     constexpr StringRef() = default;
+
+    bool empty() const { return size == 0; }
 
     std::string toString() const { return std::string(data, size); }
 

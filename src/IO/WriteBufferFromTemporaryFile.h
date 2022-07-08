@@ -20,7 +20,7 @@ public:
     ~WriteBufferFromTemporaryFile() override;
 
 private:
-    WriteBufferFromTemporaryFile(std::unique_ptr<TemporaryFile> && tmp_file);
+    explicit WriteBufferFromTemporaryFile(std::unique_ptr<TemporaryFile> && tmp_file);
 
     std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 

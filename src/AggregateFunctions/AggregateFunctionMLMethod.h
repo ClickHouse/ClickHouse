@@ -333,7 +333,7 @@ public:
         return std::make_shared<DataTypeNumber<Float64>>();
     }
 
-    void create(AggregateDataPtr __restrict place) const override
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         std::shared_ptr<IWeightsUpdater> new_weights_updater;
         if (weights_updater_name == "SGD")
@@ -362,7 +362,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
-        ConstAggregateDataPtr place,
+        ConstAggregateDataPtr __restrict place,
         IColumn & to,
         const ColumnsWithTypeAndName & arguments,
         size_t offset,

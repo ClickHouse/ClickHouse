@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -21,11 +19,12 @@ class WriteBufferFromAzureBlobStorage : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
 
-    explicit WriteBufferFromAzureBlobStorage(
-        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+    WriteBufferFromAzureBlobStorage(
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & blob_path_,
         size_t max_single_part_upload_size_,
-        size_t buf_size_);
+        size_t buf_size_,
+        std::optional<std::map<std::string, std::string>> attributes_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
 
@@ -34,9 +33,10 @@ public:
 private:
     void finalizeImpl() override;
 
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_part_upload_size;
     const String blob_path;
+    std::optional<std::map<std::string, std::string>> attributes;
 };
 
 }

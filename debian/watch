@@ -1,6 +1,0 @@
-version=4
-
-opts="filenamemangle=s%(?:.*?)?v?(\d[\d.]*)-stable\.tar\.gz%clickhouse-$1.tar.gz%" \
-   https://github.com/ClickHouse/ClickHouse/tags \
-   (?:.*?/)?v?(\d[\d.]*)-stable\.tar\.gz debian uupdate
-

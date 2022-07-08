@@ -24,7 +24,7 @@ namespace detail
         ColumnRawPtrs all_columns;
         ColumnRawPtrs sort_columns;
 
-        SharedBlock(Block && block) : Block(std::move(block)) {}
+        explicit SharedBlock(Block && block) : Block(std::move(block)) {}
     };
 }
 

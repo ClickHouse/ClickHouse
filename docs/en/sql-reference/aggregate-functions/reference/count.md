@@ -1,8 +1,8 @@
 ---
-toc_priority: 1
+sidebar_position: 1
 ---
 
-# count {#agg_function-count}
+# count
 
 Counts the number of rows or not-NULL values.
 

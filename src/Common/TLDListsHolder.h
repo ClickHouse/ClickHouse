@@ -20,7 +20,7 @@ class TLDList
 public:
     using Container = StringHashSet<>;
 
-    TLDList(size_t size);
+    explicit TLDList(size_t size);
 
     /// Return true if the tld_container does not contains such element.
     bool insert(const StringRef & host);
@@ -59,7 +59,7 @@ protected:
     TLDListsHolder();
 
     std::mutex tld_lists_map_mutex;
-    Map tld_lists_map;
+    Map tld_lists_map TSA_GUARDED_BY(tld_lists_map_mutex);
 };
 
 }

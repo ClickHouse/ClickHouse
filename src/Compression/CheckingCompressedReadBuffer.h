@@ -17,7 +17,7 @@ protected:
     bool nextImpl() override;
 
 public:
-    CheckingCompressedReadBuffer(ReadBuffer & in_, bool allow_different_codecs_ = false)
+    explicit CheckingCompressedReadBuffer(ReadBuffer & in_, bool allow_different_codecs_ = false)
         : CompressedReadBufferBase(&in_, allow_different_codecs_)
         , ReadBuffer(nullptr, 0)
     {

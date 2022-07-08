@@ -1,5 +1,5 @@
 ---
-toc_priority: 127
+sidebar_position: 127
 ---
 
 # groupBitXor {#groupbitxor}

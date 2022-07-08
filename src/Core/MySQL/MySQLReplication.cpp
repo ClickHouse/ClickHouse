@@ -221,7 +221,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_BLOB:
                 case MYSQL_TYPE_GEOMETRY:
                 {
-                    column_meta.emplace_back(UInt16(meta[pos]));
+                    column_meta.emplace_back(static_cast<UInt16>(meta[pos]));
                     pos += 1;
                     break;
                 }
@@ -229,9 +229,9 @@ namespace MySQLReplication
                 case MYSQL_TYPE_STRING:
                 {
                     /// Big-Endian
-                    auto b0 = UInt16(meta[pos] << 8);
-                    auto b1 = UInt8(meta[pos + 1]);
-                    column_meta.emplace_back(UInt16(b0 + b1));
+                    auto b0 = static_cast<UInt16>(meta[pos] << 8);
+                    auto b1 = static_cast<UInt8>(meta[pos + 1]);
+                    column_meta.emplace_back(static_cast<UInt16>(b0 + b1));
                     pos += 2;
                     break;
                 }
@@ -239,9 +239,9 @@ namespace MySQLReplication
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
                     /// Little-Endian
-                    auto b0 = UInt8(meta[pos]);
-                    auto b1 = UInt16(meta[pos + 1] << 8);
-                    column_meta.emplace_back(UInt16(b0 + b1));
+                    auto b0 = static_cast<UInt8>(meta[pos]);
+                    auto b1 = static_cast<UInt16>(meta[pos + 1] << 8);
+                    column_meta.emplace_back(static_cast<UInt16>(b0 + b1));
                     pos += 2;
                     break;
                 }
@@ -431,7 +431,7 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        const DayNum date_day_number(DateLUT::instance().makeDayNum(
+                        const ExtendedDayNum date_day_number(DateLUT::instance().makeDayNum(
                             static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f)).toUnderType());
 
                         row.push_back(Field(date_day_number.toUnderType()));
@@ -543,7 +543,7 @@ namespace MySQLReplication
                         );
 
                         if (!meta)
-                            row.push_back(Field{UInt32(date_time)});
+                            row.push_back(Field{static_cast<UInt32>(date_time)});
                         else
                         {
                             DB::DecimalUtils::DecimalComponents<DateTime64> components{
@@ -603,7 +603,7 @@ namespace MySQLReplication
                                 throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 
                             if ((*payload.position() & 0x80) == 0)
-                                mask = UInt32(-1);
+                                mask = static_cast<UInt32>(-1);
 
                             *payload.position() ^= 0x80;
 

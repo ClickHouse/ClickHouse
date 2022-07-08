@@ -131,7 +131,7 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
         using ArraySource = typename SynkType::CompatibleArraySource;
         using ValueSource = typename SynkType::CompatibleValueSource;
 
-        auto checkType = [] (auto source_ptr)
+        auto check_type = [] (auto source_ptr)
         {
             if (source_ptr == nullptr)
                 throw Exception(demangle(typeid(Base).name()) + " expected "
@@ -141,25 +141,25 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
                             + " or " + demangle(typeid(ConstSource<typename SynkType::CompatibleValueSource>).name())
                             + " but got " + demangle(typeid(*source_ptr).name()), ErrorCodes::LOGICAL_ERROR);
         };
-        auto checkTypeAndCallConcat = [& sink, & checkType, & args ...] (auto array_source_ptr, auto value_source_ptr)
+        auto check_type_and_call_concat = [& sink, & check_type, & args ...] (auto array_source_ptr, auto value_source_ptr)
         {
-            checkType(array_source_ptr);
-            checkType(value_source_ptr);
+            check_type(array_source_ptr);
+            check_type(value_source_ptr);
 
             Base::selectArrayAndValueSourceBySink(*array_source_ptr, *value_source_ptr, sink, args ...);
         };
 
         if (array_source.isConst() && value_source.isConst())
-            checkTypeAndCallConcat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
+            check_type_and_call_concat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
                                    typeid_cast<ConstSource<ValueSource> *>(&value_source));
         else if (array_source.isConst())
-            checkTypeAndCallConcat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
+            check_type_and_call_concat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
                                    typeid_cast<ValueSource *>(&value_source));
         else if (value_source.isConst())
-            checkTypeAndCallConcat(typeid_cast<ArraySource *>(&array_source),
+            check_type_and_call_concat(typeid_cast<ArraySource *>(&array_source),
                                    typeid_cast<ConstSource<ValueSource> *>(&value_source));
         else
-            checkTypeAndCallConcat(typeid_cast<ArraySource *>(&array_source),
+            check_type_and_call_concat(typeid_cast<ArraySource *>(&array_source),
                                    typeid_cast<ValueSource *>(&value_source));
     }
 };

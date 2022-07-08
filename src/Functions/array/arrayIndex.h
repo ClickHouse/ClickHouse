@@ -432,7 +432,7 @@ public:
                 const auto & map_array_column = map_column.getNestedColumn();
                 auto offsets = map_array_column.getOffsetsPtr();
                 auto keys = map_column.getNestedData().getColumnPtr(0);
-                auto array_column = ColumnArray::create(std::move(keys), std::move(offsets));
+                auto array_column = ColumnArray::create(keys, offsets);
 
                 const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
                 auto array_type = std::make_shared<DataTypeArray>(type_map.getKeyType());
@@ -474,7 +474,7 @@ private:
         auto arg_decayed = removeNullable(removeLowCardinality(arg));
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
-            || getLeastSupertype({inner_type_decayed, arg_decayed});
+            || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
     /**
@@ -718,9 +718,7 @@ private:
     /**
      * Catches arguments of type LowCardinality(T) (left) and U (right).
      *
-     * The perftests
-     * https://clickhouse-test-reports.s3.yandex.net/12550/2d27fa0fa8c198a82bf1fe3625050ccf56695976/integration_tests_(release).html
-     * showed that the amount of action needed to convert the non-constant right argument to the index column
+     * The perftests showed that the amount of action needed to convert the non-constant right argument to the index column
      * (similar to the left one's) is significantly higher than converting the array itself to an ordinary column.
      *
      * So, in terms of performance it's more optimal to fall back to default implementation and catch only constant
@@ -1045,7 +1043,7 @@ private:
         DataTypePtr array_elements_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
         const DataTypePtr & index_type = arguments[1].type;
 
-        DataTypePtr common_type = getLeastSupertype({array_elements_type, index_type});
+        DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, index_type});
 
         ColumnPtr col_nested = castColumn({ col->getDataPtr(), array_elements_type, "" }, common_type);
 

@@ -1,14 +1,15 @@
 ---
-toc_priority: 41
-toc_title: ROW POLICY
+sidebar_position: 41
+sidebar_label: ROW POLICY
 ---
 
-# CREATE ROW POLICY {#create-row-policy-statement}
+# CREATE ROW POLICY
 
 Creates a [row policy](../../../operations/access-rights.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
-!!! note "Warning"
-    Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
+:::warning    
+Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
+:::
 
 Syntax:
 
@@ -20,28 +21,29 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
 
-## USING Clause {#create-row-policy-using}
+## USING Clause
 
 Allows to specify a condition to filter rows. An user will see a row if the condition is calculated to non-zero for the row.
 
-## TO Clause {#create-row-policy-to}
+## TO Clause
 
 In the section `TO` you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
 Keyword `ALL` means all the ClickHouse users including current user. Keyword `ALL EXCEPT` allow to exclude some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-!!! note "Note"
-    If there are no row policies defined for a table then any user can `SELECT` all the row from the table. Defining one or more row policies for the table makes the access to the table depending on the row policies no matter if those row policies are defined for the current user or not. For example, the following policy
+:::note    
+If there are no row policies defined for a table then any user can `SELECT` all the row from the table. Defining one or more row policies for the table makes the access to the table depending on the row policies no matter if those row policies are defined for the current user or not. For example, the following policy
 
-    `CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
+`CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
 
-    forbids the users `mira` and `peter` to see the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
+forbids the users `mira` and `peter` to see the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
 
-    If that's not desirable it can't be fixed by adding one more row policy, like the following:
+If that's not desirable it can't be fixed by adding one more row policy, like the following:
 
-    `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
+`CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
+:::
 
-## AS Clause {#create-row-policy-as}
+## AS Clause
 
 It's allowed to have more than one policy enabled on the same table for the same user at the one time. So we need a way to combine the conditions from multiple policies.
 
@@ -74,7 +76,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 
 enables the user `peter` to see rows only if both `b=1` AND `c=2`.
 
-## ON CLUSTER Clause {#create-row-policy-on-cluster}
+## ON CLUSTER Clause
 
 Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 

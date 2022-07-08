@@ -155,7 +155,7 @@ public:
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
   */
-class ThreadFromGlobalPool
+class ThreadFromGlobalPool : boost::noncopyable
 {
 public:
     ThreadFromGlobalPool() = default;
@@ -189,12 +189,12 @@ public:
         });
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
     {
         if (joinable())
             abort();

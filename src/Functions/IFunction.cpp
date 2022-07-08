@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnNothing.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
@@ -181,9 +182,12 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         // Default implementation for nulls returns null result for null arguments,
         // so the result type must be nullable.
         if (!result_type->isNullable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Function {} with Null argument and default implementation for Nulls "
-                            "is expected to return Nullable result, got {}", result_type->getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Function {} with Null argument and default implementation for Nulls "
+                "is expected to return Nullable result, got {}",
+                getName(),
+                result_type->getName());
 
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }
@@ -200,9 +204,38 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     return nullptr;
 }
 
+ColumnPtr IExecutableFunction::defaultImplementationForNothing(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    if (!useDefaultImplementationForNothing())
+        return nullptr;
+
+    bool is_nothing_type_presented = false;
+    for (const auto & arg : args)
+        is_nothing_type_presented |= isNothing(arg.type);
+
+    if (!is_nothing_type_presented)
+        return nullptr;
+
+    if (!isNothing(result_type))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Function {} with argument with type Nothing and default implementation for Nothing "
+            "is expected to return result with type Nothing, got {}",
+            getName(),
+            result_type->getName());
+
+    if (input_rows_count > 0)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
+    return ColumnNothing::create(0);
+}
+
 ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    if (auto res = defaultImplementationForNothing(args, result_type, input_rows_count))
+        return res;
+
     if (auto res = defaultImplementationForConstantArguments(args, result_type, input_rows_count, dry_run))
         return res;
 
@@ -247,16 +280,22 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
                                         : columns_without_low_cardinality.front().column->size();
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
-            auto keys = res->convertToFullColumnIfConst();
+            bool res_is_constant = isColumnConst(*res);
+            auto keys = res_is_constant
+                ? res->cloneResized(1)->convertToFullColumnIfConst()
+                : res;
 
             auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*res_low_cardinality_type->getDictionaryType());
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
-            if (indexes)
+            if (indexes && !res_is_constant)
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0));
             else
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes);
+
+            if (res_is_constant)
+                result = ColumnConst::create(std::move(result), input_rows_count);
         }
         else
         {
@@ -410,6 +449,15 @@ void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[m
 DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
 {
     checkNumberOfArguments(arguments.size());
+
+    if (!arguments.empty() && useDefaultImplementationForNothing())
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isNothing(arg.type))
+                return std::make_shared<DataTypeNothing>();
+        }
+    }
 
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {

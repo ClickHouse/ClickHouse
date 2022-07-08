@@ -22,8 +22,8 @@ public:
     using AtomFromASTFunc = std::function<
             bool(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out)>;
 
-    RPNBuilder(const SelectQueryInfo & query_info, ContextPtr context_, const AtomFromASTFunc & atomFromAST_)
-        : WithContext(context_), atomFromAST(atomFromAST_)
+    RPNBuilder(const SelectQueryInfo & query_info, ContextPtr context_, const AtomFromASTFunc & atom_from_ast_)
+        : WithContext(context_), atom_from_ast(atom_from_ast_)
     {
         /** Evaluation of expressions that depend only on constants.
           * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
@@ -79,7 +79,7 @@ private:
             }
         }
 
-        if (!atomFromAST(node, getContext(), block_with_constants, element))
+        if (!atom_from_ast(node, getContext(), block_with_constants, element))
         {
             element.function = RPNElement::FUNCTION_UNKNOWN;
         }
@@ -114,10 +114,10 @@ private:
         return true;
     }
 
-    const AtomFromASTFunc & atomFromAST;
+    const AtomFromASTFunc & atom_from_ast;
     Block block_with_constants;
     RPN rpn;
 };
 
 
-};
+}

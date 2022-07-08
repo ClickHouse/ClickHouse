@@ -1,6 +1,6 @@
 ---
-toc_priority: 61
-toc_title: "Функция ArrayJoin"
+sidebar_position: 61
+sidebar_label: "Функция ArrayJoin"
 ---
 
 # Функция ArrayJoin {#functions_arrayjoin}

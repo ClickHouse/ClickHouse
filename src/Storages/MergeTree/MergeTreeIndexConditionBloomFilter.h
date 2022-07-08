@@ -38,7 +38,7 @@ public:
             ALWAYS_TRUE,
         };
 
-        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {}
+        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {} /// NOLINT
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<std::pair<size_t, ColumnPtr>> predicate;

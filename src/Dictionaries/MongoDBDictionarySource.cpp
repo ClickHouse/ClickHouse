@@ -56,7 +56,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
 }
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
@@ -163,12 +163,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-Pipe MongoDBDictionarySource::loadAll()
+QueryPipeline MongoDBDictionarySource::loadAll()
 {
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size));
 }
 
-Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -181,15 +181,15 @@ Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 
     Poco::MongoDB::Array::Ptr ids_array(new Poco::MongoDB::Array);
     for (const UInt64 id : ids)
-        ids_array->add(DB::toString(id), Int32(id));
+        ids_array->add(DB::toString(id), static_cast<Int32>(id));
 
     cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 
-Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -218,7 +218,7 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
                 case AttributeUnderlyingType::Int32:
                 case AttributeUnderlyingType::Int64:
                 {
-                    key.add(key_attribute.name, Int32(key_columns[attribute_index]->get64(row_idx)));
+                    key.add(key_attribute.name, static_cast<Int32>(key_columns[attribute_index]->get64(row_idx)));
                     break;
                 }
                 case AttributeUnderlyingType::Float32:
@@ -251,7 +251,7 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
     /// If more than one key we should use $or
     cursor->query().selector().add("$or", keys_array);
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 std::string MongoDBDictionarySource::toString() const

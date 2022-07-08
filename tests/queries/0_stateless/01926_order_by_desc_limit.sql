@@ -1,8 +1,9 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-tsan
+-- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
 
 DROP TABLE IF EXISTS order_by_desc;
 
-SET remote_fs_enable_cache=0;
+SET enable_filesystem_cache=0;
 
 CREATE TABLE order_by_desc (u UInt32, s String)
 ENGINE MergeTree ORDER BY u PARTITION BY u % 100

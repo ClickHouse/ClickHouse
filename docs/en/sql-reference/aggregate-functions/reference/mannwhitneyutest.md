@@ -1,9 +1,9 @@
 ---
-toc_priority: 310
-toc_title: mannWhitneyUTest
+sidebar_position: 310
+sidebar_label: mannWhitneyUTest
 ---
 
-# mannWhitneyUTest {#mannwhitneyutest}
+# mannWhitneyUTest
 
 Applies the Mann-Whitney rank test to samples from two populations.
 

@@ -44,7 +44,7 @@ LAYOUT(IP_TRIE())
 LIFETIME(MIN 10 MAX 100);
 
 -- fuzzer
-SELECT '127.0.0.0/24' = dictGetString('database_for_dict.dict_ipv4_trie', 'prefixprefixprefixprefix', tuple(IPv4StringToNum('127.0.0.0127.0.0.0'))); -- { serverError 36 }
+SELECT '127.0.0.0/24' = dictGetString('database_for_dict.dict_ipv4_trie', 'prefixprefixprefixprefix', tuple(IPv4StringToNumOrDefault('127.0.0.0127.0.0.0'))); -- { serverError 36 }
 
 SELECT 0 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('0.0.0.0')));
 SELECT 1 == dictGetUInt32('database_for_dict.dict_ipv4_trie', 'asn', tuple(IPv4StringToNum('128.0.0.0')));

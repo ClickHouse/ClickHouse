@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
@@ -163,6 +164,7 @@ public:
 
     void list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) override;
 
@@ -170,6 +172,10 @@ public:
         const String & path,
         int32_t version,
         CheckCallback callback) override;
+
+    void sync(
+         const String & path,
+         SyncCallback callback) override;
 
     void multi(
         const Requests & requests,
@@ -209,7 +215,7 @@ private:
     std::atomic<XID> next_xid {1};
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
-    std::atomic<bool> finalization_started {false};
+    std::atomic_flag finalization_started;
 
     using clock = std::chrono::steady_clock;
 
@@ -228,13 +234,13 @@ private:
 
     using Operations = std::map<XID, RequestInfo>;
 
-    Operations operations;
+    Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
     using WatchCallbacks = std::vector<WatchCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
-    Watches watches;
+    Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
     ThreadFromGlobalPool send_thread;

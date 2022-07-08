@@ -25,7 +25,9 @@ namespace ErrorCodes
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
                                            std::string connection_host,
-                                           int connection_port) : host(connection_host), port(connection_port)
+                                           std::optional<UInt16> connection_port)
+    : host(connection_host)
+    , port(connection_port.value_or(getPortFromConfig(config)))
 {
     bool is_secure = config.getBool("secure", false);
     security = is_secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
@@ -73,7 +75,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 {
 }
 
-int ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config)
+UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     bool is_secure = config.getBool("secure", false);
     return config.getInt("port",

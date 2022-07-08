@@ -31,7 +31,7 @@ public:
     using WriteBufferConstructor = std::function<WriteBufferPtr (const WriteBufferPtr & prev_buf)>;
     using WriteBufferConstructors = std::vector<WriteBufferConstructor>;
 
-    CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, WriteBufferConstructors && lazy_sources_ = {});
+    explicit CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, WriteBufferConstructors && lazy_sources_ = {});
 
     void nextImpl() override;
 

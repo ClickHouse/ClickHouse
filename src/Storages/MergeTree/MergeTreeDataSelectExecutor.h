@@ -12,6 +12,7 @@ namespace DB
 {
 
 class KeyCondition;
+struct QueryIdHolder;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
@@ -28,7 +29,7 @@ public:
 
     QueryPlanPtr read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
@@ -41,8 +42,7 @@ public:
     QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot_base,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,

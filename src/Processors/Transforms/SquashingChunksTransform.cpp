@@ -5,9 +5,9 @@ namespace DB
 {
 
 SquashingChunksTransform::SquashingChunksTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, bool reserve_memory)
+    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes, reserve_memory)
+    , squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 

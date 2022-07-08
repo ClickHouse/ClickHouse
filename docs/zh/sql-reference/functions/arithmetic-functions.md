@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: 算术函数
+sidebar_position: 35
+sidebar_label: 算术函数
 ---
 
 # 算术函数 {#arithmetic-functions}
@@ -79,5 +79,79 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 
 返回数值的最小公倍数。
 除以零或将最小负数除以-1时抛出异常。
+
+## max2 {#max2}
+
+比较两个值并返回最大值。返回值转换为[Float64](../../sql-reference/data-types/float.md)。
+
+**语法**
+
+```sql
+max2(value1, value2)
+```
+
+**参数**
+
+-   `value1` — 第一个值，类型为[Int/UInt](../../sql-reference/data-types/int-uint.md)或[Float](../../sql-reference/data-types/float.md)。
+-   `value2` — 第二个值，类型为[Int/UInt](../../sql-reference/data-types/int-uint.md)或[Float](../../sql-reference/data-types/float.md)。
+
+**返回值**
+
+-   两个值中的最大值。
+
+类型: [Float](../../sql-reference/data-types/float.md)。
+
+**示例**
+
+查询语句:
+
+```sql
+SELECT max2(-1, 2);
+```
+
+结果:
+
+```text
+┌─max2(-1, 2)─┐
+│           2 │
+└─────────────┘
+```
+
+## min2 {#min2}
+
+比较两个值并返回最小值。返回值类型转换为[Float64](../../sql-reference/data-types/float.md)。
+
+**语法**
+
+```sql
+max2(value1, value2)
+```
+
+**参数**
+
+-   `value1` — 第一个值，类型为[Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md)。
+-   `value2` — 第二个值，类型为[Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md)。
+
+**返回值**
+
+-   两个值中的最小值。
+
+类型: [Float](../../sql-reference/data-types/float.md)。
+
+**示例**
+
+查询语句:
+
+```sql
+SELECT min2(-1, 2);
+```
+
+结果:
+
+```text
+┌─min2(-1, 2)─┐
+│          -1 │
+└─────────────┘
+```
 
 [来源文章](https://clickhouse.com/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

@@ -1,5 +1,5 @@
 ---
-toc_priority: 32
+sidebar_position: 32
 ---
 
 # varPop(x) {#varpopx}

@@ -2,6 +2,9 @@
 
 #include <string>
 
+#include <base/types.h>
+#include <Common/Exception.h>
+
 namespace DB
 {
 
@@ -40,7 +43,7 @@ struct Keeper4LWInfo
         if (is_follower)
             return "follower";
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RAFT server has undefined state state, it's a bug");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RAFT server has undefined state, it's a bug");
     }
 };
 

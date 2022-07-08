@@ -1,9 +1,9 @@
 ---
-toc_priority: 54
-toc_title: Testing Hardware
+sidebar_position: 54
+sidebar_label: Testing Hardware
 ---
 
-# How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# How to Test Your Hardware with ClickHouse
 
 You can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
@@ -59,7 +59,7 @@ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/cl
 chmod a+x benchmark-new.sh
 wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 ```
-3.  Download test data according to the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) instruction (“hits” table containing 100 million rows).
+3.  Download the [web analytics dataset](../getting-started/example-datasets/metrica.md) (“hits” table containing 100 million rows).
 ```bash
 wget https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz
 tar xvf hits_100m_obfuscated_v1.tar.xz -C .
@@ -78,6 +78,6 @@ mv hits_100m_obfuscated_v1/* .
 ```bash
 ./benchmark-new.sh hits_100m_obfuscated
 ```
-7.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
+7.  Send the numbers and the info about your hardware configuration to feedback@clickhouse.com
 
 All the results are published here: https://clickhouse.com/benchmark/hardware/

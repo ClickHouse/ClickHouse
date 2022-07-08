@@ -53,14 +53,14 @@ UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
     using RingType = typename Polygon::ring_type;
     using ValueType = typename RingType::value_type;
 
-    auto sizeOfRing = [](const RingType & ring) { return sizeof(ring) + ring.capacity() * sizeof(ValueType); };
+    auto size_of_ring = [](const RingType & ring) { return sizeof(ring) + ring.capacity() * sizeof(ValueType); };
 
-    size += sizeOfRing(polygon.outer());
+    size += size_of_ring(polygon.outer());
 
     const auto & inners = polygon.inners();
     size += sizeof(inners) + inners.capacity() * sizeof(RingType);
     for (auto & inner : inners)
-        size += sizeOfRing(inner);
+        size += size_of_ring(inner);
 
     return size;
 }

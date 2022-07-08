@@ -21,7 +21,6 @@ public:
 protected:
     [[noreturn]] static void throwNotReady();
 
-protected:
     bool is_ready = false;
     String user_name;
 };

@@ -1,6 +1,6 @@
 ---
-toc_priority: 17
-toc_title: 命令行客户端
+sidebar_position: 17
+sidebar_label: 命令行客户端
 ---
 
 # 命令行客户端 {#command-line-client}

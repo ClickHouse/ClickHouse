@@ -109,7 +109,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
                 "Cannot determine common structure for {} function arguments: the amount of columns is differ for different arguments",
                 getName());
         for (size_t j = 0; j != arg_types.size(); ++j)
-            data_types[j] = getLeastSupertype({data_types[j], arg_types[j]});
+            data_types[j] = getLeastSupertype(DataTypes{data_types[j], arg_types[j]});
     }
 
     NamesAndTypesList names_and_types;
@@ -140,7 +140,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
+    auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

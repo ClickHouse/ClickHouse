@@ -1,6 +1,6 @@
 #include "ThreadProfileEvents.h"
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include "TaskStatsInfoGetter.h"
 #include "ProcfsMetricsProvider.h"
@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
-#include <sstream>
 #include <unordered_set>
 
 #include <fcntl.h>
@@ -21,12 +20,13 @@
 #include <sys/types.h>
 #include <dirent.h>
 
+#include <boost/algorithm/string/split.hpp>
+
 #include <base/errnoToString.h>
 
 
 namespace ProfileEvents
 {
-#if defined(__linux__)
     extern const Event OSIOWaitMicroseconds;
     extern const Event OSCPUWaitMicroseconds;
     extern const Event OSCPUVirtualTimeMicroseconds;
@@ -60,18 +60,31 @@ namespace ProfileEvents
     extern const Event PerfInstructionTLBMisses;
     extern const Event PerfLocalMemoryReferences;
     extern const Event PerfLocalMemoryMisses;
-#endif
 }
 
 namespace DB
 {
+
+const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
+{
+    switch (provider)
+    {
+        case MetricsProvider::None:
+            return "none";
+        case MetricsProvider::Procfs:
+            return "procfs";
+        case MetricsProvider::Netlink:
+            return "netlink";
+    }
+    __builtin_unreachable();
+}
 
 bool TasksStatsCounters::checkIfAvailable()
 {
     return findBestAvailableProvider() != MetricsProvider::None;
 }
 
-std::unique_ptr<TasksStatsCounters> TasksStatsCounters::create(const UInt64 tid)
+std::unique_ptr<TasksStatsCounters> TasksStatsCounters::create(UInt64 tid)
 {
     std::unique_ptr<TasksStatsCounters> instance;
     if (checkIfAvailable())
@@ -164,7 +177,7 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
 
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 namespace DB
 {
@@ -247,9 +260,9 @@ static_assert(sizeof(raw_events_info) / sizeof(raw_events_info[0]) == NUMBER_OF_
 #undef CACHE_EVENT
 
 // A map of event name -> event index, to parse event list in settings.
-static std::unordered_map<std::string, size_t> populateEventMap()
+static std::unordered_map<std::string_view, size_t> populateEventMap()
 {
-    std::unordered_map<std::string, size_t> name_to_index;
+    std::unordered_map<std::string_view, size_t> name_to_index;
     name_to_index.reserve(NUMBER_OF_RAW_EVENTS);
 
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
@@ -455,10 +468,10 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
         return result;
     }
 
+    std::vector<std::string> event_names;
+    boost::split(event_names, events_list, [](char c) { return c == ','; });
 
-    std::istringstream iss(events_list);        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    std::string event_name;
-    while (std::getline(iss, event_name, ','))
+    for (auto & event_name : event_names)
     {
         // Allow spaces at the beginning of the token, so that you can write 'a, b'.
         event_name.erase(0, event_name.find_first_not_of(' '));

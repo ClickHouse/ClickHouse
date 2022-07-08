@@ -35,9 +35,9 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/DummyJSONParser.h>
-#include <Functions/SimdJSONParser.h>
-#include <Functions/RapidJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Interpreters/Context.h>
@@ -123,7 +123,7 @@ public:
             bool document_ok = false;
             if (col_json_const)
             {
-                std::string_view json{reinterpret_cast<const char *>(&chars[0]), offsets[0] - 1};
+                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
                 document_ok = parser.parse(json, document);
             }
 
@@ -447,10 +447,16 @@ public:
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
+        bool has_nothing_argument = false;
+        for (const auto & arg : arguments)
+            has_nothing_argument |= isNothing(arg.type);
+
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
-        if (null_presence.has_null_constant)
+        if (has_nothing_argument)
+            return_type = std::make_shared<DataTypeNothing>();
+        else if (null_presence.has_null_constant)
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
         else if (null_presence.has_nullable)
             return_type = makeNullable(json_return_type);
@@ -896,7 +902,7 @@ struct JSONExtractTree
             if (element.isInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.count(value))
+                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.contains(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;
@@ -905,7 +911,7 @@ struct JSONExtractTree
             if (element.isUInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.count(value))
+                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.contains(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;

@@ -171,7 +171,7 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
-            if (!dependencies.count(dependency))
+            if (!dependencies.contains(dependency))
             {
                 dependencies.insert(dependency);
                 if (!dependency.isReadOnly())
@@ -360,7 +360,7 @@ static void validateUpdateColumns(
             throw Exception("There is no column " + backQuote(column_name) + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
 
-        if (key_columns.count(column_name))
+        if (key_columns.contains(column_name))
             throw Exception("Cannot UPDATE key column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
 
         auto materialized_it = column_to_affected_materialized.find(column_name);
@@ -368,7 +368,7 @@ static void validateUpdateColumns(
         {
             for (const String & materialized : materialized_it->second)
             {
-                if (key_columns.count(materialized))
+                if (key_columns.contains(materialized))
                     throw Exception("Updated column " + backQuote(column_name) + " affects MATERIALIZED column "
                         + backQuote(materialized) + ", which is a key column. Cannot UPDATE it.",
                         ErrorCodes::CANNOT_UPDATE_COLUMN);
@@ -448,7 +448,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const String & dependency : syntax_result->requiredSourceColumns())
                 {
-                    if (updated_columns.count(dependency))
+                    if (updated_columns.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
                 }
             }
@@ -740,7 +740,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto source = std::make_shared<NullSource>(first_stage_header);
                 plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source))));
                 auto pipeline = addStreamsForLaterStages(stages_copy, plan);
-                updated_header = std::make_unique<Block>(pipeline->getHeader());
+                updated_header = std::make_unique<Block>(pipeline.getHeader());
             }
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
@@ -758,7 +758,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
-    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    auto all_columns = storage_snapshot->getColumns(options);
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
@@ -802,7 +804,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         /// e.g. ALTER referencing the same table in scalar subquery
         bool execute_scalar_subqueries = !dry_run;
         auto syntax_result = TreeRewriter(context).analyze(
-            all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
+            all_asts, all_columns, storage, storage_snapshot,
+            false, true, execute_scalar_subqueries);
+
         if (execute_scalar_subqueries && context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
@@ -886,7 +890,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-QueryPipelineBuilderPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
+QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -920,11 +924,11 @@ QueryPipelineBuilderPtr MutationsInterpreter::addStreamsForLaterStages(const std
     QueryPlanOptimizationSettings do_not_optimize_plan;
     do_not_optimize_plan.optimize_plan = false;
 
-    auto pipeline = plan.buildQueryPipeline(
+    auto pipeline = std::move(*plan.buildQueryPipeline(
         do_not_optimize_plan,
-        BuildQueryPipelineSettings::fromContext(context));
+        BuildQueryPipelineSettings::fromContext(context)));
 
-    pipeline->addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);
     });
@@ -962,7 +966,7 @@ void MutationsInterpreter::validate()
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
-QueryPipeline MutationsInterpreter::execute()
+QueryPipelineBuilder MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
@@ -977,20 +981,18 @@ QueryPipeline MutationsInterpreter::execute()
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder->getHeader()))
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
     {
-        builder->addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });
     }
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-
     if (!updated_header)
-        updated_header = std::make_unique<Block>(pipeline.getHeader());
+        updated_header = std::make_unique<Block>(builder.getHeader());
 
-    return pipeline;
+    return builder;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const
@@ -1023,7 +1025,7 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     for (size_t i = 0; i < sort_columns_size; ++i)
     {
         if (header.has(sort_columns[i]))
-            sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+            sort_description.emplace_back(sort_columns[i], 1, 1);
         else
             return {};
     }
@@ -1040,7 +1042,7 @@ bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_co
 {
     /// is subset
     for (const auto & storage_column : storage_columns)
-        if (!output_columns.count(storage_column))
+        if (!output_columns.contains(storage_column))
             return false;
 
     return true;

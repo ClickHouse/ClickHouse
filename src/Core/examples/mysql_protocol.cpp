@@ -330,7 +330,7 @@ int main(int argc, char ** argv)
 
             /// Connect to the master.
             slave.connect();
-            slave.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets, binlog_checksum);
+            slave.startBinlogDumpGTID(slave_id, replicate_db, {}, gtid_sets, binlog_checksum);
 
             WriteBufferFromOStream cerr(std::cerr);
 

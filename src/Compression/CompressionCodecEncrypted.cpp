@@ -6,7 +6,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL
@@ -50,11 +50,11 @@ uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
     {
-        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
+        return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
     }
     else if (Method == AES_256_GCM_SIV)
     {
-        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
+        return static_cast<uint8_t>(CompressionMethodByte::AES_256_GCM_SIV);
     }
     else
     {

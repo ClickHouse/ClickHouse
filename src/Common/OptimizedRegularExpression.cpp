@@ -17,7 +17,7 @@ namespace DB
 
 template <bool thread_safe>
 void OptimizedRegularExpressionImpl<thread_safe>::analyze(
-    const std::string & regexp,
+    std::string_view regexp,
     std::string & required_substring,
     bool & is_trivial,
     bool & required_substring_is_prefix)
@@ -28,7 +28,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
       *  in which all metacharacters are escaped,
       *  and also if there are no '|' outside the brackets,
       *  and also avoid substrings of the form `http://` or `www` and some other
-      *   (this is the hack for typical use case in Yandex.Metrica).
+      *   (this is the hack for typical use case in web analytics applications).
       */
     const char * begin = regexp.data();
     const char * pos = begin;

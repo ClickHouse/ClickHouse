@@ -1,6 +1,6 @@
 ---
-toc_priority: 2
-toc_title: ODBC
+sidebar_position: 2
+sidebar_label: ODBC
 ---
 
 # ODBC {#table-engine-odbc}
