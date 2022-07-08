@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -9,12 +9,12 @@ namespace DB
 {
 
 /// Lightweight (in terms of logic) stream for reading single part from MergeTree
-class MergeTreeSequentialSource : public SourceWithProgress
+class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
         const MergeTreeData & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
         Names columns_to_read_,
         bool read_with_direct_io_,
@@ -35,7 +35,7 @@ protected:
 private:
 
     const MergeTreeData & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
@@ -58,7 +58,6 @@ private:
     /// current row at which we stop reading
     size_t current_row = 0;
 
-private:
     /// Closes readers and unlock part locks
     void finish();
 };

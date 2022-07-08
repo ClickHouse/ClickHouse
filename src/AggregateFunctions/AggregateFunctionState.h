@@ -52,6 +52,8 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);

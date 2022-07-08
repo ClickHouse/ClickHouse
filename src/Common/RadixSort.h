@@ -2,7 +2,7 @@
 
 
 #include <string.h>
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
 #endif
 #include <algorithm>
@@ -37,12 +37,12 @@
   */
 struct RadixSortAllocator
 {
-    void * allocate(size_t size)
+    static void * allocate(size_t size)
     {
         return ::operator new(size);
     }
 
-    void deallocate(void * ptr, size_t size)
+    static void deallocate(void * ptr, size_t size)
     {
         ::operator delete(ptr, size);
     }
@@ -513,6 +513,11 @@ public:
     static void executeLSD(Element * arr, size_t size)
     {
         radixSortLSDInternal<false>(arr, size, false, nullptr);
+    }
+
+    static void executeLSD(Element * arr, size_t size, bool reverse)
+    {
+        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
     }
 
     /** This function will start to sort inplace (modify 'arr')

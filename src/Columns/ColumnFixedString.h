@@ -32,14 +32,18 @@ private:
     /// The size of the rows.
     const size_t n;
 
-    template <bool positive> struct Cmp;
-    struct less;
-    struct greater;
+    struct ComparatorBase;
+
+    using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
+    using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
+    using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
+    using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
+    using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
     /** Create an empty column of strings of fixed-length `n` */
-    ColumnFixedString(size_t n_) : n(n_) {}
+    explicit ColumnFixedString(size_t n_) : n(n_) {}
 
-    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {}
+    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {} /// NOLINT
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
@@ -142,9 +146,11 @@ public:
         return hasEqualValuesImpl<ColumnFixedString>();
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                    size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                    size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
@@ -184,7 +190,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
+        if (const auto * rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
             return n == rhs_concrete->n;
         return false;
     }

@@ -1,8 +1,8 @@
 ---
-toc_priority: 109
+sidebar_position: 109
 ---
 
-# topKWeighted {#topkweighted}
+# topKWeighted
 
 Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves). Additionally, the weight of the value is taken into account.
 

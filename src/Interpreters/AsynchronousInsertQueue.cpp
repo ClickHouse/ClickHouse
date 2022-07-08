@@ -9,7 +9,6 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -20,8 +19,11 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledQuota.h>
 #include <Formats/FormatFactory.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace CurrentMetrics
@@ -32,6 +34,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
+    extern const Event AsyncInsertBytes;
 }
 
 namespace DB
@@ -196,6 +199,9 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         copyData(*read_buf, write_buf);
     }
 
+    if (auto quota = query_context->getQuota())
+        quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
+
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
     InsertQuery key{query, settings};
 
@@ -209,7 +215,7 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         }
     }
 
-    std::unique_lock write_lock(rwlock);
+    std::lock_guard write_lock(rwlock);
     auto it = queue.emplace(key, std::make_shared<Container>()).first;
     pushImpl(std::move(entry), it);
 }
@@ -222,7 +228,9 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     if (!data)
         data = std::make_unique<InsertData>();
 
-    data->size += entry->bytes.size();
+    size_t entry_data_size = entry->bytes.size();
+
+    data->size += entry_data_size;
     data->last_update = std::chrono::steady_clock::now();
     data->entries.emplace_back(entry);
 
@@ -239,6 +247,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
     ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
+    ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -334,7 +343,7 @@ void AsynchronousInsertQueue::cleanup()
 
         if (!keys_to_remove.empty())
         {
-            std::unique_lock write_lock(rwlock);
+            std::lock_guard write_lock(rwlock);
             size_t total_removed = 0;
 
             for (const auto & key : keys_to_remove)

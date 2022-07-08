@@ -4,8 +4,6 @@
 
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveReader.h>
-#include <IO/Archives/ZipArchiveWriter.h>
-#include <base/shared_ptr_helper.h>
 #include <mutex>
 #include <vector>
 
@@ -17,10 +15,15 @@ class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
 /// Implementation of IArchiveReader for reading zip archives.
-class ZipArchiveReader : public shared_ptr_helper<ZipArchiveReader>, public IArchiveReader
+class ZipArchiveReader : public IArchiveReader
 {
 public:
-    using CompressionMethod = ZipArchiveWriter::CompressionMethod;
+    /// Constructs an archive's reader that will read from a file in the local filesystem.
+    explicit ZipArchiveReader(const String & path_to_archive_);
+
+    /// Constructs an archive's reader that will read by making a read buffer by using
+    /// a specified function.
+    ZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_);
 
     ~ZipArchiveReader() override;
 
@@ -45,26 +48,18 @@ public:
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
 
-    /// Utility functions.
-    static CompressionMethod parseCompressionMethod(const String & str) { return ZipArchiveWriter::parseCompressionMethod(str); }
-    static void checkCompressionMethodIsEnabled(CompressionMethod method) { ZipArchiveWriter::checkCompressionMethodIsEnabled(method); }
-    static void checkEncryptionIsEnabled() { ZipArchiveWriter::checkEncryptionIsEnabled(); }
-
 private:
-    /// Constructs an archive's reader that will read from a file in the local filesystem.
-    explicit ZipArchiveReader(const String & path_to_archive_);
-
-    /// Constructs an archive's reader that will read by making a read buffer by using
-    /// a specified function.
-    ZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_);
-
-    friend struct shared_ptr_helper<ZipArchiveReader>;
     class ReadBufferFromZipArchive;
     class FileEnumeratorImpl;
     class HandleHolder;
     using RawHandle = void *;
 
     void init();
+
+    struct FileInfoImpl : public FileInfo
+    {
+        int compression_method;
+    };
 
     HandleHolder acquireHandle();
     RawHandle acquireRawHandle();

@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: VersionedCollapsingMergeTree
+sidebar_position: 37
+sidebar_label: VersionedCollapsingMergeTree
 ---
 
 # VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
@@ -53,9 +53,10 @@ VersionedCollapsingMergeTree(sign, version)
 
 <summary>Устаревший способ создания таблицы</summary>
 
-!!! warning "Внимание"
+    :::danger "Внимание"
     Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
-
+    :::
+    
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (

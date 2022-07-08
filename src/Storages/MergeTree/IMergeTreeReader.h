@@ -44,13 +44,13 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows);
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
     /// Evaluate defaulted columns if necessary.
-    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
+    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
     /// If part metadata is not equal to storage metadata, than
     /// try to perform conversions of columns.
-    void performRequiredConversions(Columns & res_columns);
+    void performRequiredConversions(Columns & res_columns) const;
 
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }
@@ -88,8 +88,6 @@ protected:
 
     using ColumnPosition = std::optional<size_t>;
     ColumnPosition findColumnForOffsets(const String & column_name) const;
-
-    friend class MergeTreeRangeReader::DelayedStream;
 
 private:
     /// Alter conversions, which must be applied on fly if required

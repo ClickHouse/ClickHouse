@@ -37,7 +37,7 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    size_t size() const override { return size_; }
+    size_t size() const override { return elements_size; }
 
     ColumnPtr cut(size_t start, size_t length) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
@@ -146,12 +146,14 @@ public:
         throw Exception("hasEqualValues is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getPermutation(bool, size_t, int, Permutation &) const override
+    void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
+                        size_t, int, Permutation &) const override
     {
         throw Exception("getPermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override
+    void updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
+                        size_t, int, Permutation &, EqualRanges &) const override
     {
         throw Exception("updatePermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -176,7 +178,7 @@ public:
     DataTypePtr getResultType() const;
 
 private:
-    size_t size_;
+    size_t elements_size;
     FunctionBasePtr function;
     ColumnsWithTypeAndName captured_columns;
 

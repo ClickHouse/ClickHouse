@@ -2,6 +2,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,7 +13,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
@@ -376,11 +376,11 @@ ColumnPtr fillColumnWithRandomData(
 }
 
 
-class GenerateSource : public SourceWithProgress
+class GenerateSource : public ISource
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
+        : ISource(Nested::flatten(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
@@ -469,36 +469,36 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const Field & value = engine_args[0]->as<const ASTLiteral &>().value;
-            if (!value.isNull())
-                random_seed = value.safeGet<UInt64>();
+            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
+            if (!ast_literal.value.isNull())
+                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = engine_args[1]->as<const ASTLiteral &>().value.safeGet<UInt64>();
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
 
         if (engine_args.size() == 3)
-            max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
+            max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
 
-        return StorageGenerateRandom::create(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
+        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
 }
 
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
+    const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {

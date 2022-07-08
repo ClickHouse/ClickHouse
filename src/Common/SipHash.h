@@ -71,7 +71,7 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 k0 = 0, UInt64 k1 = 0)
+    SipHash(UInt64 k0 = 0, UInt64 k1 = 0) /// NOLINT
     {
         /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ k0;
@@ -83,7 +83,7 @@ public:
         current_word = 0;
     }
 
-    void update(const char * data, UInt64 size)
+    ALWAYS_INLINE void update(const char * data, UInt64 size)
     {
         const char * end = data + size;
 
@@ -137,14 +137,19 @@ public:
     }
 
     template <typename T>
-    void update(const T & x)
+    ALWAYS_INLINE void update(const T & x)
     {
-        update(reinterpret_cast<const char *>(&x), sizeof(x));
+        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
-    void update(const std::string & x)
+    ALWAYS_INLINE void update(const std::string & x)
     {
         update(x.data(), x.length());
+    }
+
+    ALWAYS_INLINE void update(const std::string_view x)
+    {
+        update(x.data(), x.size());
     }
 
     /// Get the result in some form. This can only be done once!

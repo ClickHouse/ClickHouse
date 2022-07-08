@@ -2,12 +2,15 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
+#include <Functions/FunctionsCodingIP.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -17,7 +20,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
@@ -239,17 +242,19 @@ private:
     }
 };
 
-
+template <IPStringToNumExceptionMode exception_mode>
 class FunctionIPv6StringToNum : public IFunction
 {
 public:
-    static constexpr auto name = "IPv6StringToNum";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6StringToNum>(); }
+    static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
+        ? "IPv6StringToNum"
+        : (exception_mode == IPStringToNumExceptionMode::Default ? "IPv6StringToNumOrDefault" : "IPv6StringToNumOrNull");
 
-    static inline bool tryParseIPv4(const char * pos)
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIPv6StringToNum>(context); }
+
+    explicit FunctionIPv6StringToNum(ContextPtr context)
+        : cast_ipv4_ipv6_default_on_conversion_error(context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error)
     {
-        UInt32 result = 0;
-        return DB::parseIPv4(pos, reinterpret_cast<unsigned char *>(&result));
     }
 
     String getName() const override { return name; }
@@ -258,62 +263,60 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
+        if (!isStringOrFixedString(removeNullable(arguments[0])))
+        {
             throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        }
 
-        return std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
+        auto result_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
+
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+        {
+            return makeNullable(result_type);
+        }
+
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column = arguments[0].column;
-
-        if (const auto * col_in = checkAndGetColumn<ColumnString>(column.get()))
+        ColumnPtr column = arguments[0].column;
+        ColumnPtr null_map_column;
+        const NullMap * null_map = nullptr;
+        if (column->isNullable())
         {
-            auto col_res = ColumnFixedString::create(IPV6_BINARY_LENGTH);
-
-            auto & vec_res = col_res->getChars();
-            vec_res.resize(col_in->size() * IPV6_BINARY_LENGTH);
-
-            const ColumnString::Chars & vec_src = col_in->getChars();
-            const ColumnString::Offsets & offsets_src = col_in->getOffsets();
-            size_t src_offset = 0;
-            char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
-
-            for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += IPV6_BINARY_LENGTH, ++i)
-            {
-                /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
-
-                /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
-                /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
-                if (tryParseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset])))
-                {
-                    std::memcpy(
-                        src_ipv4_buf + std::strlen("::ffff:"),
-                        reinterpret_cast<const char *>(&vec_src[src_offset]),
-                        std::min<UInt64>(offsets_src[i] - src_offset, IPV4_MAX_TEXT_LENGTH + 1));
-                    parseIPv6(src_ipv4_buf, reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
-                }
-                else
-                {
-                    parseIPv6(
-                        reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
-                }
-                src_offset = offsets_src[i];
-            }
-
-            return col_res;
+            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+            column = column_nullable->getNestedColumnPtr();
+            null_map_column = column_nullable->getNullMapColumnPtr();
+            null_map = &column_nullable->getNullMapData();
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+        {
+            if (cast_ipv4_ipv6_default_on_conversion_error)
+            {
+                auto result = convertToIPv6<IPStringToNumExceptionMode::Default>(column, null_map);
+                if (null_map && !result->isNullable())
+                    return ColumnNullable::create(result, null_map_column);
+                return result;
+            }
+        }
+
+        auto result = convertToIPv6<exception_mode>(column, null_map);
+        if (null_map && !result->isNullable())
+            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
+        return result;
     }
+
+private:
+    bool cast_ipv4_ipv6_default_on_conversion_error = false;
 };
 
 
@@ -381,69 +384,81 @@ public:
     }
 };
 
-
+template <IPStringToNumExceptionMode exception_mode>
 class FunctionIPv4StringToNum : public IFunction
 {
 public:
-    static constexpr auto name = "IPv4StringToNum";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4StringToNum>(); }
+    static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
+        ? "IPv4StringToNum"
+        : (exception_mode == IPStringToNumExceptionMode::Default ? "IPv4StringToNumOrDefault" : "IPv4StringToNumOrNull");
 
-    String getName() const override
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIPv4StringToNum>(context); }
+
+    explicit FunctionIPv4StringToNum(ContextPtr context)
+        : cast_ipv4_ipv6_default_on_conversion_error(context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error)
     {
-        return name;
     }
+
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isString(removeNullable(arguments[0])))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        }
 
-        return std::make_shared<DataTypeUInt32>();
+        auto result_type = std::make_shared<DataTypeUInt32>();
+
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+        {
+            return makeNullable(result_type);
+        }
+
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
-
-    static inline UInt32 parseIPv4(const char * pos)
-    {
-        UInt32 result = 0;
-        DB::parseIPv4(pos, reinterpret_cast<unsigned char*>(&result));
-
-        return result;
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column = arguments[0].column;
-
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        ColumnPtr column = arguments[0].column;
+        ColumnPtr null_map_column;
+        const NullMap * null_map = nullptr;
+        if (column->isNullable())
         {
-            auto col_res = ColumnUInt32::create();
-
-            ColumnUInt32::Container & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-
-            const ColumnString::Chars & vec_src = col->getChars();
-            const ColumnString::Offsets & offsets_src = col->getOffsets();
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < vec_res.size(); ++i)
-            {
-                vec_res[i] = parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]));
-                prev_offset = offsets_src[i];
-            }
-
-            return col_res;
+            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+            column = column_nullable->getNestedColumnPtr();
+            null_map_column = column_nullable->getNullMapColumnPtr();
+            null_map = &column_nullable->getNullMapData();
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+        {
+            if (cast_ipv4_ipv6_default_on_conversion_error)
+            {
+                auto result = convertToIPv4<IPStringToNumExceptionMode::Default>(column, null_map);
+                if (null_map && !result->isNullable())
+                    return ColumnNullable::create(result, null_map_column);
+                return result;
+            }
+        }
+
+        auto result = convertToIPv4<exception_mode>(column, null_map);
+        if (null_map && !result->isNullable())
+            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
+        return result;
     }
+
+private:
+    bool cast_ipv4_ipv6_default_on_conversion_error = false;
 };
 
 
@@ -503,16 +518,21 @@ private:
     }
 };
 
-class FunctionToIPv4 : public FunctionIPv4StringToNum
+template <IPStringToNumExceptionMode exception_mode>
+class FunctionToIPv4 : public FunctionIPv4StringToNum<exception_mode>
 {
 public:
-    static constexpr auto name = "toIPv4";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToIPv4>(); }
+    using Base = FunctionIPv4StringToNum<exception_mode>;
 
-    String getName() const override
-    {
-        return name;
-    }
+    static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
+        ? "toIPv4"
+        : (exception_mode == IPStringToNumExceptionMode::Default ? "toIPv4OrDefault" : "toIPv4OrNull");
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToIPv4>(context); }
+
+    explicit FunctionToIPv4(ContextPtr context) : Base(context) { }
+
+    String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -520,19 +540,36 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isString(removeNullable(arguments[0])))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        }
 
-        return DataTypeFactory::instance().get("IPv4");
+        auto result_type = DataTypeFactory::instance().get("IPv4");
+
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+        {
+            return makeNullable(result_type);
+        }
+
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
 };
 
-class FunctionToIPv6 : public FunctionIPv6StringToNum
+template <IPStringToNumExceptionMode exception_mode>
+class FunctionToIPv6 : public FunctionIPv6StringToNum<exception_mode>
 {
 public:
-    static constexpr auto name = "toIPv6";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToIPv6>(); }
+    using Base = FunctionIPv6StringToNum<exception_mode>;
+
+    static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
+        ? "toIPv6"
+        : (exception_mode == IPStringToNumExceptionMode::Default ? "toIPv6OrDefault" : "toIPv6OrNull");
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToIPv6>(context); }
+
+    explicit FunctionToIPv6(ContextPtr context) : Base(context) { }
 
     String getName() const override { return name; }
 
@@ -540,11 +577,20 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isStringOrFixedString(removeNullable(arguments[0])))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        }
 
-        return DataTypeFactory::instance().get("IPv6");
+        auto result_type = DataTypeFactory::instance().get("IPv6");
+
+        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+        {
+            return makeNullable(result_type);
+        }
+
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
 };
 
@@ -639,18 +685,18 @@ struct ParseMACImpl
       */
     static UInt64 parse(const char * pos)
     {
-        return (UInt64(unhex(pos[0])) << 44)
-               | (UInt64(unhex(pos[1])) << 40)
-               | (UInt64(unhex(pos[3])) << 36)
-               | (UInt64(unhex(pos[4])) << 32)
-               | (UInt64(unhex(pos[6])) << 28)
-               | (UInt64(unhex(pos[7])) << 24)
-               | (UInt64(unhex(pos[9])) << 20)
-               | (UInt64(unhex(pos[10])) << 16)
-               | (UInt64(unhex(pos[12])) << 12)
-               | (UInt64(unhex(pos[13])) << 8)
-               | (UInt64(unhex(pos[15])) << 4)
-               | (UInt64(unhex(pos[16])));
+        return (static_cast<UInt64>(unhex(pos[0])) << 44)
+               | (static_cast<UInt64>(unhex(pos[1])) << 40)
+               | (static_cast<UInt64>(unhex(pos[3])) << 36)
+               | (static_cast<UInt64>(unhex(pos[4])) << 32)
+               | (static_cast<UInt64>(unhex(pos[6])) << 28)
+               | (static_cast<UInt64>(unhex(pos[7])) << 24)
+               | (static_cast<UInt64>(unhex(pos[9])) << 20)
+               | (static_cast<UInt64>(unhex(pos[10])) << 16)
+               | (static_cast<UInt64>(unhex(pos[12])) << 12)
+               | (static_cast<UInt64>(unhex(pos[13])) << 8)
+               | (static_cast<UInt64>(unhex(pos[15])) << 4)
+               | (static_cast<UInt64>(unhex(pos[16])));
     }
 
     static constexpr auto name = "MACStringToNum";
@@ -666,12 +712,12 @@ struct ParseOUIImpl
       */
     static UInt64 parse(const char * pos)
     {
-        return (UInt64(unhex(pos[0])) << 20)
-               | (UInt64(unhex(pos[1])) << 16)
-               | (UInt64(unhex(pos[3])) << 12)
-               | (UInt64(unhex(pos[4])) << 8)
-               | (UInt64(unhex(pos[6])) << 4)
-               | (UInt64(unhex(pos[7])));
+        return (static_cast<UInt64>(unhex(pos[0])) << 20)
+               | (static_cast<UInt64>(unhex(pos[1])) << 16)
+               | (static_cast<UInt64>(unhex(pos[3])) << 12)
+               | (static_cast<UInt64>(unhex(pos[4])) << 8)
+               | (static_cast<UInt64>(unhex(pos[6])) << 4)
+               | (static_cast<UInt64>(unhex(pos[7])));
     }
 
     static constexpr auto name = "MACStringToOUI";
@@ -883,9 +929,9 @@ private:
         if (bits_to_keep >= 8 * sizeof(UInt32))
             return { src, src };
         if (bits_to_keep == 0)
-            return { UInt32(0), UInt32(-1) };
+            return { static_cast<UInt32>(0), static_cast<UInt32>(-1) };
 
-        UInt32 mask = UInt32(-1) << (8 * sizeof(UInt32) - bits_to_keep);
+        UInt32 mask = static_cast<UInt32>(-1) << (8 * sizeof(UInt32) - bits_to_keep);
         UInt32 lower = src & mask;
         UInt32 upper = lower | ~mask;
 
@@ -971,7 +1017,7 @@ public:
     }
 };
 
-class FunctionIsIPv4String : public FunctionIPv4StringToNum
+class FunctionIsIPv4String : public IFunction
 {
 public:
     static constexpr auto name = "isIPv4String";
@@ -980,46 +1026,51 @@ public:
 
     String getName() const override { return name; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column = arguments[0].column;
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        const ColumnString * input_column = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+
+        if (!input_column)
         {
-            auto col_res = ColumnUInt8::create();
-
-            ColumnUInt8::Container & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-
-            const ColumnString::Chars & vec_src = col->getChars();
-            const ColumnString::Offsets & offsets_src = col->getOffsets();
-            size_t prev_offset = 0;
-            UInt32 result = 0;
-
-            for (size_t i = 0; i < vec_res.size(); ++i)
-            {
-                vec_res[i] = DB::parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char*>(&result));
-                prev_offset = offsets_src[i];
-            }
-            return col_res;
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+
+        auto col_res = ColumnUInt8::create();
+
+        ColumnUInt8::Container & vec_res = col_res->getData();
+        vec_res.resize(input_column->size());
+
+        const ColumnString::Chars & vec_src = input_column->getChars();
+        const ColumnString::Offsets & offsets_src = input_column->getOffsets();
+        size_t prev_offset = 0;
+        UInt32 result = 0;
+
+        for (size_t i = 0; i < vec_res.size(); ++i)
+        {
+            vec_res[i] = DB::parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char *>(&result));
+            prev_offset = offsets_src[i];
+        }
+
+        return col_res;
     }
 };
 
-class FunctionIsIPv6String : public FunctionIPv6StringToNum
+class FunctionIsIPv6String : public IFunction
 {
 public:
     static constexpr auto name = "isIPv6String";
@@ -1028,44 +1079,49 @@ public:
 
     String getName() const override { return name; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        }
 
         return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column = arguments[0].column;
-
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        const ColumnString * input_column = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        if (!input_column)
         {
-            auto col_res = ColumnUInt8::create();
-
-            ColumnUInt8::Container & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-
-            const ColumnString::Chars & vec_src = col->getChars();
-            const ColumnString::Offsets & offsets_src = col->getOffsets();
-            size_t prev_offset = 0;
-            char v[IPV6_BINARY_LENGTH];
-
-            for (size_t i = 0; i < vec_res.size(); ++i)
-            {
-                vec_res[i] = DB::parseIPv6(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char*>(v));
-                prev_offset = offsets_src[i];
-            }
-            return col_res;
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+
+        auto col_res = ColumnUInt8::create();
+
+        ColumnUInt8::Container & vec_res = col_res->getData();
+        vec_res.resize(input_column->size());
+
+        const ColumnString::Chars & vec_src = input_column->getChars();
+        const ColumnString::Offsets & offsets_src = input_column->getOffsets();
+        size_t prev_offset = 0;
+        char buffer[IPV6_BINARY_LENGTH];
+
+        for (size_t i = 0; i < vec_res.size(); ++i)
+        {
+            vec_res[i] = DB::parseIPv6(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char *>(buffer));
+            prev_offset = offsets_src[i];
+        }
+
+        return col_res;
     }
 };
 
@@ -1079,8 +1135,6 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionMACNumToString>();
     factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
     factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
-    factory.registerFunction<FunctionToIPv4>();
-    factory.registerFunction<FunctionToIPv6>();
     factory.registerFunction<FunctionIPv6CIDRToRange>();
     factory.registerFunction<FunctionIPv4CIDRToRange>();
     factory.registerFunction<FunctionIsIPv4String>();
@@ -1089,14 +1143,26 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>();
     factory.registerFunction<FunctionIPv4NumToString<1, NameFunctionIPv4NumToStringClassC>>();
 
-    factory.registerFunction<FunctionIPv4StringToNum>();
-    factory.registerFunction<FunctionIPv6NumToString>();
-    factory.registerFunction<FunctionIPv6StringToNum>();
+    factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>>();
+    factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Default>>();
+    factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Null>>();
+    factory.registerFunction<FunctionToIPv4<IPStringToNumExceptionMode::Throw>>();
+    factory.registerFunction<FunctionToIPv4<IPStringToNumExceptionMode::Default>>();
+    factory.registerFunction<FunctionToIPv4<IPStringToNumExceptionMode::Null>>();
 
-    /// MysQL compatibility aliases:
-    factory.registerAlias("INET_ATON", FunctionIPv4StringToNum::name, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIPv6NumToString>();
+    factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>>();
+    factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Default>>();
+    factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Null>>();
+    factory.registerFunction<FunctionToIPv6<IPStringToNumExceptionMode::Throw>>();
+    factory.registerFunction<FunctionToIPv6<IPStringToNumExceptionMode::Default>>();
+    factory.registerFunction<FunctionToIPv6<IPStringToNumExceptionMode::Null>>();
+
+
+    /// MySQL compatibility aliases:
+    factory.registerAlias("INET_ATON", FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("INET6_NTOA", FunctionIPv6NumToString::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("INET6_ATON", FunctionIPv6StringToNum::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("INET6_ATON", FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("INET_NTOA", NameFunctionIPv4NumToString::name, FunctionFactory::CaseInsensitive);
 }
 

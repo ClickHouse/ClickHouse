@@ -78,8 +78,7 @@ template <UInt64 MaxValue> struct MinCounterType
 };
 
 /// Denominator of expression for HyperLogLog algorithm.
-template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-    DenominatorMode denominator_mode, typename Enable = void>
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
 class Denominator;
 
 /// Returns true if rank storage is big.
@@ -89,11 +88,12 @@ constexpr bool isBigRankStore(UInt8 precision)
 }
 
 /// Used to deduce denominator type depending on options provided.
-template <typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode, typename Enable = void>
+template <typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
 struct IntermediateDenominator;
 
 template <typename DenominatorType, DenominatorMode denominator_mode>
-struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode, std::enable_if_t<denominator_mode != DenominatorMode::ExactType>>
+requires (denominator_mode != DenominatorMode::ExactType)
+struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode>
 {
     using Type = double;
 };
@@ -113,22 +113,19 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
 /// "Lightweight" implementation of expression's denominator for HyperLogLog algorithm.
 /// Uses minimum amount of memory, but estimates may be unstable.
 /// Satisfiable when rank storage is small enough.
-template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-    DenominatorMode denominator_mode>
-class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType,
-    denominator_mode,
-    std::enable_if_t<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>>
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
+requires (!details::isBigRankStore(precision)) || (!(denominator_mode == DenominatorMode::StableIfBig))
+class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>
 {
 private:
     using T = typename IntermediateDenominator<HashValueType, DenominatorType, denominator_mode>::Type;
 
 public:
-    Denominator(DenominatorType initial_value)
+    Denominator(DenominatorType initial_value) /// NOLINT
         : denominator(initial_value)
     {
     }
 
-public:
     inline void update(UInt8 cur_rank, UInt8 new_rank)
     {
         denominator -= static_cast<T>(1.0) / (1ULL << cur_rank);
@@ -157,14 +154,12 @@ private:
 /// Fully-functional version of expression's denominator for HyperLogLog algorithm.
 /// Spends more space that lightweight version. Estimates will always be stable.
 /// Used when rank storage is big.
-template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-    DenominatorMode denominator_mode>
-class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType,
-    denominator_mode,
-    std::enable_if_t<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>>
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
+requires (details::isBigRankStore(precision)) && (denominator_mode == DenominatorMode::StableIfBig)
+class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>
 {
 public:
-    Denominator(DenominatorType initial_value)
+    Denominator(DenominatorType initial_value) /// NOLINT
     {
         rank_count[0] = initial_value;
     }
@@ -321,7 +316,7 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
-        return static_cast<UInt64>(final_estimate + 0.5);
+        return static_cast<UInt64>(final_estimate + 0.5); /// NOLINT
     }
 
     void merge(const HyperLogLogCounter & rhs)
@@ -513,7 +508,6 @@ private:
         return fixed_estimate;
     }
 
-private:
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
     RankStore rank_store;

@@ -1,9 +1,9 @@
 ---
-toc_priority: 67
-toc_title: Encryption
+sidebar_position: 67
+sidebar_label: Encryption
 ---
 
-# Encryption functions {#encryption-functions}
+# Encryption functions
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
@@ -13,17 +13,15 @@ Initialization vector length is always 16 bytes (bytes in excess of 16 are ignor
 
 Note that these functions work slowly until ClickHouse 21.1.
 
-## encrypt {#encrypt}
+## encrypt
 
 This function encrypts data using these modes:
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
--   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
--   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 -   aes-128-gcm, aes-192-gcm, aes-256-gcm
+-   aes-128-ctr, aes-192-ctr, aes-256-ctr
 
 **Syntax**
 
@@ -63,9 +61,9 @@ Insert some data (please avoid storing the keys/ivs in the database as this unde
 Query:
 
 ``` sql
-INSERT INTO encryption_test VALUES('aes-256-cfb128 no IV', encrypt('aes-256-cfb128', 'Secret', '12345678910121314151617181920212')),\
-('aes-256-cfb128 no IV, different key', encrypt('aes-256-cfb128', 'Secret', 'keykeykeykeykeykeykeykeykeykeyke')),\
-('aes-256-cfb128 with IV', encrypt('aes-256-cfb128', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')),\
+INSERT INTO encryption_test VALUES('aes-256-ofb no IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212')),\
+('aes-256-ofb no IV, different key', encrypt('aes-256-ofb', 'Secret', 'keykeykeykeykeykeykeykeykeykeyke')),\
+('aes-256-ofb with IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')),\
 ('aes-256-cbc no IV', encrypt('aes-256-cbc', 'Secret', '12345678910121314151617181920212'));
 ```
 
@@ -78,12 +76,12 @@ SELECT comment, hex(secret) FROM encryption_test;
 Result:
 
 ``` text
-┌─comment─────────────────────────────┬─hex(secret)──────────────────────┐
-│ aes-256-cfb128 no IV                │ B4972BDC4459                     │
-│ aes-256-cfb128 no IV, different key │ 2FF57C092DC9                     │
-│ aes-256-cfb128 with IV              │ 5E6CB398F653                     │
-│ aes-256-cbc no IV                   │ 1BC0629A92450D9E73A00E7D02CF4142 │
-└─────────────────────────────────────┴──────────────────────────────────┘
+┌─comment──────────────────────────┬─hex(secret)──────────────────────┐
+│ aes-256-ofb no IV                │ B4972BDC4459                     │
+│ aes-256-ofb no IV, different key │ 2FF57C092DC9                     │
+│ aes-256-ofb with IV              │ 5E6CB398F653                     │
+│ aes-256-cbc no IV                │ 1BC0629A92450D9E73A00E7D02CF4142 │
+└──────────────────────────────────┴──────────────────────────────────┘
 ```
 
 Example with `-gcm`:
@@ -106,7 +104,7 @@ Result:
 └──────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## aes_encrypt_mysql {#aes_encrypt_mysql}
+## aes_encrypt_mysql
 
 Compatible with mysql encryption and resulting ciphertext can be decrypted with [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt) function.
 
@@ -116,9 +114,6 @@ Supported encryption modes:
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
--   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
--   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 
 **Syntax**
@@ -145,7 +140,7 @@ Given equal input `encrypt` and `aes_encrypt_mysql` produce the same ciphertext:
 Query:
 
 ``` sql
-SELECT encrypt('aes-256-cfb128', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') = aes_encrypt_mysql('aes-256-cfb128', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') AS ciphertexts_equal;
+SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') = aes_encrypt_mysql('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv') AS ciphertexts_equal;
 ```
 
 Result:
@@ -161,14 +156,14 @@ But `encrypt` fails when `key` or `iv` is longer than expected:
 Query:
 
 ``` sql
-SELECT encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123');
+SELECT encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123');
 ```
 
 Result:
 
 ``` text
-Received exception from server (version 21.1.2):
-Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
+Received exception from server (version 22.6.1):
+Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Invalid key size: 33 expected 32: While processing encrypt('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123').
 ```
 
 While `aes_encrypt_mysql` produces MySQL-compatitalbe output:
@@ -176,7 +171,7 @@ While `aes_encrypt_mysql` produces MySQL-compatitalbe output:
 Query:
 
 ``` sql
-SELECT hex(aes_encrypt_mysql('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123')) AS ciphertext;
+SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123')) AS ciphertext;
 ```
 
 Result:
@@ -192,7 +187,7 @@ Notice how supplying even longer `IV` produces the same result
 Query:
 
 ``` sql
-SELECT hex(aes_encrypt_mysql('aes-256-cfb128', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456')) AS ciphertext
+SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456')) AS ciphertext
 ```
 
 Result:
@@ -206,7 +201,7 @@ Result:
 Which is binary equal to what MySQL produces on same inputs:
 
 ``` sql
-mysql> SET  block_encryption_mode='aes-256-cfb128';
+mysql> SET  block_encryption_mode='aes-256-ofb';
 Query OK, 0 rows affected (0.00 sec)
 
 mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
@@ -218,17 +213,15 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 1 row in set (0.00 sec)
 ```
 
-## decrypt {#decrypt}
+## decrypt
 
 This function decrypts ciphertext into a plaintext using these modes:
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
--   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
--   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 -   aes-128-gcm, aes-192-gcm, aes-256-gcm
+-   aes-128-ctr, aes-192-ctr, aes-256-ctr
 
 **Syntax**
 
@@ -265,12 +258,12 @@ Result:
 │ aes-256-gcm          │ A8A3CCBC6426CFEEB60E4EAE03D3E94204C1B09E0254 │
 │ aes-256-gcm with AAD │ A8A3CCBC6426D9A1017A0A932322F1852260A4AD6837 │
 └──────────────────────┴──────────────────────────────────────────────┘
-┌─comment─────────────────────────────┬─hex(secret)──────────────────────┐
-│ aes-256-cfb128 no IV                │ B4972BDC4459                     │
-│ aes-256-cfb128 no IV, different key │ 2FF57C092DC9                     │
-│ aes-256-cfb128 with IV              │ 5E6CB398F653                     │
-│ aes-256-cbc no IV                   │ 1BC0629A92450D9E73A00E7D02CF4142 │
-└─────────────────────────────────────┴──────────────────────────────────┘
+┌─comment──────────────────────────┬─hex(secret)──────────────────────┐
+│ aes-256-ofb no IV                │ B4972BDC4459                     │
+│ aes-256-ofb no IV, different key │ 2FF57C092DC9                     │
+│ aes-256-ofb with IV              │ 5E6CB398F653                     │
+│ aes-256-cbc no IV                │ 1BC0629A92450D9E73A00E7D02CF4142 │
+└──────────────────────────────────┴──────────────────────────────────┘
 ```
 
 Now let's try to decrypt all that data.
@@ -284,18 +277,24 @@ SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920
 Result:
 
 ``` text
-┌─comment─────────────────────────────┬─plaintext─┐
-│ aes-256-cfb128 no IV                │ Secret    │
-│ aes-256-cfb128 no IV, different key │ �4�
-                                           �         │
-│ aes-256-cfb128 with IV              │ ���6�~        │
- │aes-256-cbc no IV                   │ �2*4�h3c�4w��@
-└─────────────────────────────────────┴───────────┘
+┌─comment──────────────┬─plaintext──┐
+│ aes-256-gcm          │ OQ�E
+                             �t�7T�\���\�   │
+│ aes-256-gcm with AAD │ OQ�E
+                             �\��si����;�o�� │
+└──────────────────────┴────────────┘
+┌─comment──────────────────────────┬─plaintext─┐
+│ aes-256-ofb no IV                │ Secret    │
+│ aes-256-ofb no IV, different key │ �4�
+                                        �         │
+│ aes-256-ofb with IV              │ ���6�~        │
+ │aes-256-cbc no IV                │ �2*4�h3c�4w��@
+└──────────────────────────────────┴───────────┘
 ```
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
 
-## aes_decrypt_mysql {#aes_decrypt_mysql}
+## aes_decrypt_mysql
 
 Compatible with mysql encryption and decrypts data encrypted with [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt) function.
 
@@ -305,9 +304,7 @@ Supported decryption modes:
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb1, aes-192-cfb1, aes-256-cfb1
--   aes-128-cfb8, aes-192-cfb8, aes-256-cfb8
--   aes-128-cfb128, aes-192-cfb128, aes-256-cfb128
+-   aes-128-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 
 **Syntax**
@@ -332,7 +329,7 @@ aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 Let's decrypt data we've previously encrypted with MySQL:
 
 ``` sql
-mysql> SET  block_encryption_mode='aes-256-cfb128';
+mysql> SET  block_encryption_mode='aes-256-ofb';
 Query OK, 0 rows affected (0.00 sec)
 
 mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
@@ -347,7 +344,7 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 Query:
 
 ``` sql
-SELECT aes_decrypt_mysql('aes-256-cfb128', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext
+SELECT aes_decrypt_mysql('aes-256-ofb', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext
 ```
 
 Result:
@@ -358,4 +355,3 @@ Result:
 └───────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/functions/encryption_functions/) <!--hide-->

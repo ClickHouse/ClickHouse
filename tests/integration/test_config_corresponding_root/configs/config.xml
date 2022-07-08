@@ -101,13 +101,6 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
-    <!-- Approximate size of mark cache, used in tables of MergeTree family.
-         In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
-
-
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
@@ -128,20 +121,6 @@
 
     <!-- Default database. -->
     <default_database>default</default_database>
-
-    <!-- Server time zone could be set here.
-
-         Time zone is used when converting between String and DateTime types,
-          when printing DateTime in text formats and parsing DateTime from text,
-          it is used in date and time related functions, if specific time zone was not passed as an argument.
-
-         Time zone is specified as identifier from IANA time zone database, like UTC or Africa/Abidjan.
-         If not specified, system time zone at server startup is used.
-
-         Please note, that server could display time zone alias instead of specified name.
-         Example: W-SU is an alias for Europe/Moscow and Zulu is an alias for UTC.
-    -->
-    <!-- <timezone>Europe/Moscow</timezone> -->
 
     <!-- You can specify umask here (see "man umask"). Server will apply it on startup.
          Number is always parsed as octal. Default umask is 027 (other users cannot read logs, data files, etc; group can only read).

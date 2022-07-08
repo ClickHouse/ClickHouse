@@ -11,7 +11,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -49,14 +48,20 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
+class StorageLiveView final : public IStorage, WithContext
 {
-friend struct shared_ptr_helper<StorageLiveView>;
 friend class LiveViewSource;
 friend class LiveViewEventsSource;
 friend class LiveViewSink;
 
 public:
+    StorageLiveView(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns,
+        const String & comment);
+
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
     bool isView() const override { return true; }
@@ -146,7 +151,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -227,13 +232,6 @@ private:
 
     /// Must be called with mutex locked
     void scheduleNextPeriodicRefresh();
-
-    StorageLiveView(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
-        const String & comment);
 };
 
 }

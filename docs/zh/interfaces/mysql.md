@@ -1,6 +1,6 @@
 ---
-toc_priority: 20
-toc_title: MySQL接口
+sidebar_position: 20
+sidebar_label: MySQL接口
 ---
 
 # MySQL接口 {#mysql-interface}

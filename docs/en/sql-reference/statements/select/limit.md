@@ -1,8 +1,8 @@
 ---
-toc_title: LIMIT
+sidebar_label: LIMIT
 ---
 
-# LIMIT Clause {#limit-clause}
+# LIMIT Clause
 
 `LIMIT m` allows to select the first `m` rows from the result.
 
@@ -12,10 +12,11 @@ toc_title: LIMIT
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
-!!! note "Note"
-    The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
+:::note    
+The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
+:::
 
-## LIMIT … WITH TIES Modifier {#limit-with-ties}
+## LIMIT … WITH TIES Modifier
 
 When you set `WITH TIES` modifier for `LIMIT n[,m]` and specify `ORDER BY expr_list`, you will get in result first `n` or `n,m` rows and all rows with same `ORDER BY` fields values equal to row at position `n` for `LIMIT n` and `m` for `LIMIT n,m`.
 

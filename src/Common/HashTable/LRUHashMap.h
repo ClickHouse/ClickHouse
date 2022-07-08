@@ -71,27 +71,27 @@ struct LRUHashMapCellNodeTraits
     using node_ptr = LRUHashMapCell<Key, Value, Hash, save_hash_in_cell> *;
     using const_node_ptr = const LRUHashMapCell<Key, Value, Hash, save_hash_in_cell> *;
 
-    static node * get_next(const node * ptr) { return ptr->next; }
-    static void set_next(node * __restrict ptr, node * __restrict next) { ptr->next = next; }
-    static node * get_previous(const node * ptr) { return ptr->prev; }
-    static void set_previous(node * __restrict ptr, node * __restrict prev) { ptr->prev = prev; }
+    static node * get_next(const node * ptr) { return ptr->next; } /// NOLINT
+    static void set_next(node * __restrict ptr, node * __restrict next) { ptr->next = next; } /// NOLINT
+    static node * get_previous(const node * ptr) { return ptr->prev; } /// NOLINT
+    static void set_previous(node * __restrict ptr, node * __restrict prev) { ptr->prev = prev; } /// NOLINT
 };
 
 template <typename TKey, typename TValue, typename Disposer, typename Hash, bool save_hash_in_cells>
-class LRUHashMapImpl :
-    private HashMapTable<
-        TKey,
-        LRUHashMapCell<TKey, TValue, Hash, save_hash_in_cells>,
-        Hash,
-        HashTableGrower<>,
-        HashTableAllocator>
+class LRUHashMapImpl : private HashMapTable<
+                           TKey,
+                           LRUHashMapCell<TKey, TValue, Hash, save_hash_in_cells>,
+                           Hash,
+                           HashTableGrowerWithPrecalculation<>,
+                           HashTableAllocator>
 {
     using Base = HashMapTable<
         TKey,
         LRUHashMapCell<TKey, TValue, Hash, save_hash_in_cells>,
         Hash,
-        HashTableGrower<>,
+        HashTableGrowerWithPrecalculation<>,
         HashTableAllocator>;
+
 public:
     using Key = TKey;
     using Value = TValue;

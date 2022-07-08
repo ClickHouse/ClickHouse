@@ -477,7 +477,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     columns.reserve(args);
     for (const auto & arg : arrays.args)
     {
-        if constexpr (std::is_same<ColumnType, IColumn>::value)
+        if constexpr (std::is_same_v<ColumnType, IColumn>)
             columns.push_back(arg.nested_column);
         else
             columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
@@ -530,7 +530,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     {
                         value = &map[columns[arg_num]->getElement(i)];
                     }
-                    else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
+                    else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                         value = &map[columns[arg_num]->getDataAt(i)];
                     else
                     {
@@ -566,7 +566,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 ++result_offset;
                 if constexpr (is_numeric_column)
                     result_data.insertValue(pair.getKey());
-                else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
+                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                     result_data.insertData(pair.getKey().data, pair.getKey().size);
                 else
                     result_data.deserializeAndInsertFromArena(pair.getKey().data);

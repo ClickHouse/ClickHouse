@@ -3,8 +3,6 @@
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
-namespace JSONBuilder { class JSONMap; }
-
 namespace DB
 {
 
@@ -27,7 +25,7 @@ public:
 
     /// Tuples with those columns are distinct.
     /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list brakes this invariant.
+    /// Removing any column from this list breaks this invariant.
     NameSet distinct_columns = {};
 
     /// QueryPipeline has single port. Totals or extremes ports are not counted.

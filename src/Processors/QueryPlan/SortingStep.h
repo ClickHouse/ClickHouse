@@ -49,7 +49,12 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
+    SortDescription getSortDescription() const { return result_description; }
+
+    void convertToFinishSorting(SortDescription prefix_description);
+
 private:
+    void updateOutputStream() override;
 
     enum class Type
     {

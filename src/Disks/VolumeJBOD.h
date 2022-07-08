@@ -22,8 +22,8 @@ using VolumesJBOD = std::vector<VolumeJBODPtr>;
 class VolumeJBOD : public IVolume
 {
 public:
-    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_avoided_)
-        : IVolume(name_, disks_, max_data_part_size_)
+    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_avoided_, bool perform_ttl_move_on_insert_, VolumeLoadBalancing load_balancing_)
+        : IVolume(name_, disks_, max_data_part_size_, perform_ttl_move_on_insert_, load_balancing_)
         , are_merges_avoided(are_merges_avoided_)
     {
     }
@@ -44,7 +44,8 @@ public:
 
     VolumeType getType() const override { return VolumeType::JBOD; }
 
-    /// Always returns next disk (round-robin), ignores argument.
+    /// Returns disk based on the load balancing algorithm (round-robin, or least-used),
+    /// ignores @index argument.
     ///
     /// - Used with policy for temporary data
     /// - Ignores all limitations
@@ -63,8 +64,36 @@ public:
     bool are_merges_avoided = true;
 
 private:
-    /// Index of last used disk.
+    struct DiskWithSize
+    {
+        DiskPtr disk;
+        uint64_t free_size = 0;
+
+        DiskWithSize(DiskPtr disk_)
+            : disk(disk_)
+            , free_size(disk->getUnreservedSpace())
+        {}
+
+        bool operator<(const DiskWithSize & rhs) const
+        {
+            return free_size < rhs.free_size;
+        }
+
+        ReservationPtr reserve(uint64_t bytes)
+        {
+            ReservationPtr reservation = disk->reserve(bytes);
+            /// Not just subtract bytes, but update the value,
+            /// since some reservations may be done directly via IDisk, or not by ClickHouse.
+            free_size = reservation->getUnreservedSpace();
+            return reservation;
+        }
+    };
+
+    mutable std::mutex mutex;
+    /// Index of last used disk, for load_balancing=round_robin
     mutable std::atomic<size_t> last_used = 0;
+    /// Priority queue of disks sorted by size, for load_balancing=least_used
+    mutable std::priority_queue<DiskWithSize> disks_by_size;
 
     /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
     std::atomic<std::optional<bool>> are_merges_avoided_user_override{std::nullopt};

@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: TTL
+sidebar_position: 44
+sidebar_label: TTL
 ---
 
 #  Манипуляции с TTL таблицы {#manipuliatsii-s-ttl-tablitsy}

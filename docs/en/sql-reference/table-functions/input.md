@@ -1,9 +1,9 @@
 ---
-toc_priority: 46
-toc_title: input
+sidebar_position: 46
+sidebar_label: input
 ---
 
-# input {#input}
+# input
 
 `input(structure)` - table function that allows effectively convert and insert data sent to the
 server with given structure to the table with another structure.

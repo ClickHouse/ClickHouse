@@ -46,7 +46,6 @@ max_server_memory_usage_to_ram_ratio: 0.9
 total_memory_profiler_step: 4194304
 total_memory_tracker_sample_probability: 0
 uncompressed_cache_size: 8589934592
-mark_cache_size: 5368709120
 mmap_cache_size: 1000
 path: ./
 tmp_path: ./tmp

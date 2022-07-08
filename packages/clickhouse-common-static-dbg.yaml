@@ -1,0 +1,38 @@
+# package sources should be placed in ${PWD}/root
+# nfpm should run from the same directory with a config
+name: "clickhouse-common-static-dbg"
+arch: "${DEB_ARCH}" # amd64, arm64
+platform: "linux"
+version: "${CLICKHOUSE_VERSION_STRING}"
+vendor: "ClickHouse Inc."
+homepage: "https://clickhouse.com"
+license: "Apache"
+section: "database"
+priority: "optional"
+
+replaces:
+- clickhouse-common-dbg
+conflicts:
+- clickhouse-common-dbg
+
+maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
+description: |
+  debugging symbols for clickhouse-common-static
+    This package contains the debugging symbols for clickhouse-common.
+
+contents:
+- src: root/usr/lib/debug/usr/bin/clickhouse.debug
+  dst: /usr/lib/debug/usr/bin/clickhouse.debug
+- src: root/usr/lib/debug/usr/bin/clickhouse-odbc-bridge.debug
+  dst: /usr/lib/debug/usr/bin/clickhouse-odbc-bridge.debug
+- src: root/usr/lib/debug/usr/bin/clickhouse-library-bridge.debug
+  dst: /usr/lib/debug/usr/bin/clickhouse-library-bridge.debug
+# docs
+- src: ../AUTHORS
+  dst: /usr/share/doc/clickhouse-common-static-dbg/AUTHORS
+- src: ../CHANGELOG.md
+  dst: /usr/share/doc/clickhouse-common-static-dbg/CHANGELOG.md
+- src: ../LICENSE
+  dst: /usr/share/doc/clickhouse-common-static-dbg/LICENSE
+- src: ../README.md
+  dst: /usr/share/doc/clickhouse-common-static-dbg/README.md

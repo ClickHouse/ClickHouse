@@ -80,7 +80,7 @@ public:
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
 
-    AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
+    explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
         , src_scale(0)
     {}

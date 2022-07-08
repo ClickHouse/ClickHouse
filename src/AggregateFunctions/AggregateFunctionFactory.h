@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Parsers/ASTFunction.h>
 
 
 #include <functional>
@@ -38,8 +39,9 @@ struct AggregateFunctionWithProperties
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
     AggregateFunctionWithProperties & operator = (const AggregateFunctionWithProperties &) = default;
 
-    template <typename Creator, std::enable_if_t<!std::is_same_v<Creator, AggregateFunctionWithProperties>> * = nullptr>
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {})
+    template <typename Creator>
+    requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
+    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}) /// NOLINT
         : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
     {
     }
@@ -102,6 +104,14 @@ private:
 
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
 
+};
+
+struct AggregateUtils
+{
+    static bool isAggregateFunction(const ASTFunction & node)
+    {
+        return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
+    }
 };
 
 }

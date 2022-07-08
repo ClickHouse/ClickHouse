@@ -11,7 +11,7 @@ private:
     SerializationPtr nested;
 
 public:
-    SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
     void enumerateStreams(
         SubstreamPath & path,
@@ -60,7 +60,7 @@ public:
       * 1. \N
       * 2. empty string (without quotes)
       * 3. NULL
-      * We support all of them (however, second variant is supported by CSVRowInputStream, not by deserializeTextCSV).
+      * We support all of them (however, second variant is supported by CSVRowInputFormat, not by deserializeTextCSV).
       * (see also input_format_defaults_for_omitted_fields and input_format_csv_unquoted_null_literal_as_null settings)
       * In CSV, non-NULL string value, starting with \N characters, must be placed in quotes, to avoid ambiguity.
       */
@@ -96,7 +96,7 @@ private:
     {
         const ColumnPtr null_map;
 
-        SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
+        explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         SerializationPtr create(const SerializationPtr & prev) const override;

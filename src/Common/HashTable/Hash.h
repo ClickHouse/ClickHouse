@@ -13,7 +13,7 @@
   *
   * Example: when we do aggregation by the visitor ID, the performance increase is more than 5 times.
   * This is because of following reasons:
-  * - in Yandex, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
+  * - in Metrica web analytics system, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
   * - in typical implementation of standard library, hash function for integers is trivial and just use lower bits;
   * - traffic is non-uniformly distributed across a day;
   * - we are using open-addressing linear probing hash tables that are most critical to hash function quality,
@@ -73,8 +73,8 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
-intHashCRC32(const T & x, DB::UInt64 updated_value)
+requires (sizeof(T) > sizeof(DB::UInt64))
+inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
     const auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
@@ -155,7 +155,8 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 }
 
 template <typename T>
-inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
+requires (sizeof(T) <= sizeof(UInt64))
+inline size_t DefaultHash64(T key)
 {
     union
     {
@@ -169,7 +170,8 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> k
 
 
 template <typename T>
-inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+requires (sizeof(T) > sizeof(UInt64))
+inline size_t DefaultHash64(T key)
 {
     if constexpr (is_big_int_v<T> && sizeof(T) == 16)
     {
@@ -217,7 +219,8 @@ struct DefaultHash<T>
 template <typename T> struct HashCRC32;
 
 template <typename T>
-inline size_t hashCRC32(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
+requires (sizeof(T) <= sizeof(UInt64))
+inline size_t hashCRC32(T key)
 {
     union
     {
@@ -230,7 +233,8 @@ inline size_t hashCRC32(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 }
 
 template <typename T>
-inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+requires (sizeof(T) > sizeof(UInt64))
+inline size_t hashCRC32(T key)
 {
     return intHashCRC32(key, -1);
 }
@@ -292,6 +296,19 @@ struct UInt128HashCRC32
     }
 };
 
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+
+struct UInt128HashCRC32
+{
+    size_t operator()(UInt128 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = __crc32cd(crc, x.items[0]);
+        crc = __crc32cd(crc, x.items[1]);
+        return crc;
+    }
+};
+
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -331,6 +348,21 @@ struct UInt256HashCRC32
         crc = _mm_crc32_u64(crc, x.items[1]);
         crc = _mm_crc32_u64(crc, x.items[2]);
         crc = _mm_crc32_u64(crc, x.items[3]);
+        return crc;
+    }
+};
+
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+
+struct UInt256HashCRC32
+{
+    size_t operator()(UInt256 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = __crc32cd(crc, x.items[0]);
+        crc = __crc32cd(crc, x.items[1]);
+        crc = __crc32cd(crc, x.items[2]);
+        crc = __crc32cd(crc, x.items[3]);
         return crc;
     }
 };

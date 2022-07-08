@@ -1,9 +1,9 @@
 ---
-toc_priority: 311
-toc_title: sparkbar
+sidebar_position: 311
+sidebar_label: sparkbar
 ---
 
-# sparkbar {#sparkbar}
+# sparkbar
 
 The function plots a frequency histogram for values `x` and the repetition rate `y` of these values over the interval `[min_x, max_x]`.
 

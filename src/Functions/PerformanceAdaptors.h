@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Functions/TargetSpecific.h>
 #include <Functions/IFunction.h>
 
+#include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 
@@ -72,7 +72,7 @@ namespace detail
             return size() == 0;
         }
 
-        void emplace_back()
+        void emplace_back() /// NOLINT
         {
             data.emplace_back();
         }
@@ -198,7 +198,7 @@ class ImplementationSelector : WithContext
 public:
     using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
+    explicit ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
 
     /* Select the best implementation based on previous runs.
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called

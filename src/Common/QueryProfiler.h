@@ -31,7 +31,7 @@ template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
-    QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_);
+    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
     ~QueryProfilerBase();
 
 private:
@@ -52,7 +52,7 @@ private:
 class QueryProfilerReal : public QueryProfilerBase<QueryProfilerReal>
 {
 public:
-    QueryProfilerReal(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerReal(UInt64 thread_id, UInt32 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };
@@ -61,7 +61,7 @@ public:
 class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
 {
 public:
-    QueryProfilerCPU(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerCPU(UInt64 thread_id, UInt32 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };

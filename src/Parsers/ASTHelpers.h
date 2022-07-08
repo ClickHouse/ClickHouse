@@ -6,7 +6,7 @@
 namespace DB
 {
 
-static inline bool isFunctionCast(const ASTFunction * function)
+static inline bool isFunctionCast(const ASTFunction * function) /// NOLINT
 {
     if (function)
         return function->name == "CAST" || function->name == "_CAST";

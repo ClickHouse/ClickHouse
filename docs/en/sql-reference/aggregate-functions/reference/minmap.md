@@ -1,8 +1,8 @@
 ---
-toc_priority: 142
+sidebar_position: 142
 ---
 
-# minMap {#agg_functions-minmap}
+# minMap
 
 Syntax: `minMap(key, value)` or `minMap(Tuple(key, value))`
 

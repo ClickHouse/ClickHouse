@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <memory>
 
@@ -9,7 +10,7 @@ namespace DB
 class WriteBufferFromFileBase;
 
 /// Interface for writing an archive.
-class IArchiveWriter : public std::enable_shared_from_this<IArchiveWriter>
+class IArchiveWriter : public std::enable_shared_from_this<IArchiveWriter>, boost::noncopyable
 {
 public:
     /// Destructors finalizes writing the archive.
@@ -29,7 +30,7 @@ public:
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
-    virtual void setCompression(int /* compression_method */, int /* compression_level */ = kDefaultCompressionLevel) {}
+    virtual void setCompression(const String & /* compression_method */, int /* compression_level */ = kDefaultCompressionLevel) {}
 
     /// Sets password. If the password is not empty it will enable encryption in the archive.
     virtual void setPassword(const String & /* password */) {}

@@ -13,7 +13,7 @@ class FieldVisitorHash : public StaticVisitor<>
 private:
     SipHash & hash;
 public:
-    FieldVisitorHash(SipHash & hash_);
+    explicit FieldVisitorHash(SipHash & hash_);
 
     void operator() (const Null & x) const;
     void operator() (const UInt64 & x) const;
@@ -28,6 +28,7 @@ public:
     void operator() (const Array & x) const;
     void operator() (const Tuple & x) const;
     void operator() (const Map & x) const;
+    void operator() (const Object & x) const;
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;

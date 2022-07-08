@@ -112,6 +112,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
 
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalNanosecond, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMicrosecond, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMillisecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalHour, PositiveMonotonicity>>();

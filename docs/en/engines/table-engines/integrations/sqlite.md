@@ -1,18 +1,18 @@
 ---
-toc_priority: 7
-toc_title: SQLite
+sidebar_position: 7
+sidebar_label: SQLite
 ---
 
-# SQLite {#sqlite}
+# SQLite
 
 The engine allows to import and export data to SQLite and supports queries to SQLite tables directly from ClickHouse.
 
 ## Creating a Table {#creating-a-table}
 
 ``` sql
-    CREATE TABLE [IF NOT EXISTS] [db.]table_name 
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
     (
-        name1 [type1], 
+        name1 [type1],
         name2 [type2], ...
     ) ENGINE = SQLite('db_path', 'table')
 ```
@@ -32,10 +32,10 @@ SHOW CREATE TABLE sqlite_db.table2;
 
 ``` text
 CREATE TABLE SQLite.table2
-( 
-    `col1` Nullable(Int32), 
+(
+    `col1` Nullable(Int32),
     `col2` Nullable(String)
-) 
+)
 ENGINE = SQLite('sqlite.db','table2');
 ```
 
@@ -57,3 +57,6 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 
 -   [SQLite](../../../engines/database-engines/sqlite.md) engine
 -   [sqlite](../../../sql-reference/table-functions/sqlite.md) table function
+
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/sqlite/) <!--hide-->

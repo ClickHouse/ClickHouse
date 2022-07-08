@@ -11,7 +11,7 @@
 #include <Common/FieldVisitors.h>
 
 using namespace DB;
-pcg64 rng(randomSeed());
+static pcg64 rng(randomSeed());
 
 std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
 {
@@ -282,8 +282,11 @@ TEST(ColumnSparse, GetPermutation)
         IColumn::Permutation perm_sparse;
         IColumn::Permutation perm_full;
 
-        sparse_src->getPermutation(reverse, limit, 1, perm_sparse);
-        full_src->getPermutation(reverse, limit, 1, perm_full);
+        IColumn::PermutationSortDirection direction = reverse ? IColumn::PermutationSortDirection::Descending : IColumn::PermutationSortDirection::Ascending;
+        IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
+
+        sparse_src->getPermutation(direction, stability, limit, 1, perm_sparse);
+        full_src->getPermutation(direction, stability, limit, 1, perm_full);
 
         auto sparse_sorted = sparse_src->permute(perm_sparse, limit);
         auto full_sorted = full_src->permute(perm_full, limit);

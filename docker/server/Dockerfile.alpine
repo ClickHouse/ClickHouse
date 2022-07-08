@@ -1,3 +1,14 @@
+FROM ubuntu:20.04 AS glibc-donor
+ARG TARGETARCH
+
+RUN arch=${TARGETARCH:-amd64} \
+    && case $arch in \
+        amd64) rarch=x86_64 ;; \
+        arm64) rarch=aarch64 ;; \
+    esac \
+    && ln -s "${rarch}-linux-gnu" /lib/linux-gnu
+
+
 FROM alpine
 
 ENV LANG=en_US.UTF-8 \
@@ -6,7 +17,24 @@ ENV LANG=en_US.UTF-8 \
     TZ=UTC \
     CLICKHOUSE_CONFIG=/etc/clickhouse-server/config.xml
 
-COPY alpine-root/ /
+COPY --from=glibc-donor /lib/linux-gnu/libc.so.6 /lib/linux-gnu/libdl.so.2 /lib/linux-gnu/libm.so.6 /lib/linux-gnu/libpthread.so.0 /lib/linux-gnu/librt.so.1 /lib/linux-gnu/libnss_dns.so.2 /lib/linux-gnu/libnss_files.so.2 /lib/linux-gnu/libresolv.so.2 /lib/linux-gnu/ld-2.31.so /lib/
+COPY --from=glibc-donor /etc/nsswitch.conf /etc/
+COPY docker_related_config.xml /etc/clickhouse-server/config.d/
+COPY entrypoint.sh /entrypoint.sh
+
+ARG TARGETARCH
+
+RUN arch=${TARGETARCH:-amd64} \
+    && case $arch in \
+        amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
+        arm64) ln -sf /lib/ld-2.31.so /lib/ld-linux-aarch64.so.1 ;; \
+    esac
+
+# lts / testing / prestable / etc
+ARG REPO_CHANNEL="stable"
+ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
+ARG VERSION="20.9.3.45"
+ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -15,13 +43,27 @@ COPY alpine-root/ /
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
 
-RUN addgroup -S -g 101 clickhouse \
+RUN arch=${TARGETARCH:-amd64} \
+    && for package in ${PACKAGES}; do \
+        { \
+            { echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+                && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" -O "/tmp/${package}-${VERSION}-${arch}.tgz" \
+                && tar xvzf "/tmp/${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / ; \
+            } || \
+            { echo "Fallback to ${REPOSITORY}/${package}-${VERSION}.tgz" \
+                && wget -c -q "${REPOSITORY}/${package}-${VERSION}.tgz" -O "/tmp/${package}-${VERSION}.tgz" \
+                && tar xvzf "/tmp/${package}-${VERSION}.tgz" --strip-components=2 -C / ; \
+            } ; \
+        } || exit 1 \
+    ; done \
+    && rm /tmp/*.tgz /install -r \
+    && addgroup -S -g 101 clickhouse \
     && adduser -S -h /var/lib/clickhouse -s /bin/bash -G clickhouse -g "ClickHouse server" -u 101 clickhouse \
-    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
+    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server/config.d /etc/clickhouse-server/users.d /etc/clickhouse-client /docker-entrypoint-initdb.d \
     && chown clickhouse:clickhouse /var/lib/clickhouse \
     && chown root:clickhouse /var/log/clickhouse-server \
     && chmod +x /entrypoint.sh \
-    && apk add --no-cache su-exec bash tzdata \
+    && apk add --no-cache bash tzdata \
     && cp /usr/share/zoneinfo/UTC /etc/localtime \
     && echo "UTC" > /etc/timezone \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client

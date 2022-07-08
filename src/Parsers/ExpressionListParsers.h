@@ -122,7 +122,7 @@ private:
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
     /// =, !=, <, > ALL (subquery) / ANY (subquery)
-    bool allow_any_all_operators = false;
+    bool comparison_expression = false;
 
 public:
     /** `operators_` - allowed operators and their corresponding functions
@@ -133,9 +133,9 @@ public:
     }
 
     ParserLeftAssociativeBinaryOperatorList(Operators_t operators_,
-            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool allow_any_all_operators_ = false)
+            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool comparison_expression_ = false)
         : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_),
-          first_elem_parser(std::move(first_elem_parser_)), allow_any_all_operators(allow_any_all_operators_)
+          first_elem_parser(std::move(first_elem_parser_)), comparison_expression(comparison_expression_)
     {
     }
 
@@ -207,7 +207,7 @@ private:
     ParserPtr elem_parser;
 
 public:
-    ParserCastExpression(ParserPtr && elem_parser_)
+    explicit ParserCastExpression(ParserPtr && elem_parser_)
         : elem_parser(std::move(elem_parser_))
     {
     }
@@ -517,6 +517,26 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserGroupingSetsExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "grouping sets expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserGroupingSetsExpressionListElements : public IParserBase
+{
+protected:
+    const char * getName() const override { return "grouping sets expression elements"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserInterpolateExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "interpolate expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /// Parser for key-value pair, where value can be list of pairs.
 class ParserKeyValuePair : public IParserBase

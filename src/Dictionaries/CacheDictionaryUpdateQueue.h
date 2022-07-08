@@ -74,8 +74,11 @@ private:
     template <DictionaryKeyType>
     friend class CacheDictionaryUpdateQueue;
 
-    std::atomic<bool> is_done{false};
-    std::exception_ptr current_exception{nullptr};
+    mutable std::mutex update_mutex;
+    mutable std::condition_variable is_update_finished;
+
+    bool is_done{false};
+    std::exception_ptr current_exception{nullptr}; /// NOLINT
 
     /// While UpdateUnit is alive, it is accounted in update_queue size.
     CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
@@ -159,9 +162,6 @@ private:
 
     UpdateQueue update_queue;
     ThreadPool update_pool;
-
-    mutable std::mutex update_mutex;
-    mutable std::condition_variable is_update_finished;
 };
 
 extern template class CacheDictionaryUpdateQueue<DictionaryKeyType::Simple>;

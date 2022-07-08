@@ -1,7 +1,6 @@
 ---
-toc_folder_title: SQL 语句
-toc_hidden: true
-toc_priority: 31
+sidebar_label: SQL 语句
+sidebar_position: 31
 ---
 
 # ClickHouse SQL 语句 {#clickhouse-sql-statements}
@@ -20,7 +19,7 @@ toc_priority: 31
 -   [CHECK TABLE](../../sql-reference/statements/check-table.md)
 -   [DESCRIBE TABLE](../../sql-reference/statements/describe-table.md)
 -   [DETACH](../../sql-reference/statements/detach.md)
--   [DROP](../../sql-reference/statements/drop.md)
+-   [DROP](../../sql-reference/statements/drop)
 -   [EXISTS](../../sql-reference/statements/exists.md)
 -   [KILL](../../sql-reference/statements/kill.md)
 -   [OPTIMIZE](../../sql-reference/statements/optimize.md)

@@ -121,7 +121,7 @@ void KeeperDispatcher::requestThread()
                         current_batch.clear();
                     }
 
-                    prev_batch = current_batch;
+                    prev_batch = std::move(current_batch);
                     prev_result = result;
                 }
 
@@ -201,7 +201,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
 
         /// Nobody waits for this session id
-        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.count(session_id_resp.internal_id))
+        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
             return;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
@@ -215,7 +215,8 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
         {
-            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected", response->xid, response->getOpNum(), session_id);
+            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected",
+                response->xid, response->xid == Coordination::WATCH_XID ? "Watch" : toString(response->getOpNum()), session_id);
             return;
         }
 
@@ -234,7 +235,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         /// If session was already disconnected than we will ignore requests
         std::lock_guard lock(session_to_response_callback_mutex);
-        if (session_to_response_callback.count(session_id) == 0)
+        if (!session_to_response_callback.contains(session_id))
             return false;
     }
 
@@ -278,7 +279,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(configuration_and_settings->enable_ipv6);
+        server->startup(config, configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -367,6 +368,11 @@ void KeeperDispatcher::shutdown()
     LOG_DEBUG(log, "Dispatcher shut down");
 }
 
+void KeeperDispatcher::forceRecovery()
+{
+    server->forceRecovery();
+}
+
 KeeperDispatcher::~KeeperDispatcher()
 {
     shutdown();
@@ -437,14 +443,14 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 
 void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
-    for (const auto & [session_id, time, request] : requests_for_sessions)
+    for (const auto & request_for_session : requests_for_sessions)
     {
         KeeperStorage::ResponsesForSessions responses;
-        auto response = request->makeResponse();
-        response->xid = request->xid;
+        auto response = request_for_session.request->makeResponse();
+        response->xid = request_for_session.request->xid;
         response->zxid = 0;
         response->error = error;
-        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response}))
+        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{request_for_session.session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,
@@ -535,10 +541,18 @@ void KeeperDispatcher::updateConfigurationThread()
 
         try
         {
+            using namespace std::chrono_literals;
             if (!server->checkInit())
             {
                 LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
-                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                std::this_thread::sleep_for(5000ms);
+                continue;
+            }
+
+            if (server->isRecovering())
+            {
+                LOG_INFO(log, "Server is recovering, will not apply configuration until recovery is finished");
+                std::this_thread::sleep_for(5000ms);
                 continue;
             }
 
@@ -551,6 +565,9 @@ void KeeperDispatcher::updateConfigurationThread()
             bool done = false;
             while (!done)
             {
+                if (server->isRecovering())
+                    break;
+
                 if (shutdown_called)
                     return;
 
@@ -572,6 +589,11 @@ void KeeperDispatcher::updateConfigurationThread()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+bool KeeperDispatcher::isServerActive() const
+{
+    return checkInit() && hasLeader() && !server->isRecovering();
 }
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -630,12 +652,7 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
-    Keeper4LWInfo result;
-    result.is_follower = server->isFollower();
-    result.is_standalone = !result.is_follower && server->getFollowerCount() == 0;
-    result.is_leader = isLeader();
-    result.is_observer = server->isObserver();
-    result.has_leader = hasLeader();
+    Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
     {
         std::lock_guard lock(push_request_mutex);
         result.outstanding_requests_count = requests_queue->size();
@@ -644,13 +661,6 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
         std::lock_guard lock(session_to_response_callback_mutex);
         result.alive_connections_count = session_to_response_callback.size();
     }
-    if (result.is_leader)
-    {
-        result.follower_count = server->getFollowerCount();
-        result.synced_follower_count = server->getSyncedFollowerCount();
-    }
-    result.total_nodes_count = server->getKeeperStateMachine()->getNodesCount();
-    result.last_zxid = server->getKeeperStateMachine()->getLastProcessedZxid();
     return result;
 }
 

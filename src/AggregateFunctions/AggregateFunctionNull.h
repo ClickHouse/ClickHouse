@@ -77,7 +77,7 @@ protected:
 
     static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
     {
-        return result_is_nullable ? place[0] : 1;
+        return result_is_nullable ? place[0] : true;
     }
 
 public:
@@ -148,7 +148,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        bool flag = 1;
+        bool flag = true;
         if constexpr (serialize_flag)
             readBinary(flag, buf);
         if (flag)
@@ -306,18 +306,23 @@ public:
         }
     }
 
-    void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
+    void addBatchSinglePlace( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
         const UInt8 * null_map = column->getNullMapData().data();
 
         this->nested_function->addBatchSinglePlaceNotNull(
-            batch_size, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
+            row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
         if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, batch_size, 1))
+            if (!memoryIsByte(null_map, row_begin, row_end, 1))
                 this->setFlag(place);
     }
 

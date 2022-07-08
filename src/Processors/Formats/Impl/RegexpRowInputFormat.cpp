@@ -1,4 +1,4 @@
-#include <stdlib.h>
+#include <cstdlib>
 #include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -128,15 +128,14 @@ void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(*buf);
 }
 
-RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ContextPtr context_)
+RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowSchemaReader(
         buf,
-        format_settings_.max_rows_to_read_for_schema_inference,
+        format_settings_,
         getDefaultDataTypeForEscapingRule(format_settings_.regexp.escaping_rule))
     , format_settings(format_settings_)
     , field_extractor(format_settings)
     , buf(in_)
-    , context(context_)
 {
 }
 
@@ -152,7 +151,7 @@ DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != field_extractor.getMatchedFieldsSize(); ++i)
     {
         String field(field_extractor.getField(i));
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule, context));
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule));
     }
 
     return data_types;
@@ -203,9 +202,9 @@ void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 
 void registerRegexpSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
+    factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings)
     {
-        return std::make_shared<RegexpSchemaReader>(buf, settings, context);
+        return std::make_shared<RegexpSchemaReader>(buf, settings);
     });
 }
 

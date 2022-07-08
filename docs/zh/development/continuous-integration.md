@@ -42,6 +42,8 @@ git push
 使用`utils/check-style/check-style`二进制文件执行一些简单的基于正则表达式的代码样式检查(注意, 它可以在本地运行).
 如果失败, 按照[代码样式指南](./style.md)修复样式错误.
 
+使用 [black](https://github.com/psf/black/) 檢查 python 代碼.
+
 ### 报告详情 {#report-details}
 -  [状态页示例](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)
 -  `docs_output.txt`记录了查结果错误(无效表格等), 空白页表示没有错误. [成功结果案例](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check/output.txt)
@@ -84,13 +86,10 @@ git push
 - **Build log**: 链接到构建和文件复制日志, 当构建失败时很有用.
 - **Build time**.
 - **Artifacts**: 构建结果文件 (`XXX`是服务器版本, 比如`20.8.1.4344`).
-    - `clickhouse-client_XXX_all.deb`
+    - `clickhouse-client_XXX_amd64.deb`
     -` clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
     - `clickhouse-common-staticXXX_amd64.deb`
-    - `clickhouse-server_XXX_all.deb`
-    - `clickhouse-test_XXX_all.deb`
-    - `clickhouse_XXX_amd64.buildinfo`
-    - `clickhouse_XXX_amd64.changes`
+    - `clickhouse-server_XXX_amd64.deb`
     - `clickhouse`: Main built binary.
     - `clickhouse-odbc-bridge`
     - `unit_tests_dbms`: 带有 ClickHouse 单元测试的 GoogleTest 二进制文件.
@@ -136,12 +135,3 @@ git push
 
 ## 性能测试 {#performance-tests}
 测量查询性能的变化. 这是最长的检查, 只需不到 6 小时即可运行.性能测试报告在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report)有详细描述.
-
-## 质量保证 {#qa}
-什么是状态页面上的任务(专用网络)项目?
-
-它是 Yandex 内部工作系统的链接. Yandex 员工可以看到检查的开始时间及其更详细的状态.
-
-运行测试的地方
-
-Yandex 内部基础设施的某个地方.

@@ -25,6 +25,8 @@ public:
       */
     void executeForCurrentContext();
 
+    bool supportsTransactions() const override { return true; }
+
 private:
     ASTPtr query_ptr;
 };
