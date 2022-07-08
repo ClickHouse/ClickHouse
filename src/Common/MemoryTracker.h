@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
@@ -63,9 +64,7 @@ private:
     double fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
-    double sample_probability = 0;
-    /// Sample probability for the whole chain.
-    std::atomic<double> total_sample_probability = 0;
+    std::optional<double> sample_probability = 0;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -87,8 +86,6 @@ private:
     void logMemoryUsage(Int64 current) const;
 
     void setOrRaiseProfilerLimit(Int64 value);
-
-    void updateTotalSampleProbability(MemoryTracker * parent_elem);
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
@@ -142,18 +139,9 @@ public:
     void setSampleProbability(double value)
     {
         sample_probability = value;
-        updateTotalSampleProbability(parent.load());
     }
 
-    void updateTotalSampleProbability()
-    {
-        updateTotalSampleProbability(parent.load());
-    }
-
-    double getSampleProbabilityTotal()
-    {
-        return total_sample_probability.load(std::memory_order_relaxed);
-    }
+    double getSampleProbability();
 
     void setProfilerStep(Int64 value)
     {
@@ -166,7 +154,6 @@ public:
     void setParent(MemoryTracker * elem)
     {
         parent.store(elem, std::memory_order_relaxed);
-        updateTotalSampleProbability(elem);
     }
 
     MemoryTracker * getParent()
