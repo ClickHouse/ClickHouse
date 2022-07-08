@@ -20,8 +20,8 @@ public:
     static DeflateJobHWPool & instance();
     static constexpr auto JOB_POOL_SIZE = 1024;
     static constexpr qpl_path_t PATH = qpl_path_hardware;
-    static qpl_job * jobPool[JOB_POOL_SIZE];
-    static std::atomic_bool jobLocks[JOB_POOL_SIZE];
+    static qpl_job * hw_job_pool[JOB_POOL_SIZE];
+    static std::atomic_bool hw_job_locks[JOB_POOL_SIZE];
     static bool job_pool_ready;
 
     bool & jobPoolReady() { return job_pool_ready;}
@@ -42,7 +42,7 @@ public:
                 }
             }
             *job_id = JOB_POOL_SIZE - index;
-            return jobPool[index];
+            return hw_job_pool[index];
         }
         else
         {
@@ -56,7 +56,7 @@ public:
         {
             uint32_t index = JOB_POOL_SIZE - job_id;
             ReleaseJobObjectGuard _(index);
-            return jobPool[index];
+            return hw_job_pool[index];
         }
         else
         {
@@ -78,10 +78,10 @@ private:
     {
         bool expected = false;
         assert(index < JOB_POOL_SIZE);
-        return jobLocks[index].compare_exchange_strong(expected, true);
+        return hw_job_locks[index].compare_exchange_strong(expected, true);
     }
 
-    void unLockJob(uint32_t index) { jobLocks[index].store(false); }
+    void unLockJob(uint32_t index) { hw_job_locks[index].store(false); }
 
     class ReleaseJobObjectGuard
     {
@@ -95,10 +95,10 @@ private:
 
         ~ReleaseJobObjectGuard()
         {
-            jobLocks[index].store(false);
+            hw_job_locks[index].store(false);
         }
     };
-    std::unique_ptr<uint8_t[]> jobPoolBufferPtr;
+    std::unique_ptr<uint8_t[]> hw_job_pool_buffer;
     Poco::Logger * log;
 };
 
@@ -111,14 +111,14 @@ public:
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
 
 private:
-    qpl_job * jobSWPtr;
+    qpl_job * sw_job;
     qpl_job * getJobCodecPtr();
 };
 
 class HardwareCodecDeflate
 {
 public:
-    bool hwEnabled;
+    bool hw_enabled;
     HardwareCodecDeflate();
     ~HardwareCodecDeflate();
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
@@ -127,7 +127,7 @@ public:
     void flushAsynchronousDecompressRequests();
 
 private:
-    std::map<uint32_t, qpl_job *> jobDecompAsyncMap;
+    std::map<uint32_t, qpl_job *> decomp_async_job_map;
     Poco::Logger * log;
 };
 class CompressionCodecDeflate : public ICompressionCodec
