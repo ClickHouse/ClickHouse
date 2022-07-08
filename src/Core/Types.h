@@ -7,6 +7,7 @@
 #include <base/Decimal.h>
 #include <base/defines.h>
 #include <base/UUID.h>
+#include <base/Base58.h>
 
 
 namespace DB
@@ -88,6 +89,7 @@ enum class TypeIndex
     LowCardinality,
     Map,
     Object,
+    Base58,
 };
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
