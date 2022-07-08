@@ -24,22 +24,22 @@ namespace DB
 
 namespace
 {
-struct HashValue
+struct DeletedRowsHash
 {
 private:
     char value[16];
 
 public:
-    HashValue() = default;
-    explicit HashValue(SipHash & hasher)
+    DeletedRowsHash() = default;
+    explicit DeletedRowsHash(SipHash & hasher)
     {
         hasher.get128(value);
 
-        static_assert(std::is_pod_v<HashValue>, "Expected to be a POD-type");
-        static_assert(sizeof(HashValue) * 8 == 128);
+        static_assert(std::is_pod_v<DeletedRowsHash>, "Expected to be a POD-type");
+        static_assert(sizeof(DeletedRowsHash) * 8 == 128);
     }
 
-    bool operator==(const HashValue & other) const
+    bool operator==(const DeletedRowsHash & other) const
     {
         return memcmp(value, other.value, sizeof(value)) == 0;
     }
@@ -51,9 +51,9 @@ constexpr UInt8 PADDING_SIZE = 7; // just in case
 constexpr UInt8 HEADER_SIZE = 0
         + sizeof(FORMAT_VERSION)
         + sizeof(UInt64)                  // number of rows in mask
-        + sizeof(HashValue)               // column data hash
+        + sizeof(DeletedRowsHash)         // column data hash
         + PADDING_SIZE                    // padding: zero-bytes
-        + sizeof(HashValue);              // header hash
+        + sizeof(DeletedRowsHash);        // header hash
 }
 
 MergeTreeDataPartDeletedMask::MergeTreeDataPartDeletedMask()
@@ -77,14 +77,14 @@ void MergeTreeDataPartDeletedMask::setDeletedRows(size_t rows, bool value)
 
 void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
 {
-    std::array<char, HEADER_SIZE - sizeof(HashValue)> header_buffer_data;
+    std::array<char, HEADER_SIZE - sizeof(DeletedRowsHash)> header_buffer_data;
     in.readStrict(header_buffer_data.data(), header_buffer_data.size());
     {// validate hash of the header first
         SipHash hash;
         hash.update(header_buffer_data.data(), header_buffer_data.size());
-        const HashValue computed_hash(hash);
+        const DeletedRowsHash computed_hash(hash);
 
-        HashValue read_hash;
+        DeletedRowsHash read_hash;
         readPODBinary(read_hash, in);
         if (read_hash != computed_hash)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -93,7 +93,7 @@ void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
 
     UInt8 format_version = FORMAT_VERSION;
     UInt64 stored_rows = 0;
-    HashValue column_hash;
+    DeletedRowsHash column_hash;
     {// Read header values
         ReadBuffer header(header_buffer_data.data(), header_buffer_data.size(), 0);
         readBinary(format_version, header);
@@ -123,7 +123,7 @@ void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
 void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
 {
     {// Header
-        std::array<char, HEADER_SIZE - sizeof(HashValue)> header_buffer_data;
+        std::array<char, HEADER_SIZE - sizeof(DeletedRowsHash)> header_buffer_data;
         WriteBuffer header(header_buffer_data.data(), header_buffer_data.size());
 
         writeBinary(FORMAT_VERSION, header);
@@ -132,7 +132,7 @@ void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
         {
             SipHash hash;
             deleted_rows->updateHashFast(hash);
-            writePODBinary(HashValue(hash), header);
+            writePODBinary(DeletedRowsHash(hash), header);
         }
 
         {
@@ -145,7 +145,7 @@ void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
         {// header hash
             SipHash hash;
             hash.update(header_buffer_data.data(), header_buffer_data.size());
-            writePODBinary(HashValue(hash), out);
+            writePODBinary(DeletedRowsHash(hash), out);
         }
     }
     assert(HEADER_SIZE == out.count());
