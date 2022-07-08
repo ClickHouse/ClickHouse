@@ -2873,9 +2873,9 @@ function colorize(elem, ratio) {
     let [r, g, b] = [0, 0, 0];
 
     /// ratio less than 1 - green
-    /// ratio from 1 to 10 - green to yellow
-    /// ratio from 10 to 100 - yellow to red
-    /// ratio from 100 to 1000 to infinity - red to brown to black
+    /// ratio from 1 to 2 - green to yellow
+    /// ratio from 2 to 10 - yellow to red
+    /// ratio from 10 to 1000 to infinity - red to brown to black
 
     /// Note: we are using RGB space without proper gamma correction. Read more: https://www.handprint.com/HP/WCL/color1.html
 
@@ -2890,7 +2890,7 @@ function colorize(elem, ratio) {
             g = 255;
             r = (ratio - 1) * 255;
         } else if (ratio <= 10) {
-            g = (10 - ratio) / 9 * 255;
+            g = (10 - ratio) / 8 * 255;
             r = 255;
         } else {
             r = (1 - ((ratio - 10) / ((ratio - 10) + 1000))) * 255;
@@ -3023,7 +3023,7 @@ function render() {
         let checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'query-checkbox';
-        checkbox.checked = true;
+        checkbox.checked = selectors.queries[query_num];
         checkbox.addEventListener('change', e => {
             selectors.queries[query_num] = e.target.checked;
             renderSummary(filtered_data);
