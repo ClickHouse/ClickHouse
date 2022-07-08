@@ -83,7 +83,7 @@ private:
 
     UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;
 
-    bool isColumnAllPrimaryKey(const ASTPtr & ast) const;
+    bool isExpressionOverSortingKey(const ASTPtr & ast) const;
 
     bool isSortingKey(const String & column_name) const;
 
@@ -107,7 +107,6 @@ private:
     const StringSet table_columns;
     const Names queried_columns;
     const NameSet sorting_key_names;
-    const NameSet pk_names;
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
