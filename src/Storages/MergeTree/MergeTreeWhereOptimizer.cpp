@@ -38,8 +38,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
-    , pk_names{NameSet(
-          metadata_snapshot->getPrimaryKey().column_names.begin(), metadata_snapshot->getPrimaryKey().column_names.end())}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
@@ -195,8 +193,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
             && !cannotBeMoved(node, is_final)
-            /// Do not take into consideration the conditions consisting of column that not belong to the primary key columns
-            && isColumnAllPrimaryKey(node)
+            /// when use final, do not take into consideration the conditions consisting of column that not belong to the sorting key columns
+            && (!is_final || isExpressionOverSortingKey(node))
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
@@ -322,18 +320,22 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     return size;
 }
 
-bool MergeTreeWhereOptimizer::isColumnAllPrimaryKey(const ASTPtr & ast) const
+bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const ASTPtr & ast) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
         for (const auto & arg : args)
-            if (!isColumnAllPrimaryKey(arg))
+        {
+            if (isConstant(ast) || sorting_key_names.contains(arg->getColumnName()))
+                continue;
+            if (!isExpressionOverSortingKey(arg))
                 return false;
+        }
         return true;
     }
 
-    if (isConstant(ast) || pk_names.contains(ast->getColumnName()))
+    if (isConstant(ast) || sorting_key_names.contains(ast->getColumnName()))
         return true;
     else
         return false;
