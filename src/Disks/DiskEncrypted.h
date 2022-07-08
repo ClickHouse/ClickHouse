@@ -6,7 +6,6 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskDecorator.h>
 #include <Common/MultiVersion.h>
-#include <Disks/FakeDiskTransaction.h>
 
 
 namespace DB
@@ -84,7 +83,7 @@ public:
         delegate->moveDirectory(wrapped_from_path, wrapped_to_path);
     }
 
-    DirectoryIteratorPtr iterateDirectory(const String & path) const override
+    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->iterateDirectory(wrapped_path);
@@ -110,7 +109,7 @@ public:
         delegate->replaceFile(wrapped_from_path, wrapped_to_path);
     }
 
-    void listFiles(const String & path, std::vector<String> & file_names) const override
+    void listFiles(const String & path, std::vector<String> & file_names) override
     {
         auto wrapped_path = wrappedPath(path);
         delegate->listFiles(wrapped_path, file_names);
@@ -193,16 +192,10 @@ public:
         delegate->setLastModified(wrapped_path, timestamp);
     }
 
-    Poco::Timestamp getLastModified(const String & path) const override
+    Poco::Timestamp getLastModified(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->getLastModified(wrapped_path);
-    }
-
-    time_t getLastChanged(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->getLastChanged(wrapped_path);
     }
 
     void setReadOnly(const String & path) override
@@ -238,13 +231,6 @@ public:
     bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
-
-    DiskTransactionPtr createTransaction() override
-    {
-        /// Need to overwrite explicetly because this disk change
-        /// a lot of "delegate" methods.
-        return std::make_shared<FakeDiskTransaction>(*this);
-    }
 
 private:
     String wrappedPath(const String & path) const

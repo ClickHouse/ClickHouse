@@ -1,4 +1,6 @@
 <test>
+
+
     <substitutions>
          <substitution>
            <name>func</name>

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
@@ -73,8 +72,6 @@ private:
 
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
-
-    std::atomic<std::chrono::microseconds> max_wait_time;
 
     std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
 
@@ -188,13 +185,6 @@ public:
 
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
-
-    std::chrono::microseconds getOvercommitWaitingTime()
-    {
-        return max_wait_time.load(std::memory_order_relaxed);
-    }
-
-    void setOvercommitWaitingTime(UInt64 wait_time);
 
     void setOvercommitTracker(OvercommitTracker * tracker) noexcept
     {

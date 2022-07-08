@@ -12,13 +12,6 @@
 
 namespace DB
 {
-
-namespace
-{
-    constexpr const char ALLOW_BACKUP_SETTING_NAME[] = "allow_backup";
-}
-
-
 SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast)
 {
     init(ast, nullptr);
@@ -48,10 +41,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
 
         /// Optionally check if a setting with that name is allowed.
         if (access_control)
-        {
-            if (setting_name != ALLOW_BACKUP_SETTING_NAME)
-                access_control->checkSettingNameIsAllowed(setting_name);
-        }
+            access_control->checkSettingNameIsAllowed(setting_name);
 
         value = ast.value;
         min_value = ast.min_value;
@@ -137,36 +127,6 @@ std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNa
 }
 
 
-std::vector<UUID> SettingsProfileElements::findDependencies() const
-{
-    std::vector<UUID> res;
-    for (const auto & element : *this)
-    {
-        if (element.parent_profile)
-            res.push_back(*element.parent_profile);
-    }
-    return res;
-}
-
-
-void SettingsProfileElements::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
-{
-    for (auto & element : *this)
-    {
-        if (element.parent_profile)
-        {
-            auto id = *element.parent_profile;
-            auto it_new_id = old_to_new_ids.find(id);
-            if (it_new_id != old_to_new_ids.end())
-            {
-                auto new_id = it_new_id->second;
-                element.parent_profile = new_id;
-            }
-        }
-    }
-}
-
-
 void SettingsProfileElements::merge(const SettingsProfileElements & other)
 {
     insert(end(), other.begin(), other.end());
@@ -178,11 +138,8 @@ Settings SettingsProfileElements::toSettings() const
     Settings res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
-        {
-            if (!elem.value.isNull())
-                res.set(elem.setting_name, elem.value);
-        }
+        if (!elem.setting_name.empty() && !elem.value.isNull())
+            res.set(elem.setting_name, elem.value);
     }
     return res;
 }
@@ -192,11 +149,8 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     SettingsChanges res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
-        {
-            if (!elem.value.isNull())
-                res.push_back({elem.setting_name, elem.value});
-        }
+        if (!elem.setting_name.empty() && !elem.value.isNull())
+            res.push_back({elem.setting_name, elem.value});
     }
     return res;
 }
@@ -206,7 +160,7 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     SettingsConstraints res{access_control};
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
+        if (!elem.setting_name.empty())
         {
             if (!elem.min_value.isNull())
                 res.setMinValue(elem.setting_name, elem.min_value);
@@ -235,14 +189,5 @@ std::vector<UUID> SettingsProfileElements::toProfileIDs() const
     return res;
 }
 
-bool SettingsProfileElements::isBackupAllowed() const
-{
-    for (const auto & setting : *this)
-    {
-        if (setting.setting_name == ALLOW_BACKUP_SETTING_NAME)
-            return static_cast<bool>(SettingFieldBool{setting.value});
-    }
-    return true;
-}
 
 }

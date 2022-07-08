@@ -123,14 +123,14 @@ static const ASTFunction * getAsTuple(const ASTPtr & node)
     if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
         return func;
     return {};
-}
+};
 
 static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
 {
     if (const auto * value_tuple = node->as<ASTLiteral>())
         return value_tuple && value_tuple->value.tryGet<Tuple>(tuple);
     return false;
-}
+};
 
 bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
 {

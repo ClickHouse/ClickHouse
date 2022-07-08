@@ -1,5 +1,3 @@
-// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name)
-
 #include <csignal>
 #include <sys/time.h>
 #if defined(OS_LINUX)
@@ -294,8 +292,8 @@ void ThreadFuzzer::setup() const
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define MAKE_WRAPPER(RET, NAME, ...) \
-        extern "C" RET __##NAME(__VA_ARGS__); \
-        extern "C" RET NAME(__VA_ARGS__) \
+        extern "C" RET __##NAME(__VA_ARGS__); /* NOLINT */ \
+        extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
         { \
             injection( \
                 NAME##_before_yield_probability.load(std::memory_order_relaxed), \
@@ -319,5 +317,3 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
 #    undef MAKE_WRAPPER
 #endif
 }
-
-// NOLINTEND(readability-inconsistent-declaration-parameter-name)

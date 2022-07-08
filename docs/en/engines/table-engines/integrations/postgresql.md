@@ -3,7 +3,7 @@ sidebar_position: 11
 sidebar_label: PostgreSQL
 ---
 
-# PostgreSQL
+# PostgreSQL {#postgresql}
 
 The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
 

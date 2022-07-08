@@ -2,7 +2,7 @@
 sidebar_position: 110
 ---
 
-# groupArray
+# groupArray {#agg_function-grouparray}
 
 Syntax: `groupArray(x)` or `groupArray(max_size)(x)`
 

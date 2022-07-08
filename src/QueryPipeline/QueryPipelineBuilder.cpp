@@ -30,6 +30,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void QueryPipelineBuilder::addQueryPlan(std::unique_ptr<QueryPlan> plan)
+{
+    pipe.addQueryPlan(std::move(plan));
+}
+
 void QueryPipelineBuilder::checkInitialized()
 {
     if (!initialized())
@@ -83,7 +88,7 @@ void QueryPipelineBuilder::init(Pipe pipe_)
     pipe = std::move(pipe_);
 }
 
-void QueryPipelineBuilder::init(QueryPipeline & pipeline)
+void QueryPipelineBuilder::init(QueryPipeline pipeline)
 {
     if (initialized())
         throw Exception("Pipeline has already been initialized", ErrorCodes::LOGICAL_ERROR);
@@ -91,6 +96,8 @@ void QueryPipelineBuilder::init(QueryPipeline & pipeline)
     if (pipeline.pushing())
         throw Exception("Can't initialize pushing pipeline", ErrorCodes::LOGICAL_ERROR);
 
+    pipe.holder = std::move(pipeline.resources);
+    pipe.processors = std::move(pipeline.processors);
     if (pipeline.output)
     {
         pipe.output_ports = {pipeline.output};
@@ -265,13 +272,11 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     bool will_limit_max_threads = true;
     size_t max_threads = 0;
     Pipes pipes;
-    QueryPlanResourceHolder resources;
 
     for (auto & pipeline_ptr : pipelines)
     {
         auto & pipeline = *pipeline_ptr;
         pipeline.checkInitialized();
-        resources = std::move(pipeline.resources);
         pipeline.pipe.collected_processors = collected_processors;
 
         pipes.emplace_back(std::move(pipeline.pipe));
@@ -287,7 +292,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
-    pipeline.addResources(std::move(resources));
 
     if (will_limit_max_threads)
     {
@@ -425,7 +429,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     step->appendExtraProcessors(processors);
 
     left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
-    left->resources = std::move(right->resources);
+    left->pipe.holder = std::move(right->pipe.holder);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     return left;
@@ -465,16 +469,31 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
 
     Pipes pipes;
     pipes.emplace_back(std::move(pipe));
-    pipes.emplace_back(QueryPipelineBuilder::getPipe(std::move(pipeline), resources));
+    pipes.emplace_back(QueryPipelineBuilder::getPipe(std::move(pipeline)));
     pipe = Pipe::unitePipes(std::move(pipes), collected_processors, true);
 
     auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
     addTransform(std::move(processor));
 }
 
+void QueryPipelineBuilder::setProgressCallback(const ProgressCallback & callback)
+{
+    for (auto & processor : pipe.processors)
+    {
+        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source->setProgressCallback(callback);
+    }
+}
+
 void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
+
+    for (auto & processor : pipe.processors)
+    {
+        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source->setProcessListElement(elem);
+    }
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()
@@ -485,16 +504,9 @@ PipelineExecutorPtr QueryPipelineBuilder::execute()
     return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
-Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources)
-{
-    resources = std::move(pipeline.resources);
-    return std::move(pipeline.pipe);
-}
-
 QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
 {
     QueryPipeline res(std::move(builder.pipe));
-    res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());
     res.setProcessListElement(builder.process_list_element);
     return res;

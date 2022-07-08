@@ -12,7 +12,6 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
-#include <QueryPipeline/Pipe.h>
 
 #include <Columns/FilterDescription.h>
 
@@ -56,12 +55,6 @@ public:
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        ContextMutablePtr context_,
-        const SelectQueryOptions &,
-        const Names & required_result_column_names_ = Names{});
-
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -92,12 +85,12 @@ public:
     BlockIO execute() override;
 
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan) override;
+    virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    void ignoreWithTotals() override;
+    virtual void ignoreWithTotals() override;
 
     ASTPtr getQuery() const { return query_ptr; }
 
@@ -126,26 +119,12 @@ public:
     void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
 
     /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo(size_t replica_num, size_t replica_count);
-
-    static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context);
-    static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context);
+    void setProperClientInfo();
 
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
-        std::optional<Pipe> input_pipe,
-        const StoragePtr & storage_,
-        const SelectQueryOptions &,
-        const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
-        SubqueriesForSets subquery_for_sets_ = {},
-        PreparedSets prepared_sets_ = {});
-
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        ContextMutablePtr context_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,

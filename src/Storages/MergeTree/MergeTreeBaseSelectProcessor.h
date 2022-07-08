@@ -5,7 +5,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
@@ -29,7 +29,7 @@ struct ParallelReadingExtension
 };
 
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
-class MergeTreeBaseSelectProcessor : public ISource
+class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
 public:
     MergeTreeBaseSelectProcessor(
@@ -115,7 +115,7 @@ protected:
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
-    std::vector<MergeTreeReaderPtr> pre_reader_for_step;
+    MergeTreeReaderPtr pre_reader;
 
     MergeTreeReadTaskPtr task;
 

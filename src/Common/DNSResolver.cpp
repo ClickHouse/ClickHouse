@@ -83,8 +83,25 @@ static void splitHostAndPort(const std::string & host_and_port, std::string & ou
         throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
 }
 
-static DNSResolver::IPAddresses hostByName(const std::string & host)
+static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 {
+    Poco::Net::IPAddress ip;
+
+    /// NOTE:
+    /// - Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
+    /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (without brackets)
+    if (host.starts_with('['))
+    {
+        assert(host.ends_with(']'));
+        if (Poco::Net::IPAddress::tryParse(host.substr(1, host.size() - 2), ip))
+            return DNSResolver::IPAddresses(1, ip);
+    }
+    else
+    {
+        if (Poco::Net::IPAddress::tryParse(host, ip))
+            return DNSResolver::IPAddresses(1, ip);
+    }
+
     /// Family: AF_UNSPEC
     /// AI_ALL is required for checking if client is allowed to connect from an address
     auto flags = Poco::Net::DNS::DNS_HINT_AI_V4MAPPED | Poco::Net::DNS::DNS_HINT_AI_ALL;
@@ -110,30 +127,6 @@ static DNSResolver::IPAddresses hostByName(const std::string & host)
         ProfileEvents::increment(ProfileEvents::DNSError);
         throw Exception("Not found address of host: " + host, ErrorCodes::DNS_ERROR);
     }
-
-    return addresses;
-}
-
-static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
-{
-    Poco::Net::IPAddress ip;
-
-    /// NOTE:
-    /// - Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
-    /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (without brackets)
-    if (host.starts_with('['))
-    {
-        assert(host.ends_with(']'));
-        if (Poco::Net::IPAddress::tryParse(host.substr(1, host.size() - 2), ip))
-            return DNSResolver::IPAddresses(1, ip);
-    }
-    else
-    {
-        if (Poco::Net::IPAddress::tryParse(host, ip))
-            return DNSResolver::IPAddresses(1, ip);
-    }
-
-    DNSResolver::IPAddresses addresses = hostByName(host);
 
     return addresses;
 }
@@ -213,26 +206,6 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
 
     addToNewHosts(host);
     return  Poco::Net::SocketAddress(impl->cache_host(host).front(), port);
-}
-
-std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std::string & host, UInt16 port)
-{
-    if (Poco::Net::IPAddress ip; Poco::Net::IPAddress::tryParse(host, ip))
-        return std::vector<Poco::Net::SocketAddress>{{ip, port}};
-
-    std::vector<Poco::Net::SocketAddress> addresses;
-
-    if (!impl->disable_cache)
-        addToNewHosts(host);
-
-    std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : impl->cache_host(host);
-    auto ips_end = std::unique(ips.begin(), ips.end());
-
-    addresses.reserve(ips_end - ips.begin());
-    for (auto ip = ips.begin(); ip != ips_end; ++ip)
-        addresses.emplace_back(*ip, port);
-
-    return addresses;
 }
 
 String DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)

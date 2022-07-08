@@ -12,17 +12,29 @@ apt update
 apt install sudo python pip git
 pip3 install -r requirements.txt
 git config --global --add safe.directory /workspace
-./build.py --livereload 8080
+./build.py --skip-multi-page --skip-blog --skip-docs --livereload 8080
 ```
 
 ```
 cd ../docs/tools
-sudo apt install python3 pip
+sudo apt install python-3 pip
 pip3 install -r requirements.txt
 
 virtualenv build
 
-./build.py --livereload 8080
+./build.py --skip-multi-page --skip-blog --skip-docs --livereload 8080
 
 # Open the web browser and go to http://localhost:8080/
+```
+
+# How to quickly test the blog
+
+```
+./build.py --skip-multi-page --skip-docs --livereload 8080
+```
+
+# How to quickly test the broken links in docs
+
+```
+./build.py --skip-multi-page --skip-blog --lang en --livereload 8080
 ```

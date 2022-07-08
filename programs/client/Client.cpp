@@ -994,7 +994,7 @@ void Client::processConfig()
     ///   The value of the option is used as the text of query (or of multiple queries).
     ///   If stdin is not a terminal, INSERT data for the first query is read from it.
     /// - stdin is not a terminal. In this case queries are read from it.
-    /// - --queries-file command line option is present.
+    /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
@@ -1038,7 +1038,6 @@ void Client::processConfig()
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
     client_info.quota_key = config().getString("quota_key", "");
-    client_info.query_kind = query_kind;
 }
 
 

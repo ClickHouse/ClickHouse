@@ -318,59 +318,7 @@ template <typename T>
 void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
-    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
-    bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
-
-    auto sort = [&](auto begin, auto end, auto pred)
-    {
-        /// A case for radix sort
-        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
-        {
-            /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
-            bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
-            size_t size = end - begin;
-
-            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
-            {
-                PaddedPODArray<ValueWithIndex<T>> pairs(size);
-                size_t index = 0;
-
-                for (auto * it = begin; it != end; ++it)
-                {
-                    pairs[index] = {data[*it], static_cast<UInt32>(*it)};
-                    ++index;
-                }
-
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), size, reverse, begin);
-
-                /// Radix sort treats all NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (std::is_floating_point_v<T> && nan_direction_hint < 0)
-                {
-                    size_t nans_to_move = 0;
-
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (isNaN(data[begin[reverse ? i : size - 1 - i]]))
-                            ++nans_to_move;
-                        else
-                            break;
-                    }
-
-                    if (nans_to_move)
-                    {
-                        std::rotate(begin, begin + (reverse ? nans_to_move : size - nans_to_move), end);
-                    }
-                }
-
-                return;
-            }
-        }
-
-        ::sort(begin, end, pred);
-    };
+    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
@@ -489,10 +437,10 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const T * data_pos = data.data();
 
     /** A slightly more optimized version.
-      * Based on the assumption that often pieces of consecutive values
-      *  completely pass or do not pass the filter.
-      * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
-      */
+    * Based on the assumption that often pieces of consecutive values
+    *  completely pass or do not pass the filter.
+    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+    */
     static constexpr size_t SIMD_BYTES = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
@@ -577,115 +525,6 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
-#ifdef __SSE2__
-
-namespace
-{
-    /** Optimization for ColumnVector replicate using SIMD instructions.
-      * For such optimization it is important that data is right padded with 15 bytes.
-      *
-      * Replicate span size is offsets[i] - offsets[i - 1].
-      *
-      * Split spans into 3 categories.
-      * 1. Span with 0 size. Continue iteration.
-      *
-      * 2. Span with 1 size. Update pointer from which data must be copied into result.
-      * Then if we see span with size 1 or greater than 1 copy data directly into result data and reset pointer.
-      * Example:
-      * Data: 1 2 3 4
-      * Offsets: 1 2 3 4
-      * Result data: 1 2 3 4
-      *
-      * 3. Span with size greater than 1. Save single data element into register and copy it into result data.
-      * Example:
-      * Data: 1 2 3 4
-      * Offsets: 4 4 4 4
-      * Result data: 1 1 1 1
-      *
-      * Additional handling for tail is needed if pointer from which data must be copied from span with size 1 is not null.
-      */
-    template<typename IntType>
-    requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-    void replicateSSE42Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
-    {
-        const IntType * data_copy_begin_ptr = nullptr;
-        size_t offsets_size = offsets.size();
-
-        for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
-        {
-            size_t span = offsets[offset_index] - offsets[offset_index - 1];
-            if (span == 1)
-            {
-                if (!data_copy_begin_ptr)
-                    data_copy_begin_ptr = data + offset_index;
-
-                continue;
-            }
-
-            /// Copy data
-
-            if (data_copy_begin_ptr)
-            {
-                size_t copy_size = (data + offset_index) - data_copy_begin_ptr;
-                bool remainder = copy_size % 4;
-                size_t sse_copy_counter = (copy_size / 4) + remainder;
-                auto * result_data_copy = result_data;
-
-                while (sse_copy_counter)
-                {
-                    __m128i copy_batch = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data_copy_begin_ptr));
-                    _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data_copy), copy_batch);
-                    result_data_copy += 4;
-                    data_copy_begin_ptr += 4;
-                    --sse_copy_counter;
-                }
-
-                result_data += copy_size;
-                data_copy_begin_ptr = nullptr;
-            }
-
-            if (span == 0)
-                continue;
-
-            /// Copy single data element into result data
-
-            bool span_remainder = span % 4;
-            size_t copy_counter = (span / 4) + span_remainder;
-            auto * result_data_tmp = result_data;
-            __m128i copy_element_data = _mm_set1_epi32(data[offset_index]);
-
-            while (copy_counter)
-            {
-                _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data_tmp), copy_element_data);
-                result_data_tmp += 4;
-                --copy_counter;
-            }
-
-            result_data += span;
-        }
-
-        /// Copy tail if needed
-
-        if (data_copy_begin_ptr)
-        {
-            size_t copy_size = (data + offsets_size) - data_copy_begin_ptr;
-            bool remainder = copy_size % 4;
-            size_t sse_copy_counter = (copy_size / 4) + remainder;
-
-            while (sse_copy_counter)
-            {
-                __m128i copy_batch = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data_copy_begin_ptr));
-                _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data), copy_batch);
-                result_data += 4;
-                data_copy_begin_ptr += 4;
-                --sse_copy_counter;
-            }
-        }
-    }
-}
-
-#endif
-
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
@@ -697,14 +536,6 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
         return this->create();
 
     auto res = this->create(offsets.back());
-
-#ifdef __SSE2__
-    if constexpr (std::is_same_v<T, UInt32>)
-    {
-        replicateSSE42Int32(getData().data(), res->getData().data(), offsets);
-        return res;
-    }
-#endif
 
     auto it = res->getData().begin(); // NOLINT
     for (size_t i = 0; i < size; ++i)
