@@ -1,5 +1,8 @@
 #!/bin/bash -e
 
+# This script will substitute the benchmark results into the HTML page.
+# Note: editing HTML with sed may look strange, but at least we avoid using node.js and npm, and that's good.
+
 (
     sed '/^const data = \[$/q' index.html
 

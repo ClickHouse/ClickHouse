@@ -8,7 +8,7 @@
     "tags": ["Java", "column-oriented"],
 
     "load_time": 2032,
-    "data_size": 9245538172,
+    "data_size": null,
 
     "result": [
 [0.002, 0.001, 0.001],
