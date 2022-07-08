@@ -9,7 +9,65 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet">
 
     <style>
+        :root {
+            --color: black;
+            --title-color: black;
+            --background-color: white;
+
+            --link-color: #08F;
+            --link-hover-color: #F40;
+
+            --selector-text-color: black;
+            --selector-active-text-color: black;
+            --selector-background-color: #EEE;
+            --selector-active-background-color: #FFCB80;
+            --selector-hover-text-color: black;
+            --selector-hover-background-color: #FDB;
+
+            --summary-every-other-row-color: #F8F8F8;
+            --highlight-color: #EEE;
+            --bar-color: #FFCB80;
+            --legend-color: #FED;
+            --legend-border-color: #FFCB80;
+
+            --tooltip-text-color: white;
+            --tooltip-background-color: black;
+
+            --nothing-selected-color: #CCC;
+            --shadow-color: grey;
+        }
+
+        [data-theme="dark"] {
+            --color: #CCC;
+            --title-color: white;
+            --background-color: #04293A;
+
+            --link-color: #8CF;
+            --link-hover-color: #0FF;
+
+            --selector-text-color: white;
+            --selector-background-color: #444;
+            --selector-active-text-color: white;
+            --selector-active-background-color: #088;
+            --selector-hover-text-color: black;
+            --selector-hover-background-color: white;
+
+            --summary-every-other-row-color: #053750;
+            --highlight-color: #064663;
+            --bar-color: #088;
+            --legend-color: #064663;
+            --legend-border-color: #064663;
+
+            --tooltip-text-color: white;
+            --tooltip-background-color: #444;
+
+            --nothing-selected-color: #666;
+            --shadow-color: black;
+        }
+
         html, body {
+            color: var(--color);
+            background-color: var(--background-color);
             width: 100%;
             height: 100%;
             margin: 0;
@@ -20,6 +78,10 @@
         body {
             font-family: 'Inter', sans-serif;
             padding: 1% 3% 0 3%;
+        }
+
+        h1 {
+            color: var(--title-color);
         }
 
         table {
@@ -48,37 +110,39 @@
             display: inline-block;
             margin-left: 0.1rem;
             padding: 0.2rem 0.5rem 0.2rem 0.5rem;
-            background: #EEE;
-            color: black;
-            border: 0.2rem solid white;
+            background: var(--selector-background-color);
+            color: var(--selector-text-color);
+            border: 0.2rem solid var(--background-color);
             border-radius: 0.5rem;
         }
 
         .selector-active {
-            background: #FFCB80;
+            color: var(--selector-active-text-color);
+            background: var(--selector-active-background-color);
         }
 
         a, a:visited {
             text-decoration: none;
-            color: #08F;
+            color: var(--link-color);
             cursor: pointer;
         }
 
         a:hover {
-            color: #F40;
+            color: var(--link-hover-color);
             font-weight: bold;
         }
 
         .selector:hover {
-            background: #EEE;
+            color: var(--selector-hover-text-color) !important;
+            background: var(--selector-background-color);
         }
 
         .selector-active:hover {
-            background: #FDB;
+            background: var(--selector-hover-background-color);
         }
 
         #summary tr:nth-child(odd) {
-            background: #F8F8F8;
+            background: var(--summary-every-other-row-color);
         }
 
         .summary-name {
@@ -93,7 +157,7 @@
 
         .summary-bar {
             height: 1rem;
-            background: #FFCB80;
+            background: var(--bar-color);
             border-radius: 0 0.2rem 0.2rem 0;
         }
 
@@ -109,12 +173,12 @@
         }
 
         .th-entry-hilite {
-            background: #EEE;
+            background: var(--highlight-color);
             font-weight: bold;
         }
 
         .summary-row:hover, .summary-row-hilite {
-            background: #EEE !important;
+            background: var(--highlight-color) !important;
             font-weight: bold;
         }
 
@@ -135,7 +199,7 @@
         }
 
         .shadow:hover {
-            box-shadow: 0 0 1rem gray;
+            box-shadow: 0 0 1rem var(--shadow-color);
             position: relative;
         }
 
@@ -144,15 +208,15 @@
             min-height: 4rem;
             padding: 0.5rem;
             margin-bottom: 1rem;
-            background: #FED;
-            border: 1px solid #FFCB80;
+            background: var(--legend-color);
+            border: 1px solid var(--legend-border-color);
         }
 
         #nothing-selected {
             display: none;
             font-size: 32pt;
             font-weight: bold;
-            color: #CCC;
+            color: var(--nothing-selected-color);
         }
 
         .note {
@@ -165,9 +229,9 @@
             bottom: calc(100% + 0.5rem);
             left: calc(50% - 0.25rem);
             visibility: hidden;
-            background-color: black;
-            color: white;
-            box-shadow: 0 0 1rem gray;
+            background-color: var(--tooltip-background-color);
+            color: var(--tooltip-text-color);
+            box-shadow: 0 0 1rem var(--shadow-color);
             padding: 0.5rem 0.75rem;
             border-radius: 0.5rem;
             z-index: 1;
@@ -189,7 +253,7 @@
             margin-left: -1rem;
             border-width: 0.5rem;
             border-style: solid;
-            border-color: black transparent transparent transparent;
+            border-color: var(--tooltip-background-color) transparent transparent transparent;
         }
     </style>
     <script type="text/javascript">
@@ -650,10 +714,18 @@ function colorize(elem, ratio) {
         }
     }
 
+    if (document.documentElement.getAttribute('data-theme') == 'dark') {
+        r /= 1.5;
+        g /= 1.5;
+        b /= 1.5;
+    }
+
     elem.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
     if (ratio === null || ratio > 10) {
         /// This will look better on dark backgrounds
         elem.style.color = 'white';
+    } else {
+        elem.style.color = 'black';
     }
 
     /// The best result is highlighted
