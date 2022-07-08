@@ -18,7 +18,9 @@ sed -i 's MaxDirectMemorySize=1g MaxDirectMemorySize=5g g' apache-druid-$VERSION
 # Disable cache to test query performance
 sed -i 's druid.historical.cache.useCache=true druid.historical.cache.useCache=false g' apache-druid-$VERSION/conf/druid/single-server/medium/historical/runtime.properties
 sed -i 's druid.historical.cache.populateCache=true druid.historical.cache.populateCache=false g' apache-druid-$VERSION/conf/druid/single-server/medium/historical/runtime.properties
+sed -i 's druid.processing.buffer.sizeBytes=500MiB druid.processing.buffer.sizeBytes=1000MiB g' apache-druid-$VERSION/conf/druid/single-server/medium/historical/runtime.properties
 
+echo "druid.query.groupBy.maxMergingDictionarySize=5000000000" >> apache-druid-$VERSION/conf/druid/single-server/medium/historical/runtime.properties
 # Druid launcher does not start Druid as a daemon. Run it in background
 ./apache-druid-${VERSION}/bin/start-single-server-medium &
 
