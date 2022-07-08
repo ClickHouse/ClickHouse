@@ -87,6 +87,10 @@ MergeListElement::MergeListElement(
     /// thread_group::memory_tracker, but MemoryTrackerThreadSwitcher will reset parent).
     memory_tracker.setProfilerStep(settings.memory_profiler_step);
     memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+    /// Specify sample probability also for current thread ot track more deallocations.
+    if (auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker())
+        thread_memory_tracker->setSampleProbability(settings.memory_profiler_sample_probability);
+
     memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
     if (settings.memory_tracker_fault_probability)
         memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);

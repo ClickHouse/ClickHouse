@@ -1,8 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
-#include <Common/Dwarf.h>
 #include <Common/ArenaAllocator.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -56,16 +56,8 @@ struct AggregateFunctionFlameGraphTree
 
     TreeNode * find(const UInt64 * stack, size_t stack_size, Arena * arena)
     {
-        /// Skip first 2 frames which are always the same:
-        /// src/Common/StackTrace.cpp
-        /// src/Common/MemoryAllocationTracker.cpp
-        const size_t offset = 0;
-
-        if (!root.ptr && stack_size > 1)
-            root.ptr = stack[1];
-
         TreeNode * node = &root;
-        for (size_t i = offset; i < stack_size; ++i)
+        for (size_t i = 0; i < stack_size; ++i)
         {
             UInt64 ptr = stack[i];
             if (ptr == 0)
@@ -255,125 +247,229 @@ void dumpFlameGraph(
 
 struct AggregateFunctionFlameGraphData
 {
-    struct Allocation
+    struct Entry
     {
         AggregateFunctionFlameGraphTree::TreeNode * trace;
-        UInt64 ptr;
-        size_t size;
+        UInt64 size;
+        Entry * next = nullptr;
     };
 
-    struct Deallocation
+    struct Pair
     {
-        UInt64 ptr;
-        size_t size;
+        Entry * allocation = nullptr;
+        Entry * deallocation = nullptr;
     };
 
-    using Allocator = AlignedArenaAllocator<alignof(Allocation)>;
-    using Allocations = PODArray<Allocation, 32, Allocator>;
-    using Deallocations = PODArray<Deallocation, 32, Allocator>;
+    using Entries = HashMap<UInt64, Pair>;
 
-    Allocations allocations;
-    Deallocations deallocations;
     AggregateFunctionFlameGraphTree tree;
+    Entries entries;
+    Entry * free_list = nullptr;
+
+    Entry * alloc(Arena * arena)
+    {
+        if (free_list)
+        {
+            auto * res = free_list;
+            free_list = free_list->next;
+            return res;
+        }
+
+        return reinterpret_cast<Entry *>(arena->alloc(sizeof(Entry)));
+    }
+
+    void release(Entry * entry)
+    {
+        entry->next = free_list;
+        free_list = entry;
+    }
+
+    static void track(Entry * allocation)
+    {
+        auto * node = allocation->trace;
+        while (node)
+        {
+            node->allocated += allocation->size;
+            node = node->parent;
+        }
+    }
+
+    static void untrack(Entry * allocation)
+    {
+        auto * node = allocation->trace;
+        while (node)
+        {
+            node->allocated -= allocation->size;
+            node = node->parent;
+        }
+    }
+
+    static Entry * tryFindMatchAndRemove(Entry *& list, UInt64 size)
+    {
+        if (!list)
+            return nullptr;
+
+        if (list->size == size)
+        {
+            Entry * entry = list;
+            list = list->next;
+            return entry;
+        }
+        else
+        {
+            Entry * parent = list;
+            while (parent->next && parent->next->size != size)
+                parent = parent->next;
+
+            if (parent->next && parent->next->size == size)
+            {
+                Entry * entry = parent->next;
+                parent->next = entry->next;
+                return entry;
+            }
+
+            return nullptr;
+        }
+    }
 
     void add(UInt64 ptr, Int64 size, const UInt64 * stack, size_t stack_size, Arena * arena)
     {
+        /// In case if argument is nullptr, only track allocations.
+        if (ptr == 0)
+        {
+            if (size > 0)
+            {
+                auto * node = tree.find(stack, stack_size, arena);
+                Entry entry{.trace = node, .size = UInt64(size)};
+                track(&entry);
+            }
+
+            return;
+        }
+
+        auto & place = entries[ptr];
         if (size > 0)
         {
-            auto * node = tree.find(stack, stack_size, arena);
-            allocations.push_back(Allocation{node, ptr, UInt64(size)}, arena);
-
-            while (node)
+            if (auto * deallocation = tryFindMatchAndRemove(place.deallocation, size))
             {
-                node->allocated += size;
-                node = node->parent;
+                release(deallocation);
+            }
+            else
+            {
+                auto * node = tree.find(stack, stack_size, arena);
+
+                auto * allocation = alloc(arena);
+                allocation->size = UInt64(size);
+                allocation->trace = node;
+
+                track(allocation);
+
+                allocation->next = place.allocation;
+                place.allocation = allocation;
             }
         }
         else if (size < 0)
         {
-            deallocations.push_back(Deallocation{ptr, UInt64(-size)}, arena);
+            UInt64 abs_size = -size;
+            if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
+            {
+                untrack(allocation);
+                release(allocation);
+            }
+            else
+            {
+                auto * deallocation = alloc(arena);
+                deallocation->size = abs_size;
+
+                deallocation->next = place.deallocation;
+                place.deallocation = deallocation;
+            }
+        }
+    }
+
+    void merge(const AggregateFunctionFlameGraphTree & other_tree, Arena * arena)
+    {
+        AggregateFunctionFlameGraphTree::Trace::Frames frames;
+        std::vector<AggregateFunctionFlameGraphTree::ListNode *> nodes;
+
+        nodes.push_back(other_tree.root.children);
+
+        while (!nodes.empty())
+        {
+            if (nodes.back() == nullptr)
+            {
+                nodes.pop_back();
+
+                /// We don't have root's frame so framers are empty in the end.
+                if (!frames.empty())
+                    frames.pop_back();
+
+                continue;
+            }
+
+            AggregateFunctionFlameGraphTree::TreeNode * current = nodes.back()->child;
+            nodes.back() = nodes.back()->next;
+
+            frames.push_back(current->ptr);
+
+            if(current->children)
+                nodes.push_back(current->children);
+            else
+            {
+                if (current->allocated)
+                    add(0, current->allocated, frames.data(), frames.size(), arena);
+
+                frames.pop_back();
+            }
         }
     }
 
     void merge(const AggregateFunctionFlameGraphData & other, Arena * arena)
     {
-        std::vector<UInt64> trace;
-        for (const auto & allocation : other.allocations)
+        AggregateFunctionFlameGraphTree::Trace::Frames frames;
+        for (const auto & entry : other.entries)
         {
-            trace.clear();
-            const auto * node = allocation.trace;
-            while (node && node->ptr)
+            for (auto * allocation = entry.value.second.allocation; allocation; allocation = allocation->next)
             {
-                trace.push_back(node->ptr);
-                node = node->parent;
-            }
-
-            std::reverse(trace.begin(), trace.end());
-            add(allocation.ptr, allocation.size, trace.data(), trace.size(), arena);
-        }
-
-        deallocations.insert(other.deallocations.begin(), other.deallocations.end(), arena);
-    }
-
-    void processDeallocations() const
-    {
-        std::unordered_map<UInt64, std::list<const Allocation *>> allocations_map;
-        for (const auto & allocation : allocations)
-            allocations_map[allocation.ptr].push_back(&allocation);
-
-        for (const auto & deallocation : deallocations)
-        {
-            auto it = allocations_map.find(deallocation.ptr);
-            if (it != allocations_map.end())
-            {
-                for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
+                frames.clear();
+                const auto * node = allocation->trace;
+                while (node->ptr)
                 {
-                    if ((*jt)->size == deallocation.size)
-                    {
-                        auto * node = (*jt)->trace;
-                        it->second.erase(jt);
-
-                        while (node)
-                        {
-                            node->allocated -= deallocation.size;
-                            node = node->parent;
-                        }
-
-                        break;
-                    }
+                    frames.push_back(node->ptr);
+                    node = node->parent;
                 }
+
+                std::reverse(frames.begin(), frames.end());
+                add(entry.value.first, allocation->size, frames.data(), frames.size(), arena);
+                untrack(allocation);
+            }
+
+            for (auto * deallocation = entry.value.second.deallocation; deallocation; deallocation = deallocation->next)
+            {
+                add(entry.value.first, -Int64(deallocation->size), nullptr, 0, arena);
             }
         }
+
+        merge(other.tree, arena);
     }
-
-    void write(WriteBuffer & /*buf*/) const
-    {
-
-    }
-
-    void read(ReadBuffer & /*buf*/) {}
 
     void dumpFlameGraph(
         DB::PaddedPODArray<UInt8> & chars,
         DB::PaddedPODArray<UInt64> & offsets,
         size_t max_depth, size_t min_bytes) const
     {
-        processDeallocations();
         DB::dumpFlameGraph(tree.dump(max_depth, min_bytes), chars, offsets);
     }
 };
 
 class AggregateFunctionFlameGraph final : public IAggregateFunctionDataHelper<AggregateFunctionFlameGraphData, AggregateFunctionFlameGraph>
 {
-private:
-    bool dump_tree;
 public:
-    AggregateFunctionFlameGraph(const DataTypes & argument_types_, bool dump_tree_)
+    explicit AggregateFunctionFlameGraph(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<AggregateFunctionFlameGraphData, AggregateFunctionFlameGraph>(argument_types_, {})
-        , dump_tree(dump_tree_)
     {}
 
-    String getName() const override { return dump_tree ? "allocationsTree" : "allocationsFlameGraph"; }
+    String getName() const override { return "flameGraph"; }
 
     DataTypePtr getReturnType() const override
     {
@@ -411,14 +507,14 @@ public:
         this->data(place).merge(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization for function flameGraph is not implemented.");
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict, ReadBuffer &, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).read(buf);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization for function flameGraph is not implemented.");
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -462,24 +558,17 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             name, argument_types[2]->getName());
 }
 
-AggregateFunctionPtr createAggregateFunctionAllocationsFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     check(name, argument_types, params);
-    return std::make_shared<AggregateFunctionFlameGraph>(argument_types, false);
-}
-
-AggregateFunctionPtr createAggregateFunctionAllocationsTree(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
-{
-    check(name, argument_types, params);
-    return std::make_shared<AggregateFunctionFlameGraph>(argument_types, true);
+    return std::make_shared<AggregateFunctionFlameGraph>(argument_types);
 }
 
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("allocationsFlameGraph", { createAggregateFunctionAllocationsFlameGraph, properties });
-    factory.registerFunction("allocationsTree", { createAggregateFunctionAllocationsTree, properties });
+    factory.registerFunction("flameGraph", { createAggregateFunctionFlameGraph, properties });
 }
 
 }
