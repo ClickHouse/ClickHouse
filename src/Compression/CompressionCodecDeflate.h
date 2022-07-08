@@ -81,6 +81,8 @@ private:
         return jobLocks[index].compare_exchange_strong(expected, true);
     }
 
+    void unLockJob(uint32_t index) { jobLocks[index].store(false); }
+
     class ReleaseJobObjectGuard
     {
         uint32_t index;

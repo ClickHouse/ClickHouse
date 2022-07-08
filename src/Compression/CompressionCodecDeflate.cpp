@@ -40,7 +40,7 @@ DeflateJobHWPool::DeflateJobHWPool():log(&Poco::Logger::get("DeflateJobHWPool"))
         if ((nullptr == qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
             break;
         jobPool[index] = qpl_job_ptr;
-        jobLocks[index].store(false);
+        unLockJob(index);
     }
 
     const char * qpl_version = qpl_get_library_version();
@@ -66,7 +66,7 @@ DeflateJobHWPool::~DeflateJobHWPool()
             qpl_fini_job(jobPool[i]);
         }
         jobPool[i] = nullptr;
-        jobLocks[i].store(false);
+        unLockJob(i);
     }
     jobPoolReady() = false;
 }
