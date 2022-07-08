@@ -1034,7 +1034,9 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = std::make_shared<MutationCommands>();
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
-        MutationType first_mutation_type = mutations_begin_it->second.type;
+
+        bool support_lightweight_mutate = part->supportLightweightDeleteMutate();
+        MutationType first_mutation_type = support_lightweight_mutate ? mutations_begin_it->second.type : MutationType::Ordinary;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
@@ -1043,7 +1045,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
             /// Do not combine mutations with different types.
             /// TODO: compact part support lightweight delete.
-            if (isWidePart(part) && it->second.type != first_mutation_type)
+            if (support_lightweight_mutate && it->second.type != first_mutation_type)
                 break;
 
             size_t commands_size = 0;
@@ -1130,11 +1132,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             future_part->part_info = new_part_info;
             future_part->name = part->getNewName(new_part_info);
             future_part->type = part->getType();
-
-            if (isWidePart(part))
-                future_part->mutation_type = first_mutation_type;
-            else
-                future_part->mutation_type = MutationType::Ordinary;
+            future_part->mutation_type = first_mutation_type;
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);

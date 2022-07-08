@@ -459,6 +459,9 @@ public:
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
 
+    /// True if the part supports lightweight delete mutate.
+    bool supportLightweightDeleteMutate() const;
+
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return deleted_mask.getDeletedRows().size() > 0; }
 

@@ -1212,6 +1212,12 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setSerializationInfos(infos);
 }
 
+/// Project part / part with project parts / compact part doesn't support LWD.
+bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
+{
+    return part_type == MergeTreeDataPartType::Wide && parent_part == nullptr && projection_parts.size() == 0;
+}
+
 void IMergeTreeDataPart::loadDeletedMask()
 {
     if (part_type == Type::Compact)
