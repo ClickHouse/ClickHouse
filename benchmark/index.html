@@ -848,7 +848,7 @@ function render() {
             const ratio = curr_timing / baseline_timing;
 
             let td = document.createElement('td');
-            td.appendChild(document.createTextNode(curr_timing ? `${curr_timing.toFixed(2)} (×${ratio.toFixed(2)})` : '0'));
+            td.appendChild(document.createTextNode(curr_timing ? `${Math.round(curr_timing)}s (×${ratio.toFixed(2)})` : '0'));
 
             colorize(td, ratio);
             tr.appendChild(td);
