@@ -149,7 +149,7 @@ This gives us a point of comparison. Alternatively, we can take a benchmark entr
 
 We are interested in relative query run times, not absolute. The benchmark has a broad set of queries, and there can be queries that typically run in 100ms (e.g. for interactive dashboards) and some queries that typically run in a minute (e.g. complex ad-hoc queries). And we want to treat these queries equally important in the benchmark, that's why we need relative values.
 
-The constant shift is needed to make the formula well-defined when query time approaches zero. E.g. some systems can get query results in 0 ms using table metadata lookup, and another in 10 ms by range scan. But this should not be treated as the infinite advantage of one system over the other. With the constant shift, we will treat it as only two times an advantage. 
+The constant shift is needed to make the formula well-defined when query time approaches zero. E.g. some systems can get query results in 0 ms using table metadata lookup, and another in 10 ms by range scan. But this should not be treated as the infinite advantage of one system over the other. With the constant shift, we will treat it as only two times an advantage.
 
 4. For every query, if the result is not present, substitute it with a "penalty" calculated as follows: take the maximum query runtime for this benchmark entry across other queries that have a result, but if it is less than 300 seconds, put it 300 seconds. Then multiply the value by 2. Then calculate the ratio as explained above.
 
@@ -210,7 +210,7 @@ We also introduced the [Hardware Benchmark](https://clickhouse.com/benchmark/har
 - [x] Databend
 - [ ] Doris/PALO
 - [x] Druid
-- [ ] Pinot
+- [x] Pinot
 - [x] CrateDB
 - [ ] Spark SQL
 - [ ] Starrocks
