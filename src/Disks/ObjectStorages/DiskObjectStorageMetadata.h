@@ -12,17 +12,6 @@ namespace DB
 struct DiskObjectStorageMetadata
 {
 private:
-    struct RelativePathWithSize
-    {
-        String relative_path;
-        size_t bytes_size;
-
-        RelativePathWithSize() = default;
-
-        RelativePathWithSize(const String & relative_path_, size_t bytes_size_)
-            : relative_path(relative_path_), bytes_size(bytes_size_) {}
-    };
-
     /// Metadata file version.
     static constexpr uint32_t VERSION_ABSOLUTE_PATHS = 1;
     static constexpr uint32_t VERSION_RELATIVE_PATHS = 2;
@@ -31,7 +20,7 @@ private:
     const std::string & common_metadata_path;
 
     /// Relative paths of blobs.
-    std::vector<RelativePathWithSize> storage_objects;
+    RelativePathsWithSize storage_objects;
 
     /// URI
     const std::string & remote_fs_root_path;
@@ -71,7 +60,7 @@ public:
         return remote_fs_root_path;
     }
 
-    std::vector<RelativePathWithSize> getBlobsRelativePaths() const
+    RelativePathsWithSize getBlobsRelativePaths() const
     {
         return storage_objects;
     }

@@ -265,6 +265,9 @@
 [submodule "contrib/hashidsxx"]
 	path = contrib/hashidsxx
 	url = https://github.com/schoentoon/hashidsxx.git
+[submodule "contrib/nats-io"]
+	path = contrib/nats-io
+	url = https://github.com/ClickHouse/nats.c.git
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
 	url = https://github.com/VectorCamp/vectorscan.git

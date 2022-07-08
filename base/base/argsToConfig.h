@@ -4,7 +4,7 @@
 
 namespace Poco::Util
 {
-class LayeredConfiguration;
+class LayeredConfiguration; // NOLINT(cppcoreguidelines-virtual-class-destructor)
 }
 
 /// Import extra command line arguments to configuration. These are command line arguments after --.
