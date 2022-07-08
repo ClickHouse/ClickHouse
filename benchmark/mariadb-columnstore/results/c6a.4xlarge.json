@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "Previous name: InfiniDB.",
 
-    "tags": ["SQL", "C++", "column-oriented", "MySQL compatible"],
+    "tags": ["C++", "column-oriented", "MySQL compatible"],
 
     "load_time": 2507.8,
     "data_size": 19712857022,

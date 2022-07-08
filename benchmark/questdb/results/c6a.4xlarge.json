@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "Many queries cannot run. It also crashes and hangs.",
 
-    "tags": ["SQL", "Java", "time-series"],
+    "tags": ["Java", "time-series"],
 
     "load_time": 1667.5,
     "data_size": 126680518680,

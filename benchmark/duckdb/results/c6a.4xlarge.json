@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "Many queries triggered OOM",
 
-    "tags": ["SQL", "C", "column-oriented", "embedded"],
+    "tags": ["C", "column-oriented", "embedded"],
 
     "load_time": 4217,
     "data_size": 27241492480,

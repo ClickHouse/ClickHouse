@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "",
 
-    "tags": ["SQL", "C", "PostgreSQL compatible", "column-oriented", "time-series"],
+    "tags": ["C", "PostgreSQL compatible", "column-oriented", "time-series"],
 
     "load_time": 4605,
     "data_size": 20333747165,

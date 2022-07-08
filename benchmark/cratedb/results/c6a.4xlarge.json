@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "For some queries it gives \"Data too large\".",
 
-    "tags": ["SQL", "Java", "column-oriented"],
+    "tags": ["Java", "column-oriented"],
 
     "load_time": 10687,
     "data_size": 109636633416,
