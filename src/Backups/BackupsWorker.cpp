@@ -100,10 +100,10 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
             /// Make a backup coordination.
             std::shared_ptr<IBackupCoordination> backup_coordination;
-            SCOPE_EXIT({
+            SCOPE_EXIT_SAFE(
                 if (backup_coordination && !backup_settings.internal)
                     backup_coordination->drop();
-            });
+            );
 
             ClusterPtr cluster;
             if (on_cluster)
@@ -278,10 +278,10 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
 
             /// Make a restore coordination.
             std::shared_ptr<IRestoreCoordination> restore_coordination;
-            SCOPE_EXIT({
+            SCOPE_EXIT_SAFE(
                 if (restore_coordination && !restore_settings.internal)
                     restore_coordination->drop();
-            });
+            );
 
             if (on_cluster && restore_settings.coordination_zk_path.empty())
             {
