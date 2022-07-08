@@ -45,9 +45,6 @@ namespace
     /// Writing backup entries to the backup and removing temporary hard links.
     constexpr const char * kWritingBackupStatus = "writing backup";
 
-    /// Error status.
-    constexpr const char * kErrorStatus = IBackupCoordination::kErrorStatus;
-
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
     {
@@ -102,85 +99,60 @@ BackupEntriesCollector::~BackupEntriesCollector() = default;
 
 BackupEntries BackupEntriesCollector::run()
 {
-    try
-    {
-        /// run() can be called onle once.
-        if (!current_status.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
+    /// run() can be called onle once.
+    if (!current_status.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
 
-        /// Find other hosts working along with us to execute this ON CLUSTER query.
-        all_hosts
-            = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
+    /// Find other hosts working along with us to execute this ON CLUSTER query.
+    all_hosts
+        = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
 
-        /// Do renaming in the create queries according to the renaming config.
-        renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
+    /// Do renaming in the create queries according to the renaming config.
+    renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
 
-        /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
-        calculateRootPathInBackup();
+    /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
+    calculateRootPathInBackup();
 
-        /// Find databases and tables which we're going to put to the backup.
-        gatherMetadataAndCheckConsistency();
+    /// Find databases and tables which we're going to put to the backup.
+    gatherMetadataAndCheckConsistency();
 
-        /// Make backup entries for the definitions of the found databases.
-        makeBackupEntriesForDatabasesDefs();
+    /// Make backup entries for the definitions of the found databases.
+    makeBackupEntriesForDatabasesDefs();
 
-        /// Make backup entries for the definitions of the found tables.
-        makeBackupEntriesForTablesDefs();
+    /// Make backup entries for the definitions of the found tables.
+    makeBackupEntriesForTablesDefs();
 
-        /// Make backup entries for the data of the found tables.
-        setStatus(kExtractingDataFromTablesStatus);
-        makeBackupEntriesForTablesData();
+    /// Make backup entries for the data of the found tables.
+    setStatus(kExtractingDataFromTablesStatus);
+    makeBackupEntriesForTablesData();
 
-        /// Run all the tasks added with addPostCollectingTask().
-        setStatus(kRunningPostTasksStatus);
-        runPostTasks();
+    /// Run all the tasks added with addPostCollectingTask().
+    setStatus(kRunningPostTasksStatus);
+    runPostTasks();
 
-        /// No more backup entries or tasks are allowed after this point.
-        setStatus(kWritingBackupStatus);
+    /// No more backup entries or tasks are allowed after this point.
+    setStatus(kWritingBackupStatus);
 
-        return std::move(backup_entries);
-    }
-    catch (...)
-    {
-        try
-        {
-            setStatus(kErrorStatus, getCurrentExceptionMessage(false));
-        }
-        catch (...)
-        {
-        }
-        throw;
-    }
+    return std::move(backup_entries);
 }
 
 Strings BackupEntriesCollector::setStatus(const String & new_status, const String & message)
 {
-    if (new_status == kErrorStatus)
+    LOG_TRACE(log, "{}", toUpperFirst(new_status));
+    current_status = new_status;
+
+    backup_coordination->setStatus(backup_settings.host_id, new_status, message);
+
+    if (new_status.starts_with(kGatheringMetadataStatus))
     {
-        LOG_ERROR(log, "{} failed with error: {}", toUpperFirst(current_status), message);
-        backup_coordination->setStatus(backup_settings.host_id, new_status, message);
-        return {};
+        auto now = std::chrono::steady_clock::now();
+        auto end_of_timeout = std::max(now, consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout);
+        return backup_coordination->waitStatusFor(
+            all_hosts, new_status, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - now).count());
     }
     else
     {
-        LOG_TRACE(log, "{}", toUpperFirst(new_status));
-        current_status = new_status;
-        if (new_status.starts_with(kGatheringMetadataStatus))
-        {
-            auto now = std::chrono::steady_clock::now();
-            auto end_of_timeout = std::max(now, consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout);
-
-            return backup_coordination->setStatusAndWaitFor(
-                backup_settings.host_id,
-                new_status,
-                message,
-                all_hosts,
-                std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - now).count());
-        }
-        else
-        {
-            return backup_coordination->setStatusAndWait(backup_settings.host_id, new_status, message, all_hosts);
-        }
+        return backup_coordination->waitStatus(all_hosts, new_status);
     }
 }
 
