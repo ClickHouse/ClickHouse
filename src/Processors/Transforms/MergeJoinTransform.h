@@ -210,6 +210,7 @@ public:
     SortCursorImpl cursor;
 
     const Block & sampleBlock() const { return sample_block; }
+    Columns sampleColumns() const { return sample_block.getColumns(); }
 
 private:
     Block sample_block;
@@ -261,7 +262,6 @@ private:
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     std::vector<FullMergeJoinCursorPtr> cursors;
-    std::vector<Chunk> sample_chunks;
 
     /// Keep some state to make connection between data in different blocks
     AnyJoinState any_join_state;
