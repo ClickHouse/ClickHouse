@@ -43,7 +43,7 @@
             --background-color: #04293A;
 
             --link-color: #8CF;
-            --link-hover-color: #0FF;
+            --link-hover-color: #FFF;
 
             --selector-text-color: white;
             --selector-background-color: #444;
@@ -52,7 +52,7 @@
             --selector-hover-text-color: black;
             --selector-hover-background-color: white;
 
-            --summary-every-other-row-color: #053750;
+            --summary-every-other-row-color: #042e41;
             --highlight-color: #064663;
             --bar-color: #088;
             --legend-color: #064663;
@@ -129,7 +129,6 @@
 
         a:hover {
             color: var(--link-hover-color);
-            font-weight: bold;
         }
 
         .selector:hover {
@@ -255,6 +254,27 @@
             border-style: solid;
             border-color: var(--tooltip-background-color) transparent transparent transparent;
         }
+
+        .nowrap {
+            text-wrap: none;
+        }
+
+        .themes {
+            float: right;
+            font-size: 200%;
+            cursor: pointer;
+        }
+
+        #toggle-dark, #toggle-light {
+            padding-right: 0.5rem;
+            cursor: pointer;
+        }
+
+        #toggle-dark:hover, #toggle-light:hover {
+            display: inline-block;
+            transform: translate(1px, 1px);
+            filter: brightness(125%);
+        }
     </style>
     <script type="text/javascript">
 
@@ -360,6 +380,7 @@ const additional_data_size_points = [
 <body>
 
 <div class="header stick-left">
+    <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
     <h1>ClickBench — a Benchmark For Analytical DBMS</h1>
     <a href="https://github.com/ClickHouse/ClickBench/">Methodology</a> | <a href="https://github.com/ClickHouse/ClickBench/">Reproduce and Validate the Results</a> | <a href="https://github.com/ClickHouse/ClickBench/">Add a System</a> | <a href="https://github.com/ClickHouse/ClickBench/">Report Mistake</a> | <a href="https://clickhouse.com/benchmark/hardware/">Hardware Benchmark</a>
 </div>
@@ -446,6 +467,23 @@ let selectors = {
     "metric": "hot",
     "queries": [],
 };
+
+let theme = 'light';
+
+function setTheme(new_theme) {
+    theme = new_theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    window.localStorage.setItem('theme', theme);
+    render();
+}
+
+document.getElementById('toggle-light').addEventListener('click', e => setTheme('light'));
+document.getElementById('toggle-dark').addEventListener('click', e => setTheme('dark'));
+
+let new_theme = window.localStorage.getItem('theme');
+if (new_theme && new_theme != theme) {
+    setTheme(new_theme);
+}
 
 /// Generate selectors
 
