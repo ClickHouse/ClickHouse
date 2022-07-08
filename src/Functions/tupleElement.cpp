@@ -56,7 +56,7 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
-        return {1};
+        return {1, 2};
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -97,7 +97,7 @@ public:
         return out_return_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         Columns array_offsets;
 
@@ -122,7 +122,7 @@ public:
         size_t index = 0;
         if (!getElementNum(arguments[1].column, *tuple_type_concrete, index, arguments.size()))
         {
-            return ColumnConst::create(arguments[2].column, input_rows_count);
+            return arguments[2].column;
         }
         ColumnPtr res = tuple_col_concrete->getColumns()[index];
 
