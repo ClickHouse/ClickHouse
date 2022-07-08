@@ -215,7 +215,8 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
         {
-            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected", response->xid, response->getOpNum(), session_id);
+            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected",
+                response->xid, response->xid == Coordination::WATCH_XID ? "Watch" : toString(response->getOpNum()), session_id);
             return;
         }
 

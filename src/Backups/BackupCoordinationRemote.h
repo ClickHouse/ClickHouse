@@ -1,18 +1,20 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
-#include <Backups/BackupCoordinationHelpers.h>
+#include <Backups/BackupCoordinationReplicatedAccess.h>
+#include <Backups/BackupCoordinationReplicatedTables.h>
+#include <Backups/BackupCoordinationStatusSync.h>
 
 
 namespace DB
 {
 
-/// Stores backup temporary information in Zookeeper, used to perform BACKUP ON CLUSTER.
-class BackupCoordinationDistributed : public IBackupCoordination
+/// Implementation of the IBackupCoordination interface performing coordination via ZooKeeper. It's necessary for "BACKUP ON CLUSTER".
+class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
-    ~BackupCoordinationDistributed() override;
+    BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
+    ~BackupCoordinationRemote() override;
 
     void setStatus(const String & current_host, const String & new_status, const String & message) override;
     Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts) override;
@@ -26,14 +28,19 @@ public:
 
     Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const override;
 
+    void addReplicatedMutations(
+        const String & table_shared_id,
+        const String & table_name_for_logs,
+        const String & replica_name,
+        const std::vector<MutationInfo> & mutations) override;
+
+    std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const override;
+
     void addReplicatedDataPath(const String & table_shared_id, const String & data_path) override;
     Strings getReplicatedDataPaths(const String & table_shared_id) const override;
 
-    void addReplicatedAccessPath(const String & access_zk_path, const String & file_path) override;
-    Strings getReplicatedAccessPaths(const String & access_zk_path) const override;
-
-    void setReplicatedAccessHost(const String & access_zk_path, const String & host_id) override;
-    String getReplicatedAccessHost(const String & access_zk_path) const override;
+    void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) override;
+    Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
@@ -53,7 +60,8 @@ public:
 private:
     void createRootNodes();
     void removeAllNodes();
-    void prepareReplicatedPartNames() const;
+    void prepareReplicatedTables() const;
+    void prepareReplicatedAccess() const;
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
@@ -61,7 +69,8 @@ private:
     BackupCoordinationStatusSync status_sync;
 
     mutable std::mutex mutex;
-    mutable std::optional<BackupCoordinationReplicatedPartNames> replicated_part_names;
+    mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
+    mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
 };
 
 }

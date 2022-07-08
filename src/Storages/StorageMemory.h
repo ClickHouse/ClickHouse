@@ -116,7 +116,7 @@ public:
 
 private:
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 

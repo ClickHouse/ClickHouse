@@ -1,4 +1,8 @@
-SET join_algorithm='parallel_hash';
+{% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge'] -%}
+
+SELECT '--- {{ join_algorithm }} ---';
+
+SET join_algorithm = '{{ join_algorithm }}';
 
 SELECT
     EventDate,
@@ -65,8 +69,9 @@ ORDER BY hits DESC
 LIMIT 10
 SETTINGS joined_subquery_requires_alias = 0;
 
-SELECT CounterID FROM test.visits ARRAY JOIN Goals.ID WHERE CounterID = 942285 ORDER BY CounterID;
+{% if join_algorithm != 'full_sorting_merge' -%}
 
+SELECT CounterID FROM test.visits ARRAY JOIN Goals.ID WHERE CounterID = 942285 ORDER BY CounterID;
 
 SELECT
     CounterID,
@@ -194,6 +199,8 @@ ANY INNER JOIN
 USING k ORDER BY joined
 SETTINGS any_join_distinct_right_table_keys = 1;
 
+{% endif -%}
+
 SELECT a.*, b.* FROM
 (
     SELECT number AS k FROM system.numbers LIMIT 10
@@ -203,3 +210,5 @@ ALL INNER JOIN
     SELECT intDiv(number, 2) AS k, number AS joined FROM system.numbers LIMIT 10
 ) AS b
 USING k ORDER BY joined;
+
+{% endfor %}
