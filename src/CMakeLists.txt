@@ -439,8 +439,8 @@ if (TARGET ch_contrib::avrocpp)
     dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
 endif ()
 
-target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::udns)
-target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::cpp-dns)
+target_compile_options(clickhouse_common_io PRIVATE -Wno-reserved-identifier)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
 
 if (TARGET OpenSSL::Crypto)
     dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)

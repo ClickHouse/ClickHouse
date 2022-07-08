@@ -274,9 +274,6 @@
 [submodule "contrib/base-x"]
 	path = contrib/base-x
 	url = https://github.com/ClickHouse/base-x.git
-[submodule "contrib/udns"]
-	path = contrib/udns
-	url = https://github.com/ClickHouse/udns
-[submodule "contrib/cpp-dns"]
-	path = contrib/cpp-dns
-	url = https://github.com/ClickHouse/cpp-dns
+[submodule "contrib/c-ares"]
+	path = contrib/c-ares
+	url = https://github.com/ClickHouse/c-ares
