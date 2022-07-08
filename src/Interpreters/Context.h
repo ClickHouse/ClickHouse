@@ -550,8 +550,6 @@ public:
         const String & projection_name = {},
         const String & view_name = {});
 
-    OpenTelemetryThreadTraceContextScopePtr startTracing(const std::string& name);
-
     /// Supported factories for records in query_log
     enum class QueryLogFactories
     {
