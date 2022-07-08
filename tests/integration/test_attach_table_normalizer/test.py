@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=["configs/config.xml"], with_zookeeper=True)
+node = cluster.add_instance('node', main_configs=["configs/config.xml"], with_zookeeper=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
