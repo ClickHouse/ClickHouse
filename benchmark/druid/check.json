@@ -1,0 +1,1 @@
+{"query": "SELECT COUNT(*) from hits"}
