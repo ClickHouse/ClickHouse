@@ -60,21 +60,5 @@ void ASTSubquery::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-String ASTSubquery::getAliasOrColumnName() const
-{
-    if (!alias.empty())
-        return alias;
-    if (!cte_name.empty())
-        return cte_name;
-    return getColumnName();
-}
-
-String ASTSubquery::tryGetAlias() const
-{
-    if (!alias.empty())
-        return alias;
-    return cte_name;
-}
-
 }
 

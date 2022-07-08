@@ -39,7 +39,7 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Result Type", result_type->getName());
 
     if (!result_name.empty())
-        map.add("Result Name", result_name);
+        map.add("Result Type", magic_enum::enum_name(type));
 
     if (column)
         map.add("Column", column->getName());
@@ -435,7 +435,8 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
     }
 
     nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
-    std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
+    auto it = std::remove_if(inputs.begin(), inputs.end(), [&](const Node * node) { return !visited_nodes.contains(node); });
+    inputs.erase(it, inputs.end());
 }
 
 static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)
@@ -997,8 +998,8 @@ void ActionsDAG::addMaterializingOutputActions()
 
 const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
 {
-    FunctionOverloadResolverPtr func_builder_materialize
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(
+                            std::make_shared<FunctionMaterialize>());
 
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
@@ -1102,8 +1103,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             const auto * left_arg = dst_node;
 
             FunctionCastBase::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
-            FunctionOverloadResolverPtr func_builder_cast
-                = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
+            FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
@@ -1151,8 +1151,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
     auto adding_column_action = std::make_shared<ActionsDAG>();
-    FunctionOverloadResolverPtr func_builder_materialize
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     auto column_name = column.name;
     const auto * column_node = &adding_column_action->addColumn(std::move(column));
@@ -1614,7 +1613,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     std::stack<Frame> stack;
     std::unordered_set<const ActionsDAG::Node *> visited_nodes;
 
-    stack.push({.node = predicate});
+    stack.push(Frame{.node = predicate});
     visited_nodes.insert(predicate);
     while (!stack.empty())
     {
@@ -1786,9 +1785,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
             actions->inputs.push_back(input);
         }
 
-        /// We should not add result_predicate into the index for the second time.
-        if (input->result_name != result_predicate->result_name)
-            actions->index.push_back(input);
+        actions->index.push_back(input);
     }
 
     return actions;
@@ -1802,8 +1799,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 {
     Node * predicate = const_cast<Node *>(tryFindInIndex(filter_name));
     if (!predicate)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}", filter_name, dumpDAG());
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
+                            filter_name, dumpDAG());
 
     /// If condition is constant let's do nothing.
     /// It means there is nothing to push down or optimization was already applied.
@@ -1842,14 +1840,13 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         if (can_remove_filter)
         {
             /// If filter column is not needed, remove it from index.
-            std::erase_if(index, [&](const Node * node) { return node == predicate; });
-
-            /// At the very end of this method we'll call removeUnusedActions() with allow_remove_inputs=false,
-            /// so we need to manually remove predicate if it is an input node.
-            if (predicate->type == ActionType::INPUT)
+            for (auto i = index.begin(); i != index.end(); ++i)
             {
-                std::erase_if(inputs, [&](const Node * node) { return node == predicate; });
-                nodes.remove_if([&](const Node & node) { return &node == predicate; });
+                if (*i == predicate)
+                {
+                    index.erase(i);
+                    break;
+                }
             }
         }
         else
@@ -1874,6 +1871,8 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                         index_node = new_predicate;
             }
         }
+
+        removeUnusedActions(false);
     }
     else
     {
@@ -1928,9 +1927,10 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             predicate->function_base = predicate->function_builder->build(arguments);
             predicate->function = predicate->function_base->prepare(arguments);
         }
+
+        removeUnusedActions(false);
     }
 
-    removeUnusedActions(false);
     return actions;
 }
 

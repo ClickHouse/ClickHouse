@@ -21,17 +21,10 @@
 #if USE_SSL
 #     include <openssl/crypto.h>
 #     include <openssl/rand.h>
-#     include <openssl/err.h>
 #endif
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int OPENSSL_ERROR;
-}
-
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
@@ -178,13 +171,7 @@ namespace
                     ///generate and add salt here
                     ///random generator FIPS complaint
                     uint8_t key[32];
-                    if (RAND_bytes(key, sizeof(key)) != 1)
-                    {
-                        char buf[512] = {0};
-                        ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-                    }
-
+                    RAND_bytes(key, sizeof(key));
                     String salt;
                     salt.resize(sizeof(key) * 2);
                     char * buf_pos = salt.data();
@@ -492,7 +479,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            String maybe_new_name;
             if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
                 continue;
 

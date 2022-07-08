@@ -9,7 +9,7 @@ sidebar_label: SET
 SET param = value
 ```
 
-Устанавливает значение `value` для [настройки](../../operations/settings/index.md) `param` в текущей сессии. [Конфигурационные параметры сервера](../../operations/server-configuration-parameters/settings.md) нельзя изменить подобным образом.
+Устанавливает значение `value` для [настройки](../../operations/settings/overview.md) `param` в текущей сессии. [Конфигурационные параметры сервера](../../operations/server-configuration-parameters/settings.md) нельзя изменить подобным образом.
 
 Можно одним запросом установить все настройки из заданного профиля настроек.
 

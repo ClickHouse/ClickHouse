@@ -3,7 +3,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/SortDescription.h>
-#include <Core/ColumnNumbers.h>
 
 
 namespace DB
@@ -58,8 +57,7 @@ private:
     };
     PreviousChunk prev_chunk;
 
-    Names column_names;
-    ColumnNumbers column_positions;
+    Names columns_names;
     ClearableSetVariants data;
     Sizes key_sizes;
     UInt64 limit_hint;

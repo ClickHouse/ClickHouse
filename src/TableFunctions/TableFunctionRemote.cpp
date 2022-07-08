@@ -2,8 +2,6 @@
 
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -15,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <base/range.h>
@@ -80,7 +79,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 else
                 {
                     auto database_literal = evaluateConstantExpressionOrIdentifierAsLiteral(arg_value, context);
-                    configuration.database = checkAndGetLiteralArgument<String>(database_literal, "database");
+                    configuration.database = database_literal->as<ASTLiteral>()->value.safeGet<String>();
                 }
             }
             else
@@ -114,7 +113,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (is_cluster_function)
         {
             args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-            cluster_name = checkAndGetLiteralArgument<String>(args[arg_num], "cluster_name");
+            cluster_name = args[arg_num]->as<ASTLiteral &>().value.safeGet<const String &>();
         }
         else
         {
@@ -135,7 +134,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         else
         {
             args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
-            configuration.database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
+            configuration.database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
 
             ++arg_num;
 
@@ -150,7 +149,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 {
                     std::swap(qualified_name.database, qualified_name.table);
                     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                    qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
+                    qualified_name.table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                     ++arg_num;
                 }
             }
@@ -202,10 +201,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
+        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name);
+            cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettingsRef());
     }
     else
     {
@@ -267,7 +267,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
     assert(cluster);
     StoragePtr res = remote_table_function_ptr
-        ? std::make_shared<StorageDistributed>(
+        ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
@@ -280,7 +280,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             DistributedSettings{},
             false,
             cluster)
-        : std::make_shared<StorageDistributed>(
+        : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},

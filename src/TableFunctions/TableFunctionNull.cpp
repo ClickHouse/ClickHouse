@@ -1,9 +1,9 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageNull.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionNull.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -30,7 +30,7 @@ void TableFunctionNull::parseArguments(const ASTPtr & ast_function, ContextPtr c
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!arguments.empty())
-        structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context), "structure");
+        structure = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context)->as<ASTLiteral>()->value.safeGet<String>();
 }
 
 ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context) const
@@ -45,7 +45,7 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
         columns = getActualTableStructure(context);
     else if (!structure_hint.empty())
         columns = structure_hint;
-    auto res = std::make_shared<StorageNull>(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
+    auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
     res->startup();
     return res;
 }

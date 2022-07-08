@@ -10,12 +10,7 @@
 namespace DB
 {
 
-ProtobufListInputFormat::ProtobufListInputFormat(
-    ReadBuffer & in_,
-    const Block & header_,
-    const Params & params_,
-    const FormatSchemaInfo & schema_info_,
-    bool flatten_google_wrappers_)
+ProtobufListInputFormat::ProtobufListInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
     , serializer(ProtobufSerializer::create(
@@ -25,7 +20,6 @@ ProtobufListInputFormat::ProtobufListInputFormat(
         *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::Yes),
         /* with_length_delimiter = */ true,
         /* with_envelope = */ true,
-        flatten_google_wrappers_,
          *reader))
 {
 }
@@ -76,10 +70,9 @@ void registerInputFormatProtobufList(FormatFactory & factory)
                 RowInputFormatParams params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<ProtobufListInputFormat>(buf, sample, std::move(params),
-                    FormatSchemaInfo(settings, "Protobuf", true), settings.protobuf.input_flatten_google_wrappers);
+                return std::make_shared<ProtobufListInputFormat>(buf, sample, std::move(params), FormatSchemaInfo(settings, "Protobuf", true));
             });
-    factory.markFormatSupportsSubsetOfColumns("ProtobufList");
+    factory.markFormatAsColumnOriented("ProtobufList");
 }
 
 void registerProtobufListSchemaReader(FormatFactory & factory)

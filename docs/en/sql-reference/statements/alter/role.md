@@ -3,7 +3,7 @@ sidebar_position: 46
 sidebar_label: ROLE
 ---
 
-## ALTER ROLE
+## ALTER ROLE {#alter-role-statement}
 
 Changes roles.
 

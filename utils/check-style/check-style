@@ -282,9 +282,6 @@ std_cerr_cout_excludes=(
     src/Client/ClientBase.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
-    src/Bridge/IBridge.cpp
-    src/Daemon/BaseDaemon.cpp
-    src/Loggers/Loggers.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
@@ -312,12 +309,6 @@ for test_case in "${tests_with_event_time_date[@]}"; do
     cat "$test_case" | tr '\n' ' ' | grep -q -i -e 'WHERE.*event_date[ ]*=[ ]*today()' -e 'WHERE.*event_date[ ]*=[ ]*today()' && {
         echo "event_time/event_date should be filtered using >=yesterday() in $test_case (to avoid flakiness)"
     }
-done
-
-expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
-for test_case in "${expect_tests[@]}"; do
-    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
-    grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 done
 
 # Conflict markers

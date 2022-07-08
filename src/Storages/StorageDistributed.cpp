@@ -16,7 +16,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -35,6 +34,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 
@@ -311,7 +314,6 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-        NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -644,6 +646,22 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
+Pipe StorageDistributed::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(local_context),
+        BuildQueryPipelineSettings::fromContext(local_context));
+}
+
 void StorageDistributed::read(
     QueryPlan & query_plan,
     const Names &,
@@ -688,25 +706,13 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-
-    auto settings = local_context->getSettingsRef();
-    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas && !settings.use_hedged_requests;
-
-    if (parallel_replicas)
-        ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, main_table, remote_table_function_ptr,
-            select_stream_factory, modified_query_ast,
-            local_context, query_info,
-            sharding_key_expr, sharding_key_column_name,
-            query_info.cluster);
-    else
-        ClusterProxy::executeQuery(
-            query_plan, header, processed_stage,
-            main_table, remote_table_function_ptr,
-            select_stream_factory, log, modified_query_ast,
-            local_context, query_info,
-            sharding_key_expr, sharding_key_column_name,
-            query_info.cluster);
+    ClusterProxy::executeQuery(
+        query_plan, header, processed_stage,
+        main_table, remote_table_function_ptr,
+        select_stream_factory, log, modified_query_ast,
+        local_context, query_info,
+        sharding_key_expr, sharding_key_column_name,
+        query_info.cluster);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -751,17 +757,15 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
+    /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedSink>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
-    QueryPipeline pipeline;
-
     const Settings & settings = local_context->getSettingsRef();
     if (settings.max_distributed_depth && local_context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
@@ -826,7 +830,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
                 getClusterName(),
                 dst_addresses.size());
         }
-        return {};
+        return nullptr;
     }
 
     if (settings.parallel_distributed_insert_select == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
@@ -838,6 +842,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
     const auto & cluster = getCluster();
     const auto & shards_info = cluster->getShardsInfo();
+
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     String new_query_str;
     {
@@ -857,7 +863,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
         if (shard_info.isLocal())
         {
             InterpreterInsertQuery interpreter(new_query, query_context);
-            pipeline.addCompletedPipeline(interpreter.execute().pipeline);
+            pipelines.emplace_back(std::make_unique<QueryPipelineBuilder>());
+            pipelines.back()->init(interpreter.execute().pipeline);
         }
         else
         {
@@ -870,14 +877,16 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
                 = std::make_shared<RemoteQueryExecutor>(shard_info.pool, std::move(connections), new_query_str, Block{}, query_context);
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote));
-            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
-
-            pipeline.addCompletedPipeline(std::move(remote_pipeline));
+            pipelines.emplace_back(std::make_unique<QueryPipelineBuilder>());
+            pipelines.back()->init(Pipe(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote)));
+            pipelines.back()->setSinks([](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+            {
+                return std::make_shared<EmptySink>(header);
+            });
         }
     }
 
-    return pipeline;
+    return std::make_unique<QueryPipelineBuilder>(QueryPipelineBuilder::unitePipelines(std::move(pipelines)));
 }
 
 
@@ -1040,14 +1049,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         {
             const auto & tmp_path = dir_path / "tmp";
 
-            /// "tmp" created by DistributedSink
+            /// "tmp" created by DistributedBlockOutputStream
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
                 LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedSink on demand.
+                /// Will be created by DistributedBlockOutputStream on demand.
                 std::filesystem::remove(dir_path);
             }
             else
@@ -1367,7 +1376,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     {
         /// Step is 5% of the delay and minimal one second.
         /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
-        const size_t step_ms = std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
+        const size_t step_ms = std::min<double>(1., double(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
         UInt64 delayed_ms = 0;
 
         do {
@@ -1434,15 +1443,15 @@ void registerStorageDistributed(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], local_context);
 
-        String remote_database = checkAndGetLiteralArgument<String>(engine_args[1], "remote_database");
-        String remote_table = checkAndGetLiteralArgument<String>(engine_args[2], "remote_table");
+        String remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
         String storage_policy = "default";
         if (engine_args.size() >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
-            storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            storage_policy = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         /// Check that sharding_key exists in the table and has numeric type.
@@ -1489,7 +1498,7 @@ void registerStorageDistributed(StorageFactory & factory)
         if (!distributed_settings.monitor_max_sleep_time_ms.changed)
             distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
 
-        return std::make_shared<StorageDistributed>(
+        return StorageDistributed::create(
             args.table_id,
             args.columns,
             args.constraints,
@@ -1513,3 +1522,4 @@ void registerStorageDistributed(StorageFactory & factory)
 }
 
 }
+

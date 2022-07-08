@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-# Server may ignore some exceptions, but it still print exceptions to logs and (at least in CI) sends Error and Warning log messages to client
-# making test fail because of non-empty stderr. Ignore such log messages.
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

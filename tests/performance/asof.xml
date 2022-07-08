@@ -1,4 +1,9 @@
 <test>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
     <query>
         SELECT *
         FROM
@@ -41,4 +46,5 @@
         ON (visits.fingerprint = origins.fingerprint AND visits.date &gt;= origins.date)
         FORMAT Null
     </query>
+
 </test>

@@ -7,7 +7,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <base/range.h>
-#include <cassert>
+#include <assert.h>
 
 
 namespace DB

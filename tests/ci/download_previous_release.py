@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+###########################################################################
+#                                                                         #
+# TODO (@vdimir, @Avogar)                                                 #
+# Merge with one from https://github.com/ClickHouse/ClickHouse/pull/27928 #
+#                                                                         #
+###########################################################################
+
 import re
 import os
 import logging
@@ -62,7 +69,7 @@ def find_previous_release(server_version, releases):
     return False, None
 
 
-def get_previous_release(server_version):
+def get_previous_release(server_version=None):
     page = 1
     found = False
     while not found:

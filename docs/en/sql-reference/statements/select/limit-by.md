@@ -2,7 +2,7 @@
 sidebar_label: LIMIT BY
 ---
 
-# LIMIT BY Clause
+# LIMIT BY Clause {#limit-by-clause}
 
 A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](../../../sql-reference/syntax.md#syntax-expressions).
 
@@ -20,7 +20,7 @@ During query processing, ClickHouse selects data ordered by sorting key. The sor
 If you want to use column numbers instead of column names in the `LIMIT BY` clause, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).	
 	
 
-## Examples
+## Examples {#examples}
 
 Sample table:
 

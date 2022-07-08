@@ -32,6 +32,9 @@ public:
     static String toName(int32_t code);
     static inline int32_t toCode(const String & name);
 
+    // Return true if server is running and serving requests
+    bool serverIsActive() const;
+
 protected:
     KeeperDispatcher & keeper_dispatcher;
 };
@@ -304,15 +307,4 @@ struct IsReadOnlyCommand : public IFourLetterCommand
     ~IsReadOnlyCommand() override = default;
 };
 
-struct RecoveryCommand : public IFourLetterCommand
-{
-    explicit RecoveryCommand(KeeperDispatcher & keeper_dispatcher_)
-        : IFourLetterCommand(keeper_dispatcher_)
-    {
-    }
-
-    String name() override { return "rcvr"; }
-    String run() override;
-    ~RecoveryCommand() override = default;
-};
 }

@@ -4,10 +4,11 @@
 
 #if USE_HDFS
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
+#include <base/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -15,21 +16,10 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public IStorage, WithContext
+class StorageHDFS final : public shared_ptr_helper<StorageHDFS>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageHDFS>;
 public:
-    StorageHDFS(
-        const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        const String & compression_method_ = "",
-        bool distributed_processing_ = false,
-        ASTPtr partition_by = nullptr);
-
     String getName() const override { return "HDFS"; }
 
     Pipe read(
@@ -57,7 +47,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool supportsSubsetOfColumns() const override;
+    bool isColumnOriented() const override;
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -67,6 +57,17 @@ public:
 
 protected:
     friend class HDFSSource;
+    StorageHDFS(
+        const String & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        const String & compression_method_ = "",
+        bool distributed_processing_ = false,
+        ASTPtr partition_by = nullptr);
 
 private:
     std::vector<const String> uris;
@@ -82,7 +83,7 @@ private:
 
 class PullingPipelineExecutor;
 
-class HDFSSource : public ISource, WithContext
+class HDFSSource : public SourceWithProgress, WithContext
 {
 public:
     class DisclosedGlobIterator
@@ -132,6 +133,8 @@ private:
     Block block_for_format;
     std::vector<NameAndTypePair> requested_virtual_columns;
     UInt64 max_block_size;
+    bool need_path_column;
+    bool need_file_column;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
 

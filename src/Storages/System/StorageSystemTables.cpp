@@ -16,7 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
@@ -124,7 +124,7 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockSource : public ISource
+class TablesBlockSource : public SourceWithProgress
 {
 public:
     TablesBlockSource(
@@ -134,7 +134,7 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         ContextPtr context_)
-        : ISource(std::move(header))
+        : SourceWithProgress(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
@@ -244,30 +244,10 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        const auto & settings = context->getSettingsRef();
+                        /// Fill the rest columns with defaults
                         while (src_index < columns_mask.size())
-                        {
-                            // total_rows
-                            if (src_index == 18 && columns_mask[src_index])
-                            {
-                                if (auto total_rows = table.second->totalRows(settings))
-                                    res_columns[res_index++]->insert(*total_rows);
-                                else
-                                    res_columns[res_index++]->insertDefault();
-                            }
-                            // total_bytes
-                            else if (src_index == 19 && columns_mask[src_index])
-                            {
-                                if (auto total_bytes = table.second->totalBytes(settings))
-                                    res_columns[res_index++]->insert(*total_bytes);
-                                else
-                                    res_columns[res_index++]->insertDefault();
-                            }
-                            /// Fill the rest columns with defaults
-                            else if (columns_mask[src_index])
+                            if (columns_mask[src_index++])
                                 res_columns[res_index++]->insertDefault();
-                            src_index++;
-                        }
                     }
                 }
 
