@@ -126,7 +126,9 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     int format_version;
     *buf >> "format version: " >> format_version >> "\n";
 
-    assert(format_version <= 2);
+    /// Allow format_version = 1 for backward compatibility.
+    if (format_version != 1 && format_version != 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported format version in mutation.txt, expected '1' or '2', got '{}'", format_version);
 
     type = MutationType::Ordinary;
     if (format_version == 2)
@@ -137,6 +139,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         auto type_value = magic_enum::enum_cast<MutationType>(type_str);
         if (type_value.has_value())
             type = type_value.value();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported mutation type in mutation.txt, expected 'Lightweight' or 'Ordinary', got '{}'", type_str);
     }
 
     LocalDateTime create_time_dt;
