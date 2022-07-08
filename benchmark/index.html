@@ -571,7 +571,7 @@ function renderSummary(filtered_data) {
 
         let link = document.createElement('a');
         link.appendChild(document.createTextNode(`${elem.system} (${elem.machine})`));
-        link.href = "https://github.com/ClickHouse/ClickBench/" + elem.system;
+        link.href = "https://github.com/ClickHouse/ClickBench/" + elem.source;
 
         td_name.appendChild(link);
         if (elem.comment) { td_name.appendChild(addNote(elem.comment)); }
