@@ -281,6 +281,16 @@ const data = [
 ,{"system":"TimescaleDB","date":"2022-07-01","machine":"c6a.4xlarge, 500gb gp2","cluster_size":1,"comment":"","tags":["C","PostgreSQL compatible","row-oriented","time-series"],"load_time":1620,"data_size":72882392030,"result":[[437.7,215.793,176.42],[327.026,259.568,244.578],[262.978,263.09,263.083],[262.807,263.046,266.847],[337.497,334.964,330.852],[355.689,356.801,362.894],[262.762,263.012,262.968],[263.055,263.016,263.028],[319.928,319.388,320.704],[323.584,322.224,322.488],[265.979,265.465,265.375],[266.019,265.543,265.462],[277.018,276.3,276.595],[280.352,279.251,279.572],[279.915,279.896,279.674],[296.377,298.506,297.659],[314.448,314.605,312.57],[302.668,302.672,303.039],[325.81,324.061,324.376],[262.447,262.698,262.704],[267.581,267.467,267.482],[268.085,267.466,267.696],[263.391,263.097,263.126],[38.291,0.435,0.335],[0.127,0.005,0.005],[263.138,263.1,263.092],[0.889,0.341,0.339],[267.586,267.498,267.491],[289.086,290.012,290.093],[263.22,263.071,263.109],[274.78,273.995,273.998],[282.217,281.39,281.47],[429.273,426.588,439.431],[448.808,418.724,418.207],[455.196,422.75,423.142],[299.263,296.937,297.261],[18.693,1.552,1.481],[18.125,0.945,0.937],[18.528,1.062,0.902],[18.268,1.779,1.77],[19.615,1.965,1.966],[18.97,1.435,1.43],[18.33,1.153,0.952]],"source":"timescaledb/results/c6a.4xlarge.json"}
 ,{"system":"Vertica","date":"2022-07-01","machine":"c6a.4xlarge, 500gb gp2","cluster_size":1,"comment":"","tags":["column-oriented"],"load_time":12239,"data_size":22597367016,"result":[[0.031357,0.020759,0.019373],[0.156612,0.033543,0.032149],[0.404881,0.124383,0.124252],[0.220711,0.074036,0.070379],[2.19663,2.18441,2.1763],[11.5901,11.4847,11.4573],[0.160286,0.063093,0.064844],[0.116135,0.047536,0.046322],[2.36592,2.15174,2.15675],[4.42049,4.37322,4.38596],[1.24771,1.17476,1.21011],[1.30116,1.24332,1.24521],[14.0523,13.9236,13.9943],[39.8961,39.7911,39.771],[14.6776,14.5524,14.5899],[2.82581,2.71968,2.72123],[48.4932,48.4037,48.4298],[36.8767,36.7432,36.9178],[108.743,108.81,108.671],[0.02734,0.018601,0.018892],[8.98822,4.2958,4.38323],[10.0097,4.31009,4.26843],[14.2354,5.48257,5.47171],[3.29109,0.405847,0.337797],[0.088318,0.079666,0.091852],[1.05864,1.26979,1.81786],[0.087436,0.092269,0.087506],[15.0424,15.0873,15.2561],[22.1566,22.1208,21.9509],[2.59797,2.46053,2.46406],[3.63938,3.68086,3.68988],[6.58816,4.84546,4.8853],[20.7209,20.4806,20.5823],[77.3779,78.1301,77.4366],[77.2494,77.646,77.4976],[6.79571,6.81133,6.67973],[0.887148,0.782822,0.753053],[0.369373,0.339676,0.338677],[0.099038,0.089598,0.099019],[2.15693,2.01152,2.00868],[0.096018,0.052062,0.053813],[0.058647,0.046352,0.045415],[0.106915,0.077122,0.076134]],"source":"vertica/results/c6a.4xlarge.json"}
 ]; // end of data
+
+const additional_data_size_points = [
+{"fake": true, "system": "hits.tsv", "data_size": 74807831229},
+{"fake": true, "system": "hits.csv", "data_size": 81136059858},
+{"fake": true, "system": "hits.json", "data_size": 232733025002},
+{"fake": true, "system": "hits.parquet", "data_size": 14779976446},
+{"fake": true, "system": "hits.tsv.gz", "data_size": 16298506510},
+{"fake": true, "system": "hits.csv.gz", "data_size": 16608960810},
+{"fake": true, "system": "hits.json.gz", "data_size": 23728268670}
+];
     </script>
 </head>
 <body>
@@ -517,7 +527,7 @@ function renderSummary(filtered_data) {
 
     const baseline_data = [...filtered_data[0].result.keys()].map(query_num =>
         [...Array(3).keys()].map(run_num =>
-            Math.min(...filtered_data.map(elem => elem.result[query_num][run_num]).filter(x => x))));
+            Math.min(...filtered_data.filter(elem => !elem.fake).map(elem => elem.result[query_num][run_num]).filter(x => x))));
 
     const min_load_time = Math.min(...filtered_data.map(elem => elem.load_time).filter(x => x));
     const min_data_size = Math.min(...filtered_data.map(elem => elem.data_size).filter(x => x));
@@ -569,11 +579,15 @@ function renderSummary(filtered_data) {
         let td_name = document.createElement('td');
         td_name.className = 'summary-name';
 
-        let link = document.createElement('a');
-        link.appendChild(document.createTextNode(`${elem.system} (${elem.machine})`));
-        link.href = "https://github.com/ClickHouse/ClickBench/" + elem.source;
+        if (!elem.fake) {
+            let link = document.createElement('a');
+            link.appendChild(document.createTextNode(`${elem.system} (${elem.machine})`));
+            link.href = "https://github.com/ClickHouse/ClickBench/" + elem.source;
+            td_name.appendChild(link);
+        } else {
+            td_name.appendChild(document.createTextNode(elem.system));
+        }
 
-        td_name.appendChild(link);
         if (elem.comment) { td_name.appendChild(addNote(elem.comment)); }
         td_name.appendChild(document.createTextNode(': '));
 
@@ -670,7 +684,12 @@ function render() {
     nothing_selected_elem.style.display = 'none';
     [...document.querySelectorAll('.comparison')].map(e => e.style.display = 'block');
 
-    const [sorted_indices, baseline_data] = renderSummary(filtered_data);
+    if (selectors.metric == 'size') {
+        filtered_data = [...filtered_data, ...additional_data_size_points];
+    }
+
+    let [sorted_indices, baseline_data] = renderSummary(filtered_data);
+    sorted_indices = sorted_indices.filter(idx => !filtered_data[idx].fake);
 
     /// Generate details
 
