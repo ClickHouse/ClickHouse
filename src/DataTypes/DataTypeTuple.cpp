@@ -214,6 +214,20 @@ size_t DataTypeTuple::getPositionByName(const String & name) const
     throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 }
 
+bool DataTypeTuple::getPositionByName(const String & name, size_t & index) const
+{
+    size_t size = elems.size();
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (names[i] == name)
+        {
+            index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
 String DataTypeTuple::getNameByPosition(size_t i) const
 {
     if (i == 0 || i > names.size())

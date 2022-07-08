@@ -60,6 +60,7 @@ public:
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
+    bool getPositionByName(const String & name, size_t & index) const;
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
