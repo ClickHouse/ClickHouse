@@ -426,6 +426,8 @@ class SettingsRandomizer:
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
+        "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
+        "max_compress_block_size": lambda: random.randint(1, 1048576 * 3),
     }
 
     @staticmethod
@@ -437,7 +439,36 @@ class SettingsRandomizer:
 
 
 class MergeTreeSettingsRandomizer:
-    settings = {"index_granularity": lambda: random.randint(1, 65536)}
+    settings = {
+        "index_granularity": lambda: random.randint(1, 65536),
+        "min_bytes_for_wide_part": lambda: 0
+        if random.random() < 0.3
+        else random.randint(0, 1024 * 1024 * 1024),
+        "min_rows_for_wide_part": lambda: 0
+        if random.random() < 0.3
+        else random.randint(0, 10000000),
+        "ratio_of_defaults_for_sparse_serialization": lambda: 0.0
+        if random.random() < 0.1
+        else 1.0
+        if random.random() < 4 / 9
+        else random.random(),
+        "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
+        "prefer_fetch_merged_part_size_threshold": lambda: random.randint(
+            1, 10 * 1024 * 1024 * 1024
+        ),
+        "always_fetch_merged_part": lambda: random.randint(0, 1),
+        "vertical_merge_algorithm_min_rows_to_activate": lambda: random.randint(
+            1, 32 * 8192
+        ),
+        "vertical_merge_algorithm_min_columns_to_activate": lambda: random.randint(
+            1, 20
+        ),
+        "min_merge_bytes_to_use_direct_io": lambda: 1
+        if random.random() < 0.2
+        else random.randint(1, 10 * 1024 * 1024 * 1024),
+        "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
+        "write_final_mark": lambda: random.randint(0, 1),
+    }
 
     @staticmethod
     def get_random_settings(args):
@@ -591,7 +622,7 @@ class TestCase:
 
         description += f"\nSettings used in the test: {self.cli_format_settings(self.random_settings)}"
         if args.randomize_merge_tree_settings:
-            description += f"\nMergeTreeSettings used in test: {self.cli_format_settings(self.merge_tree_random_settings)}"
+            description += f"\n\nMergeTreeSettings used in test: {self.cli_format_settings(self.merge_tree_random_settings)}"
 
         return description + "\n"
 
