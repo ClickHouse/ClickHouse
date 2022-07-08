@@ -72,9 +72,25 @@ inline std::string_view toDescription(OvercommitResult result)
     }
 }
 
-bool shouldTrackAllockation(DB::Float64 probability, void * ptr)
+bool shouldTrackAllocation(DB::Float64 probability, void * ptr)
 {
     return sipHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
+}
+
+AllocationTrace updateAllocationTrace(AllocationTrace trace, const std::optional<double> & sample_probability)
+{
+    if (unlikely(sample_probability))
+        return AllocationTrace(*sample_probability);
+
+    return trace;
+}
+
+AllocationTrace getAllocationTrace(std::optional<double> & sample_probability)
+{
+    if (unlikely(sample_probability))
+        return AllocationTrace(*sample_probability);
+
+    return AllocationTrace(0);
 }
 
 }
@@ -86,7 +102,7 @@ void AllocationTrace::onAlloc(void * ptr, size_t size) const
     if (likely(sample_probability == 0))
         return;
 
-    if (sample_probability < 1 && !shouldTrackAllockation(sample_probability, ptr))
+    if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
         return;
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -98,7 +114,7 @@ void AllocationTrace::onFree(void * ptr, size_t size) const
     if (likely(sample_probability == 0))
         return;
 
-    if (sample_probability < 1 && !shouldTrackAllockation(sample_probability, ptr))
+    if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
         return;
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -117,15 +133,8 @@ static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
 
-MemoryTracker::MemoryTracker(VariableContext level_) : level(level_)
-{
-    setParent(&total_memory_tracker);
-}
-MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : level(level_)
-{
-    if (parent)
-        setParent(parent_);
-}
+MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
 
 
 MemoryTracker::~MemoryTracker()
@@ -169,10 +178,14 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     {
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-            std::ignore = loaded_next->allocImpl(size, throw_if_memory_exceeded,
-                level == VariableContext::Process ? this : query_tracker); /// NOLINT(unused-result)
+        {
+            MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
+            return updateAllocationTrace(
+                loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker),
+                sample_probability);
+        }
 
-        return AllocationTrace(total_sample_probability.load(std::memory_order_relaxed));
+        return getAllocationTrace(sample_probability);
     }
 
     /** Using memory_order_relaxed means that if allocations are done simultaneously,
@@ -287,10 +300,14 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-        std::ignore = loaded_next->allocImpl(size, throw_if_memory_exceeded,
-            level == VariableContext::Process ? this : query_tracker);
+    {
+        MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
+        return updateAllocationTrace(
+            loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker),
+            sample_probability);
+    }
 
-    return AllocationTrace(total_sample_probability.load(std::memory_order_relaxed));
+    return getAllocationTrace(sample_probability);
 }
 
 void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
@@ -317,24 +334,15 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
     return false;
 }
 
-// AllocationTrace MemoryTracker::realloc(Int64 old_size, Int64 new_size)
-// {
-//     Int64 addition = new_size - old_size;
-//     if (addition > 0)
-//         return alloc(addition);
-//     else
-//         return free(-addition);
-// }
-
 AllocationTrace MemoryTracker::free(Int64 size)
 {
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-            std::ignore = loaded_next->free(size);
+            return updateAllocationTrace(loaded_next->free(size), sample_probability);
 
-        return AllocationTrace(total_sample_probability.load(std::memory_order_relaxed));
+        return getAllocationTrace(sample_probability);
     }
 
     Int64 accounted_size = size;
@@ -362,14 +370,15 @@ AllocationTrace MemoryTracker::free(Int64 size)
     if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
         overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 
+    AllocationTrace res = getAllocationTrace(sample_probability);
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-        std::ignore = loaded_next->free(size);
+        res = updateAllocationTrace(loaded_next->free(size), sample_probability);
 
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())
         CurrentMetrics::sub(metric_loaded, accounted_size);
 
-    return AllocationTrace(total_sample_probability.load(std::memory_order_relaxed));
+    return res;
 }
 
 
@@ -448,11 +457,13 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
         ;
 }
 
-void MemoryTracker::updateTotalSampleProbability(MemoryTracker * parent_elem)
+double MemoryTracker::getSampleProbability()
 {
-    double parent_sample_probability = 0;
-    if (parent_elem)
-        parent_sample_probability = parent_elem->total_sample_probability.load();
+    if (sample_probability)
+        return *sample_probability;
 
-    total_sample_probability.store(1.0 - (1.0 - parent_sample_probability) * (1.0 - sample_probability), std::memory_order_relaxed);
+    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        return loaded_next->getSampleProbability();
+
+    return 0;
 }

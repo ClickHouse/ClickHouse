@@ -26,7 +26,7 @@ struct TraceLogElement
     UInt64 thread_id{};
     String query_id{};
     Array trace{};
-    Int64 size{}; /// Allocation size in bytes for TraceType::Memory
+    Int64 size{}; /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample
     UInt64 ptr{}; /// Allocation ptr for TraceType::MemorySample
 
     static std::string name() { return "TraceLog"; }
