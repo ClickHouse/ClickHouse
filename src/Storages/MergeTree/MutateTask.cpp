@@ -1586,6 +1586,9 @@ MutateTask::MutateTask(
     ctx->source_part = ctx->future_part->parts[0];
     ctx->storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
 
+    /// part is checked for lightweight delete in selectPartsToMutate().
+    ctx->is_lightweight_mutation = ctx->future_part->mutation_type == MutationType::Lightweight;
+
     auto storage_snapshot = ctx->storage_from_source_part->getStorageSnapshot(ctx->metadata_snapshot, context_);
     extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
@@ -1640,9 +1643,7 @@ bool MutateTask::prepare()
                 command.partition, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
-    /// Enable lightweight delete for wide part only.
-    if (isWidePart(ctx->source_part) && (ctx->future_part->mutation_type == MutationType::Lightweight))
-        ctx->is_lightweight_mutation = true;
+
     if (ctx->source_part->isStoredOnDisk() && !ctx->is_lightweight_mutation && !isStorageTouchedByMutations(
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
