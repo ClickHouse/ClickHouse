@@ -1,18 +1,18 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
-#include <Backups/BackupCoordinationHelpers.h>
+#include <Backups/BackupCoordinationStatusSync.h>
 
 
 namespace DB
 {
 
-/// Stores restore temporary information in Zookeeper, used to perform RESTORE ON CLUSTER.
-class RestoreCoordinationDistributed : public IRestoreCoordination
+/// Implementation of the IRestoreCoordination interface performing coordination via ZooKeeper. It's necessary for "RESTORE ON CLUSTER".
+class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationDistributed(const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper);
-    ~RestoreCoordinationDistributed() override;
+    RestoreCoordinationRemote(const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper);
+    ~RestoreCoordinationRemote() override;
 
     /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
     void setStatus(const String & current_host, const String & new_status, const String & message) override;
