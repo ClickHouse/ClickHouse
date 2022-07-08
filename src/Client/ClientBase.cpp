@@ -2141,17 +2141,28 @@ void ClientBase::showClientVersion()
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    auto add_program_options = [&](auto & to_settings)
-    {
-        if (allow_repeated_settings)
-            to_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
-        else
-            to_settings.addProgramOptions(options_description.main_description.value());
-    };
+    if (allow_repeated_settings)
+        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addProgramOptions(options_description.main_description.value());
 
-    add_program_options(cmd_settings);
     if (allow_merge_tree_settings)
-        add_program_options(cmd_merge_tree_settings);
+    {
+        /// Add merge tree settings manually, because names of some settings
+        /// may clash. Query settings have higher priority and we just
+        /// skip ambigous merge tree settings.
+        auto & main_options = options_description.main_description.value();
+        for (const auto & setting : cmd_merge_tree_settings.all())
+        {
+            if (main_options.find_nothrow(setting.getName(), false))
+                continue;
+
+            if (allow_repeated_settings)
+                cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, setting);
+            else
+                cmd_merge_tree_settings.addProgramOption(main_options, setting);
+        }
+    }
 
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
