@@ -27,8 +27,6 @@
             --summary-every-other-row-color: #F8F8F8;
             --highlight-color: #EEE;
             --bar-color: #FFCB80;
-            --legend-color: #FED;
-            --legend-border-color: #FFCB80;
 
             --tooltip-text-color: white;
             --tooltip-background-color: black;
@@ -55,8 +53,6 @@
             --summary-every-other-row-color: #042e41;
             --highlight-color: #064663;
             --bar-color: #088;
-            --legend-color: #064663;
-            --legend-border-color: #064663;
 
             --tooltip-text-color: white;
             --tooltip-background-color: #444;
@@ -202,15 +198,6 @@
             position: relative;
         }
 
-        #legend {
-            font-family: monospace;
-            min-height: 4rem;
-            padding: 0.5rem;
-            margin-bottom: 1rem;
-            background: var(--legend-color);
-            border: 1px solid var(--legend-border-color);
-        }
-
         #nothing-selected {
             display: none;
             font-size: 32pt;
@@ -226,7 +213,6 @@
         .tooltip {
             position: absolute;
             bottom: calc(100% + 0.5rem);
-            left: calc(50% - 0.25rem);
             visibility: hidden;
             background-color: var(--tooltip-background-color);
             color: var(--tooltip-text-color);
@@ -234,10 +220,20 @@
             padding: 0.5rem 0.75rem;
             border-radius: 0.5rem;
             z-index: 1;
-            width: 20rem;
-            margin-left: -10rem;
             text-align: left;
             white-space: normal;
+        }
+
+        .tooltip-result {
+            left: calc(50% - 0.25rem);
+            width: 20rem;
+            margin-left: -10rem;
+        }
+
+        .tooltip-query {
+            left: 0;
+            width: 40rem;
+            margin-left: -3rem;
         }
 
         .note:hover .tooltip {
@@ -248,11 +244,19 @@
             content: " ";
             position: absolute;
             top: 100%;
-            left: 50%;
-            margin-left: -1rem;
             border-width: 0.5rem;
             border-style: solid;
             border-color: var(--tooltip-background-color) transparent transparent transparent;
+        }
+
+        .tooltip-result::after {
+            left: 50%;
+            margin-left: -1rem;
+        }
+
+        .tooltip-query::after {
+            left: 3rem;
+            margin-left: 0.5rem;
         }
 
         .nowrap {
@@ -451,8 +455,6 @@ const additional_data_size_points = [
     </tbody>
 </table>
 
-<div id="legend" class="stick-left comparison"></div>
-
 <script type="text/javascript">
 
 const constant_time_add = 0.01;
@@ -605,7 +607,7 @@ function addNote(text) {
     note.appendChild(document.createTextNode('†'));
 
     let tooltip = document.createElement('span');
-    tooltip.className = 'tooltip';
+    tooltip.className = 'tooltip tooltip-result';
     tooltip.appendChild(document.createTextNode(text));
 
     note.appendChild(tooltip);
@@ -901,7 +903,14 @@ function render() {
         tr.appendChild(td_checkbox);
 
         let td_query_num = document.createElement('td');
+        td_query_num.className = 'note';
         td_query_num.appendChild(document.createTextNode(`Q${query_num}. `));
+
+        let tooltip = document.createElement('span');
+        tooltip.className = 'tooltip tooltip-query';
+        tooltip.appendChild(document.createTextNode(`Query ${query_num}: ${queries[query_num]}`));
+        td_query_num.appendChild(tooltip);
+
         tr.appendChild(td_query_num);
 
         sorted_indices.map(idx => {
@@ -914,11 +923,6 @@ function render() {
 
             colorize(td, ratio);
             tr.appendChild(td);
-        });
-
-        tr.addEventListener('mouseover', e => {
-            let legend = document.getElementById('legend');
-            legend.innerText = `Query ${query_num}: ${queries[query_num]}`;
         });
 
         details_body.appendChild(tr);
