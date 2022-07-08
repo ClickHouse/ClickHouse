@@ -28,7 +28,6 @@ class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
-class DictionaryReader;
 class DictionaryJoinAdapter;
 class StorageJoin;
 class StorageDictionary;
@@ -140,9 +139,6 @@ private:
     VolumePtr tmp_volume;
 
     std::shared_ptr<StorageJoin> right_storage_join;
-
-    std::shared_ptr<StorageDictionary> right_storage_dictionary;
-    std::shared_ptr<DictionaryReader> dictionary_reader;
 
     std::shared_ptr<IKeyValueStorage> right_kv_storage;
 
@@ -310,14 +306,10 @@ public:
 
     void setStorageJoin(std::shared_ptr<IKeyValueStorage> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
-    void setStorageJoin(std::shared_ptr<StorageDictionary> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
 
-    bool tryInitDictJoin(const Block & sample_block, ContextPtr context);
-
-    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join || right_kv_storage; }
-    const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
+    bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
     std::shared_ptr<IKeyValueStorage> getStorageKeyValue() { return right_kv_storage; }
 };

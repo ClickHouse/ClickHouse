@@ -13,7 +13,6 @@
 
 #include <Dictionaries/DictionaryStructure.h>
 
-#include <Interpreters/DictionaryReader.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -722,8 +721,6 @@ void TableJoin::setStorageJoin(std::shared_ptr<IKeyValueStorage> storage)
 
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
 {
-    if (right_storage_dictionary)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
     right_storage_join = storage;
 }
 
@@ -735,13 +732,6 @@ void TableJoin::setRightStorageName(const std::string & storage_name)
 const std::string & TableJoin::getRightStorageName() const
 {
     return right_storage_name;
-}
-
-void TableJoin::setStorageJoin(std::shared_ptr<StorageDictionary> storage)
-{
-    if (right_storage_join)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
-    right_storage_dictionary = storage;
 }
 
 String TableJoin::renamedRightColumnName(const String & name) const
@@ -828,7 +818,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (dictionary_reader || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
+    if (!right_storage_name.empty() || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
     if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
         return false;

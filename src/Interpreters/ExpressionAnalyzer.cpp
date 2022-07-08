@@ -18,7 +18,6 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/DictionaryReader.h>
 #include <Interpreters/DictionaryJoinAdapter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
