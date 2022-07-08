@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "",
 
-    "tags": ["SQL", "Java", "column-oriented"],
+    "tags": ["Java", "column-oriented"],
 
     "load_time": 19620,
     "data_size": 45188608472,

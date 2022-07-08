@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "It successfully loaded only 94465149 out of 99997497 records. Some queries returned NullPointerException. The loading process is painful - splitting to 100 pieces required. It does not correctly report errors on data loading, the results may be incorrect.",
 
-    "tags": ["SQL", "Java", "column-oriented"],
+    "tags": ["Java", "column-oriented"],
 
     "load_time": 2032,
     "data_size": 9245538172,

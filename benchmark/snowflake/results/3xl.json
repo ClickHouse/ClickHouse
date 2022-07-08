@@ -5,7 +5,7 @@
     "cluster_size": 64,
     "comment": "",
 
-    "tags": ["SQL", "managed", "column-oriented"],
+    "tags": ["managed", "column-oriented"],
 
     "load_time": 2524,
     "data_size": 12300000000,

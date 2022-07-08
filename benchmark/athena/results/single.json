@@ -5,7 +5,7 @@
     "cluster_size": "serverless",
     "comment": "",
 
-    "tags": ["stateless", "managed", "SQL", "Java", "column-oriented"],
+    "tags": ["stateless", "managed", "Java", "column-oriented"],
 
     "load_time": 0,
     "data_size": 13800000000,

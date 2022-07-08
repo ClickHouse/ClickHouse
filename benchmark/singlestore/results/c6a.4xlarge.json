@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "Previous name: MemSQL. Some queries did not run due to memory limits",
 
-    "tags": ["SQL", "MySQL compatible", "column-oriented"],
+    "tags": ["MySQL compatible", "column-oriented"],
 
     "load_time": 690,
     "data_size": 29836263469,

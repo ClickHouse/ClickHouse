@@ -5,7 +5,7 @@
     "cluster_size": 1,
     "comment": "Only 90% of data successfully loaded. For some queries it gives \"Data too large\".",
 
-    "tags": ["SQL", "Rust", "column-oriented", "ClickHouse derivative"],
+    "tags": ["Rust", "column-oriented", "ClickHouse derivative"],
 
     "load_time": 484,
     "data_size": 43016643271,
