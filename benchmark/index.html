@@ -910,7 +910,7 @@ function render() {
             const ratio = curr_timing !== null ? (constant_time_add + curr_timing) / (constant_time_add + baseline_timing) : null;
 
             let td = document.createElement('td');
-            td.appendChild(document.createTextNode(curr_timing !== null ? `${curr_timing.toFixed(2)} (×${ratio.toFixed(2)})` : '☠'));
+            td.appendChild(document.createTextNode(curr_timing !== null ? `${curr_timing.toFixed(2)}s (×${ratio.toFixed(2)})` : '☠'));
 
             colorize(td, ratio);
             tr.appendChild(td);
