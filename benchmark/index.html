@@ -154,6 +154,43 @@
             font-weight: bold;
             color: #CCC;
         }
+
+        .note {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip {
+            position: absolute;
+            bottom: calc(100% + 0.5rem);
+            left: calc(50% - 0.25rem);
+            visibility: hidden;
+            background-color: black;
+            color: white;
+            box-shadow: 0 0 1rem gray;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            z-index: 1;
+            width: 20rem;
+            margin-left: -10rem;
+            text-align: left;
+            white-space: normal;
+        }
+
+        .note:hover .tooltip {
+            visibility: visible;
+        }
+
+        .tooltip::after {
+            content: " ";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -1rem;
+            border-width: 0.5rem;
+            border-style: solid;
+            border-color: black transparent transparent transparent;
+        }
     </style>
     <script type="text/javascript">
 
@@ -2711,6 +2748,19 @@ function selectRun(timings) {
     return selectors.metric == 'cold' ? timings[0] : (timings[1] !== null && timings[2] !== null ? Math.min(timings[1], timings[2]) : null)
 }
 
+function addNote(text) {
+    let note = document.createElement('sup');
+    note.className = 'note';
+    note.appendChild(document.createTextNode('†'));
+
+    let tooltip = document.createElement('span');
+    tooltip.className = 'tooltip';
+    tooltip.appendChild(document.createTextNode(text));
+
+    note.appendChild(tooltip);
+    return note;
+}
+
 function renderSummary(filtered_data) {
     let table = document.getElementById('summary');
     clearElement(table);
@@ -2785,6 +2835,7 @@ function renderSummary(filtered_data) {
         link.href = "https://github.com/ClickHouse/ClickBench/" + elem.system;
 
         td_name.appendChild(link);
+        if (elem.comment) { td_name.appendChild(addNote(elem.comment)); }
         td_name.appendChild(document.createTextNode(': '));
 
         const ratio = summaries[idx];
@@ -2822,9 +2873,11 @@ function colorize(elem, ratio) {
     let [r, g, b] = [0, 0, 0];
 
     /// ratio less than 1 - green
-    /// ratio from 1 to 10 - green to orange
-    /// ratio from 10 to 100 - orange to red
+    /// ratio from 1 to 10 - green to yellow
+    /// ratio from 10 to 100 - yellow to red
     /// ratio from 100 to 1000 to infinity - red to brown to black
+
+    /// Note: we are using RGB space without proper gamma correction. Read more: https://www.handprint.com/HP/WCL/color1.html
 
     if (ratio !== null) {
         if (ratio < 1) {
@@ -2846,9 +2899,11 @@ function colorize(elem, ratio) {
 
     elem.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
     if (ratio === null || ratio > 10) {
+        /// This will look better on dark backgrounds
         elem.style.color = 'white';
     }
 
+    /// The best result is highlighted
     if (ratio == 1) {
         elem.style.fontWeight = 'bold';
     }
