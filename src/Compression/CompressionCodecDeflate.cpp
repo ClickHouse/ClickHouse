@@ -37,7 +37,7 @@ DeflateJobHWPool::DeflateJobHWPool():log(&Poco::Logger::get("DeflateJobHWPool"))
     for (index = 0; index < JOB_POOL_SIZE; ++index)
     {
         qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(hw_job_pool_buffer.get() + index*JOB_POOL_SIZE);
-        if ((nullptr == qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
+        if ((!qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
             break;
         hw_job_pool[index] = qpl_job_ptr;
         unLockJob(index);
@@ -95,7 +95,7 @@ uint32_t HardwareCodecDeflate::doCompressData(const char * source, uint32_t sour
     uint32_t job_id = 0;
     qpl_job* job_ptr = nullptr;
     uint32_t compressed_size = 0;
-    if (job_ptr = DeflateJobHWPool::instance().acquireJob(&job_id); nullptr == job_ptr)
+    if (!(job_ptr = DeflateJobHWPool::instance().acquireJob(&job_id)))
     {
         LOG_WARNING(log, "HardwareCodecDeflate::doCompressData acquireJob fail!");
         return 0;
@@ -109,7 +109,7 @@ uint32_t HardwareCodecDeflate::doCompressData(const char * source, uint32_t sour
     job_ptr->available_out = dest_size;
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_DYNAMIC_HUFFMAN | QPL_FLAG_LAST | QPL_FLAG_OMIT_VERIFY;
 
-    if (auto status = qpl_execute_job(job_ptr); QPL_STS_OK == status)
+    if (auto status = qpl_execute_job(job_ptr); status == QPL_STS_OK)
         compressed_size = job_ptr->total_out;
     else
         LOG_WARNING(log, "HardwareCodecDeflate::doCompressData fail ->status: '{}' ", static_cast<size_t>(status));
@@ -122,7 +122,7 @@ uint32_t HardwareCodecDeflate::doDecompressData(const char * source, uint32_t so
 {
     uint32_t job_id = 0;
     qpl_job* job_ptr = nullptr;
-    if (job_ptr = DeflateJobHWPool::instance().acquireJob(&job_id); nullptr == job_ptr)
+    if (!(job_ptr = DeflateJobHWPool::instance().acquireJob(&job_id)))
     {
         LOG_WARNING(log, "HardwareCodecDeflate::doDecompressData acquireJob fail!");
         return 0;
@@ -135,7 +135,7 @@ uint32_t HardwareCodecDeflate::doDecompressData(const char * source, uint32_t so
     job_ptr->available_out = uncompressed_size;
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_LAST;
 
-    if (auto status = qpl_execute_job(job_ptr); QPL_STS_OK == status)
+    if (auto status = qpl_execute_job(job_ptr); status == QPL_STS_OK)
     {
         DeflateJobHWPool::instance().releaseJob(job_id);
         return job_ptr->total_out;
@@ -152,7 +152,7 @@ uint32_t HardwareCodecDeflate::doDecompressDataReq(const char * source, uint32_t
 {
     uint32_t job_id = 0;
     qpl_job * job_ptr = nullptr;
-    if (job_ptr = DeflateJobHWPool::instance().acquireJob(&job_id); nullptr == job_ptr)
+    if (!(job_ptr = DeflateJobHWPool::instance().acquireJob(&job_id)))
     {
         LOG_WARNING(log, "HardwareCodecDeflate::doDecompressDataReq acquireJob fail!");
         return 0;
@@ -166,7 +166,7 @@ uint32_t HardwareCodecDeflate::doDecompressDataReq(const char * source, uint32_t
     job_ptr->available_out = uncompressed_size;
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_LAST;
 
-    if (auto status = qpl_submit_job(job_ptr); QPL_STS_OK == status)
+    if (auto status = qpl_submit_job(job_ptr); status == QPL_STS_OK)
     {
         decomp_async_job_map.insert(std::make_pair(job_id, job_ptr));
         return job_id;
@@ -225,14 +225,14 @@ SoftwareCodecDeflate::~SoftwareCodecDeflate()
 
 qpl_job * SoftwareCodecDeflate::getJobCodecPtr()
 {
-    if (nullptr == sw_job)
+    if (!sw_job)
     {
         uint32_t size = 0;
         qpl_get_job_size(qpl_path_software, &size);
 
         sw_job = reinterpret_cast<qpl_job *>((std::make_unique<uint8_t[]>(size)).get());
         // Job initialization
-        if (auto status = qpl_init_job(qpl_path_software, sw_job); QPL_STS_OK != status)
+        if (auto status = qpl_init_job(qpl_path_software, sw_job); status != QPL_STS_OK)
             throw Exception(
                 "SoftwareCodecDeflate::getJobCodecPtr -> qpl_init_job fail:" + std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
     }
@@ -251,7 +251,7 @@ uint32_t SoftwareCodecDeflate::doCompressData(const char * source, uint32_t sour
     job_ptr->level = qpl_default_level;
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_DYNAMIC_HUFFMAN | QPL_FLAG_LAST | QPL_FLAG_OMIT_VERIFY;
 
-    if (auto status = qpl_execute_job(job_ptr); QPL_STS_OK != status)
+    if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
         throw Exception(
             "SoftwareCodecDeflate::doCompressData -> qpl_execute_job fail:" + std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
 
@@ -270,7 +270,7 @@ void SoftwareCodecDeflate::doDecompressData(const char * source, uint32_t source
     job_ptr->available_out = uncompressed_size;
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_LAST;
 
-    if (auto status = qpl_execute_job(job_ptr); QPL_STS_OK != status)
+    if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
         throw Exception(
             "SoftwareCodecDeflate::doDecompressData -> qpl_execute_job fail:" + std::to_string(status), ErrorCodes::CANNOT_DECOMPRESS);
 }
