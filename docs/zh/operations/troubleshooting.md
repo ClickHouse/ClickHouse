@@ -1,6 +1,6 @@
 ---
-sidebar_position: 46
-sidebar_label: "常见问题"
+toc_priority: 46
+toc_title: "常见问题"
 ---
 
 # 常见问题 {#troubleshooting}

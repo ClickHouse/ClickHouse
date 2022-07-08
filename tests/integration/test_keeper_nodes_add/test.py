@@ -7,6 +7,7 @@ import string
 import os
 import time
 from multiprocessing.dummy import Pool
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from kazoo.client import KazooClient, KazooState
 
@@ -97,16 +98,3 @@ def test_nodes_add(started_cluster):
 
     for i in range(100):
         assert zk_conn3.exists("/test_three_" + str(i)) is not None
-
-    # configs which change endpoints of server should not be allowed
-    node1.replace_in_config(
-        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
-        "node3",
-        "non_existing_node",
-    )
-
-    node1.query("SYSTEM RELOAD CONFIG")
-    time.sleep(2)
-    assert node1.contains_in_log(
-        "Config will be ignored because a server with ID 3 is already present in the cluster"
-    )

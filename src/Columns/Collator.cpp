@@ -86,7 +86,7 @@ AvailableCollationLocales::LocalesVector AvailableCollationLocales::getAvailable
 bool AvailableCollationLocales::isCollationSupported(const std::string & locale_name) const
 {
     /// We support locale names in any case, so we have to convert all to lower case
-    return locales_map.contains(Poco::toLower(locale_name));
+    return locales_map.count(Poco::toLower(locale_name));
 }
 
 Collator::Collator(const std::string & locale_)

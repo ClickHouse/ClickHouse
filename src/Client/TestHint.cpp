@@ -32,9 +32,12 @@ int parseErrorCode(DB::ReadBufferFromString & in)
 namespace DB
 {
 
-TestHint::TestHint(const String & query_)
+TestHint::TestHint(bool enabled_, const String & query_)
     : query(query_)
 {
+    if (!enabled_)
+        return;
+
     // Don't parse error hints in leading comments, because it feels weird.
     // Leading 'echo' hint is OK.
     bool is_leading_hint = true;

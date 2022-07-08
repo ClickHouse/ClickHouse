@@ -1,6 +1,6 @@
 ---
-sidebar_position: 38
-sidebar_label: SHOW
+toc_priority: 38
+toc_title: SHOW
 ---
 
 # SHOW 查询 {#show-queries}

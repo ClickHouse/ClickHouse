@@ -3,7 +3,6 @@
 
 #include <Core/Block.h>
 #include <Storages/StorageGenerateRandom.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
@@ -59,20 +58,20 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     }
 
     /// Parsing first argument as table structure and creating a sample block
-    structure = checkAndGetLiteralArgument<String>(args[0], "structure");
+    structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() >= 2)
     {
-        const auto & literal = args[1]->as<const ASTLiteral &>();
-        if (!literal.value.isNull())
-            random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
+        const Field & value = args[1]->as<const ASTLiteral &>().value;
+        if (!value.isNull())
+            random_seed = value.safeGet<UInt64>();
     }
 
     if (args.size() >= 3)
-        max_string_length = checkAndGetLiteralArgument<UInt64>(args[2], "max_string_length");
+        max_string_length = args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
     if (args.size() == 4)
-        max_array_length = checkAndGetLiteralArgument<UInt64>(args[3], "max_string_length");
+        max_array_length = args[3]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 }
 
 ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
@@ -83,7 +82,7 @@ ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextP
 StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = std::make_shared<StorageGenerateRandom>(
+    auto res = StorageGenerateRandom::create(
         StorageID(getDatabaseName(), table_name), columns, String{}, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;

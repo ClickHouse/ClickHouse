@@ -90,10 +90,6 @@ private:
     }
 };
 
-namespace detail
-{
-void appendHintsMessageImpl(String & message, const std::vector<String> & hints);
-}
 
 template <size_t MaxNumHints, typename Self>
 class IHints
@@ -104,12 +100,6 @@ public:
     std::vector<String> getHints(const String & name) const
     {
         return prompter.getHints(name, getAllRegisteredNames());
-    }
-
-    void appendHintsMessage(String & message, const String & name) const
-    {
-        auto hints = getHints(name);
-        detail::appendHintsMessageImpl(message, hints);
     }
 
     IHints() = default;
@@ -124,4 +114,5 @@ public:
 private:
     NamePrompter<MaxNumHints> prompter;
 };
+
 }

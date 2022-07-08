@@ -7,7 +7,7 @@
 
 namespace DB
 {
-class SeekableReadBuffer;
+class ReadBuffer;
 
 /// A backup entry represents some data which should be written to the backup or has been read from the backup.
 class IBackupEntry
@@ -23,10 +23,10 @@ public:
     virtual std::optional<UInt128> getChecksum() const { return {}; }
 
     /// Returns a read buffer for reading the data.
-    virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer() const = 0;
+    virtual std::unique_ptr<ReadBuffer> getReadBuffer() const = 0;
 };
 
-using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
+using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 
 }

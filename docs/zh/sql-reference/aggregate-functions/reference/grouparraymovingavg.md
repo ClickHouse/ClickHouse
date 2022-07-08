@@ -1,5 +1,5 @@
 ---
-sidebar_position: 114
+toc_priority: 114
 ---
 
 # groupArrayMovingAvg {#agg_function-grouparraymovingavg}

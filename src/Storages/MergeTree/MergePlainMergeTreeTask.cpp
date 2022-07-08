@@ -107,22 +107,15 @@ void MergePlainMergeTreeTask::prepare()
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
-            storage.merging_params,
-            txn);
+            storage.merging_params);
 }
 
 
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-    auto builder = merge_task->getBuilder();
-
-    MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction, builder);
-    transaction.commit();
-
+    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
     write_part_log({});
-    storage.incrementMergedPartsProfileEvent(new_part->getType());
 }
 
 }

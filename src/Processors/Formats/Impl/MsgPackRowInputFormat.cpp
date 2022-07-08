@@ -359,7 +359,7 @@ bool MsgPackVisitor::visit_ext(const char * value, uint32_t size)
         return true;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported MsgPack extension type: {:x}", type);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported MsgPack extension type: {%x}", type);
 }
 
 void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
@@ -414,7 +414,7 @@ void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
 }
 
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
+    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
     if (!number_of_columns)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "You must specify setting input_format_msgpack_number_of_columns to extract table schema from MsgPack data");
@@ -498,7 +498,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             msgpack::object_ext object_ext = object.via.ext;
             if (object_ext.type() == int8_t(MsgPackExtensionTypes::UUIDType))
                 return std::make_shared<DataTypeUUID>();
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {%x} is not supported", object_ext.type());
         }
     }
     __builtin_unreachable();
@@ -535,7 +535,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
 
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)
+    factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
     {
         return std::make_shared<MsgPackSchemaReader>(buf, settings);
     });

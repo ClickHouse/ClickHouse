@@ -50,7 +50,6 @@ TEST(Processors, PortsNotConnected)
     processors.emplace_back(std::move(source));
     processors.emplace_back(std::move(sink));
 
-#ifndef ABORT_ON_LOGICAL_ERROR
     try
     {
         QueryStatus * element = nullptr;
@@ -63,5 +62,4 @@ TEST(Processors, PortsNotConnected)
         std::cout << e.displayText() << std::endl;
         ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos) << "Expected 'pipeline', got: " << e.displayText();
     }
-#endif
 }

@@ -19,10 +19,6 @@ ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
 {
 }
 
-size_t ReadIndirectBufferFromRemoteFS::getFileSize()
-{
-    return impl->getFileSize();
-}
 
 off_t ReadIndirectBufferFromRemoteFS::getPosition()
 {

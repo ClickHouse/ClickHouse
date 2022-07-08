@@ -1,5 +1,5 @@
 ---
-sidebar_position: 202
+toc_priority: 202
 ---
 
 # quantileExact {#quantileexact}

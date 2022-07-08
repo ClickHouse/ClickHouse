@@ -7,9 +7,9 @@
 #include <array>
 #include <optional>
 #include <functional>
-#include <csignal>
+#include <signal.h>
 
-#ifdef OS_DARWIN
+#ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
 #   ifdef __clang__
 #       pragma clang diagnostic ignored "-Wreserved-id-macro"

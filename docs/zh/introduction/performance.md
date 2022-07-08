@@ -1,6 +1,6 @@
 ---
-sidebar_position: 3
-sidebar_label: ClickHouse性能
+toc_priority: 3
+toc_title: ClickHouse性能
 ---
 
 # 性能 {#performance}

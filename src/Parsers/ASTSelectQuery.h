@@ -32,8 +32,7 @@ public:
         LIMIT_BY,
         LIMIT_OFFSET,
         LIMIT_LENGTH,
-        SETTINGS,
-        INTERPOLATE
+        SETTINGS
     };
 
     static String expressionToString(Expression expr)
@@ -70,8 +69,6 @@ public:
                 return "LIMIT LENGTH";
             case Expression::SETTINGS:
                 return "SETTINGS";
-            case Expression::INTERPOLATE:
-                return "INTERPOLATE";
         }
         return "";
     }
@@ -86,7 +83,6 @@ public:
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
     bool group_by_with_constant_keys = false;
-    bool group_by_with_grouping_sets = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
@@ -102,7 +98,7 @@ public:
     ASTPtr where()          const { return getExpression(Expression::WHERE); }
     ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
     ASTPtr having()         const { return getExpression(Expression::HAVING); }
-    ASTPtr window()         const { return getExpression(Expression::WINDOW); }
+    ASTPtr window() const { return getExpression(Expression::WINDOW); }
     ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
     ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
@@ -110,7 +106,6 @@ public:
     ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
-    ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 
     bool hasFiltration() const { return where() || prewhere() || having(); }
 
@@ -140,7 +135,7 @@ public:
 
     void setFinal();
 
-    QueryKind getQueryKind() const override { return QueryKind::Select; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
