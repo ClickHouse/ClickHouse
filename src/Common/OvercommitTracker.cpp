@@ -25,6 +25,9 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     , allow_release(true)
 {}
 
+/// Logging doing allocations (for creating formatted strings, forward messages
+/// to channels and so on), and there should not be any recursive
+/// OvercommitTracker calls, since this may lead to deadlocks.
 #define LOG_DEBUG_SAFE(...)                                                                               \
     do {                                                                                                  \
         OvercommitTrackerBlockerInThread blocker;                                                         \

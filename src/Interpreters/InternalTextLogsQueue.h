@@ -1,14 +1,17 @@
 #pragma once
+
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/OvercommitTracker.h>
 #include <Core/Block.h>
 
 
 namespace DB
 {
 
-class InternalTextLogsQueue : public ConcurrentBoundedQueue<MutableColumns>
+class InternalTextLogsQueue
 {
+private:
+    ConcurrentBoundedQueue<MutableColumns> queue;
+
 public:
     /// You should not push logs in the queue if their priority greater max_priority
     int max_priority;
@@ -23,6 +26,10 @@ public:
 
     /// Converts priority from Poco::Message::Priority to a string
     static const char * getPriorityName(int priority);
+
+    /// ConcurrentBoundedQueue interface.
+    void emplace(MutableColumns && columns);
+    bool tryPop(MutableColumns & columns);
 };
 
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
