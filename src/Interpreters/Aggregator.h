@@ -1276,14 +1276,7 @@ private:
         ManyAggregatedDataVariants & non_empty_data) const;
 
     template <typename Method, typename Table>
-    void convertToBlockImpl(
-        Method & method,
-        Table & data,
-        MutableColumns & key_columns,
-        AggregateColumnsData & aggregate_columns,
-        MutableColumns & final_aggregate_columns,
-        Arena * arena,
-        bool final) const;
+    BlocksList convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1292,19 +1285,10 @@ private:
         Arena * arena) const;
 
     template <typename Method, bool use_compiled_functions, typename Table>
-    void convertToBlockImplFinal(
-        Method & method,
-        Table & data,
-        std::vector<IColumn *> key_columns,
-        MutableColumns & final_aggregate_columns,
-        Arena * arena) const;
+    BlocksList convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t rows) const;
 
     template <typename Method, typename Table>
-    void convertToBlockImplNotFinal(
-        Method & method,
-        Table & data,
-        std::vector<IColumn *>  key_columns,
-        AggregateColumnsData & aggregate_columns) const;
+    BlocksList convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const;
 
     struct OutputBlockColumns
     {
