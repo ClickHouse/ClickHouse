@@ -88,6 +88,7 @@ std::optional<size_t> IHiveFile::getRows()
             has_init_rows = true;
         }
     }
+
     return rows;
 }
 
