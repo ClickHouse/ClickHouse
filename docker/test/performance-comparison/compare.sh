@@ -1332,8 +1332,6 @@ $REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numact
 $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
 EOF
 
-    head ci-checks.tsv
-
     # Also insert some data about the check into the CI checks table.
     "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
         < ci-checks.tsv
