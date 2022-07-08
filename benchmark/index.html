@@ -108,7 +108,12 @@
             padding-bottom: 0.5rem;
         }
 
-        .summary-row:hover {
+        .th-entry-hilite {
+            background: #EEE;
+            font-weight: bold;
+        }
+
+        .summary-row:hover, .summary-row-hilite {
             background: #EEE !important;
             font-weight: bold;
         }
@@ -2625,6 +2630,18 @@ unique_systems.map(elem => {
     systems.appendChild(selector);
     if (!(elem in selectors.system)) { selectors.system[elem] = true; }
     selector.addEventListener('click', e => toggle(e, elem, selectors.system));
+
+    /// Highlighting summary rows and table columns on hovering over the system selector.
+    selector.addEventListener('mouseover', e => {
+        [...document.querySelectorAll('.summary-row')].map(row => {
+            row.className = row.dataset.system == elem ? 'summary-row summary-row-hilite' : 'summary-row' });
+        [...document.querySelectorAll('.th-entry')].map(th => {
+            th.className = th.dataset.system == elem ? 'th-entry th-entry-hilite' : 'th-entry' });
+    });
+    selector.addEventListener('mouseout', e => {
+        [...document.querySelectorAll('.summary-row')].map(row => { row.className = 'summary-row' });
+        [...document.querySelectorAll('.th-entry')].map(row => { row.className = 'th-entry' });
+    });
 });
 
 [... new Set(data.map(elem => elem.tags).flat())].map(elem => {
@@ -2758,6 +2775,8 @@ function renderSummary(filtered_data) {
         let tr = document.createElement('tr');
         tr.className = 'summary-row';
 
+        tr.dataset.system = elem.system;
+
         let td_name = document.createElement('td');
         td_name.className = 'summary-name';
 
@@ -2861,6 +2880,7 @@ function render() {
 
     /// Generate details
 
+    /// Global checkbox
     {
         let th_checkbox = document.createElement('th');
         let checkbox = document.createElement('input');
@@ -2877,10 +2897,13 @@ function render() {
         details_head.appendChild(document.createElement('th'));
     }
 
+    /// Table header
     sorted_indices.map(idx => {
         const elem = filtered_data[idx];
         let th = document.createElement('th');
         th.appendChild(document.createTextNode(`${elem.system}\n(${elem.machine})`));
+        th.className = 'th-entry';
+        th.dataset.system = elem.system;
         details_head.appendChild(th);
     });
 
@@ -2934,6 +2957,7 @@ function render() {
         details_body.appendChild(tr);
     }
 
+    /// Query runtimes
     const num_queries = filtered_data[0].result.length;
 
     for (let query_num = 0; query_num < num_queries; ++query_num) {
