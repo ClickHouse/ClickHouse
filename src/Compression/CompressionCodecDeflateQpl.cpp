@@ -15,8 +15,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
 }
-qpl_job * DeflateQplJobHWPool::hw_job_pool[JOB_POOL_SIZE];
-std::atomic_bool DeflateQplJobHWPool::hw_job_locks[JOB_POOL_SIZE];
+qpl_job * DeflateQplJobHWPool::hw_job_ptr_pool[JOB_NUMBER];
+std::atomic_bool DeflateQplJobHWPool::hw_job_ptr_locks[JOB_NUMBER];
 bool DeflateQplJobHWPool::job_pool_ready;
 
 DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
@@ -28,47 +28,46 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 DeflateQplJobHWPool::DeflateQplJobHWPool():
     log(&Poco::Logger::get("DeflateQplJobHWPool")),
     random_engine(std::random_device()()),
-    distribution(0, JOB_POOL_SIZE-1)
+    distribution(0, JOB_NUMBER-1)
 {
-    uint32_t size = 0;
+    uint32_t job_size = 0;
     uint32_t index = 0;
-    /// get total size required for saving qpl job context
-    qpl_get_job_size(PATH, &size);
-    /// allocate buffer for storing all job objects
-    hw_job_pool_buffer = std::make_unique<uint8_t[]>(size * JOB_POOL_SIZE);
-    memset(hw_job_pool, 0, JOB_POOL_SIZE*sizeof(qpl_job *));
-    for (index = 0; index < JOB_POOL_SIZE; ++index)
+    const char * qpl_version = qpl_get_library_version();
+
+    /// Get size required for saving a single qpl job object
+    qpl_get_job_size(PATH, &job_size);
+    /// Allocate entire buffer for storing all job objects
+    hw_job_buffer = std::make_unique<uint8_t[]>(job_size * JOB_NUMBER);
+    /// Initialize pool for storing all job object pointers
+    memset(hw_job_ptr_pool, 0, JOB_NUMBER*sizeof(qpl_job *));
+    /// Reallocate buffer for each job object through shifting address offset
+    for (index = 0; index < JOB_NUMBER; ++index)
     {
-        qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(hw_job_pool_buffer.get() + index*JOB_POOL_SIZE);
+        qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(hw_job_buffer.get() + index*job_size);
         if ((!qpl_job_ptr) || (qpl_init_job(PATH, qpl_job_ptr) != QPL_STS_OK))
-            break;
-        hw_job_pool[index] = qpl_job_ptr;
+        {
+            jobPoolReady() = false;
+            LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. QPL Version:{}.",qpl_version);
+            return;
+        }
+        hw_job_ptr_pool[index] = qpl_job_ptr;
         unLockJob(index);
     }
 
-    const char * qpl_version = qpl_get_library_version();
-    if(JOB_POOL_SIZE == index)
-    {
-        jobPoolReady() = true;
-        LOG_DEBUG(log, "Hardware-assisted DeflateQpl codec is ready! QPL Version:{}",qpl_version);
-    }
-    else
-    {
-        jobPoolReady() = false;
-        LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. QPL Version:{}.",qpl_version);
-    }
+    jobPoolReady() = true;
+    LOG_DEBUG(log, "Hardware-assisted DeflateQpl codec is ready! QPL Version:{}",qpl_version);
 }
 
 DeflateQplJobHWPool::~DeflateQplJobHWPool()
 {
-    for (uint32_t i = 0; i < JOB_POOL_SIZE; ++i)
+    for (uint32_t i = 0; i < JOB_NUMBER; ++i)
     {
-        if (hw_job_pool[i])
+        if (hw_job_ptr_pool[i])
         {
             while (!tryLockJob(i));
-            qpl_fini_job(hw_job_pool[i]);
+            qpl_fini_job(hw_job_ptr_pool[i]);
             unLockJob(i);
-            hw_job_pool[i] = nullptr;
+            hw_job_ptr_pool[i] = nullptr;
         }
     }
     jobPoolReady() = false;
@@ -84,13 +83,13 @@ qpl_job * DeflateQplJobHWPool::acquireJob(uint32_t * job_id)
         {
             index = distribution(random_engine);
             retry++;
-            if (retry > JOB_POOL_SIZE)
+            if (retry > JOB_NUMBER)
             {
                 return nullptr;
             }
         }
-        *job_id = JOB_POOL_SIZE - index;
-        return hw_job_pool[index];
+        *job_id = JOB_NUMBER - index;
+        return hw_job_ptr_pool[index];
     }
     else
         return nullptr;
@@ -100,9 +99,9 @@ qpl_job * DeflateQplJobHWPool::releaseJob(uint32_t job_id)
 {
     if (jobPoolReady())
     {
-        uint32_t index = JOB_POOL_SIZE - job_id;
+        uint32_t index = JOB_NUMBER - job_id;
         ReleaseJobObjectGuard _(index);
-        return hw_job_pool[index];
+        return hw_job_ptr_pool[index];
     }
     else
         return nullptr;
@@ -111,8 +110,8 @@ qpl_job * DeflateQplJobHWPool::releaseJob(uint32_t job_id)
 bool DeflateQplJobHWPool::tryLockJob(size_t index)
 {
     bool expected = false;
-    assert(index < JOB_POOL_SIZE);
-    return hw_job_locks[index].compare_exchange_strong(expected, true);
+    assert(index < JOB_NUMBER);
+    return hw_job_ptr_locks[index].compare_exchange_strong(expected, true);
 }
 
 //HardwareCodecDeflateQpl
