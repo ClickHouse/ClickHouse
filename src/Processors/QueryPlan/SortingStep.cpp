@@ -111,7 +111,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
 
     /// merge sorted
-    if (input_sort_mode == DataStream::SortMode::Chunk || input_sort_desc.hasPrefix(result_description))
+    if (input_sort_mode == DataStream::SortMode::Chunk && input_sort_desc.hasPrefix(result_description))
     {
         if (pipeline.getNumStreams() > 1)
         {
@@ -124,7 +124,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     }
 
     /// finish shorting
-    if (input_sort_mode == DataStream::SortMode::Chunk || result_description.hasPrefix(input_sort_desc))
+    if (input_sort_mode == DataStream::SortMode::Chunk && result_description.hasPrefix(input_sort_desc))
     {
         if (pipeline.getNumStreams() > 1)
         {
