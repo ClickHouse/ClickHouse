@@ -117,12 +117,14 @@ private:
 class HardwareCodecDeflate
 {
 public:
-    bool hw_enabled;
+    /// RET_ERROR stands for hardware codec fail,need fallback to software codec.
+    static constexpr int32_t RET_ERROR = -1;
+
     HardwareCodecDeflate();
     ~HardwareCodecDeflate();
-    uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
-    uint32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
-    uint32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
+    int32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
+    int32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
+    int32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
     void flushAsynchronousDecompressRequests();
 
 private:
