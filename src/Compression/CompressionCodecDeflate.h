@@ -105,13 +105,12 @@ private:
 class SoftwareCodecDeflate
 {
 public:
-    SoftwareCodecDeflate();
     ~SoftwareCodecDeflate();
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size);
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
 
 private:
-    qpl_job * sw_job;
+    qpl_job * sw_job = nullptr;
     qpl_job * getJobCodecPtr();
 };
 
@@ -127,6 +126,9 @@ public:
     void flushAsynchronousDecompressRequests();
 
 private:
+    /// Asynchronous job map for decompression: job ID - job object.
+    /// For each submission, push job ID && job object into this map;
+    /// For flush, pop out job ID && job object from this map. Use job ID to release job lock and use job object to check job status till complete.
     std::map<uint32_t, qpl_job *> decomp_async_job_map;
     Poco::Logger * log;
 };

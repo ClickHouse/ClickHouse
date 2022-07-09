@@ -47,12 +47,12 @@ DeflateJobHWPool::DeflateJobHWPool():log(&Poco::Logger::get("DeflateJobHWPool"))
     if(JOB_POOL_SIZE == index)
     {
         jobPoolReady() = true;
-        LOG_DEBUG(log, "QPL deflate HW codec is ready! QPL Version:{}",qpl_version);
+        LOG_DEBUG(log, "Hardware-assisted DEFLATE codec is ready! QPL Version:{}",qpl_version);
     }
     else
     {
         jobPoolReady() = false;
-        LOG_WARNING(log, "QPL deflate HW codec is not ready! Please check if IAA hardware support. Will fallback to software codec here. QPL Version:{}.",qpl_version);
+        LOG_WARNING(log, "Initialization of hardware-assisted DEFLATE codec failed, falling back to software DEFLATE codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. QPL Version:{}.",qpl_version);
     }
 }
 
@@ -213,10 +213,6 @@ void HardwareCodecDeflate::flushAsynchronousDecompressRequests()
     }
 }
 
-SoftwareCodecDeflate::SoftwareCodecDeflate():sw_job(nullptr)
-{
-}
-
 SoftwareCodecDeflate::~SoftwareCodecDeflate()
 {
     if (nullptr != sw_job)
@@ -233,8 +229,8 @@ qpl_job * SoftwareCodecDeflate::getJobCodecPtr()
         sw_job = reinterpret_cast<qpl_job *>((std::make_unique<uint8_t[]>(size)).get());
         // Job initialization
         if (auto status = qpl_init_job(qpl_path_software, sw_job); status != QPL_STS_OK)
-            throw Exception(
-                "SoftwareCodecDeflate::getJobCodecPtr -> qpl_init_job fail:" + std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
+            throw Exception(ErrorCodes::CANNOT_COMPRESS,
+                "Initialization of DEFLATE software fallback codec failed. (details: qpl_init_job with error code {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
     }
     return sw_job;
 }
@@ -252,8 +248,8 @@ uint32_t SoftwareCodecDeflate::doCompressData(const char * source, uint32_t sour
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_DYNAMIC_HUFFMAN | QPL_FLAG_LAST | QPL_FLAG_OMIT_VERIFY;
 
     if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
-        throw Exception(
-            "SoftwareCodecDeflate::doCompressData -> qpl_execute_job fail:" + std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Execution of DEFLATE software fallback codec failed. (details: qpl_execute_job with error code {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
 
     return job_ptr->total_out;
 }
@@ -271,8 +267,8 @@ void SoftwareCodecDeflate::doDecompressData(const char * source, uint32_t source
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_LAST;
 
     if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
-        throw Exception(
-            "SoftwareCodecDeflate::doDecompressData -> qpl_execute_job fail:" + std::to_string(status), ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+            "Execution of DEFLATE software fallback codec failed. (details: qpl_execute_job with error code {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
 }
 
 //CompressionCodecDeflate
