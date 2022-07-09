@@ -3,14 +3,14 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 
 /// These must be exposed in header for the purpose of dynamic compilation.
-#include <AggregateFunctions/QuantileReservoirSampler.h>
-#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
+#include <AggregateFunctions/QuantileBFloat16Histogram.h>
 #include <AggregateFunctions/QuantileExact.h>
 #include <AggregateFunctions/QuantileExactWeighted.h>
-#include <AggregateFunctions/QuantileApproximateWeighted.h>
-#include <AggregateFunctions/QuantileTiming.h>
+#include <AggregateFunctions/QuantileInterpolatedWeighted.h>
+#include <AggregateFunctions/QuantileReservoirSampler.h>
+#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
 #include <AggregateFunctions/QuantileTDigest.h>
-#include <AggregateFunctions/QuantileBFloat16Histogram.h>
+#include <AggregateFunctions/QuantileTiming.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
@@ -226,8 +226,8 @@ struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExac
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
 
-struct NameQuantileApproximateWeighted { static constexpr auto name = "quantileApproximateWeighted"; };
-struct NameQuantilesApproximateWeighted { static constexpr auto name = "quantilesApproximateWeighted"; };
+struct NameQuantileInterpolatedWeighted { static constexpr auto name = "quantileInterpolatedWeighted"; };
+struct NameQuantilesInterpolatedWeighted { static constexpr auto name = "quantilesInterpolatedWeighted"; };
 
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };
 struct NameQuantileTimingWeighted { static constexpr auto name = "quantileTimingWeighted"; };
