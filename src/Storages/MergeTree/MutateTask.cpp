@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -44,6 +45,7 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 
     return true;
 }
+
 
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
@@ -541,17 +543,18 @@ static NameToNameVector collectFilesForRenames(
 /// Initialize and write to disk new part fields like checksums, columns, etc.
 void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
+    const DataPartStorageBuilderPtr & data_part_storage_builder,
     MergeTreeData::MutableDataPartPtr new_data_part,
     ExecuteTTLType execute_ttl_type,
     const CompressionCodecPtr & codec,
     ContextPtr context)
 {
-    auto disk = new_data_part->volume->getDisk();
-    auto part_path = fs::path(new_data_part->getFullRelativePath());
+    //auto disk = new_data_part->volume->getDisk();
+    //auto part_path = fs::path(new_data_part->getRelativePath());
 
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
-        auto out = disk->writeFile(part_path / IMergeTreeDataPart::UUID_FILE_NAME, 4096, WriteMode::Rewrite, context->getWriteSettings());
+        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
@@ -561,7 +564,7 @@ void finalizeMutatedPart(
     if (execute_ttl_type != ExecuteTTLType::NONE)
     {
         /// Write a file with ttl infos in json format.
-        auto out_ttl = disk->writeFile(part_path / "ttl.txt", 4096, WriteMode::Rewrite, context->getWriteSettings());
+        auto out_ttl = data_part_storage_builder->writeFile("ttl.txt", 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -570,7 +573,7 @@ void finalizeMutatedPart(
 
     if (!new_data_part->getSerializationInfos().empty())
     {
-        auto out = disk->writeFile(part_path / IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, WriteMode::Rewrite, context->getWriteSettings());
+        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
@@ -579,18 +582,18 @@ void finalizeMutatedPart(
 
     {
         /// Write file with checksums.
-        auto out_checksums = disk->writeFile(part_path / "checksums.txt", 4096, WriteMode::Rewrite, context->getWriteSettings());
+        auto out_checksums = data_part_storage_builder->writeFile("checksums.txt", 4096, context->getWriteSettings());
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
     {
-        auto out = disk->writeFile(part_path / IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, WriteMode::Rewrite, context->getWriteSettings());
+        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
     }
 
     {
         /// Write a file with a description of columns.
-        auto out_columns = disk->writeFile(part_path / "columns.txt", 4096, WriteMode::Rewrite, context->getWriteSettings());
+        auto out_columns = data_part_storage_builder->writeFile("columns.txt", 4096, context->getWriteSettings());
         new_data_part->getColumns().writeText(*out_columns);
     } /// close fd
 
@@ -600,8 +603,7 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
-    new_data_part->setBytesOnDisk(
-        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
+    new_data_part->setBytesOnDisk(new_data_part->data_part_storage->calculateTotalSizeOnDisk());
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 }
@@ -653,10 +655,8 @@ struct MutationContext
     MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
         = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
 
-    VolumePtr single_disk_volume;
     MergeTreeData::MutableDataPartPtr new_data_part;
-    DiskPtr disk;
-    String new_part_tmp_path;
+    DataPartStorageBuilderPtr data_part_storage_builder;
 
     IMergedBlockOutputStreamPtr out{nullptr};
 
@@ -691,8 +691,7 @@ public:
         MergeTreeData::MutableDataPartsVector && parts_,
         const ProjectionDescription & projection_,
         size_t & block_num_,
-        MutationContextPtr ctx_
-        )
+        MutationContextPtr ctx_)
         : name(std::move(name_))
         , parts(std::move(parts_))
         , projection(projection_)
@@ -737,9 +736,11 @@ public:
             if (next_level_parts.empty())
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-                selected_parts[0]->renameTo(projection.name + ".proj", true);
+                auto builder = selected_parts[0]->data_part_storage->getBuilder();
+                selected_parts[0]->renameTo(projection.name + ".proj", true, builder);
                 selected_parts[0]->name = projection.name;
                 selected_parts[0]->is_temp = false;
+                builder->commit();
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
                 /// Task is finished
@@ -784,6 +785,7 @@ public:
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 ctx->new_data_part.get(),
+                ctx->data_part_storage_builder.get(),
                 ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
@@ -943,7 +945,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             if (projection_block)
             {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                    *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
+                tmp_part.builder->commit();
                 tmp_part.finalize();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
             }
@@ -965,7 +968,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (projection_block)
         {
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
+            temp_part.builder->commit();
             temp_part.finalize();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
         }
@@ -1065,7 +1069,7 @@ private:
 
     void prepare()
     {
-        ctx->disk->createDirectories(ctx->new_part_tmp_path);
+        ctx->data_part_storage_builder->createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -1100,6 +1104,7 @@ private:
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
+            ctx->data_part_storage_builder,
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
@@ -1192,7 +1197,7 @@ private:
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
-        ctx->disk->createDirectories(ctx->new_part_tmp_path);
+        ctx->data_part_storage_builder->createDirectories();
 
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
@@ -1203,12 +1208,12 @@ private:
 
         NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
-        for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
+        for (auto it = ctx->source_part->data_part_storage->iterate(); it->isValid(); it->next())
         {
             if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
-            String destination = ctx->new_part_tmp_path;
+            String destination;
             String file_name = it->name();
 
             auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
@@ -1220,29 +1225,31 @@ private:
             {
                 if (rename_it->second.empty())
                     continue;
-
-                destination += rename_it->second;
+                destination = rename_it->second;
             }
             else
             {
-                destination += it->name();
+                destination = it->name();
             }
 
-
-            if (!ctx->disk->isDirectory(it->path()))
+            if (it->isFile())
             {
-                ctx->disk->createHardLink(it->path(), destination);
+                ctx->data_part_storage_builder->createHardLinkFrom(
+                    *ctx->source_part->data_part_storage, it->name(), destination);
                 hardlinked_files.insert(it->name());
             }
-
             else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
-                ctx->disk->createDirectories(destination);
-                for (auto p_it = ctx->disk->iterateDirectory(it->path()); p_it->isValid(); p_it->next())
+                ctx->data_part_storage_builder->createProjection(destination);
+
+                auto projection_data_part_storage = ctx->source_part->data_part_storage->getProjection(destination);
+                auto projection_data_part_storage_builder = ctx->data_part_storage_builder->getProjection(destination);
+
+                for (auto p_it = projection_data_part_storage->iterate(); p_it->isValid(); p_it->next())
                 {
-                    String p_destination = fs::path(destination) / p_it->name();
-                    ctx->disk->createHardLink(p_it->path(), p_destination);
+                    projection_data_part_storage_builder->createHardLinkFrom(
+                        *projection_data_part_storage, p_it->name(), p_it->name());
                     hardlinked_files.insert(p_it->name());
                 }
             }
@@ -1272,6 +1279,7 @@ private:
                 builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
+                ctx->data_part_storage_builder,
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header,
@@ -1323,7 +1331,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->data_part_storage_builder, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
     }
 
 
@@ -1458,11 +1466,22 @@ bool MutateTask::prepare()
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
     }
 
-    ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
     /// FIXME new_data_part is not used in the case when we clone part with cloneAndLoadDataPartOnSameDisk and return false
     /// Is it possible to handle this case earlier?
+
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        single_disk_volume,
+        ctx->data->getRelativeDataPath(),
+        "tmp_mut_" + ctx->future_part->name);
+
+    ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
+        single_disk_volume,
+        ctx->data->getRelativeDataPath(),
+        "tmp_mut_" + ctx->future_part->name);
+
     ctx->new_data_part = ctx->data->createPart(
-        ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, ctx->single_disk_volume, "tmp_mut_" + ctx->future_part->name);
+        ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, data_part_storage);
 
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
@@ -1478,9 +1497,6 @@ bool MutateTask::prepare()
     ctx->new_data_part->setColumns(new_columns);
     ctx->new_data_part->setSerializationInfos(new_infos);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
-
-    ctx->disk = ctx->new_data_part->volume->getDisk();
-    ctx->new_part_tmp_path = ctx->new_data_part->getFullRelativePath();
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())
@@ -1540,5 +1556,9 @@ const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
     return ctx->hardlinked_files;
 }
 
+DataPartStorageBuilderPtr MutateTask::getBuilder() const
+{
+    return ctx->data_part_storage_builder;
+}
 
 }

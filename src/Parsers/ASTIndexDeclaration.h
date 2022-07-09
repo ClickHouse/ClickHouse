@@ -16,6 +16,7 @@ public:
     IAST * expr;
     ASTFunction * type;
     UInt64 granularity;
+    bool part_of_create_index_query = false;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Index"; }

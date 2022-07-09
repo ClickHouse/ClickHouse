@@ -215,7 +215,8 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
         {
-            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected", response->xid, response->getOpNum(), session_id);
+            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected",
+                response->xid, response->xid == Coordination::WATCH_XID ? "Watch" : toString(response->getOpNum()), session_id);
             return;
         }
 
@@ -651,12 +652,7 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
-    Keeper4LWInfo result;
-    result.is_follower = server->isFollower();
-    result.is_standalone = !result.is_follower && server->getFollowerCount() == 0;
-    result.is_leader = isLeader();
-    result.is_observer = server->isObserver();
-    result.has_leader = hasLeader();
+    Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
     {
         std::lock_guard lock(push_request_mutex);
         result.outstanding_requests_count = requests_queue->size();
@@ -665,13 +661,6 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
         std::lock_guard lock(session_to_response_callback_mutex);
         result.alive_connections_count = session_to_response_callback.size();
     }
-    if (result.is_leader)
-    {
-        result.follower_count = server->getFollowerCount();
-        result.synced_follower_count = server->getSyncedFollowerCount();
-    }
-    result.total_nodes_count = server->getKeeperStateMachine()->getNodesCount();
-    result.last_zxid = server->getKeeperStateMachine()->getLastProcessedZxid();
     return result;
 }
 
