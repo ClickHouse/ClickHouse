@@ -41,8 +41,8 @@ template <typename Value, bool _> using FuncQuantilesExactInclusive = AggregateF
 template <typename Value, bool _> using FuncQuantileExactWeighted = AggregateFunctionQuantile<Value, QuantileExactWeighted<Value>, NameQuantileExactWeighted, true, void, false>;
 template <typename Value, bool _> using FuncQuantilesExactWeighted = AggregateFunctionQuantile<Value, QuantileExactWeighted<Value>, NameQuantilesExactWeighted, true, void, true>;
 
-template <typename Value, bool _> using FuncQuantileApproximateWeighted = AggregateFunctionQuantile<Value, QuantileApproximateWeighted<Value>, NameQuantileApproximateWeighted, true, void, false>;
-template <typename Value, bool _> using FuncQuantilesApproximateWeighted = AggregateFunctionQuantile<Value, QuantileApproximateWeighted<Value>, NameQuantilesApproximateWeighted, true, void, true>;
+template <typename Value, bool _> using FuncQuantileInterpolatedWeighted = AggregateFunctionQuantile<Value, QuantileInterpolatedWeighted<Value>, NameQuantileInterpolatedWeighted, true, void, false>;
+template <typename Value, bool _> using FuncQuantilesInterpolatedWeighted = AggregateFunctionQuantile<Value, QuantileInterpolatedWeighted<Value>, NameQuantilesInterpolatedWeighted, true, void, true>;
 
 template <typename Value, bool _> using FuncQuantileTiming = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantileTiming, false, Float32, false>;
 template <typename Value, bool _> using FuncQuantilesTiming = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantilesTiming, false, Float32, true>;
@@ -75,8 +75,8 @@ constexpr bool supportDecimal()
         std::is_same_v<Function<Float32, false>, FuncQuantilesExactHigh<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantileExactWeighted<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantileApproximateWeighted<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesApproximateWeighted<Float32, false>>;
+        std::is_same_v<Function<Float32, false>, FuncQuantileInterpolatedWeighted<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesInterpolatedWeighted<Float32, false>>;
 }
 
 template <template <typename, bool> class Function>
@@ -88,8 +88,8 @@ constexpr bool supportBigInt()
         std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantileExactWeighted<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesApproximateWeighted<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesApproximateWeighted<Float32, false>>;
+        std::is_same_v<Function<Float32, false>, FuncQuantilesInterpolatedWeighted<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesInterpolatedWeighted<Float32, false>>;
 }
 
 template <template <typename, bool> class Function>
@@ -161,8 +161,8 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerFunction(NameQuantileExactWeighted::name, createAggregateFunctionQuantile<FuncQuantileExactWeighted>);
     factory.registerFunction(NameQuantilesExactWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesExactWeighted>, properties });
 
-    factory.registerFunction(NameQuantileApproximateWeighted::name, createAggregateFunctionQuantile<FuncQuantileApproximateWeighted>);
-    factory.registerFunction(NameQuantilesApproximateWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesApproximateWeighted>, properties });
+    factory.registerFunction(NameQuantileInterpolatedWeighted::name, createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>);
+    factory.registerFunction(NameQuantilesInterpolatedWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesInterpolatedWeighted>, properties });
 
     factory.registerFunction(NameQuantileTiming::name, createAggregateFunctionQuantile<FuncQuantileTiming>);
     factory.registerFunction(NameQuantilesTiming::name, { createAggregateFunctionQuantile<FuncQuantilesTiming>, properties });
@@ -189,7 +189,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerAlias("medianExactLow", NameQuantileExactLow::name);
     factory.registerAlias("medianExactHigh", NameQuantileExactHigh::name);
     factory.registerAlias("medianExactWeighted", NameQuantileExactWeighted::name);
-    factory.registerAlias("medianApproximateWeighted", NameQuantileApproximateWeighted::name);
+    factory.registerAlias("medianInterpolatedWeighted", NameQuantileInterpolatedWeighted::name);
     factory.registerAlias("medianTiming", NameQuantileTiming::name);
     factory.registerAlias("medianTimingWeighted", NameQuantileTimingWeighted::name);
     factory.registerAlias("medianTDigest", NameQuantileTDigest::name);
