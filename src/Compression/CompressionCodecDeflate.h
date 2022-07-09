@@ -2,6 +2,7 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <qpl/qpl.h>
+#include <random>
 
 namespace Poco
 {
@@ -31,10 +32,10 @@ public:
         if (jobPoolReady())
         {
             uint32_t retry = 0;
-            auto index = random(JOB_POOL_SIZE);
+            auto index = distribution(random_engine);
             while (tryLockJob(index) == false)
             {
-                index = random(JOB_POOL_SIZE);
+                index = distribution(random_engine);
                 retry++;
                 if (retry > JOB_POOL_SIZE)
                 {
@@ -65,15 +66,6 @@ public:
     }
 
 private:
-    static size_t random(uint32_t pool_size)
-    {
-        size_t tsc = 0;
-        unsigned lo, hi;
-        __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi) : :);
-        tsc = (((static_cast<uint64_t>(hi)) << 32) | (static_cast<uint64_t>(lo)));
-        return (static_cast<size_t>((tsc * 44485709377909ULL) >> 4)) % pool_size;
-    }
-
     bool tryLockJob(size_t index)
     {
         bool expected = false;
@@ -100,6 +92,8 @@ private:
     };
     std::unique_ptr<uint8_t[]> hw_job_pool_buffer;
     Poco::Logger * log;
+    std::mt19937 random_engine;
+    std::uniform_int_distribution<int> distribution;
 };
 
 class SoftwareCodecDeflate
