@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,6 +12,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 mkdir -p ${CLICKHOUSE_USER_FILES_PATH}/
+
+rm -rf ${CLICKHOUSE_USER_FILES_PATH}/file_{0..10}.json
 
 echo '{"obj": "aaa", "id": 1, "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_0.json
 echo '{"id": 2, "obj": "bbb", "s": "bar"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_1.json
@@ -32,5 +34,5 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_regex (id UInt64, obj String, s String) 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_regex SELECT * FROM file('file_{0..10}.json','JSONEachRow');"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() from t_regex;"
 
-rm -rf ${CLICKHOUSE_USER_FILES_PATH}/file_*.json;
+rm -rf ${CLICKHOUSE_USER_FILES_PATH}/file_{0..10}.json;
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_regex;"
