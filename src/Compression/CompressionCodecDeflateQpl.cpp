@@ -18,6 +18,7 @@ namespace ErrorCodes
 qpl_job * DeflateQplJobHWPool::hw_job_ptr_pool[JOB_NUMBER];
 std::atomic_bool DeflateQplJobHWPool::hw_job_ptr_locks[JOB_NUMBER];
 bool DeflateQplJobHWPool::job_pool_ready;
+std::unique_ptr<uint8_t[]> DeflateQplJobHWPool::hw_job_buffer;
 
 DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 {
