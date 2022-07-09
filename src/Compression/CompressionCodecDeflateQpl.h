@@ -27,51 +27,12 @@ public:
 
     bool & jobPoolReady() { return job_pool_ready;}
 
-    qpl_job * acquireJob(uint32_t * job_id)
-    {
-        if (jobPoolReady())
-        {
-            uint32_t retry = 0;
-            auto index = distribution(random_engine);
-            while (tryLockJob(index) == false)
-            {
-                index = distribution(random_engine);
-                retry++;
-                if (retry > JOB_POOL_SIZE)
-                {
-                    return nullptr;
-                }
-            }
-            *job_id = JOB_POOL_SIZE - index;
-            return hw_job_pool[index];
-        }
-        else
-        {
-            return nullptr;
-        }
-    }
+    qpl_job * acquireJob(uint32_t * job_id);
 
-    qpl_job * releaseJob(uint32_t job_id)
-    {
-        if (jobPoolReady())
-        {
-            uint32_t index = JOB_POOL_SIZE - job_id;
-            ReleaseJobObjectGuard _(index);
-            return hw_job_pool[index];
-        }
-        else
-        {
-            return nullptr;
-        }
-    }
+    qpl_job * releaseJob(uint32_t job_id);
 
 private:
-    bool tryLockJob(size_t index)
-    {
-        bool expected = false;
-        assert(index < JOB_POOL_SIZE);
-        return hw_job_locks[index].compare_exchange_strong(expected, true);
-    }
+    bool tryLockJob(size_t index);
 
     void unLockJob(uint32_t index) { hw_job_locks[index].store(false); }
 
@@ -81,15 +42,11 @@ private:
         ReleaseJobObjectGuard() = delete;
 
     public:
-        ReleaseJobObjectGuard(const uint32_t index_) : index(index_)
-        {
-        }
+        ReleaseJobObjectGuard(const uint32_t index_) : index(index_){}
 
-        ~ReleaseJobObjectGuard()
-        {
-            hw_job_locks[index].store(false);
-        }
+        ~ReleaseJobObjectGuard(){ hw_job_locks[index].store(false); }
     };
+
     std::unique_ptr<uint8_t[]> hw_job_pool_buffer;
     Poco::Logger * log;
     std::mt19937 random_engine;
