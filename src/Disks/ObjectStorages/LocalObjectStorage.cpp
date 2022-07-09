@@ -32,7 +32,7 @@ LocalObjectStorage::LocalObjectStorage()
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
-    return fs::exists(object.path);
+    return fs::exists(object.absolute_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
@@ -53,13 +53,27 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    const auto & path = object.path;
+    const auto & path = object.absolute_path;
 
-    if (!file_size.has_value())
-        file_size = getFileSizeIfPossible(path);
+    if (!file_size)
+        file_size = tryGetSizeFromFilePath(path);
 
+    /// For now we cannot allow asynchrnous reader from local filesystem when CachedObjectStorage is used.
     ReadSettings modified_settings{read_settings};
-    modified_settings.local_fs_method = LocalFSReadMethod::pread;
+    switch (modified_settings.local_fs_method)
+    {
+        case LocalFSReadMethod::pread_threadpool:
+        case LocalFSReadMethod::pread_fake_async:
+        {
+            modified_settings.local_fs_method = LocalFSReadMethod::pread;
+            LOG_INFO(log, "Changing local filesystem read method to `pread`");
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
 
     LOG_TEST(log, "Read object: {}", path);
     return createReadBufferFromFileBase(path, modified_settings, read_hint, file_size);
@@ -73,7 +87,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     size_t buf_size,
     const WriteSettings & /* write_settings */)
 {
-    const auto & path = object.path;
+    const auto & path = object.absolute_path;
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     LOG_TEST(log, "Write object: {}", path);
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
@@ -92,8 +106,8 @@ void LocalObjectStorage::removeObject(const StoredObject & object)
     if (!exists(object))
         return;
 
-    if (0 != unlink(object.path.data()))
-        throwFromErrnoWithPath("Cannot unlink file " + object.path, object.path, ErrorCodes::CANNOT_UNLINK);
+    if (0 != unlink(object.absolute_path.data()))
+        throwFromErrnoWithPath("Cannot unlink file " + object.absolute_path, object.absolute_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void LocalObjectStorage::removeObjects(const StoredObjects & objects)
@@ -122,11 +136,11 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
 void LocalObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    fs::path to = object_to.path;
-    fs::path from = object_from.path;
+    fs::path to = object_to.absolute_path;
+    fs::path from = object_from.absolute_path;
 
     /// Same logic as in DiskLocal.
-    if (object_from.path.ends_with('/'))
+    if (object_from.absolute_path.ends_with('/'))
         from = from.parent_path();
     if (fs::is_directory(from))
         to /= from.filename();

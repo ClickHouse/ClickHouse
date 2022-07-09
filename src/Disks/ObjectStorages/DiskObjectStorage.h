@@ -164,9 +164,9 @@ public:
 
     UInt64 getRevision() const override;
 
-    DiskObjectStoragePtr getObjectStorage(const String & name_) override;
+    DiskObjectStoragePtr createDiskObjectStorage(const String & name_) override;
 
-    bool isCached() const override;
+    bool supportsCache() const override;
 
 private:
 

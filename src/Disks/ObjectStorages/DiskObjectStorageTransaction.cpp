@@ -133,7 +133,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         if (remove_from_cache)
         {
             for (const auto & object : objects_to_remove)
-                object_storage.removeCacheIfExists(object.getCacheHint());
+                object_storage.removeCacheIfExists(object.getPathKeyForCache());
         }
     }
 };
@@ -227,7 +227,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         }
 
         for (const auto & object : objects_to_remove_from_cache)
-            object_storage.removeCacheIfExists(object.getCacheHint());
+            object_storage.removeCacheIfExists(object.getPathKeyForCache());
     }
 };
 

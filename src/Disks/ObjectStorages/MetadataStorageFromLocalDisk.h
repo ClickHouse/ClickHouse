@@ -8,11 +8,11 @@
 namespace DB
 {
 
-class MetadataStorageFromLocalDisk : public IMetadataStorage
+class MetadataStorageFromLocalDisk final : public IMetadataStorage
 {
 
 public:
-    explicit MetadataStorageFromLocalDisk(
+    MetadataStorageFromLocalDisk(
         DiskPtr disk_,
         ObjectStoragePtr object_storage_,
         const std::string & object_storage_root_path_);
@@ -49,8 +49,6 @@ public:
 
     StoredObject createStorageObject(const std::string & blob_name) const override;
 
-    std::string getObjectStoragePath() const override { return object_storage_root_path; }
-
 private:
     DiskPtr disk;
     ObjectStoragePtr object_storage;
@@ -63,7 +61,7 @@ private:
     DiskPtr disk;
 
 public:
-    explicit MetadataStorageFromLocalDiskTransaction(const MetadataStorageFromLocalDisk & metadata_storage_, DiskPtr disk_)
+    MetadataStorageFromLocalDiskTransaction(const MetadataStorageFromLocalDisk & metadata_storage_, DiskPtr disk_)
         : MetadataStorageFromDiskTransaction(metadata_storage_)
         , disk(disk_)
     {}

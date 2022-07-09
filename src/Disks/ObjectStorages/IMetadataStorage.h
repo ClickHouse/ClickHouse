@@ -128,9 +128,7 @@ public:
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
 
-    virtual std::string getObjectStoragePath() const = 0;
-
-    /// Return [(object_storage_path, size_in_bytes), ...] for metadata path.
+    /// Return object information (absolute_path, bytes_size, ...) for metadata path.
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 

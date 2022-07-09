@@ -251,7 +251,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
     String id;
     auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0].path;
+        id = blobs_paths[0].absolute_path;
     return id;
 }
 
@@ -435,12 +435,12 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
     return {};
 }
 
-bool DiskObjectStorage::isCached() const
+bool DiskObjectStorage::supportsCache() const
 {
-    return object_storage->isCached();
+    return object_storage->supportsCache();
 }
 
-DiskObjectStoragePtr DiskObjectStorage::getObjectStorage(const String & name_)
+DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage(const String & name_)
 {
     return std::make_shared<DiskObjectStorage>(
         name_,

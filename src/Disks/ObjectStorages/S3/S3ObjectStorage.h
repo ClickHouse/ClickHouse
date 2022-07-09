@@ -58,6 +58,8 @@ public:
     {
     }
 
+    std::string getName() const override { return "S3ObjectStorage"; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -126,9 +128,9 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool isCached() const override { return true; }
+    bool supportsCache() const override { return true; }
 
-    void removeCacheIfExists(const std::string & path) override;
+    void removeCacheIfExists(const std::string & path_key) override;
 
     String getCacheBasePath() const override;
 

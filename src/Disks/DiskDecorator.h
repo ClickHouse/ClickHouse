@@ -81,11 +81,11 @@ public:
     void startup(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    bool isCached() const override { return delegate->isCached(); }
+    bool supportsCache() const override { return delegate->supportsCache(); }
     String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
 
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
-    DiskObjectStoragePtr getObjectStorage(const String &) override;
+    DiskObjectStoragePtr createDiskObjectStorage(const String &) override;
 
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 

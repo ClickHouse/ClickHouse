@@ -100,38 +100,33 @@ StoredObjects MetadataStorageFromLocalDisk::getStorageObjects(const std::string 
 StoredObject MetadataStorageFromLocalDisk::createStorageObject(const std::string & blob_name) const
 {
     auto blob_path = fs::path(object_storage_root_path) / blob_name;
-    StoredObject::CacheHintCreator cache_hint_creator;
     size_t object_size = 0;
+
+    StoredObject::PathKeyForCacheCreator path_key_for_cache_creator = [](const String & blob_path_) -> String
+    {
+        try
+        {
+            return toString(getINodeNumberFromPath(blob_path_));
+        }
+        catch (...)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("MetadataStorageFromLocalDisk"),
+                "Object does not exist while getting cache path hint (object path: {})",
+                blob_path_);
+
+            return "";
+        }
+    };
 
     if (exists(blob_path))
     {
         object_size = getFileSize(blob_path);
-        cache_hint_creator = [cache_hint = toString(getINodeNumberFromPath(blob_path))](const String &)
-        {
-            return cache_hint;
-        };
-    }
-    else
-    {
-        cache_hint_creator = [](const String & blob_path_) -> String
-        {
-            try
-            {
-                return toString(getINodeNumberFromPath(blob_path_));
-            }
-            catch (...)
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("MetadataStorageFromLocalDisk"),
-                    "Object does not exist while getting cache path hint (object path: {})",
-                    blob_path_);
-
-                return "";
-            }
-        };
+        path_key_for_cache_creator =
+            [path_key = path_key_for_cache_creator(blob_path)](const String &) { return path_key; };
     }
 
-    return StoredObject{blob_path, object_size, std::move(cache_hint_creator)};
+    return StoredObject{blob_path, object_size, std::move(path_key_for_cache_creator)};
 }
 
 uint32_t MetadataStorageFromLocalDisk::getHardlinkCount(const std::string & path) const
@@ -140,7 +135,7 @@ uint32_t MetadataStorageFromLocalDisk::getHardlinkCount(const std::string & path
     return disk->getRefCount(path);
 }
 
-void MetadataStorageFromLocalDiskTransaction::writeStringToFile(const std::string & path, const std::string & data) /// NOLINT
+void MetadataStorageFromLocalDiskTransaction::writeStringToFile(const std::string & path, const std::string & data)
 {
     auto wb = disk->writeFile(path);
     wb->write(data.data(), data.size());
