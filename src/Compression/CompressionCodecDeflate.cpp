@@ -25,7 +25,10 @@ DeflateJobHWPool & DeflateJobHWPool::instance()
     return ret;
 }
 
-DeflateJobHWPool::DeflateJobHWPool():log(&Poco::Logger::get("DeflateJobHWPool"))
+DeflateJobHWPool::DeflateJobHWPool():
+    log(&Poco::Logger::get("DeflateJobHWPool")),
+    random_engine(std::random_device()()),
+    distribution(0, JOB_POOL_SIZE-1)
 {
     uint32_t size = 0;
     uint32_t index = 0;
