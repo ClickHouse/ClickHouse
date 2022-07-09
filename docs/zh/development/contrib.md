@@ -31,4 +31,3 @@
 | UnixODBC           | [LGPL v2.1](https://github.com/ClickHouse-Extras/UnixODBC/tree/b0ad30f7f6289c12b76f04bfb9d466374bb32168)                            |
 | zlib-ng            | [Zlib许可证](https://github.com/ClickHouse-Extras/zlib-ng/blob/develop/LICENSE.md)                                                  |
 | zstd               | [BSD3-条款许可](https://github.com/facebook/zstd/blob/dev/LICENSE)                                                                  |
-| deflate               | [MIT](https://github.com/intel/qpl/blob/develop/LICENSE) 

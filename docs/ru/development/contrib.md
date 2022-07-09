@@ -86,7 +86,6 @@ sidebar_label: "Используемые сторонние библиотеки
 | xz | [Public Domain](https://github.com/xz-mirror/xz/blob/869b9d1b4edd6df07f819d360d306251f8147353/COPYING) |
 | zlib-ng | [zLib](https://github.com/ClickHouse-Extras/zlib-ng/blob/6a5e93b9007782115f7f7e5235dedc81c4f1facb/LICENSE.md) |
 | zstd | [BSD](https://github.com/facebook/zstd/blob/a488ba114ec17ea1054b9057c26a046fc122b3b6/LICENSE) |
-| qpl | [MIT](https://github.com/intel/qpl/blob/cdc8442f7a5e7a6ff6eea39c69665e0c5034d85d/LICENSE) |
 
 Список всех сторонних библиотек можно получить с помощью запроса:
 
