@@ -647,7 +647,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         maybeMarkAsBroken(file_path, e);
         throw;
     }
-    catch(...)
+    catch (...)
     {
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(std::current_exception());

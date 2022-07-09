@@ -477,7 +477,7 @@ void Connection::sendQuery(
     OpenTelemetrySpanHolder span("Connection::sendQuery()");
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
-    span.addAttribute("target", [this]() { return this->getHost() + ":" + std::to_string(this->getPort()); } );
+    span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); } );
 
     ClientInfo new_client_info;
     auto& current_trace_context = OpenTelemetryThreadTraceContext::current();
