@@ -961,14 +961,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         // Setup tracing context for this thread
         auto context = session->sessionOrGlobalContext();
-        thread_trace_context = std::make_unique<OpenTelemetryThreadTraceContextScope>("HTTPHandler::handleRequest()",
+        thread_trace_context = std::make_unique<OpenTelemetryThreadTraceContextScope>("HTTPHandler",
                                                                                       client_info.client_trace_context,
                                                                                       context->getSettingsRef(),
                                                                                       context->getOpenTelemetrySpanLog());
-        if (!client_info.client_trace_context.tracestate.empty())
-        {
-            thread_trace_context->root_span.addAttribute("clickhouse.tracestate", client_info.client_trace_context.tracestate);
-        }
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");
