@@ -133,7 +133,6 @@ function clone_submodules
             contrib/NuRaft
             contrib/jemalloc
             contrib/replxx
-            contrib/qpl
             contrib/wyhash
             contrib/hashidsxx
         )
