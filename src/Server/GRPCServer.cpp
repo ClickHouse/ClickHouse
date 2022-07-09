@@ -829,8 +829,6 @@ namespace
 
         query_context = session->makeQueryContext(std::move(client_info));
 
-
-
         /// Prepare settings.
         SettingsChanges settings_changes;
         for (const auto & [key, value] : query_info.settings())

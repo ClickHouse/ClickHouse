@@ -246,7 +246,7 @@ OpenTelemetryThreadTraceContextScope::OpenTelemetryThreadTraceContextScope(
             /// skip tracing context initialization on current thread
             return;
 
-        while(_parent_trace_context.trace_id == UUID())
+        while (_parent_trace_context.trace_id == UUID())
         {
             // make sure the random generated trace_id is not 0 which is an invalid id
             _parent_trace_context.trace_id.toUnderType().items[0] = thread_local_rng(); //-V656
