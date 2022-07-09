@@ -18,18 +18,14 @@ class DeflateQplJobHWPool
 public:
     DeflateQplJobHWPool();
     ~DeflateQplJobHWPool();
-    static DeflateQplJobHWPool & instance();
-    static constexpr auto JOB_NUMBER = 1024;
-    static constexpr qpl_path_t PATH = qpl_path_hardware;
-    static qpl_job * hw_job_ptr_pool[JOB_NUMBER];
-    static std::atomic_bool hw_job_ptr_locks[JOB_NUMBER];
-    static bool job_pool_ready;
 
     bool & jobPoolReady() { return job_pool_ready;}
 
     qpl_job * acquireJob(uint32_t * job_id);
 
     qpl_job * releaseJob(uint32_t job_id);
+
+    static DeflateQplJobHWPool & instance();
 
 private:
     bool tryLockJob(size_t index);
@@ -47,10 +43,16 @@ private:
         ~ReleaseJobObjectGuard(){ hw_job_ptr_locks[index].store(false); }
     };
 
-    std::unique_ptr<uint8_t[]> hw_job_buffer;
+    static constexpr auto JOB_NUMBER = 1024;
+    static constexpr qpl_path_t PATH = qpl_path_hardware;
+    static qpl_job * hw_job_ptr_pool[JOB_NUMBER];
+    static std::atomic_bool hw_job_ptr_locks[JOB_NUMBER];
+    static bool job_pool_ready;
+    static std::unique_ptr<uint8_t[]> hw_job_buffer;
     Poco::Logger * log;
     std::mt19937 random_engine;
     std::uniform_int_distribution<int> distribution;
+
 };
 
 class SoftwareCodecDeflateQpl
