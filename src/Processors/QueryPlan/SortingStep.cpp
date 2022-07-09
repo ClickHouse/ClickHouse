@@ -113,6 +113,12 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
 
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    const auto input_sort_mode = input_streams.front().sort_mode;
+    const SortDescription & input_sort_desc = input_streams.front().sort_description;
+
+    if (input_sort_mode == DataStream::SortMode::Stream && input_sort_desc.hasPrefix(result_description))
+        return;
+
     if (type == Type::FinishSorting)
     {
         bool need_finish_sorting = (prefix_description.size() < result_description.size());

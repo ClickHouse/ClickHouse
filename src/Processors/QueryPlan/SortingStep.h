@@ -49,7 +49,7 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    SortDescription getSortDescription() const { return result_description; }
+    const SortDescription & getSortDescription() const { return result_description; }
 
     void convertToFinishSorting(SortDescription prefix_description);
 
