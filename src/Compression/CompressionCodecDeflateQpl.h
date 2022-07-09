@@ -19,10 +19,10 @@ public:
     DeflateQplJobHWPool();
     ~DeflateQplJobHWPool();
     static DeflateQplJobHWPool & instance();
-    static constexpr auto JOB_POOL_SIZE = 1024;
+    static constexpr auto JOB_NUMBER = 1024;
     static constexpr qpl_path_t PATH = qpl_path_hardware;
-    static qpl_job * hw_job_pool[JOB_POOL_SIZE];
-    static std::atomic_bool hw_job_locks[JOB_POOL_SIZE];
+    static qpl_job * hw_job_ptr_pool[JOB_NUMBER];
+    static std::atomic_bool hw_job_ptr_locks[JOB_NUMBER];
     static bool job_pool_ready;
 
     bool & jobPoolReady() { return job_pool_ready;}
@@ -34,7 +34,7 @@ public:
 private:
     bool tryLockJob(size_t index);
 
-    void unLockJob(uint32_t index) { hw_job_locks[index].store(false); }
+    void unLockJob(uint32_t index) { hw_job_ptr_locks[index].store(false); }
 
     class ReleaseJobObjectGuard
     {
@@ -44,10 +44,10 @@ private:
     public:
         ReleaseJobObjectGuard(const uint32_t index_) : index(index_){}
 
-        ~ReleaseJobObjectGuard(){ hw_job_locks[index].store(false); }
+        ~ReleaseJobObjectGuard(){ hw_job_ptr_locks[index].store(false); }
     };
 
-    std::unique_ptr<uint8_t[]> hw_job_pool_buffer;
+    std::unique_ptr<uint8_t[]> hw_job_buffer;
     Poco::Logger * log;
     std::mt19937 random_engine;
     std::uniform_int_distribution<int> distribution;
