@@ -119,6 +119,7 @@ public:
     int32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
     int32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
     int32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
+    /// Flush result for previous asynchronous decompression requests.Must be used following with several calls of doDecompressDataReq.
     void flushAsynchronousDecompressRequests();
 
 private:
@@ -148,6 +149,7 @@ protected:
 
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest) const override;
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
+    ///Flush result for previous asynchronous decompression requests on asynchronous mode.
     void flushAsynchronousDecompressRequests() override;
 
 private:

@@ -77,7 +77,7 @@ public:
     /// Flush result for previous asynchronous decompression requests.
     /// This function must be called following several requests offload to HW.
     /// To make sure asynchronous results have been flushed into target buffer completely.
-    /// Meanwhile, source and target buffer for decompression should not be overwritten until this function execute completely.
+    /// Meanwhile, source and target buffer for decompression can not be overwritten until this function execute completely.
     /// Otherwise it would conflict with HW offloading and cause exception.
     /// For QPL deflate, it support the maximum number of requests equal to DeflateJobHWPool::jobPoolSize
     virtual void flushAsynchronousDecompressRequests(){}
