@@ -189,15 +189,15 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
 #ifndef KEEPER_STANDALONE_BUILD
-#ifdef ENABLE_QPL_COMPRESSION
-    registerCodecDeflate(*this);
-#endif
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
+    #ifdef ENABLE_QPL_COMPRESSION
+        registerCodecDeflate(*this);
+    #endif
 #endif
 
     default_codec = get("LZ4", {});
