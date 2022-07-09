@@ -79,7 +79,7 @@ public:
     /// To make sure asynchronous results have been flushed into target buffer completely.
     /// Meanwhile, source and target buffer for decompression can not be overwritten until this function execute completely.
     /// Otherwise it would conflict with HW offloading and cause exception.
-    /// For QPL deflate, it support the maximum number of requests equal to DeflateJobHWPool::jobPoolSize
+    /// For QPL deflate, it support the maximum number of requests equal to DeflateQplJobHWPool::jobPoolSize
     virtual void flushAsynchronousDecompressRequests(){}
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec

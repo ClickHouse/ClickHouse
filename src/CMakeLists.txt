@@ -344,7 +344,7 @@ set_source_files_properties(
 
 if (ENABLE_QPL)
 set_source_files_properties(
-        Compression/CompressionCodecDeflate.cpp
+        Compression/CompressionCodecDeflateQpl.cpp
         PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 endif ()
 

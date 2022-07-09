@@ -12,13 +12,13 @@ class Logger;
 namespace DB
 {
 
-/// DeflateJobHWPool is resource pool for provide the job objects which is required to save context infomation during offload asynchronous compression to IAA.
-class DeflateJobHWPool
+/// DeflateQplJobHWPool is resource pool for provide the job objects which is required to save context infomation during offload asynchronous compression to IAA.
+class DeflateQplJobHWPool
 {
 public:
-    DeflateJobHWPool();
-    ~DeflateJobHWPool();
-    static DeflateJobHWPool & instance();
+    DeflateQplJobHWPool();
+    ~DeflateQplJobHWPool();
+    static DeflateQplJobHWPool & instance();
     static constexpr auto JOB_POOL_SIZE = 1024;
     static constexpr qpl_path_t PATH = qpl_path_hardware;
     static qpl_job * hw_job_pool[JOB_POOL_SIZE];
@@ -96,10 +96,10 @@ private:
     std::uniform_int_distribution<int> distribution;
 };
 
-class SoftwareCodecDeflate
+class SoftwareCodecDeflateQpl
 {
 public:
-    ~SoftwareCodecDeflate();
+    ~SoftwareCodecDeflateQpl();
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size);
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
 
@@ -108,14 +108,14 @@ private:
     qpl_job * getJobCodecPtr();
 };
 
-class HardwareCodecDeflate
+class HardwareCodecDeflateQpl
 {
 public:
     /// RET_ERROR stands for hardware codec fail,need fallback to software codec.
     static constexpr int32_t RET_ERROR = -1;
 
-    HardwareCodecDeflate();
-    ~HardwareCodecDeflate();
+    HardwareCodecDeflateQpl();
+    ~HardwareCodecDeflateQpl();
     int32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
     int32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
     int32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
@@ -129,10 +129,10 @@ private:
     std::map<uint32_t, qpl_job *> decomp_async_job_map;
     Poco::Logger * log;
 };
-class CompressionCodecDeflate : public ICompressionCodec
+class CompressionCodecDeflateQpl : public ICompressionCodec
 {
 public:
-    CompressionCodecDeflate();
+    CompressionCodecDeflateQpl();
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
 
@@ -154,8 +154,8 @@ protected:
 
 private:
     uint32_t getMaxCompressedDataSize(uint32_t uncompressed_size) const override;
-    std::unique_ptr<HardwareCodecDeflate> hw_codec;
-    std::unique_ptr<SoftwareCodecDeflate> sw_codec;
+    std::unique_ptr<HardwareCodecDeflateQpl> hw_codec;
+    std::unique_ptr<SoftwareCodecDeflateQpl> sw_codec;
 };
 
 }
