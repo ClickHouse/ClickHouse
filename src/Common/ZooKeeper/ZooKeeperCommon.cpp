@@ -1,3 +1,4 @@
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
@@ -296,6 +297,32 @@ void ZooKeeperListRequest::readImpl(ReadBuffer & in)
 std::string ZooKeeperListRequest::toStringImpl() const
 {
     return fmt::format("path = {}", path);
+}
+
+void ZooKeeperFilteredListRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(has_watch, out);
+    Coordination::write(static_cast<uint8_t>(list_request_type), out);
+}
+
+void ZooKeeperFilteredListRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    Coordination::read(has_watch, in);
+
+    uint8_t read_request_type{0};
+    Coordination::read(read_request_type, in);
+    list_request_type = static_cast<ListRequestType>(read_request_type);
+}
+
+std::string ZooKeeperFilteredListRequest::toStringImpl() const
+{
+    return fmt::format(
+            "path = {}\n"
+            "list_request_type = {}",
+            path,
+            list_request_type);
 }
 
 void ZooKeeperListResponse::readImpl(ReadBuffer & in)

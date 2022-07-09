@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/getClusterName.h>
@@ -22,7 +23,7 @@ std::string getClusterName(const IAST & node)
         return ast_id->name();
 
     if (const auto * ast_lit = node.as<ASTLiteral>())
-        return ast_lit->value.safeGet<String>();
+        return checkAndGetLiteralArgument<String>(*ast_lit, "cluster_name");
 
     /// A hack to support hyphens in cluster names.
     if (const auto * ast_func = node.as<ASTFunction>())
