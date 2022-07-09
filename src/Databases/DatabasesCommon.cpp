@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
@@ -162,6 +163,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     query.as_table.clear();
     query.if_not_exists = false;
     query.is_populate = false;
+    query.is_create_empty = false;
     query.replace_view = false;
     query.replace_table = false;
     query.create_or_replace = false;
@@ -217,11 +219,11 @@ bool DatabaseWithOwnTablesBase::empty() const
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
-    std::unique_lock lock(mutex);
-    return detachTableUnlocked(table_name, lock);
+    std::lock_guard lock(mutex);
+    return detachTableUnlocked(table_name);
 }
 
-StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &)
+StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
     StoragePtr res;
 
@@ -244,11 +246,11 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
-    std::unique_lock lock(mutex);
-    attachTableUnlocked(table_name, table, lock);
+    std::lock_guard lock(mutex);
+    attachTableUnlocked(table_name, table);
 }
 
-void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> &)
+void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
 {
     auto table_id = table->getStorageID();
     if (table_id.database_name != database_name)
@@ -312,7 +314,7 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     }
 }
 
-StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &) const
+StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name) const
 {
     auto it = tables.find(table_name);
     if (it != tables.end())
@@ -321,22 +323,34 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
                     backQuote(database_name), backQuote(table_name));
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
 {
-    /// Backup all the tables in this database.
-    /// Here we skip inner tables of materialized views.
-    auto skip_internal_tables = [](const String & table_name) { return !table_name.starts_with(".inner_id."); };
-    return getTablesIterator(backup_entries_collector.getContext(), skip_internal_tables);
+    std::vector<std::pair<ASTPtr, StoragePtr>> res;
+
+    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
+    {
+        auto create_table_query = tryGetCreateTableQuery(it->name(), local_context);
+        if (!create_table_query)
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for table {}.{}", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+
+        const auto & create = create_table_query->as<const ASTCreateQuery &>();
+        if (create.getTable() != it->name())
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for table {}.{}", backQuoteIfNeed(create.getTable()), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+
+        auto storage = it->table();
+        storage->adjustCreateQueryForBackup(create_table_query);
+        res.emplace_back(create_table_query, storage);
+    }
+
+    return res;
 }
 
-void DatabaseWithOwnTablesBase::checkCreateTableQueryForBackup(const ASTPtr &, const BackupEntriesCollector &) const
-{
-}
-
-void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer)
+void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination>, UInt64)
 {
     /// Creates a table by executing a "CREATE TABLE" query.
-    restorer.executeCreateQuery(create_table_query);
+    InterpreterCreateQuery interpreter{create_table_query, local_context};
+    interpreter.setInternal(true);
+    interpreter.execute();
 }
 
 }

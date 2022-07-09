@@ -2,9 +2,12 @@
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/User.h>
+#include <Access/AccessBackup.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
@@ -520,26 +523,33 @@ bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddr
 }
 
 
-bool IAccessStorage::isRestoreAllowed() const
-{
-    return isBackupAllowed() && !isReadOnly();
-}
-
-std::vector<std::pair<UUID, AccessEntityPtr>> IAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
+void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const
 {
     if (!isBackupAllowed())
         throwBackupNotAllowed();
 
-    auto res = readAllWithIDs(type);
-    boost::range::remove_erase_if(res, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
-    return res;
+    auto entities = readAllWithIDs(type);
+    boost::range::remove_erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+
+    if (entities.empty())
+        return;
+
+    auto backup_entry = makeBackupEntryForAccess(
+        entities,
+        data_path_in_backup,
+        backup_entries_collector.getAccessCounter(type),
+        backup_entries_collector.getContext()->getAccessControl());
+
+    backup_entries_collector.addBackupEntry(backup_entry);
 }
 
-void IAccessStorage::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> &, const RestoreSettings &, std::shared_ptr<IRestoreCoordination>)
+
+void IAccessStorage::restoreFromBackup(RestorerFromBackup &)
 {
     if (!isRestoreAllowed())
         throwRestoreNotAllowed();
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertFromBackup() is not implemented in {}", getStorageType());
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "restoreFromBackup() is not implemented in {}", getStorageType());
 }
 
 

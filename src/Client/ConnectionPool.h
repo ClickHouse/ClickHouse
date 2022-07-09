@@ -4,6 +4,7 @@
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -179,7 +180,7 @@ public:
 private:
     mutable std::mutex mutex;
     using ConnectionPoolWeakPtr = std::weak_ptr<IConnectionPool>;
-    std::unordered_map<Key, ConnectionPoolWeakPtr, KeyHash> pools;
+    std::unordered_map<Key, ConnectionPoolWeakPtr, KeyHash> pools TSA_GUARDED_BY(mutex);
 };
 
 inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionPoolFactory::Key & rhs)
