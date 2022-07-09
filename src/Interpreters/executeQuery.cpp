@@ -917,8 +917,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 query_span->addAttribute("db.statement", elem.query);
                 query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
+                query_span->addAttribute("clickhouse.tracestate", OpenTelemetryThreadTraceContext::current().tracestate);
                 query_span->addAttribute("clickhouse.query_status", "QueryFinish");
-                query_span->addAttribute("clickhouse.tracestate", context->query_trace_context.tracestate});
                 query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
                 query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
                 query_span->addAttributeIfNotZero("clickhouse.written_rows", info.written_rows);
