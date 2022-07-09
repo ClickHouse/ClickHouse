@@ -44,22 +44,22 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 
 std::string IObjectStorage::getCacheBasePath() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for {}", getName());
 }
 
 StoredObject::StoredObject(
-    const std::string & path_,
+    const std::string & absolute_path_,
     uint64_t bytes_size_,
-    std::function<String(const String &)> && cache_hint_creator_)
-    : path(path_)
+    PathKeyForCacheCreator && path_key_for_cache_creator_)
+    : absolute_path(absolute_path_)
     , bytes_size(bytes_size_)
-    , cache_hint_creator(std::move(cache_hint_creator_))
+    , path_key_for_cache_creator(std::move(path_key_for_cache_creator_))
 {}
 
-std::string StoredObject::getCacheHint() const
+std::string StoredObject::getPathKeyForCache() const
 {
-    if (cache_hint_creator)
-        return cache_hint_creator(path);
+    if (path_key_for_cache_creator)
+        return path_key_for_cache_creator(absolute_path);
     return "";
 }
 

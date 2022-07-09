@@ -219,7 +219,7 @@ public:
 
     virtual String getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
-    virtual bool isCached() const { return false; }
+    virtual bool supportsCache() const { return false; }
 
     /// Returns a list of storage objects (contains path, size, ...).
     /// (A list is returned because for Log family engines there might
@@ -340,11 +340,11 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual DiskObjectStoragePtr getObjectStorage(const String &)
+    virtual DiskObjectStoragePtr createDiskObjectStorage(const String &)
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage() is not implemented for disk type: {}",
+            "Method createDiskObjectStorage() is not implemented for disk type: {}",
             getType());
     }
 

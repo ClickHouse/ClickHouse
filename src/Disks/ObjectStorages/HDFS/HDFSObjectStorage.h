@@ -50,6 +50,8 @@ public:
         , settings(std::move(settings_))
     {}
 
+    std::string getName() const override { return "HDFSObjectStorage"; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

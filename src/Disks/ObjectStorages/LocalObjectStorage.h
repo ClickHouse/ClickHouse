@@ -17,6 +17,8 @@ class LocalObjectStorage : public IObjectStorage
 public:
     LocalObjectStorage();
 
+    std::string getName() const override { return "LocalObjectStorage"; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

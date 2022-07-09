@@ -37,23 +37,23 @@ struct RelativePathWithSize
 using RelativePathsWithSize = std::vector<RelativePathWithSize>;
 
 
-/// Object metadata: path, size. cache_hint.
+/// Object metadata: path, size, path_key_for_cache.
 struct StoredObject
 {
-    std::string path; /// absolute
+    std::string absolute_path;
     uint64_t bytes_size;
 
     /// Optional cache hint for cache. Use delayed initialization
     /// because somecache hint implementation requires it.
-    using CacheHintCreator = std::function<std::string(const std::string &)>;
-    CacheHintCreator cache_hint_creator;
+    using PathKeyForCacheCreator = std::function<std::string(const std::string &)>;
+    PathKeyForCacheCreator path_key_for_cache_creator;
 
     StoredObject() = default;
 
     explicit StoredObject(
-        const std::string & path_, uint64_t bytes_size_ = 0, CacheHintCreator && cache_hint_creator_ = {});
+        const std::string & absolute_path_, uint64_t bytes_size_ = 0, PathKeyForCacheCreator && path_key_for_cache_creator_ = {});
 
-    std::string getCacheHint() const;
+    std::string getPathKeyForCache() const;
 };
 
 using StoredObjects = std::vector<StoredObject>;
@@ -74,6 +74,8 @@ class IObjectStorage
 {
 public:
     IObjectStorage() = default;
+
+    virtual std::string getName() const = 0;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
@@ -168,15 +170,17 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix, ContextPtr context) = 0;
 
-    /// Generate object storage path.
+    /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual std::string generateBlobNameForPath(const std::string & path) = 0;
 
     virtual bool supportsAppend() const { return false; }
 
+    /// Remove filesystem cache. `path` is a result of object.getPathKeyForCache() method,
+    /// which is used to define a cache key for the source object path.
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
-    virtual bool isCached() const { return false; }
+    virtual bool supportsCache() const { return false; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

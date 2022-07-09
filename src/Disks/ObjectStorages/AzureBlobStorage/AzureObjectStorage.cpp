@@ -43,7 +43,7 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
 
     /// What a shame, no Exists method...
     Azure::Storage::Blobs::ListBlobsOptions options;
-    options.Prefix = object.path;
+    options.Prefix = object.absolute_path;
     options.PageSizeHint = 1;
 
     auto blobs_list_response = client_ptr->ListBlobs(options);
@@ -51,7 +51,7 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
 
     for (const auto & blob : blobs_list)
     {
-        if (object.path == blob.Name)
+        if (object.absolute_path == blob.Name)
             return true;
     }
 
@@ -67,7 +67,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
     auto settings_ptr = settings.get();
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client.get(), object.path, read_settings, settings_ptr->max_single_read_retries,
+        client.get(), object.absolute_path, read_settings, settings_ptr->max_single_read_retries,
         settings_ptr->max_single_download_retries, read_settings.remote_fs_buffer_size);
 }
 
@@ -111,11 +111,11 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     auto buffer = std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
-        object.path,
+        object.absolute_path,
         settings.get()->max_single_part_upload_size,
         buf_size);
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.absolute_path);
 }
 
 void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
@@ -135,7 +135,7 @@ void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithS
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void AzureObjectStorage::removeObject(const StoredObject & object)
 {
-    const auto & path = object.path;
+    const auto & path = object.absolute_path;
     auto client_ptr = client.get();
     auto delete_info = client_ptr->DeleteBlob(path);
     if (!delete_info.Value.Deleted)
@@ -147,23 +147,23 @@ void AzureObjectStorage::removeObjects(const StoredObjects & objects)
     auto client_ptr = client.get();
     for (const auto & object : objects)
     {
-        auto delete_info = client_ptr->DeleteBlob(object.path);
+        auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
         if (!delete_info.Value.Deleted)
-            throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", object.path);
+            throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", object.absolute_path);
     }
 }
 
 void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     auto client_ptr = client.get();
-    auto delete_info = client_ptr->DeleteBlob(object.path);
+    auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
 }
 
 void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     auto client_ptr = client.get();
     for (const auto & object : objects)
-        auto delete_info = client_ptr->DeleteBlob(object.path);
+        auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
 }
 
 
@@ -190,8 +190,8 @@ void AzureObjectStorage::copyObject( /// NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto client_ptr = client.get();
-    auto dest_blob_client = client_ptr->GetBlobClient(object_to.path);
-    auto source_blob_client = client_ptr->GetBlobClient(object_from.path);
+    auto dest_blob_client = client_ptr->GetBlobClient(object_to.absolute_path);
+    auto source_blob_client = client_ptr->GetBlobClient(object_from.absolute_path);
 
     Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
     if (object_to_attributes.has_value())
