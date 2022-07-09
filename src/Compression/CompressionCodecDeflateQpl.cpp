@@ -89,6 +89,7 @@ qpl_job * DeflateQplJobHWPool::acquireJob(uint32_t * job_id)
             }
         }
         *job_id = JOB_NUMBER - index;
+        assert(index < JOB_NUMBER);
         return hw_job_ptr_pool[index];
     }
     else
@@ -100,6 +101,7 @@ qpl_job * DeflateQplJobHWPool::releaseJob(uint32_t job_id)
     if (jobPoolReady())
     {
         uint32_t index = JOB_NUMBER - job_id;
+        assert(index < JOB_NUMBER);
         ReleaseJobObjectGuard _(index);
         return hw_job_ptr_pool[index];
     }
@@ -122,6 +124,9 @@ HardwareCodecDeflateQpl::HardwareCodecDeflateQpl():
 
 HardwareCodecDeflateQpl::~HardwareCodecDeflateQpl()
 {
+#ifndef NDEBUG
+    assert(decomp_async_job_map.empty());
+#else
     if (!decomp_async_job_map.empty())
     {
         LOG_WARNING(log, "Find un-released job when HardwareCodecDeflateQpl destroy");
@@ -131,6 +136,7 @@ HardwareCodecDeflateQpl::~HardwareCodecDeflateQpl()
         }
         decomp_async_job_map.clear();
     }
+#endif
 }
 
 int32_t HardwareCodecDeflateQpl::doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const
