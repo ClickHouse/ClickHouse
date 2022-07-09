@@ -63,16 +63,10 @@ public:
     };
 
     /// Get current decompression mode
-    CodecMode getDecompressMode() const
-    {
-        return decompressMode;
-    }
+    CodecMode getDecompressMode() const{ return decompressMode; }
 
     /// if set mode to CodecMode::Asynchronous, must be followed with flushAsynchronousDecompressRequests
-    void setDecompressMode(CodecMode mode)
-    {
-        decompressMode = mode;
-    }
+    void setDecompressMode(CodecMode mode){ decompressMode = mode; }
 
     /// Flush result for previous asynchronous decompression requests.
     /// This function must be called following several requests offload to HW.

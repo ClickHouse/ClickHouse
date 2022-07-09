@@ -63,15 +63,56 @@ DeflateQplJobHWPool::~DeflateQplJobHWPool()
 {
     for (uint32_t i = 0; i < JOB_POOL_SIZE; ++i)
     {
-        if (hw_job_pool[i] != nullptr)
+        if (hw_job_pool[i])
         {
             while (!tryLockJob(i));
             qpl_fini_job(hw_job_pool[i]);
+            unLockJob(i);
+            hw_job_pool[i] = nullptr;
         }
-        hw_job_pool[i] = nullptr;
-        unLockJob(i);
     }
     jobPoolReady() = false;
+}
+
+qpl_job * DeflateQplJobHWPool::acquireJob(uint32_t * job_id)
+{
+    if (jobPoolReady())
+    {
+        uint32_t retry = 0;
+        auto index = distribution(random_engine);
+        while (tryLockJob(index) == false)
+        {
+            index = distribution(random_engine);
+            retry++;
+            if (retry > JOB_POOL_SIZE)
+            {
+                return nullptr;
+            }
+        }
+        *job_id = JOB_POOL_SIZE - index;
+        return hw_job_pool[index];
+    }
+    else
+        return nullptr;
+}
+
+qpl_job * DeflateQplJobHWPool::releaseJob(uint32_t job_id)
+{
+    if (jobPoolReady())
+    {
+        uint32_t index = JOB_POOL_SIZE - job_id;
+        ReleaseJobObjectGuard _(index);
+        return hw_job_pool[index];
+    }
+    else
+        return nullptr;
+}
+
+bool DeflateQplJobHWPool::tryLockJob(size_t index)
+{
+    bool expected = false;
+    assert(index < JOB_POOL_SIZE);
+    return hw_job_locks[index].compare_exchange_strong(expected, true);
 }
 
 //HardwareCodecDeflateQpl
