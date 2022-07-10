@@ -4,6 +4,7 @@
 
 #include "Coordination/KeeperStorage.h"
 #include "Core/Defines.h"
+#include "IO/WriteHelpers.h"
 #include "config_core.h"
 
 #if USE_NURAFT
@@ -2082,19 +2083,37 @@ TEST_P(CoordinationTest, TestDurableState)
     reload_state_manager();
     assert_read_state();
 
-    state_manager.reset();
+    {
+        SCOPED_TRACE("Read from corrupted file");
+        state_manager.reset();
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        write_buf.seek(20, SEEK_SET);
+        DB::writeIntBinary(31, write_buf);
+        write_buf.sync();
+        write_buf.close();
+        reload_state_manager();
+        ASSERT_EQ(state_manager->read_state(), nullptr);
+    }
 
-    DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_WRONLY);
-    write_buf.write(20);
-    write_buf.sync();
-    write_buf.close();
-    reload_state_manager();
-    ASSERT_EQ(state_manager->read_state(), nullptr);
+    {
+        SCOPED_TRACE("Read from file with invalid size");
+        state_manager.reset();
 
-    state_manager.reset();
-    std::filesystem::remove("./state");
-    reload_state_manager();
-    ASSERT_EQ(state_manager->read_state(), nullptr);
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_WRONLY);
+        DB::writeIntBinary(20, write_buf);
+        write_buf.sync();
+        write_buf.close();
+        reload_state_manager();
+        ASSERT_EQ(state_manager->read_state(), nullptr);
+    }
+
+    {
+        SCOPED_TRACE("State file is missing");
+        state_manager.reset();
+        std::filesystem::remove("./state");
+        reload_state_manager();
+        ASSERT_EQ(state_manager->read_state(), nullptr);
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
