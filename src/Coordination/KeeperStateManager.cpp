@@ -267,7 +267,8 @@ void KeeperStateManager::save_config(const nuraft::cluster_config & config)
 
 const std::filesystem::path & KeeperStateManager::getOldServerStatePath()
 {
-    static auto old_path = [this]{
+    static auto old_path = [this]
+    {
         return server_state_path.parent_path() / (server_state_path.filename().generic_string() + "-OLD");
     }();
 

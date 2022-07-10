@@ -3,6 +3,7 @@
 #include "Common/ZooKeeper/IKeeper.h"
 
 #include "Coordination/KeeperStorage.h"
+#include "Core/Defines.h"
 #include "config_core.h"
 
 #if USE_NURAFT
@@ -186,6 +187,10 @@ TEST_P(CoordinationTest, TestSummingRaft1)
 {
     ChangelogDirTest test("./logs");
     SummingRaftServer s1(1, "localhost", 44444, "./logs", "./state");
+    SCOPE_EXIT(
+        if (std::filesystem::exists("./state"))
+            std::filesystem::remove("./state");
+    );
 
     /// Single node is leader
     EXPECT_EQ(s1.raft_instance->get_leader(), 1);
@@ -2045,12 +2050,13 @@ TEST_P(CoordinationTest, TestListRequestTypes)
 
 TEST_P(CoordinationTest, TestDurableState)
 {
-    auto state = nuraft::cs_new<nuraft::srv_state>();
+    ChangelogDirTest logs("./logs");
 
+    auto state = nuraft::cs_new<nuraft::srv_state>();
     std::optional<DB::KeeperStateManager> state_manager;
 
     const auto reload_state_manager = [&]
-    { 
+    {
         state_manager.emplace(1, "localhost", 9181, "./logs", "./state");
     };
 
@@ -2077,8 +2083,16 @@ TEST_P(CoordinationTest, TestDurableState)
     assert_read_state();
 
     state_manager.reset();
+
+    DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_WRONLY);
+    write_buf.write(20);
+    write_buf.sync();
+    write_buf.close();
+    reload_state_manager();
+    ASSERT_EQ(state_manager->read_state(), nullptr);
+
+    state_manager.reset();
     std::filesystem::remove("./state");
-    
     reload_state_manager();
     ASSERT_EQ(state_manager->read_state(), nullptr);
 }
