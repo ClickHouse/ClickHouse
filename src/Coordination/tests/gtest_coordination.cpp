@@ -2043,6 +2043,46 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     }
 }
 
+TEST_P(CoordinationTest, TestDurableState)
+{
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+
+    std::optional<DB::KeeperStateManager> state_manager;
+
+    const auto reload_state_manager = [&]
+    { 
+        state_manager.emplace(1, "localhost", 9181, "./logs", "./state");
+    };
+
+    reload_state_manager();
+    ASSERT_EQ(state_manager->read_state(), nullptr);
+
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    const auto assert_read_state = [&]
+    {
+        auto read_state = state_manager->read_state();
+        ASSERT_NE(read_state, nullptr);
+        ASSERT_EQ(read_state->get_term(), state->get_term());
+        ASSERT_EQ(read_state->get_voted_for(), state->get_voted_for());
+        ASSERT_EQ(read_state->is_election_timer_allowed(), state->is_election_timer_allowed());
+    };
+
+    assert_read_state();
+
+    reload_state_manager();
+    assert_read_state();
+
+    state_manager.reset();
+    std::filesystem::remove("./state");
+    
+    reload_state_manager();
+    ASSERT_EQ(state_manager->read_state(), nullptr);
+}
+
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
     ::testing::ValuesIn(std::initializer_list<CompressionParam>{
