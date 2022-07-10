@@ -10,6 +10,7 @@ set -e
 user=user_$CLICKHOUSE_TEST_UNIQUE_NAME
 $CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS $user"
 $CLICKHOUSE_CLIENT --query "CREATE USER $user IDENTIFIED WITH PLAINTEXT_PASSWORD BY 'hello'"
+$CLICKHOUSE_CLIENT --query "GRANT SELECT ON system.numbers TO $user"
 trap '$CLICKHOUSE_CLIENT --query "DROP USER $user"' EXIT
 
 # Wait for query to start executing. At that time, the password should be cleared.
