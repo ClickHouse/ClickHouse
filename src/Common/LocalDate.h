@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstring>
+#include <string.h>
 #include <string>
 #include <exception>
 #include <Common/DateLUT.h>

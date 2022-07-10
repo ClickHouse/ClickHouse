@@ -8,7 +8,4 @@
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(multiIf(rand() % 2, toDateTime(rand()), toDate(rand())))</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(if(rand() % 2, [toDateTime(rand())], [toDate(rand())]))</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(multiIf(rand() % 2, [toDateTime(rand())], [toDate(rand())]))</query>
-
-    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(COALESCE(toNullable(number), 0))</query>
-    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(multiIf(number % 7 = 0, 1, number % 3 = 0, 2, number % 5 = 0, 3, number % 11 = 0, 4, 5))</query>
 </test>

@@ -1,9 +1,9 @@
 ---
-sidebar_position: 10
-sidebar_label: RabbitMQ
+toc_priority: 10
+toc_title: RabbitMQ
 ---
 
-# RabbitMQ Engine
+# RabbitMQ Engine {#rabbitmq-engine}
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 

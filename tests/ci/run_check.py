@@ -5,12 +5,10 @@ import re
 from typing import Tuple
 
 from github import Github
-
-from commit_status_helper import get_commit, post_labels, remove_labels
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
-from pr_info import FORCE_TESTS_LABEL, PRInfo
-from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
+from commit_status_helper import get_commit
 
 NAME = "Run Check (actions)"
 
@@ -23,38 +21,65 @@ TRUSTED_ORG_IDS = {
 OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
-SUBMODULE_CHANGED_LABEL = "submodule changed"
+FORCE_TESTS_LABEL = "force tests"
 
-# They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
-# updated accordingly
-LABELS = {
-    "pr-backward-incompatible": ["Backward Incompatible Change"],
-    "pr-bugfix": [
-        "Bug Fix",
-        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
-        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
-    ],
-    "pr-build": [
-        "Build/Testing/Packaging Improvement",
-        "Build Improvement",
-        "Build/Testing Improvement",
-        "Build",
-        "Packaging Improvement",
-    ],
-    "pr-documentation": [
-        "Documentation (changelog entry is not required)",
-        "Documentation",
-    ],
-    "pr-feature": ["New Feature"],
-    "pr-improvement": ["Improvement"],
-    "pr-not-for-changelog": [
-        "Not for changelog (changelog entry is not required)",
-        "Not for changelog",
-    ],
-    "pr-performance": ["Performance Improvement"],
+# Individual trusted contirbutors who are not in any trusted organization.
+# Can be changed in runtime: we will append users that we learned to be in
+# a trusted org, to save GitHub API calls.
+TRUSTED_CONTRIBUTORS = {
+    e.lower()
+    for e in [
+        "achimbab",
+        "adevyatova ",  # DOCSUP
+        "Algunenano",  # Raúl Marín, Tinybird
+        "amosbird",
+        "AnaUvarova",  # DOCSUP
+        "anauvarova",  # technical writer, Yandex
+        "annvsh",  # technical writer, Yandex
+        "atereh",  # DOCSUP
+        "azat",
+        "bharatnc",  # Newbie, but already with many contributions.
+        "bobrik",  # Seasoned contributor, CloudFlare
+        "BohuTANG",
+        "codyrobert",  # Flickerbox engineer
+        "cwurm",  # Employee
+        "damozhaeva",  # DOCSUP
+        "den-crane",
+        "flickerbox-tom",  # Flickerbox
+        "gyuton",  # technical writer, Yandex
+        "hagen1778",  # Roman Khavronenko, seasoned contributor
+        "hczhcz",
+        "hexiaoting",  # Seasoned contributor
+        "ildus",  # adjust, ex-pgpro
+        "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
+        "ka1bi4",  # DOCSUP
+        "kirillikoff",  # DOCSUP
+        "kitaisreal",  # Seasoned contributor
+        "kreuzerkrieg",
+        "lehasm",  # DOCSUP
+        "michon470",  # DOCSUP
+        "MyroTk",  # Tester in Altinity
+        "myrrc",  # Michael Kot, Altinity
+        "nikvas0",
+        "nvartolomei",
+        "olgarev",  # DOCSUP
+        "otrazhenia",  # Yandex docs contractor
+        "pdv-ru",  # DOCSUP
+        "podshumok",  # cmake expert from QRator Labs
+        "s-mx",  # Maxim Sabyanin, former employee, present contributor
+        "sevirov",  # technical writer, Yandex
+        "spongedu",  # Seasoned contributor
+        "taiyang-li",
+        "ucasFL",  # Amos Bird's friend
+        "vdimir",  # Employee
+        "vzakaznikov",
+        "YiuRULE",
+        "zlobober",  # Developer of YT
+        "ilejn",  # Arenadata, responsible for Kerberized Kafka
+        "thomoco",  # ClickHouse
+        "BoloniniD",  # Seasoned contributor, HSE
+    ]
 }
-
-CATEGORY_TO_LABEL = {c: lb for lb, categories in LABELS.items() for c in categories}
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
@@ -104,26 +129,20 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     return True, "No special conditions apply", "pending"
 
 
-def check_pr_description(pr_info) -> Tuple[str, str]:
+def check_pr_description(pr_info):
+    description = pr_info.body
+
     lines = list(
-        map(lambda x: x.strip(), pr_info.body.split("\n") if pr_info.body else [])
+        map(lambda x: x.strip(), description.split("\n") if description else [])
     )
     lines = [re.sub(r"\s+", " ", line) for line in lines]
-
-    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
-    if [
-        True
-        for line in lines
-        if re.match(rf"\AReverts {GITHUB_REPOSITORY}#[\d]+\Z", line)
-    ]:
-        return "", LABELS["pr-not-for-changelog"][0]
 
     category = ""
     entry = ""
 
     i = 0
     while i < len(lines):
-        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
+        if re.match(r"(?i)^[>*_ ]*change\s*log\s*category", lines[i]):
             i += 1
             if i >= len(lines):
                 break
@@ -149,10 +168,10 @@ def check_pr_description(pr_info) -> Tuple[str, str]:
                     + second_category
                     + "'"
                 )
-                return result_status[:140], category
+                return result_status[:140]
 
         elif re.match(
-            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+            r"(?i)^[>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
         ):
             i += 1
             # Can have one empty line between header and the entry itself.
@@ -171,74 +190,34 @@ def check_pr_description(pr_info) -> Tuple[str, str]:
             i += 1
 
     if not category:
-        return "Changelog category is empty", category
+        return "Changelog category is empty"
 
     # Filter out the PR categories that are not for changelog.
     if re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        return "", category
+        return ""
 
     if not entry:
-        return f"Changelog entry required for category '{category}'", category
+        return f"Changelog entry required for category '{category}'"
 
-    return "", category
+    return ""
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
+    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    description_error, category = check_pr_description(pr_info)
-    pr_labels_to_add = []
-    pr_labels_to_remove = []
-    if (
-        category in CATEGORY_TO_LABEL
-        and CATEGORY_TO_LABEL[category] not in pr_info.labels
-    ):
-        pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
-
-    for label in pr_info.labels:
-        if (
-            label in CATEGORY_TO_LABEL.values()
-            and category in CATEGORY_TO_LABEL
-            and label != CATEGORY_TO_LABEL[category]
-        ):
-            pr_labels_to_remove.append(label)
-
-    if pr_info.has_changes_in_submodules():
-        pr_labels_to_add.append(SUBMODULE_CHANGED_LABEL)
-    elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
-        pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
-
-    print(f"change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
-    if pr_labels_to_add:
-        post_labels(gh, pr_info, pr_labels_to_add)
-
-    if pr_labels_to_remove:
-        remove_labels(gh, pr_info, pr_labels_to_remove)
-
-    commit.create_status(
-        context="Simple Check",
-        description="Skipped",
-        state="success",
-        target_url=GITHUB_RUN_URL,
-    )
-
-    if description_error:
-        print(
-            "::error ::Cannot run, PR description does not match the template: "
-            f"{description_error}"
-        )
+    description_report = check_pr_description(pr_info)[:139]
+    if description_report:
+        print("::notice ::Cannot run, description does not match the template")
         logging.info(
-            "PR body doesn't match the template: (start)\n%s\n(end)\n" "Reason: %s",
-            pr_info.body,
-            description_error,
+            "PR body doesn't match the template: (start)\n%s\n(end)", pr_info.body
         )
         url = (
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
@@ -246,7 +225,7 @@ if __name__ == "__main__":
         )
         commit.create_status(
             context=NAME,
-            description=description_error[:139],
+            description=description_report,
             state="failure",
             target_url=url,
         )
@@ -260,7 +239,16 @@ if __name__ == "__main__":
         )
         sys.exit(1)
     else:
-        print("::notice ::Can run")
-        commit.create_status(
-            context=NAME, description=description, state="pending", target_url=url
-        )
+        if "pr-documentation" in pr_info.labels or "pr-doc-fix" in pr_info.labels:
+            commit.create_status(
+                context=NAME,
+                description="Skipping checks for documentation",
+                state="success",
+                target_url=url,
+            )
+            print("::notice ::Can run, but it's documentation PR, skipping")
+        else:
+            print("::notice ::Can run")
+            commit.create_status(
+                context=NAME, description=description, state="pending", target_url=url
+            )

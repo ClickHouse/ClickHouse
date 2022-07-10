@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
+
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
@@ -10,7 +12,7 @@
 namespace DB
 {
 
-class MutateFromLogEntryTask : public ReplicatedMergeMutateTaskBase
+class MutateFromLogEntryTask : public shared_ptr_helper<MutateFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
 {
 public:
     template <typename Callback>
@@ -20,11 +22,10 @@ public:
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
-
     UInt64 getPriority() override { return priority; }
 
 private:
-    ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
+    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override

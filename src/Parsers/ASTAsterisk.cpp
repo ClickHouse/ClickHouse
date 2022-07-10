@@ -17,8 +17,6 @@ void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const { ostr.write('*'); 
 void ASTAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << "*";
-
-    /// Format column transformers
     for (const auto & child : children)
     {
         settings.ostr << ' ';

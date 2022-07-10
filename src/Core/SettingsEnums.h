@@ -42,12 +42,9 @@ enum class JoinAlgorithm
     HASH,
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
-    PARALLEL_HASH,
-    DIRECT,
-    FULL_SORTING_MERGE,
 };
 
-DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+DECLARE_SETTING_ENUM(JoinAlgorithm)
 
 
 /// Which rows should be included in TOTALS.
@@ -168,7 +165,7 @@ DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 
 enum class HandleKafkaErrorMode
 {
-    DEFAULT = 0, // Ignore errors with threshold.
+    DEFAULT = 0, // Ignore errors whit threshold.
     STREAM, // Put errors to stream in the virtual column named ``_error.
     /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likey system.kafka_errors. This is not implemented now.  */
     /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
@@ -185,18 +182,10 @@ enum class ShortCircuitFunctionEvaluation
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
-enum class TransactionsWaitCSNMode
-{
-    ASYNC,
-    WAIT,
-    WAIT_UNKNOWN,
-};
-
-DECLARE_SETTING_ENUM(TransactionsWaitCSNMode)
-
 DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
+
 }

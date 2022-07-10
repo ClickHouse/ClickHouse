@@ -1,7 +1,7 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <base/scope_guard.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>

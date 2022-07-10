@@ -10,14 +10,10 @@ set max_rows_to_read = 2, allow_experimental_projection_optimization = 1;
 select min(i), max(i), count() from d;
 select min(i), max(i), count() from d group by _partition_id order by _partition_id;
 select min(i), max(i), count() from d where _partition_value.1 = 0 group by _partition_id order by _partition_id;
-select min(i), max(i), count() from d where moduloLegacy(i, 2) = 0 group by _partition_id order by _partition_id;
 select min(i), max(i), count() from d where _partition_value.1 = 10 group by _partition_id order by _partition_id;
 
 -- fuzz crash
 select min(i) from d where 1 = _partition_value.1;
-
--- fuzz crash https://github.com/ClickHouse/ClickHouse/issues/37151
-SELECT min(i), max(i), count() FROM d WHERE (_partition_value.1) = 0 GROUP BY ignore(bitTest(ignore(NULL), 65535), NULL, (_partition_value.1) = 7, '10.25', bitTest(NULL, -9223372036854775808), NULL, ignore(ignore(-2147483647, NULL)), 1024), _partition_id ORDER BY _partition_id ASC NULLS FIRST;
 
 drop table d;
 
@@ -54,12 +50,7 @@ drop table if exists d;
 create table d (dt DateTime, j int) engine MergeTree partition by (toDate(dt), ceiling(j), toDate(dt), CEILING(j)) order by tuple();
 insert into d values ('2021-10-24 10:00:00', 10), ('2021-10-25 10:00:00', 10), ('2021-10-26 10:00:00', 10), ('2021-10-27 10:00:00', 10);
 select min(dt), max(dt), count() from d where toDate(dt) >= '2021-10-25';
--- fuzz crash
-select min(dt), max(dt), count(toDate(dt) >= '2021-10-25') from d where toDate(dt) >= '2021-10-25';
 select count() from d group by toDate(dt);
-
--- fuzz crash
-SELECT min(dt), count(ignore(ignore(ignore(tupleElement(_partition_value, NULL) = NULL), NULL, NULL, NULL), 0, '10485.76', NULL)), max(dt), count(toDate(dt) >= '2021-10-25') FROM d WHERE toDate(dt) >= '2021-10-25';
 
 -- fuzz crash
 SELECT pointInEllipses(min(j), NULL), max(dt), count('0.0000000007') FROM d WHERE toDate(dt) >= '2021-10-25';
@@ -68,15 +59,3 @@ SELECT min(dt) FROM d PREWHERE ((0.9998999834060669 AND 1023) AND 255) <= ceil(j
 SELECT count('') AND NULL FROM d PREWHERE ceil(j) <= NULL;
 
 drop table d;
-
--- count variant optimization
-
-drop table if exists test;
-create table test (id Int64, d Int64, projection dummy(select * order by id)) engine MergeTree order by id;
-insert into test select number, number from numbers(1e3);
-
-select count(if(d=4, d, 1)) from test settings force_optimize_projection = 1;
-select count(d/3) from test settings force_optimize_projection = 1;
-select count(if(d=4, Null, 1)) from test settings force_optimize_projection = 1; -- { serverError 584 }
-
-drop table test;

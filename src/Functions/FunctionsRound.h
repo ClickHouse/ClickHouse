@@ -168,7 +168,7 @@ struct IntegerRoundingComputation
         __builtin_unreachable();
     }
 
-    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
+    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
         if constexpr (sizeof(T) <= sizeof(scale) && scale_mode == ScaleMode::Negative)
         {
@@ -181,10 +181,6 @@ struct IntegerRoundingComputation
         *out = compute(*in, scale);
     }
 
-    static ALWAYS_INLINE void compute(const T * __restrict in, T scale, T * __restrict out) requires(!std::integral<T>)
-    {
-        *out = compute(*in, scale);
-    }
 };
 
 
@@ -436,7 +432,7 @@ public:
         scale_arg = in_scale - scale_arg;
         if (scale_arg > 0)
         {
-            auto scale = intExp10OfSize<T>(scale_arg);
+            size_t scale = intExp10(scale_arg);
 
             const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
             const NativeType * end_in = reinterpret_cast<const NativeType *>(in.data()) + in.size();

@@ -1,11 +1,11 @@
 ---
-sidebar_position: 58
-sidebar_label: "Функции для работы с внешними словарями"
+toc_priority: 58
+toc_title: "Функции для работы с внешними словарями"
 ---
 
-    :::note "Внимание"
+!!! attention "Внимание"
     Для словарей, созданных с помощью [DDL-запросов](../../sql-reference/statements/create/dictionary.md), в параметре `dict_name` указывается полное имя словаря вместе с базой данных, например: `<database>.<dict_name>`. Если база данных не указана, используется текущая.
-    :::
+
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).

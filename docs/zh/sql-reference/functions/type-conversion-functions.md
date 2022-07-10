@@ -1,6 +1,6 @@
 ---
-sidebar_position: 38
-sidebar_label: 类型转换函数
+toc_priority: 38
+toc_title: 类型转换函数
 ---
 
 # 类型转换函数 {#lei-xing-zhuan-huan-han-shu}
