@@ -200,9 +200,13 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
-KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
-    : my_server_id(server_id_), secure(false), log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false)),
-      server_state_path(state_file_path), logger(&Poco::Logger::get("KeeperStateManager"))
+KeeperStateManager::KeeperStateManager(
+    int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
+    : my_server_id(server_id_)
+    , secure(false)
+    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
+    , server_state_path(state_file_path)
+    , logger(&Poco::Logger::get("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -304,14 +308,14 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     const auto try_read_file = [this](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
-        ReadBufferFromFile read_buf(path);
-        auto content_size = read_buf.getFileSize();
-
-        if (content_size == 0)
-            return nullptr;
-
         try
         {
+            ReadBufferFromFile read_buf(path);
+            auto content_size = read_buf.getFileSize();
+
+            if (content_size == 0)
+                return nullptr;
+
             uint64_t read_checksum;
             readIntBinary(read_checksum, read_buf);
 
