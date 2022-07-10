@@ -2,7 +2,7 @@
 sidebar_position: 150
 ---
 
-# skewPop {#skewpop}
+# skewPop
 
 Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 

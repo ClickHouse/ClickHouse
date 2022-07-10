@@ -1,6 +1,6 @@
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
-#include <signal.h>
+#include <csignal>
 #include <poll.h>
 
 #include <mutex>

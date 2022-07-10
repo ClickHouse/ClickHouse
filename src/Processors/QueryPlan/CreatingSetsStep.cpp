@@ -49,6 +49,11 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
 }
 
+void CreatingSetStep::updateOutputStream()
+{
+    output_stream = createOutputStream(input_streams.front(), Block{}, getDataStreamTraits());
+}
+
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');

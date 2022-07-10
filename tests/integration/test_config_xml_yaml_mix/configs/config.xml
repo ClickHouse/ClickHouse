@@ -60,8 +60,6 @@
 
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
-    <mark_cache_size>5368709120</mark_cache_size>
-
     <mmap_cache_size>1000</mmap_cache_size>
 
     <path>./</path>
