@@ -309,7 +309,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         try
         {
             auto state = nuraft::srv_state::deserialize(*state_buf);
-            LOG_INFO(&Poco::Logger::get("LOGGER"), "Read state from {}", path.generic_string());
+            LOG_INFO(&Poco::Logger::get("KeeperStateManager"), "Read state from {}", path.generic_string());
             return state;
         }
         catch (const std::overflow_error &)
@@ -337,6 +337,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         std::filesystem::rename(old_path, server_state_path);
     }
 
+    LOG_INFO(&Poco::Logger::get("KeeperStateManager"), "No state was read");
     return nullptr;
 }
 
