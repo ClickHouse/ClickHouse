@@ -186,22 +186,22 @@ void ReadBufferFromRemoteFSGather::initialize()
     auto current_buf_offset = file_offset_of_buffer_end;
     for (size_t i = 0; i < blobs_to_read.size(); ++i)
     {
-        const auto & [file_path, size, _] = blobs_to_read[i];
+        const auto & object = blobs_to_read[i];
 
-        if (size > current_buf_offset)
+        if (object.bytes_size > current_buf_offset)
         {
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || current_buf_idx != i)
             {
                 current_buf_idx = i;
-                current_buf = createImplementationBuffer(file_path, size);
+                current_buf = createImplementationBuffer(object.absolute_path, object.bytes_size);
             }
 
             current_buf->seek(current_buf_offset, SEEK_SET);
             return;
         }
 
-        current_buf_offset -= size;
+        current_buf_offset -= object.bytes_size;
     }
     current_buf_idx = blobs_to_read.size();
     current_buf = nullptr;
@@ -242,8 +242,8 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 
     ++current_buf_idx;
 
-    const auto & [path, size, _] = blobs_to_read[current_buf_idx];
-    current_buf = createImplementationBuffer(path, size);
+    const auto & object = blobs_to_read[current_buf_idx];
+    current_buf = createImplementationBuffer(object.absolute_path, object.bytes_size);
 
     return true;
 }

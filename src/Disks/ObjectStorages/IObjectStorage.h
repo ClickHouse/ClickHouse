@@ -12,6 +12,7 @@
 #include <IO/WriteSettings.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Common/ThreadPool.h>
 #include <Disks/WriteMode.h>
 
@@ -36,25 +37,6 @@ struct RelativePathWithSize
 };
 using RelativePathsWithSize = std::vector<RelativePathWithSize>;
 
-
-/// Object metadata: path, size, path_key_for_cache.
-struct StoredObject
-{
-    std::string absolute_path;
-    uint64_t bytes_size;
-
-    /// Optional cache hint for cache. Use delayed initialization
-    /// because somecache hint implementation requires it.
-    using PathKeyForCacheCreator = std::function<std::string(const std::string &)>;
-    PathKeyForCacheCreator path_key_for_cache_creator;
-
-    StoredObject() = default;
-
-    explicit StoredObject(
-        const std::string & absolute_path_, uint64_t bytes_size_ = 0, PathKeyForCacheCreator && path_key_for_cache_creator_ = {});
-
-    std::string getPathKeyForCache() const;
-};
 
 using StoredObjects = std::vector<StoredObject>;
 
@@ -173,6 +155,9 @@ public:
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual std::string generateBlobNameForPath(const std::string & path) = 0;
+
+    /// Get unique id for passed absolute path in object storage.
+    virtual std::string getUniqueId(const std::string & path) const { return path; }
 
     virtual bool supportsAppend() const { return false; }
 

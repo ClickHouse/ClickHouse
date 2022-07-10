@@ -47,20 +47,4 @@ std::string IObjectStorage::getCacheBasePath() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for {}", getName());
 }
 
-StoredObject::StoredObject(
-    const std::string & absolute_path_,
-    uint64_t bytes_size_,
-    PathKeyForCacheCreator && path_key_for_cache_creator_)
-    : absolute_path(absolute_path_)
-    , bytes_size(bytes_size_)
-    , path_key_for_cache_creator(std::move(path_key_for_cache_creator_))
-{}
-
-std::string StoredObject::getPathKeyForCache() const
-{
-    if (path_key_for_cache_creator)
-        return path_key_for_cache_creator(absolute_path);
-    return "";
-}
-
 }

@@ -36,6 +36,7 @@ using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;
 
 using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 
+
 /// Disk object storage transaction, actually implement some part of disk object storage
 /// logic. Works on top of non atomic operations with blobs and possibly atomic implementation
 /// of metadata storage.
@@ -52,11 +53,14 @@ struct DiskObjectStorageTransaction final : public IDiskTransaction, std::enable
 private:
     IObjectStorage & object_storage;
     IMetadataStorage & metadata_storage;
+
     MetadataTransactionPtr metadata_transaction;
+
     /// TODO we can get rid of this params
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
 
     DiskObjectStorageOperations operations_to_execute;
+
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,

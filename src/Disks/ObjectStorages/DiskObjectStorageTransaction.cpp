@@ -332,8 +332,9 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto blob_name = object_storage.generateBlobNameForPath(to_path);
-            auto object_to = metadata_storage.createStorageObject(blob_name);
+            std::string blob_name = object_storage.generateBlobNameForPath(to_path);
+            auto object_to = StoredObject::create(
+                object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
 
             object_storage.copyObject(object_from, object_to);
 
@@ -371,7 +372,7 @@ void DiskObjectStorageTransaction::createDirectories(const std::string & path)
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
-            tx->createDicrectoryRecursive(path);
+            tx->createDirectoryRecursive(path);
         }));
 }
 
@@ -508,7 +509,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         blob_name = object_storage.generateBlobNameForPath(path);
     }
 
-    auto object = metadata_storage.createStorageObject(blob_name);
+    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 

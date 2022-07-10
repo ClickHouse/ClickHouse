@@ -47,6 +47,11 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     return readObject(objects[0], read_settings, read_hint, file_size);
 }
 
+std::string LocalObjectStorage::getUniqueId(const std::string & path) const
+{
+    return toString(getINodeNumberFromPath(path));
+}
+
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
@@ -102,10 +107,6 @@ void LocalObjectStorage::listPrefix(const std::string & path, RelativePathsWithS
 
 void LocalObjectStorage::removeObject(const StoredObject & object)
 {
-    /// For local object storage files are actually removed when "metadata" is removed.
-    if (!exists(object))
-        return;
-
     if (0 != unlink(object.absolute_path.data()))
         throwFromErrnoWithPath("Cannot unlink file " + object.absolute_path, object.absolute_path, ErrorCodes::CANNOT_UNLINK);
 }
