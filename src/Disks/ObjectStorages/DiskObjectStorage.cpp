@@ -16,6 +16,7 @@
 #include <Common/IFileCache.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
+#include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -78,8 +79,12 @@ private:
 
 }
 
-
 DiskTransactionPtr DiskObjectStorage::createTransaction()
+{
+    return std::make_shared<FakeDiskTransaction>(*this);
+}
+
+DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
         *object_storage,
@@ -176,7 +181,7 @@ bool DiskObjectStorage::isFile(const String & path) const
 
 void DiskObjectStorage::createFile(const String & path)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->createFile(path);
     transaction->commit();
 }
@@ -201,7 +206,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
         metadata_helper->createFileOperationObject("rename", revision, object_metadata);
     }
 
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
     transaction->commit();
 }
@@ -215,7 +220,7 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
 {
     if (exists(to_path))
     {
-        auto transaction = createTransaction();
+        auto transaction = createObjectStorageTransaction();
         transaction->replaceFile(from_path, to_path);
         transaction->commit();
     }
@@ -225,7 +230,7 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
 
 void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->removeSharedFile(path, delete_metadata_only);
     transaction->commit();
 }
@@ -276,7 +281,7 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
         metadata_helper->createFileOperationObject("hardlink", revision, object_metadata);
     }
 
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->createHardLink(src_path, dst_path);
     transaction->commit();
 }
@@ -291,7 +296,7 @@ void DiskObjectStorage::setReadOnly(const String & path)
 {
     /// We should store read only flag inside metadata file (instead of using FS flag),
     /// because we modify metadata file when create hard-links from it.
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->setReadOnly(path);
     transaction->commit();
 }
@@ -305,7 +310,7 @@ bool DiskObjectStorage::isDirectory(const String & path) const
 
 void DiskObjectStorage::createDirectory(const String & path)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->createDirectory(path);
     transaction->commit();
 }
@@ -313,7 +318,7 @@ void DiskObjectStorage::createDirectory(const String & path)
 
 void DiskObjectStorage::createDirectories(const String & path)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->createDirectories(path);
     transaction->commit();
 }
@@ -321,7 +326,7 @@ void DiskObjectStorage::createDirectories(const String & path)
 
 void DiskObjectStorage::clearDirectory(const String & path)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->clearDirectory(path);
     transaction->commit();
 }
@@ -329,7 +334,7 @@ void DiskObjectStorage::clearDirectory(const String & path)
 
 void DiskObjectStorage::removeDirectory(const String & path)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->removeDirectory(path);
     transaction->commit();
 }
@@ -350,7 +355,7 @@ void DiskObjectStorage::listFiles(const String & path, std::vector<String> & fil
 
 void DiskObjectStorage::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->setLastModified(path, timestamp);
     transaction->commit();
 }
@@ -394,14 +399,14 @@ ReservationPtr DiskObjectStorage::reserve(UInt64 bytes)
 
 void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->removeSharedFileIfExists(path, delete_metadata_only);
     transaction->commit();
 }
 
 void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
     transaction->commit();
 }
@@ -451,7 +456,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     WriteMode mode,
     const WriteSettings & settings)
 {
-    auto transaction = createTransaction();
+    auto transaction = createObjectStorageTransaction();
     auto result = transaction->writeFile(path, buf_size, mode, settings);
 
     return result;

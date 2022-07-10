@@ -2128,6 +2128,12 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 
     return shared->keeper_dispatcher;
 }
+
+std::shared_ptr<KeeperDispatcher> & Context::tryGetKeeperDispatcher() const
+{
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    return shared->keeper_dispatcher;
+}
 #endif
 
 void Context::shutdownKeeperDispatcher() const

@@ -79,7 +79,7 @@ def new_backup_name():
 
 def get_path_to_backup(backup_name):
     name = backup_name.split(",")[1].strip("')/ ")
-    return os.path.join(instance.cluster.instances_dir, "backups", name)
+    return os.path.join(node1.cluster.instances_dir, "backups", name)
 
 
 def test_replicated_table():
@@ -514,3 +514,195 @@ def test_system_users():
         node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
     )
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
+
+
+def test_projection():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt32, y String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}') "
+        "ORDER BY y PARTITION BY x%10"
+    )
+    node1.query(f"INSERT INTO tbl SELECT number, toString(number) FROM numbers(3)")
+
+    node1.query("ALTER TABLE tbl ADD PROJECTION prjmax (SELECT MAX(x))")
+    node1.query(f"INSERT INTO tbl VALUES (100, 'a'), (101, 'b')")
+
+    assert (
+        node1.query(
+            "SELECT count() FROM system.projection_parts WHERE database='default' AND table='tbl' AND name='prjmax'"
+        )
+        == "2\n"
+    )
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    assert (
+        node1.query(
+            "SELECT count() FROM system.projection_parts WHERE database='default' AND table='tbl' AND name='prjmax'"
+        )
+        == "0\n"
+    )
+
+    node1.query(f"RESTORE TABLE tbl FROM {backup_name}")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV(
+        [[0, "0"], [1, "1"], [2, "2"], [100, "a"], [101, "b"]]
+    )
+
+    assert (
+        node1.query(
+            "SELECT count() FROM system.projection_parts WHERE database='default' AND table='tbl' AND name='prjmax'"
+        )
+        == "2\n"
+    )
+
+
+def test_replicated_table_with_not_synced_def():
+    node1.query(
+        "CREATE TABLE tbl ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY tuple()"
+    )
+
+    node2.query(
+        "CREATE TABLE tbl ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY tuple()"
+    )
+
+    node2.query("SYSTEM STOP REPLICATION QUEUES tbl")
+    node1.query("ALTER TABLE tbl MODIFY COLUMN x String")
+
+    # Not synced because the replication queue is stopped
+    assert node1.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+    assert node2.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl'"
+    ) == TSV([["x", "UInt8"], ["y", "String"]])
+
+    backup_name = new_backup_name()
+    node2.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    # But synced after RESTORE anyway
+    node1.query(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=1"
+    )
+    assert node1.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+    assert node2.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    node2.query(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
+    )
+    assert node1.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+    assert node2.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+
+
+def test_table_in_replicated_database_with_not_synced_def():
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
+    )
+
+    node1.query(
+        "CREATE TABLE mydb.tbl (x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY tuple()"
+    )
+
+    node1.query("ALTER TABLE mydb.tbl MODIFY COLUMN x String")
+
+    backup_name = new_backup_name()
+    node2.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+
+    # But synced after RESTORE anyway
+    node1.query(
+        f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=1"
+    )
+    assert node1.query(
+        "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+    assert node2.query(
+        "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+
+    node2.query(
+        f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
+    )
+    assert node1.query(
+        "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+    assert node2.query(
+        "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
+    ) == TSV([["x", "String"], ["y", "String"]])
+
+
+def has_mutation_in_backup(mutation_id, backup_name, database, table):
+    return (
+        os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/1/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+        or os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/2/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+        or os.path.exists(
+            os.path.join(
+                get_path_to_backup(backup_name),
+                f"shards/1/replicas/3/data/{database}/{table}/mutations/{mutation_id}.txt",
+            )
+        )
+    )
+
+
+def test_mutation():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY tuple()"
+    )
+
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(5)")
+
+    node2.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(5, 5)")
+
+    node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(10, 5)")
+
+    node1.query("ALTER TABLE tbl UPDATE x=x+1 WHERE 1")
+    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(1) WHERE 1")
+    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(2) WHERE 1")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    assert not has_mutation_in_backup("0000000000", backup_name, "default", "tbl")
+    assert has_mutation_in_backup("0000000001", backup_name, "default", "tbl")
+    assert has_mutation_in_backup("0000000002", backup_name, "default", "tbl")
+    assert not has_mutation_in_backup("0000000003", backup_name, "default", "tbl")
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")

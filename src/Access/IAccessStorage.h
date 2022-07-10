@@ -18,9 +18,8 @@ struct User;
 class Credentials;
 class ExternalAuthenticators;
 enum class AuthenticationType;
-struct BackupSettings;
-struct RestoreSettings;
-class IRestoreCoordination;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
@@ -158,11 +157,11 @@ public:
 
     /// Returns true if this storage can be stored to or restored from a backup.
     virtual bool isBackupAllowed() const { return false; }
-    virtual bool isRestoreAllowed() const;
+    virtual bool isRestoreAllowed() const { return isBackupAllowed() && !isReadOnly(); }
 
     /// Makes a backup of this access storage.
-    virtual std::vector<std::pair<UUID, AccessEntityPtr>> readAllForBackup(AccessEntityType type, const BackupSettings & backup_settings) const;
-    virtual void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination);
+    virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
+    virtual void restoreFromBackup(RestorerFromBackup & restorer);
 
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;

@@ -12,6 +12,8 @@ class DiskDecorator : public IDisk
 {
 public:
     explicit DiskDecorator(const DiskPtr & delegate_);
+
+    DiskTransactionPtr createTransaction() override;
     const String & getName() const override;
     ReservationPtr reserve(UInt64 bytes) override;
     ~DiskDecorator() override = default;
@@ -69,6 +71,7 @@ public:
     DiskType getType() const override { return delegate->getType(); }
     bool isRemote() const override { return delegate->isRemote(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
+    bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;

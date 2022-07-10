@@ -51,7 +51,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
     -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
-    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
