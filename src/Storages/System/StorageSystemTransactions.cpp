@@ -15,6 +15,7 @@ static DataTypePtr getStateEnumType()
     DataTypeEnum8::Values
         {
             {"RUNNING",           static_cast<Int8>(MergeTreeTransaction::State::RUNNING)},
+            {"COMMITTING",           static_cast<Int8>(MergeTreeTransaction::State::COMMITTING)},
             {"COMMITTED",         static_cast<Int8>(MergeTreeTransaction::State::COMMITTED)},
             {"ROLLED_BACK",       static_cast<Int8>(MergeTreeTransaction::State::ROLLED_BACK)},
         });

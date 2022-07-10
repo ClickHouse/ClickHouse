@@ -1,3 +1,0 @@
----
-is_index: true
----

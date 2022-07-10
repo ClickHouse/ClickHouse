@@ -14,7 +14,7 @@
 #include <base/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
-#include "ODBCConnectionFactory.h"
+#include "ODBCPooledConnectionFactory.h"
 
 
 namespace DB
@@ -42,7 +42,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         std::string connection_string = params.get("connection_string");
 
-        auto connection = ODBCConnectionFactory::instance().get(
+        auto connection = ODBCPooledConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 

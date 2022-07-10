@@ -2,7 +2,7 @@
 sidebar_position: 208
 ---
 
-# quantileTDigestWeighted {#quantiletdigestweighted}
+# quantileTDigestWeighted
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The function takes into account the weight of each sequence member. The maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
 
