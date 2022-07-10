@@ -123,7 +123,7 @@ namespace
                 res |= show_databases;
             }
 
-            max_flags |= max_flags_with_children;
+            max_flags |= res;
 
             return res;
         };
@@ -131,13 +131,48 @@ namespace
         AccessRights res = access;
         res.modifyFlags(modifier);
 
+        /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
         if (access_control.doesSelectFromSystemDatabaseRequireGrant())
         {
-            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "one");
+            const char * always_accessible_tables[] = {
+                /// Constant tables
+                "one",
+
+                /// "numbers", "numbers_mt", "zeros", "zeros_mt" were excluded because they can generate lots of values and
+                /// that can decrease performance in some cases.
+
+                "contributors",
+                "licenses",
+                "time_zones",
+                "collations",
+
+                "formats",
+                "privileges",
+                "data_type_families",
+                "table_engines",
+                "table_functions",
+                "aggregate_function_combinators",
+
+                "functions", /// Can contain user-defined functions
+
+                /// The following tables hide some rows if the current user doesn't have corresponding SHOW privileges.
+                "databases",
+                "tables",
+                "columns",
+
+                /// Specific to the current session
+                "settings",
+                "current_roles",
+                "enabled_roles",
+                "quota_usage"
+            };
+
+            for (const auto * table_name : always_accessible_tables)
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
             if (max_flags.contains(AccessType::SHOW_USERS))
                 res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
-            
+
             if (max_flags.contains(AccessType::SHOW_ROLES))
                 res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "roles");
 
@@ -149,25 +184,15 @@ namespace
 
             if (max_flags.contains(AccessType::SHOW_QUOTAS))
                 res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
-
-            if (max_flags.contains(AccessType::SHOW_COLUMNS))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "columns");
-
-            if (max_flags.contains(AccessType::SHOW_TABLES))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "tables");
-
-            if (max_flags.contains(AccessType::SHOW_DATABASES))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "databases");
         }
         else
         {
-            /// Anyone has access to the "system" database.
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
         }
 
-        if (!access_control.doesSelectFromInformationSchemaDatabaseRequireGrant())
+        /// If "select_from_information_schema_requires_grant" is enabled we don't provide implicit grants for the information_schema database.
+        if (!access_control.doesSelectFromInformationSchemaRequireGrant())
         {
-            /// Anyone has access to the "information_schema" database.
             res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
             res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         }
