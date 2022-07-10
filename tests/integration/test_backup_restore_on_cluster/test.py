@@ -434,6 +434,7 @@ def test_required_privileges():
     node1.query("INSERT INTO tbl VALUES (100)")
 
     node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
 
     backup_name = new_backup_name()
     expected_error = "necessary to have grant BACKUP ON default.tbl"
@@ -478,6 +479,7 @@ def test_system_users():
 
     backup_name = new_backup_name()
     node1.query("CREATE USER u2 SETTINGS allow_backup=false")
+    node1.query("GRANT CLUSTER ON *.* TO u2")
 
     expected_error = "necessary to have grant BACKUP ON system.users"
     assert expected_error in node1.query_and_get_error(
