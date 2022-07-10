@@ -459,7 +459,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     };
 
     if (is_full_access)
-        return access_granted();
+        return true;
 
     if (user_was_dropped)
         return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
@@ -468,7 +468,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         flags &= ~AccessType::CLUSTER;
 
     if (!flags)
-        return access_granted();
+        return true;
 
     /// Access to temporary tables is controlled in an unusual way, not like normal tables.
     /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
