@@ -21,8 +21,9 @@ public:
     ~BackupCoordinationLocal() override;
 
     void setStatus(const String & current_host, const String & new_status, const String & message) override;
-    Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts) override;
-    Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms) override;
+    void setErrorStatus(const String & current_host, const Exception & exception) override;
+    Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) override;
+    Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) override;
 
     void addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name,
                                 const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
