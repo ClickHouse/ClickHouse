@@ -87,7 +87,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     }
 
     add_subquery("SELECT concat(func.name, comb.name) AS x FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate", "x");
-    
+
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
     if (suggestion_limit > 0)
     {

@@ -155,8 +155,8 @@ public:
     void setSelectFromSystemDatabaseRequiresGrant(bool enable) { select_from_system_db_requires_grant = enable; }
     bool doesSelectFromSystemDatabaseRequireGrant() const { return select_from_system_db_requires_grant; }
 
-    void setSelectFromInformationSchemaDatabaseRequiresGrant(bool enable) { select_from_information_schema_db_requires_grant = enable; }
-    bool doesSelectFromInformationSchemaDatabaseRequireGrant() const { return select_from_information_schema_db_requires_grant; }
+    void setSelectFromInformationSchemaRequiresGrant(bool enable) { select_from_information_schema_requires_grant = enable; }
+    bool doesSelectFromInformationSchemaRequireGrant() const { return select_from_information_schema_requires_grant; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
@@ -222,7 +222,7 @@ private:
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;
-    std::atomic_bool select_from_information_schema_db_requires_grant = false;
+    std::atomic_bool select_from_information_schema_requires_grant = false;
 };
 
 }

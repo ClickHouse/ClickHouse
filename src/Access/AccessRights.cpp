@@ -1062,12 +1062,12 @@ void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
 {
     if (!root)
         return;
-    
+
     bool flags_added, flags_removed;
     root->modifyFlags(function, false, flags_added, flags_removed);
     if (flags_removed && root_with_grant_option)
         root_with_grant_option->makeIntersection(*root);
-    
+
     if (root_with_grant_option)
     {
         root_with_grant_option->modifyFlags(function, true, flags_added, flags_removed);
