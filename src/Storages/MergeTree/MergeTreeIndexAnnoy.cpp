@@ -259,15 +259,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context);
 };
 
-MergeTreeIndexFormat MergeTreeIndexAnnoy::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
-{
-    if (disk->exists(relative_path_prefix + ".idx2"))
-        return {2, ".idx2"};
-    else if (disk->exists(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /* unknown */, ""};
-}
-
 MergeTreeIndexPtr AnnoyIndexCreator(const IndexDescription & index)
 {
     int param = index.arguments[0].get<int>();
