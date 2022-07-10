@@ -5,6 +5,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
+#include "IO/ReadHelpers.h"
 
 namespace DB
 {
@@ -199,8 +200,9 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
-KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
-    : my_server_id(server_id_), secure(false), log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
+KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
+    : my_server_id(server_id_), secure(false), log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false)),
+      server_state_path(state_file_path)
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -213,6 +215,7 @@ KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix_,
     const std::string & log_storage_path,
+    const std::string & state_file_path,
     const Poco::Util::AbstractConfiguration & config,
     const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
@@ -224,6 +227,7 @@ KeeperStateManager::KeeperStateManager(
           coordination_settings->rotate_log_storage_interval,
           coordination_settings->force_sync,
           coordination_settings->compress_logs))
+    , server_state_path(state_file_path)
 {
 }
 
@@ -261,10 +265,79 @@ void KeeperStateManager::save_config(const nuraft::cluster_config & config)
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
+const std::filesystem::path & KeeperStateManager::getOldServerStatePath()
+{
+    static auto old_path = [this]{
+        return server_state_path.parent_path() / (server_state_path.filename().generic_string() + "-OLD");
+    }();
+
+    return old_path;
+}
+
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
-    nuraft::ptr<nuraft::buffer> buf = state.serialize();
-    server_state = nuraft::srv_state::deserialize(*buf);
+    const auto & old_path = getOldServerStatePath();
+
+    if (std::filesystem::exists(server_state_path))
+        std::filesystem::rename(server_state_path, old_path);
+
+    WriteBufferFromFile server_state_file(server_state_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+    auto buf = state.serialize();
+    server_state_file.write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
+    server_state_file.sync();
+    server_state_file.close();
+
+    std::filesystem::remove(old_path);
+}
+
+nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
+{
+    const auto & old_path = getOldServerStatePath();
+
+    const auto try_read_file = [](const auto & path) -> nuraft::ptr<nuraft::srv_state>
+    {
+        ReadBufferFromFile read_buf(path);
+        auto content_size = read_buf.getFileSize();
+
+        if (content_size == 0)
+            return nullptr;
+
+        auto state_buf = nuraft::buffer::alloc(content_size);
+        read_buf.read(reinterpret_cast<char *>(state_buf->data_begin()), content_size);
+        assertEOF(read_buf);
+
+        try
+        {
+            auto state = nuraft::srv_state::deserialize(*state_buf);
+            LOG_INFO(&Poco::Logger::get("LOGGER"), "Read state from {}", path.generic_string());
+            return state;
+        }
+        catch (const std::overflow_error &)
+        {
+            LOG_WARNING(&Poco::Logger::get("KeeperStateManager"), "Failed to deserialize state from {}", path.generic_string());
+            return nullptr;
+        }
+    };
+
+    if (std::filesystem::exists(server_state_path))
+    {
+        auto state = try_read_file(server_state_path);
+
+        if (state)
+            return state;
+    }
+
+    if (std::filesystem::exists(old_path))
+    {
+        auto state = try_read_file(server_state_path);
+
+        if (state)
+            return state;
+
+        std::filesystem::rename(old_path, server_state_path);
+    }
+
+    return nullptr;
 }
 
 ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
