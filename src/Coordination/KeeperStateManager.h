@@ -138,6 +138,8 @@ private:
 
     const std::filesystem::path server_state_path;
 
+    Poco::Logger * logger;
+
 public:
     /// Parse configuration from xml config.
     KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const;
