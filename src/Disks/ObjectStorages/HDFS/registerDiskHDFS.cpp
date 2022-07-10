@@ -1,7 +1,7 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromRemoteDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/HDFS/HDFSCommon.h>
@@ -40,7 +40,7 @@ void registerDiskHDFS(DiskFactory & factory)
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context_);
 
-        auto metadata_storage = std::make_shared<MetadataStorageFromRemoteDisk>(metadata_disk, uri);
+        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
 
         DiskPtr disk_result = std::make_shared<DiskObjectStorage>(

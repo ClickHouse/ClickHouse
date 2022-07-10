@@ -260,7 +260,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
     if (!id.starts_with(object_storage_root_path))
         return false;
 
-    StoredObject object(id);
+    auto object = StoredObject::create(*object_storage, id, {}, true);
     return object_storage->exists(std::move(object));
 }
 

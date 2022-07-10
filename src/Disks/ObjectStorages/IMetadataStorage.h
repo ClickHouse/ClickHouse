@@ -43,7 +43,7 @@ public:
 
     virtual void createDirectory(const std::string & path) = 0;
 
-    virtual void createDicrectoryRecursive(const std::string & path) = 0;
+    virtual void createDirectoryRecursive(const std::string & path) = 0;
 
     virtual void removeDirectory(const std::string & path) = 0;
 
@@ -87,9 +87,6 @@ class IMetadataStorage : private boost::noncopyable
 {
 friend class MetadataStorageFromDiskTransaction;
 
-protected:
-    mutable std::shared_mutex metadata_mutex;
-
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
@@ -123,8 +120,6 @@ public:
 
     /// ==== More specefic methods. Previous were almost general purpose. ====
 
-    virtual DiskPtr getDisk() const = 0;
-
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
 
@@ -132,8 +127,7 @@ public:
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
-    /// Creates StoredObject object by blob_name.
-    virtual StoredObject createStorageObject(const std::string & blob_name) const = 0;
+    virtual std::string getObjectStorageRootPath() const = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

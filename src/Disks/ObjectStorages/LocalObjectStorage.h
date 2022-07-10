@@ -80,6 +80,8 @@ public:
 
     std::string generateBlobNameForPath(const std::string & path) override { return path; }
 
+    std::string getUniqueId(const std::string & path) const override;
+
     bool isRemote() const override { return false; }
 
 private:
