@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/logger_useful.h>
+#include <Common/Throttler.h>
 #include <base/sleep.h>
 
 
@@ -25,7 +26,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     const String & path_,
     size_t max_single_read_retries_,
     size_t max_single_download_retries_,
-    size_t tmp_buffer_size_,
+    const ReadSettings & read_settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
@@ -33,7 +34,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
     , max_single_download_retries(max_single_download_retries_)
-    , tmp_buffer_size(tmp_buffer_size_)
+    , read_settings(read_settings_)
+    , tmp_buffer_size(read_settings.remote_fs_buffer_size)
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
 {
@@ -75,6 +77,8 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         try
         {
             bytes_read = data_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), to_read_bytes);
+            if (read_settings.throttler)
+                read_settings.throttler->add(bytes_read);
             break;
         }
         catch (const Azure::Storage::StorageException & e)

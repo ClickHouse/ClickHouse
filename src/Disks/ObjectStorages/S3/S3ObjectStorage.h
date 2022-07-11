@@ -123,7 +123,6 @@ public:
 
 private:
     ReadSettings patchSettings(const ReadSettings & read_settings) const;
-    WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 

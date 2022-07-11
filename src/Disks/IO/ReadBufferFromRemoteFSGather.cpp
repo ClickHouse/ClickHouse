@@ -89,7 +89,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
         path,
         max_single_read_retries,
         max_single_download_retries,
-        settings.remote_fs_buffer_size,
+        settings,
         /* use_external_buffer */true,
         read_until_position);
 }

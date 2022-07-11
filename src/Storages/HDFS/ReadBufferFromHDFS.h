@@ -29,7 +29,6 @@ public:
                        const String & hdfs_file_path_,
                        const Poco::Util::AbstractConfiguration & config_,
                        const ReadSettings & read_settings_ = {},
-                       size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
                        size_t read_until_position_ = 0);
 
     ~ReadBufferFromHDFS() override;
