@@ -1,7 +1,7 @@
 #!/bin/bash
 
 sudo apt-get update
-sudo apt install openjdk-8-jdk -y
+sudo apt install -y openjdk-8-jdk python2
 sudo update-alternatives --config java
 
 # Install
@@ -31,7 +31,8 @@ gzip -d hits.tsv.gz
 
 ./apache-druid-${VERSION}/bin/post-index-task --file ingest.json --url http://localhost:8081
 
-# The loading time should be checked from the logs
+# The command above will fail due to timeout but still continue to run in background.
+# The loading time should be checked from the logs.
 
 # Run the queries
 ./run.sh

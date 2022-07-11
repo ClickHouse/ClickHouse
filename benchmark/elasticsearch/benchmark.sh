@@ -16,6 +16,9 @@ export PASSWORD='...'
 
 curl -k -XGET 'https://localhost:9200' -u "elastic:${PASSWORD}"
 
+# This will create an index.
+curl -k -XPUT -u "elastic:${PASSWORD}" 'https://localhost:9200/hits'
+
 wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.json.gz'
 gzip -d hits.json.gz
 
