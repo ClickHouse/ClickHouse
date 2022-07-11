@@ -15,7 +15,7 @@ namespace DB {
         }
     }
 
-    CARESPTRResolver::CARESPTRResolver() : channel(std::make_shared<ares_channel>()) {
+    CARESPTRResolver::CARESPTRResolver() : channel(std::make_unique<ares_channel>()) {
         init();
     }
 

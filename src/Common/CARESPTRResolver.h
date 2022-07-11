@@ -19,7 +19,7 @@ namespace DB {
 
         void resolve(const std::string & ip, std::vector<std::string> & response);
 
-        std::shared_ptr<ares_channel> channel;
+        std::unique_ptr<ares_channel> channel;
     };
 }
 
