@@ -51,6 +51,7 @@ void checkWriteAccess(IDisk & disk)
     }
     catch (...)
     {
+        /// Log current exception, because finalize() can throw a different exception.
         tryLogCurrentException(__PRETTY_FUNCTION__);
         file->finalize();
         throw;
