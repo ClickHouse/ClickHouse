@@ -3,7 +3,7 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
-
+#include <Common/logger_useful.h>
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
 #include <Interpreters/JIT/compileFunction.h>
@@ -12,6 +12,13 @@
 
 namespace DB
 {
+
+static Poco::Logger * getLogger()
+{
+    static Poco::Logger & logger = Poco::Logger::get("SortDescription");
+    return &logger;
+}
+
 
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 {
@@ -50,7 +57,10 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     for (size_t i = 0; i < prefix.size(); ++i)
     {
         if ((*this)[i] != prefix[i])
+        {
+            LOG_DEBUG(getLogger(), "index: {}\norigin: {}\nprefix: {}", i, (*this)[i].dump(), prefix[i].dump());
             return false;
+        }
     }
     return true;
 }
@@ -87,12 +97,6 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
         buffer << header_types[i]->getName() << ' ' << description[i].direction << ' ' << description[i].nulls_direction;
 
     return buffer.str();
-}
-
-static Poco::Logger * getLogger()
-{
-    static Poco::Logger & logger = Poco::Logger::get("SortDescription");
-    return &logger;
 }
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)

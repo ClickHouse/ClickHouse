@@ -147,6 +147,7 @@ ReadFromMergeTree::ReadFromMergeTree(
             if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
                 == header.end())
                 break;
+            // fixme: there is no information about NULLS direction
             sort_description.emplace_back(column_name, sort_direction);
         }
         output_stream->sort_description = std::move(sort_description);
