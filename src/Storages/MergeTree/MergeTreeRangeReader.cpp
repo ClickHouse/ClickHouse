@@ -675,6 +675,8 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     }
 
     need_read_deleted_mask = merge_tree_reader->needReadDeletedMask();
+    if (need_read_deleted_mask)
+       deleted_rows = merge_tree_reader->data_part->getDeletedMask();
 
     if (prewhere_info)
     {
@@ -1000,8 +1002,7 @@ void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 
     UInt8 * pos = vec.data();
     UInt8 * end = &vec[num_rows];
 
-    const auto & deleted_rows_col = merge_tree_reader->data_part->getDeletedMask().getDeletedRows();
-    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col.getData();
+    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows->getData();
 
     while (pos < end && leading_begin_part_offset < leading_end_part_offset)
     {

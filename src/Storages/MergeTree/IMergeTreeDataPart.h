@@ -463,15 +463,13 @@ public:
     bool supportLightweightDeleteMutate() const;
 
     /// True if here is lightweight deleted mask file in part.
-    bool hasLightweightDelete() const { return deleted_mask.getDeletedRows().size() > 0; }
+    bool hasLightweightDelete() const { return data_part_storage->exists(DELETED_ROWS_MARK_FILE_NAME); }
 
-    const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
+    /// Read lightweight deleted mask when needed.
+    const MergeTreeDataPartDeletedMask::DeletedRows getDeletedMask() const;
     void writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask);
-    void loadDeletedMask();
 
 protected:
-
-    MergeTreeDataPartDeletedMask deleted_mask {};
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
