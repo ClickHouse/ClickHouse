@@ -619,7 +619,7 @@ private:
 
 public:
     explicit MarkovModel(MarkovModelParameters params_)
-        : params(params_), code_points(params.order, BEGIN) {}
+        : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
     {
@@ -830,7 +830,7 @@ private:
     MarkovModel markov_model;
 
 public:
-    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(params_) {}
+    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(std::move(params_)) {}
 
     void train(const IColumn & column) override
     {

@@ -49,13 +49,12 @@ std::unique_ptr<SeekableReadBuffer> HDFSObjectStorage::readObject( /// NOLINT
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
-    const std::string & common_path_prefix,
-    const BlobsPathToSize & blobs_to_read,
+    const PathsWithSize & paths_to_read,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, common_path_prefix, common_path_prefix, blobs_to_read, read_settings);
+    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, paths_to_read, read_settings);
     auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }
@@ -69,7 +68,9 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     const WriteSettings &)
 {
     if (attributes.has_value())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(
@@ -80,7 +81,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 }
 
 
-void HDFSObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
+void HDFSObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     const size_t begin_of_path = path.find('/', path.find("//") + 2);
     int32_t num_entries;
@@ -104,10 +105,10 @@ void HDFSObjectStorage::removeObject(const std::string & path)
 
 }
 
-void HDFSObjectStorage::removeObjects(const std::vector<std::string> & paths)
+void HDFSObjectStorage::removeObjects(const PathsWithSize & paths)
 {
-    for (const auto & hdfs_path : paths)
-        removeObject(hdfs_path);
+    for (const auto & [path, _] : paths)
+        removeObject(path);
 }
 
 void HDFSObjectStorage::removeObjectIfExists(const std::string & path)
@@ -116,15 +117,17 @@ void HDFSObjectStorage::removeObjectIfExists(const std::string & path)
         removeObject(path);
 }
 
-void HDFSObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
+void HDFSObjectStorage::removeObjectsIfExist(const PathsWithSize & paths)
 {
-    for (const auto & hdfs_path : paths)
-        removeObjectIfExists(hdfs_path);
+    for (const auto & [path, _] : paths)
+        removeObjectIfExists(path);
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string &) const
 {
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "HDFS API doesn't support custom attributes/metadata for stored objects");
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT
@@ -133,7 +136,9 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (object_to_attributes.has_value())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     auto in = readObject(object_from);
     auto out = writeObject(object_to, WriteMode::Rewrite);

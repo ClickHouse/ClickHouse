@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTimeWindow.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -458,10 +459,12 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
-    dropInnerTableIfAny(true, local_context);
+    output_header.clear();
+
+    InterpreterDropQuery::executeDropQuery(
+    ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, true);
 
     /// create inner table
-    std::exchange(has_inner_table, true);
     auto create_context = Context::createCopy(local_context);
     auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
@@ -667,6 +670,19 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto block_io = interpreter.execute();
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
+
+        auto adding_missing_defaults_dag = addMissingDefaults(
+            pipe.getHeader(),
+            block_io.pipeline.getHeader().getNamesAndTypesList(),
+            getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
+            getContext(),
+            getContext()->getSettingsRef().insert_null_as_default);
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+        pipe.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
+        });
+
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
@@ -915,7 +931,7 @@ void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
     std::lock_guard lock(fire_signal_mutex);
     for (const auto & signal : signals)
         fire_signal.push_back(signal);
-    fire_signal_condition.notify_all();
+    fire_task->schedule();
 }
 
 void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
@@ -927,6 +943,12 @@ void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 
 void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 {
+    if (is_proctime)
+    {
+        max_watermark = watermark;
+        return;
+    }
+
     std::lock_guard lock(fire_signal_mutex);
 
     bool updated;
@@ -952,10 +974,10 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
     }
 
     if (updated)
-        fire_signal_condition.notify_all();
+        fire_task->schedule();
 }
 
-inline void StorageWindowView::cleanup()
+void StorageWindowView::cleanup()
 {
     std::lock_guard fire_signal_lock(fire_signal_mutex);
     std::lock_guard mutex_lock(mutex);
@@ -973,18 +995,21 @@ inline void StorageWindowView::cleanup()
 
 void StorageWindowView::threadFuncCleanup()
 {
-    try
-    {
-        if (!shutdown_called)
-            cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (shutdown_called)
+        return;
 
-    if (!shutdown_called)
-        clean_cache_task->scheduleAfter(clean_interval_ms);
+    if ((Poco::Timestamp().epochMicroseconds() - last_clean_timestamp_usec) > clean_interval_usec)
+    {
+        try
+        {
+            cleanup();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        last_clean_timestamp_usec = Poco::Timestamp().epochMicroseconds();
+    }
 }
 
 void StorageWindowView::threadFuncFireProc()
@@ -992,14 +1017,15 @@ void StorageWindowView::threadFuncFireProc()
     if (shutdown_called)
         return;
 
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
     while (next_fire_signal <= timestamp_now)
     {
         try
         {
-            fire(next_fire_signal);
+            if (max_watermark >= timestamp_now)
+                fire(next_fire_signal);
         }
         catch (...)
         {
@@ -1013,54 +1039,36 @@ void StorageWindowView::threadFuncFireProc()
         next_fire_signal += slide_interval;
     }
 
+    if (max_watermark >= timestamp_now)
+        clean_cache_task->schedule();
+
     UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000;
     if (!shutdown_called)
-        fire_task->scheduleAfter(std::max(
-            UInt64(0),
-            static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
+        fire_task->scheduleAfter(std::max(UInt64(0), static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
 }
 
 void StorageWindowView::threadFuncFireEvent()
 {
-    std::unique_lock lock(fire_signal_mutex);
-    while (!shutdown_called)
+    std::lock_guard lock(fire_signal_mutex);
+
+    LOG_TRACE(log, "Fire events: {}", fire_signal.size());
+
+    while (!shutdown_called && !fire_signal.empty())
     {
-        bool signaled = std::cv_status::no_timeout == fire_signal_condition.wait_for(lock, std::chrono::seconds(fire_signal_timeout_s));
-        if (!signaled)
-            continue;
-
-        LOG_TRACE(log, "Fire events: {}", fire_signal.size());
-
-        while (!fire_signal.empty())
+        try
         {
-            try
-            {
-                fire(fire_signal.front());
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-            max_fired_watermark = fire_signal.front();
-            fire_signal.pop_front();
+            fire(fire_signal.front());
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        max_fired_watermark = fire_signal.front();
+        fire_signal.pop_front();
     }
-}
 
-// Pipe StorageWindowView::read(
-//     const Names & column_names,
-//     const StorageSnapshotPtr & storage_snapshot,
-//     SelectQueryInfo & query_info,
-//     ContextPtr local_context,
-//     QueryProcessingStage::Enum processed_stage,
-//     const size_t max_block_size,
-//     const unsigned num_streams)
-// {
-//     QueryPlan plan;
-//     read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-//     return plan.convertToPipe(
-//         QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
-// }
+    clean_cache_task->schedule();
+}
 
 void StorageWindowView::read(
     QueryPlan & query_plan,
@@ -1147,7 +1155,7 @@ StorageWindowView::StorageWindowView(
     , WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
-    , clean_interval_ms(context_->getSettingsRef().window_view_clean_interval.totalMilliseconds())
+    , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -1155,9 +1163,6 @@ StorageWindowView::StorageWindowView(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-
-    if (!query.select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// If the target table is not set, use inner target table
     has_inner_target_table = query.to_table_id.empty();
@@ -1224,7 +1229,6 @@ StorageWindowView::StorageWindowView(
 ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_)
 {
     select_query = query.clone();
-    input_header.clear();
     output_header.clear();
 
     String select_database_name = getContext()->getCurrentDatabase();
@@ -1512,23 +1516,23 @@ void StorageWindowView::writeIntoWindowView(
 
         if (block_max_timestamp)
             window_view.updateMaxTimestamp(block_max_timestamp);
-
-        UInt32 lateness_upper_bound = 0;
-        if (window_view.allowed_lateness && t_max_fired_watermark)
-            lateness_upper_bound = t_max_fired_watermark;
-
-        /// On each chunk check window end for each row in a window column, calculating max.
-        /// Update max watermark (latest seen window end) if needed.
-        /// If lateness is allowed, add lateness signals.
-        builder.addSimpleTransform([&](const Block & current_header)
-        {
-            return std::make_shared<WatermarkTransform>(
-                current_header,
-                window_view,
-                window_view.window_id_name,
-                lateness_upper_bound);
-        });
     }
+
+    UInt32 lateness_upper_bound = 0;
+    if (!window_view.is_proctime && window_view.allowed_lateness && t_max_fired_watermark)
+        lateness_upper_bound = t_max_fired_watermark;
+
+    /// On each chunk check window end for each row in a window column, calculating max.
+    /// Update max watermark (latest seen window end) if needed.
+    /// If lateness is allowed, add lateness signals.
+    builder.addSimpleTransform([&](const Block & current_header)
+    {
+        return std::make_shared<WatermarkTransform>(
+            current_header,
+            window_view,
+            window_view.window_id_name,
+            lateness_upper_bound);
+    });
 
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(
@@ -1563,10 +1567,12 @@ void StorageWindowView::startup()
 {
     DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 
-    // Start the working thread
-    fire_task->activateAndSchedule();
+    fire_task->activate();
     clean_cache_task->activate();
-    clean_cache_task->scheduleAfter(clean_interval_ms);
+
+    /// Start the working thread
+    if (is_proctime)
+        fire_task->schedule();
 }
 
 void StorageWindowView::shutdown()
@@ -1574,7 +1580,6 @@ void StorageWindowView::shutdown()
     shutdown_called = true;
 
     fire_condition.notify_all();
-    fire_signal_condition.notify_all();
 
     clean_cache_task->deactivate();
     fire_task->deactivate();
@@ -1601,7 +1606,7 @@ void StorageWindowView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (!std::exchange(has_inner_table, false))
         return;
@@ -1609,10 +1614,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     try
     {
         InterpreterDropQuery::executeDropQuery(
-            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
+            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
     }
     catch (...)
     {
@@ -1620,15 +1625,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     }
 }
 
-const Block & StorageWindowView::getInputHeader() const
+Block StorageWindowView::getInputHeader() const
 {
-    std::lock_guard lock(sample_block_lock);
-    if (!input_header)
-    {
-        input_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns))
-                           .getSampleBlock();
-    }
-    return input_header;
+    auto metadata = getSourceTable()->getInMemoryMetadataPtr();
+    return metadata->getSampleBlockNonMaterialized();
 }
 
 const Block & StorageWindowView::getOutputHeader() const

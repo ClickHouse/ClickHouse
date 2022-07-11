@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel
+# Tags: no-replicated-database, no-parallel, no-ordinary-database
 # Tag no-replicated-database: Unsupported type of ALTER query
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO table_for_freeze SELECT number, toStri
 
 # also for old syntax
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS table_for_freeze_old_syntax;"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE table_for_freeze_old_syntax (dt Date, value String) ENGINE = MergeTree(dt, (value), 8192);"
+${CLICKHOUSE_CLIENT} --allow_deprecated_syntax_for_merge_tree=1 --query "CREATE TABLE table_for_freeze_old_syntax (dt Date, value String) ENGINE = MergeTree(dt, (value), 8192);"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO table_for_freeze_old_syntax SELECT toDate('2021-03-01'), toString(number) from numbers(10);"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze FREEZE WITH NAME 'test_01417' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
@@ -54,6 +54,19 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze_old_syntax FREEZE PAR
 
 # Unfreeze partition with old syntax
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze_old_syntax UNFREEZE PARTITION '202103' WITH NAME 'test_01417_single_part_old_syntax' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
+  | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
+      --query "SELECT command_type, partition_id, part_name, backup_name FROM table"
+
+# Unfreeze the whole backup with SYSTEM query
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze FREEZE PARTITION '7' WITH NAME 'test_01417_single_part_7_system'"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE table_for_freeze"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze UNFREEZE PARTITION '7' WITH NAME 'test_01417_single_part_7_system'" 2>/dev/null
+rc=$?
+if [ $rc -eq 0 ]; then
+    echo "ALTER query shouldn't unfreeze removed table. Code: $rc"
+    exit 1
+fi
+${CLICKHOUSE_CLIENT} --query "SYSTEM UNFREEZE WITH NAME 'test_01417_single_part_7_system'" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
       --query "SELECT command_type, partition_id, part_name, backup_name FROM table"
 

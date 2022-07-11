@@ -422,7 +422,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     -   `query` — use with `predefined_query_handler` type, executes query when the handler is called.
 
-    -   `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request params.
+    -   `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in HTTP request parameters.
 
     -   `status` — use with `static` type, response status code.
 
@@ -477,9 +477,9 @@ In one `predefined_query_handler` only supports one `query` of an insert type.
 
 ### dynamic_query_handler {#dynamic_query_handler}
 
-In `dynamic_query_handler`, the query is written in the form of param of the HTTP request. The difference is that in `predefined_query_handler`, the query is written in the configuration file. You can configure `query_param_name` in `dynamic_query_handler`.
+In `dynamic_query_handler`, the query is written in the form of parameter of the HTTP request. The difference is that in `predefined_query_handler`, the query is written in the configuration file. You can configure `query_param_name` in `dynamic_query_handler`.
 
-ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the param is not passed in.
+ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the parameter is not passed in.
 
 To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` and `queries` whether the settings were set successfully.
 

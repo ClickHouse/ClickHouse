@@ -29,7 +29,7 @@ CreatingSetsTransform::CreatingSetsTransform(
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
     , WithContext(context_)
     , subquery(std::move(subquery_for_set_))
-    , network_transfer_limits(network_transfer_limits_)
+    , network_transfer_limits(std::move(network_transfer_limits_))
 {
 }
 

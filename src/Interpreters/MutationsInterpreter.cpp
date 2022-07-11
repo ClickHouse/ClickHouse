@@ -758,7 +758,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
-    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    auto all_columns = storage_snapshot->getColumns(options);
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
@@ -802,7 +804,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         /// e.g. ALTER referencing the same table in scalar subquery
         bool execute_scalar_subqueries = !dry_run;
         auto syntax_result = TreeRewriter(context).analyze(
-            all_asts, all_columns, storage, storage->getStorageSnapshot(metadata_snapshot, context),
+            all_asts, all_columns, storage, storage_snapshot,
             false, true, execute_scalar_subqueries);
 
         if (execute_scalar_subqueries && context->hasQueryContext())
