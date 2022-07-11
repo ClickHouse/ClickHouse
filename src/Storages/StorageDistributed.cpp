@@ -914,8 +914,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         new_query_str = buf.str();
     }
 
-    fmt::print(stderr, "new_query_str: {}", new_query_str);
-
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     ++query_context->getClientInfo().distributed_depth;
@@ -991,7 +989,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     }
     else
     {
-        // TODO: Better log message
         LOG_WARNING(log, "Parallel distributed INSERT SELECT is not possible. Reason: distributed reading is supported only from Distributed engine or *Cluster table functions");
     }
 

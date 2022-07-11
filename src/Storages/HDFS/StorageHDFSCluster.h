@@ -19,7 +19,6 @@ class Context;
 class StorageHDFSCluster : public IStorage
 {
 public:
-    StorageHDFSCluster(
         ContextPtr context_,
         String cluster_name_,
         const String & uri_,

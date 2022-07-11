@@ -34,10 +34,24 @@ def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "s0_0_0", main_configs=["configs/cluster.xml"], with_minio=True
+            "s0_0_0",
+            main_configs=["configs/cluster.xml"],
+            macros={"replica": "node1", "shard": "shard1"},
+            with_minio=True,
+            with_zookeeper=True,
         )
-        cluster.add_instance("s0_0_1", main_configs=["configs/cluster.xml"])
-        cluster.add_instance("s0_1_0", main_configs=["configs/cluster.xml"])
+        cluster.add_instance(
+            "s0_0_1",
+            main_configs=["configs/cluster.xml"],
+            macros={"replica": "replica2", "shard": "shard1"},
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
+            "s0_1_0",
+            main_configs=["configs/cluster.xml"],
+            macros={"replica": "replica1", "shard": "shard2"},
+            with_zookeeper=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -55,17 +69,17 @@ def test_select_all(started_cluster):
     pure_s3 = node.query(
         """
     SELECT * from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 
-        'minio', 'minio123', 'CSV', 
-        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') 
+        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'minio', 'minio123', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     ORDER BY (name, value, polygon)"""
     )
     # print(pure_s3)
     s3_distibuted = node.query(
         """
     SELECT * from s3Cluster(
-        'cluster_simple', 
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+        'cluster_simple',
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)"""
     )
     # print(s3_distibuted)
@@ -78,15 +92,15 @@ def test_count(started_cluster):
     pure_s3 = node.query(
         """
     SELECT count(*) from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 
-        'minio', 'minio123', 'CSV', 
+        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
     # print(pure_s3)
     s3_distibuted = node.query(
         """
     SELECT count(*) from s3Cluster(
-        'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*',
         'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
@@ -125,13 +139,13 @@ def test_union_all(started_cluster):
     SELECT * FROM
     (
         SELECT * from s3(
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 
-            'minio', 'minio123', 'CSV', 
-            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') 
+            'http://minio1:9001/root/data/{clickhouse,database}/*',
+            'minio', 'minio123', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
         UNION ALL
         SELECT * from s3(
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 
-            'minio', 'minio123', 'CSV', 
+            'http://minio1:9001/root/data/{clickhouse,database}/*',
+            'minio', 'minio123', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     )
     ORDER BY (name, value, polygon)
@@ -143,13 +157,13 @@ def test_union_all(started_cluster):
     SELECT * FROM
     (
         SELECT * from s3Cluster(
-            'cluster_simple', 
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+            'cluster_simple',
+            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
         UNION ALL
         SELECT * from s3Cluster(
-            'cluster_simple', 
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+            'cluster_simple',
+            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     )
     ORDER BY (name, value, polygon)
@@ -166,12 +180,12 @@ def test_wrong_cluster(started_cluster):
         """
     SELECT count(*) from s3Cluster(
         'non_existent_cluster',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'http://minio1:9001/root/data/{clickhouse,database}/*',
         'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     UNION ALL
     SELECT count(*) from s3Cluster(
         'non_existent_cluster',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'http://minio1:9001/root/data/{clickhouse,database}/*',
         'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     """
     )
@@ -184,14 +198,117 @@ def test_ambiguous_join(started_cluster):
     result = node.query(
         """
     SELECT l.name, r.value from s3Cluster(
-        'cluster_simple', 
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+        'cluster_simple',
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
     JOIN s3Cluster(
-        'cluster_simple', 
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+        'cluster_simple',
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
     ON l.name = r.name
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
+
+
+def test_distributed_insert_select(started_cluster):
+    first_replica_first_shard = started_cluster.instances["s0_0_0"]
+    second_replica_first_shard = started_cluster.instances["s0_0_1"]
+    first_replica_second_shard = started_cluster.instances["s0_1_0"]
+
+    first_replica_first_shard.query(
+        """
+    CREATE TABLE insert_select_local ON CLUSTER 'cluster_simple' (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select', '{replica}')
+    ORDER BY (a, b);
+        """
+    )
+
+    first_replica_first_shard.query(
+        """
+    CREATE TABLE insert_select_distributed ON CLUSTER 'cluster_simple' as insert_select_local
+    ENGINE = Distributed('cluster_simple', default, insert_select_local, b % 2);
+        """
+    )
+
+    for file_number in range(100):
+        first_replica_first_shard.query(
+            """
+        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
+        SELECT repeat('{}', 10), number from numbers(100);
+            """.format(file_number, file_number)
+        )
+
+    first_replica_first_shard.query(
+        """
+    INSERT INTO insert_select_distributed SELECT * FROM s3Cluster(
+        'cluster_simple',
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
+    ) SETTINGS parallel_distributed_insert_select=1;
+        """
+    )
+
+    for line in first_replica_first_shard.query(
+        """SELECT * FROM insert_select_local;""").strip().split('\n'):
+        _, b = line.split()
+        assert int(b) % 2 == 0
+
+    for line in second_replica_first_shard.query(
+        """SELECT * FROM insert_select_local;""").strip().split('\n'):
+        _, b = line.split()
+        assert int(b) % 2 == 0
+
+    for line in first_replica_second_shard.query(
+        """SELECT * FROM insert_select_local;""").strip().split('\n'):
+        _, b = line.split()
+        assert int(b) % 2 == 1
+
+
+def test_distributed_insert_select_with_replicated(started_cluster):
+    first_replica_first_shard = started_cluster.instances["s0_0_0"]
+    second_replica_first_shard = started_cluster.instances["s0_0_1"]
+
+    first_replica_first_shard.query(
+        """
+    CREATE TABLE insert_select_replicated_local ON CLUSTER 'first_shard' (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select', '{replica}')
+    ORDER BY (a, b);
+        """
+    )
+
+    for replica in [first_replica_first_shard, second_replica_first_shard]:
+        replica.query(
+            """
+            SYSTEM STOP FETCHES;
+            """
+        )
+        replica.query(
+            """
+            SYSTEM STOP MERGES;
+            """
+        )
+
+    for file_number in range(100):
+        first_replica_first_shard.query(
+            """
+        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
+        SELECT repeat('{}', 10), number from numbers(100);
+            """.format(file_number, file_number)
+        )
+
+
+    first_replica_first_shard.query(
+        """
+    INSERT INTO insert_select_replicated_local SELECT * FROM s3Cluster(
+        'first_shard',
+        'http://minio1:9001/root/data/generated_replicated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
+    ) SETTINGS parallel_distributed_insert_select=1;
+        """
+    )
+
+    first = int(first_replica_first_shard.query("""SELECT count(*) FROM insert_select_replicated_local""").strip())
+    second = int(second_replica_first_shard.query("""SELECT count(*) FROM insert_select_replicated_local""").strip())
+
+    assert first != 0
+    assert second != 0
+    assert first + second == 100 * 100
