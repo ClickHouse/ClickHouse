@@ -22,7 +22,7 @@ def request(command, url, headers={}, data=None):
         command,
         urllib.parse.urlunparse(parts._replace(scheme="", netloc="")),
         headers=headers,
-        body=data
+        body=data,
     )
     r = c.getresponse()
     result = Dummy()
@@ -55,13 +55,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(501)
             self.send_header("Content-Type", "application/xml")
             self.end_headers()
-            self.wfile.write(b"""<?xml version="1.0" encoding="UTF-8"?>
+            self.wfile.write(
+                b"""<?xml version="1.0" encoding="UTF-8"?>
 <Error>
     <Code>NotImplemented</Code>
     <Message>Ima GCP and I can't do `DeleteObjects` request for ya. See https://issuetracker.google.com/issues/162653700 .</Message>
     <Resource>RESOURCE</Resource>
     <RequestId>REQUEST_ID</RequestId>
-</Error>""")
+</Error>"""
+            )
         else:
             self.do_HEAD()
 
@@ -72,7 +74,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.command,
             f"http://{UPSTREAM_HOST}{self.path}",
             headers=self.headers,
-            data=data
+            data=data,
         )
         self.send_response(r.status_code)
         for k, v in r.headers.items():
