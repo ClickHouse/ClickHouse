@@ -152,7 +152,7 @@ public:
         for (const auto & arg : arguments)
             arg_types.push_back(arg.type);
 
-        return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), result_type);
+        return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), std::move(result_type));
     }
 };
 

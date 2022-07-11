@@ -1,6 +1,6 @@
 ---
-sidebar_position: 2
-sidebar_label: Syntax
+toc_priority: 31
+toc_title: Syntax
 ---
 
 # Syntax {#syntax}
@@ -152,7 +152,7 @@ expr AS alias
 
         For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        In the [CAST](./functions/type-conversion-functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
+        In the [CAST](sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
 
 -   `expr` — Any expression supported by ClickHouse.
 

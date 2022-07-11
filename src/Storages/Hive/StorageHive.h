@@ -7,7 +7,7 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -26,6 +26,7 @@ class HiveSettings;
 class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageHive>;
+
 public:
     String getName() const override { return "Hive"; }
 
@@ -35,12 +36,13 @@ public:
         ContextPtr /* query_context */,
         const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
-        return true;
+        return false;
     }
+
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -50,11 +52,6 @@ public:
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
 
     NamesAndTypesList getVirtuals() const override;
-
-    bool isColumnOriented() const override;
-
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
 
 protected:
     friend class StorageHiveSource;
@@ -75,65 +72,27 @@ private:
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
 
-    enum class PruneLevel
-    {
-        None, /// Do not prune
-        Partition,
-        File,
-        Split,
-        Max = Split,
-    };
-
-    static String pruneLevelToString(PruneLevel level)
-    {
-        return String(magic_enum::enum_name(level));
-    }
-
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    static std::vector<FileInfo> listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSFSPtr & fs);
+    static std::vector<FileInfo> listDirectory(const String & path, HiveTableMetadataPtr hive_table_metadata, const HDFSFSPtr & fs);
 
     void initMinMaxIndexExpression();
 
-    HiveFiles collectHiveFiles(
-        unsigned max_threads,
-        const SelectQueryInfo & query_info,
-        const HiveTableMetadataPtr & hive_table_metadata,
-        const HDFSFSPtr & fs,
-        const ContextPtr & context_,
-        PruneLevel prune_level = PruneLevel::Max) const;
-
-    HiveFiles collectHiveFilesFromPartition(
+    std::vector<HiveFilePtr> collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
-        const SelectQueryInfo & query_info,
-        const HiveTableMetadataPtr & hive_table_metadata,
+        SelectQueryInfo & query_info,
+        HiveTableMetadataPtr hive_table_metadata,
         const HDFSFSPtr & fs,
-        const ContextPtr & context_,
-        PruneLevel prune_level = PruneLevel::Max) const;
+        ContextPtr context_);
 
-    HiveFilePtr getHiveFileIfNeeded(
-        const FileInfo & file_info,
-        const FieldVector & fields,
-        const SelectQueryInfo & query_info,
-        const HiveTableMetadataPtr & hive_table_metadata,
-        const ContextPtr & context_,
-        PruneLevel prune_level = PruneLevel::Max) const;
-
-    void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
-
-    void lazyInitialize();
-
-    std::optional<UInt64>
-    totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const;
+    HiveFilePtr
+    createHiveFileIfNeeded(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
 
     String hive_metastore_url;
 
     /// Hive database and table
     String hive_database;
     String hive_table;
-
-    mutable std::mutex init_mutex;
-    bool has_initialized = false;
 
     /// Hive table meta
     std::vector<Apache::Hadoop::Hive::FieldSchema> table_schema;
@@ -158,7 +117,6 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 };
-
 }
 
 #endif

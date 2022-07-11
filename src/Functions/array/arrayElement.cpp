@@ -146,13 +146,13 @@ public:
 
     void update(size_t from)
     {
-        sink_null_map[index] = src_null_map && src_null_map[from];
+        sink_null_map[index] = bool(src_null_map && src_null_map[from]);
         ++index;
     }
 
     void update()
     {
-        sink_null_map[index] = static_cast<bool>(src_null_map);
+        sink_null_map[index] = bool(src_null_map);
         ++index;
     }
 
@@ -492,7 +492,7 @@ ColumnPtr FunctionArrayElement::executeNumberConst(
         /// arr[-2] is the element at offset 1 from the last and so on.
 
         ArrayElementNumImpl<DataType>::template vectorConst<true>(
-            col_nested->getData(), col_array->getOffsets(), -(static_cast<UInt64>(safeGet<Int64>(index)) + 1), col_res->getData(), builder);
+            col_nested->getData(), col_array->getOffsets(), -(UInt64(safeGet<Int64>(index)) + 1), col_res->getData(), builder);
     }
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
@@ -605,7 +605,7 @@ ColumnPtr FunctionArrayElement::executeGenericConst(
             col_nested, col_array->getOffsets(), safeGet<UInt64>(index) - 1, *col_res, builder);
     else if (index.getType() == Field::Types::Int64)
         ArrayElementGenericImpl::vectorConst<true>(
-            col_nested, col_array->getOffsets(), -(static_cast<UInt64>(safeGet<Int64>(index) + 1)), *col_res, builder);
+            col_nested, col_array->getOffsets(), -(UInt64(safeGet<Int64>(index) + 1)), *col_res, builder);
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 

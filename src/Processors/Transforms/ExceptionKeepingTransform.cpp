@@ -138,7 +138,7 @@ void ExceptionKeepingTransform::work()
         {
             stage = Stage::Exception;
             ready_output = true;
-            data.exception = exception;
+            data.exception = std::move(exception);
             onException();
         }
     }
@@ -152,7 +152,7 @@ void ExceptionKeepingTransform::work()
             {
                 stage = Stage::Exception;
                 ready_output = true;
-                data.exception = exception;
+                data.exception = std::move(exception);
                 onException();
             }
             else
@@ -166,7 +166,7 @@ void ExceptionKeepingTransform::work()
             {
                 stage = Stage::Exception;
                 ready_output = true;
-                data.exception = exception;
+                data.exception = std::move(exception);
                 onException();
             }
             else
@@ -188,7 +188,7 @@ void ExceptionKeepingTransform::work()
         {
             stage = Stage::Exception;
             ready_output = true;
-            data.exception = exception;
+            data.exception = std::move(exception);
             onException();
         }
     }

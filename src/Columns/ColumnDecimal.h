@@ -94,10 +94,8 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
     bool hasEqualValues() const override;
-    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                        size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -157,6 +155,24 @@ public:
 protected:
     Container data;
     UInt32 scale;
+
+    template <typename U>
+    void permutation(bool reverse, size_t limit, PaddedPODArray<U> & res) const
+    {
+        size_t s = data.size();
+        res.resize(s);
+        for (size_t i = 0; i < s; ++i)
+            res[i] = static_cast<U>(i);
+
+        auto sort_end = res.end();
+        if (limit && limit < s)
+            sort_end = res.begin() + limit;
+
+        if (reverse)
+            ::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            ::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+    }
 };
 
 template <class> class ColumnVector;

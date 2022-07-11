@@ -22,7 +22,7 @@ limitations under the License. */
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
@@ -540,7 +540,7 @@ void StorageLiveView::refresh(bool grab_lock)
 
 Pipe StorageLiveView::read(
     const Names & /*column_names*/,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,

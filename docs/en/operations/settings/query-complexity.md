@@ -1,6 +1,6 @@
 ---
-sidebar_position: 59
-sidebar_label: Restrictions on Query Complexity
+toc_priority: 59
+toc_title: Restrictions on Query Complexity
 ---
 
 # Restrictions on Query Complexity {#restrictions-on-query-complexity}

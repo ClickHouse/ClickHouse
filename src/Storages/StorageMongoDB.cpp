@@ -90,7 +90,7 @@ void StorageMongoDB::connectIfNotConnected()
 
 Pipe StorageMongoDB::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -99,16 +99,16 @@ Pipe StorageMongoDB::read(
 {
     connectIfNotConnected();
 
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     Block sample_block;
     for (const String & column_name : column_names)
     {
-        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
+    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true));
 }
 
 
@@ -155,8 +155,6 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
             configuration.options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
     }
-
-    context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
 
     return configuration;
 }

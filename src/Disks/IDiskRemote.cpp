@@ -4,15 +4,15 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/FileCache.h>
 
 
 namespace DB
@@ -26,12 +26,12 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;;
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
 IDiskRemote::Metadata IDiskRemote::Metadata::readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
 {
+
     Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
     result.load();
     return result;
@@ -45,6 +45,7 @@ IDiskRemote::Metadata IDiskRemote::Metadata::createAndStoreMetadata(const String
     return result;
 }
 
+
 IDiskRemote::Metadata IDiskRemote::Metadata::readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
@@ -54,6 +55,7 @@ IDiskRemote::Metadata IDiskRemote::Metadata::readUpdateAndStoreMetadata(const St
     return result;
 }
 
+
 IDiskRemote::Metadata IDiskRemote::Metadata::createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
@@ -62,17 +64,6 @@ IDiskRemote::Metadata IDiskRemote::Metadata::createUpdateAndStoreMetadata(const 
     return result;
 }
 
-IDiskRemote::Metadata IDiskRemote::Metadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, IDiskRemote::MetadataUpdater updater)
-{
-    Metadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
-    result.load();
-    if (updater(result))
-        result.save(sync);
-    metadata_disk_->removeFile(metadata_file_path_);
-
-    return result;
-
-}
 
 IDiskRemote::Metadata IDiskRemote::Metadata::createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite)
 {
@@ -131,8 +122,7 @@ void IDiskRemote::Metadata::load()
                 remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
             }
             assertChar('\n', *buf);
-            remote_fs_objects[i].relative_path = remote_fs_object_path;
-            remote_fs_objects[i].bytes_size = remote_fs_object_size;
+            remote_fs_objects[i] = {remote_fs_object_path, remote_fs_object_size};
         }
 
         readIntText(ref_count, *buf);
@@ -146,15 +136,10 @@ void IDiskRemote::Metadata::load()
     }
     catch (Exception & e)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
         if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
             throw;
 
-        if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            throw;
-
-        throw Exception("Failed to read metadata file: " + metadata_file_path, e, ErrorCodes::UNKNOWN_FORMAT);
+        throw Exception("Failed to read metadata file", e, ErrorCodes::UNKNOWN_FORMAT);
     }
 }
 
@@ -163,8 +148,7 @@ IDiskRemote::Metadata::Metadata(
         const String & remote_fs_root_path_,
         DiskPtr metadata_disk_,
         const String & metadata_file_path_)
-    : remote_fs_root_path(remote_fs_root_path_)
-    , metadata_file_path(metadata_file_path_)
+    : RemoteMetadata(remote_fs_root_path_, metadata_file_path_)
     , metadata_disk(metadata_disk_)
     , total_size(0), ref_count(0)
 {
@@ -240,12 +224,6 @@ IDiskRemote::Metadata IDiskRemote::readUpdateAndStoreMetadata(const String & pat
 }
 
 
-IDiskRemote::Metadata IDiskRemote::readUpdateStoreMetadataAndRemove(const String & path, bool sync, IDiskRemote::MetadataUpdater updater)
-{
-    std::unique_lock lock(metadata_mutex);
-    return Metadata::readUpdateStoreMetadataAndRemove(remote_fs_root_path, metadata_disk, path, sync, updater);
-}
-
 IDiskRemote::Metadata IDiskRemote::readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, IDiskRemote::MetadataUpdater updater)
 {
     if (mode == WriteMode::Rewrite || !metadata_disk->exists(path))
@@ -286,7 +264,7 @@ std::unordered_map<String, String> IDiskRemote::getSerializedMetadata(const std:
     return metadatas;
 }
 
-void IDiskRemote::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
+void IDiskRemote::removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
     LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
 
@@ -298,22 +276,12 @@ void IDiskRemote::removeMetadata(const String & path, std::vector<String> & path
 
     try
     {
-        auto metadata_updater = [&paths_to_remove, this] (Metadata & metadata)
+        auto metadata_updater = [fs_paths_keeper, this] (Metadata & metadata)
         {
             if (metadata.ref_count == 0)
             {
                 for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
-                {
-
-                    paths_to_remove.push_back(remote_fs_root_path + remote_fs_object_path);
-
-                    if (cache)
-                    {
-                        auto key = cache->hash(remote_fs_object_path);
-                        cache->remove(key);
-                    }
-                }
-
+                    fs_paths_keeper->addPath(remote_fs_root_path + remote_fs_object_path);
                 return false;
             }
             else /// In other case decrement number of references, save metadata and delete hardlink.
@@ -324,7 +292,8 @@ void IDiskRemote::removeMetadata(const String & path, std::vector<String> & path
             return true;
         };
 
-        readUpdateStoreMetadataAndRemove(path, false, metadata_updater);
+        readUpdateAndStoreMetadata(path, false, metadata_updater);
+        metadata_disk->removeFile(path);
         /// If there is no references - delete content from remote FS.
     }
     catch (const Exception & e)
@@ -343,66 +312,20 @@ void IDiskRemote::removeMetadata(const String & path, std::vector<String> & path
 }
 
 
-void IDiskRemote::removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove)
+void IDiskRemote::removeMetadataRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
     if (metadata_disk->isFile(path))
     {
-        removeMetadata(path, paths_to_remove[path]);
+        removeMetadata(path, fs_paths_keeper);
     }
     else
     {
         for (auto it = iterateDirectory(path); it->isValid(); it->next())
-            removeMetadataRecursive(it->path(), paths_to_remove);
+            removeMetadataRecursive(it->path(), fs_paths_keeper);
 
         metadata_disk->removeDirectory(path);
-    }
-}
-
-std::vector<String> IDiskRemote::getRemotePaths(const String & local_path) const
-{
-    auto metadata = readMetadata(local_path);
-
-    std::vector<String> remote_paths;
-    for (const auto & [remote_path, _] : metadata.remote_fs_objects)
-        remote_paths.push_back(fs::path(metadata.remote_fs_root_path) / remote_path);
-
-    return remote_paths;
-}
-
-void IDiskRemote::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
-{
-    /// Protect against concurrent delition of files (for example because of a merge).
-    if (metadata_disk->isFile(local_path))
-    {
-        try
-        {
-            paths_map.emplace_back(local_path, getRemotePaths(local_path));
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-                return;
-            throw;
-        }
-    }
-    else
-    {
-        DiskDirectoryIteratorPtr it;
-        try
-        {
-            it = iterateDirectory(local_path);
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            if (e.code() == std::errc::no_such_file_or_directory)
-                return;
-            throw;
-        }
-
-        for (; it->isValid(); it->next())
-            IDiskRemote::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map);
     }
 }
 
@@ -412,6 +335,7 @@ DiskPtr DiskRemoteReservation::getDisk(size_t i) const
         throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
     return disk;
 }
+
 
 void DiskRemoteReservation::update(UInt64 new_size)
 {
@@ -453,7 +377,6 @@ IDiskRemote::IDiskRemote(
     const String & name_,
     const String & remote_fs_root_path_,
     DiskPtr metadata_disk_,
-    FileCachePtr cache_,
     const String & log_name_,
     size_t thread_pool_size)
     : IDisk(std::make_unique<AsyncExecutor>(log_name_, thread_pool_size))
@@ -461,14 +384,7 @@ IDiskRemote::IDiskRemote(
     , name(name_)
     , remote_fs_root_path(remote_fs_root_path_)
     , metadata_disk(metadata_disk_)
-    , cache(cache_)
 {
-}
-
-
-String IDiskRemote::getCacheBasePath() const
-{
-    return cache ? cache->getBasePath() : "";
 }
 
 
@@ -518,63 +434,47 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
         moveFile(from_path, to_path);
 }
 
+
 void IDiskRemote::removeSharedFile(const String & path, bool delete_metadata_only)
 {
-    std::vector<String> paths_to_remove;
-    removeMetadata(path, paths_to_remove);
-
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
+    removeMetadata(path, fs_paths_keeper);
     if (!delete_metadata_only)
-        removeFromRemoteFS(paths_to_remove);
+        removeFromRemoteFS(fs_paths_keeper);
 }
+
 
 void IDiskRemote::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
-    std::vector<String> paths_to_remove;
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     if (metadata_disk->exists(path))
     {
-        removeMetadata(path, paths_to_remove);
+        removeMetadata(path, fs_paths_keeper);
         if (!delete_metadata_only)
-            removeFromRemoteFS(paths_to_remove);
+            removeFromRemoteFS(fs_paths_keeper);
     }
 }
 
-void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only)
 {
-    std::unordered_map<String, std::vector<String>> paths_to_remove;
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     for (const auto & file : files)
     {
         bool skip = file.if_exists && !metadata_disk->exists(file.path);
         if (!skip)
-            removeMetadata(file.path, paths_to_remove[file.path]);
+            removeMetadata(file.path, fs_paths_keeper);
     }
 
-    if (!keep_all_batch_data)
-    {
-        std::vector<String> remove_from_remote;
-        for (auto && [path, remote_paths] : paths_to_remove)
-        {
-            if (!file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
-        }
-        removeFromRemoteFS(remove_from_remote);
-    }
+    if (!delete_metadata_only)
+        removeFromRemoteFS(fs_paths_keeper);
 }
 
-void IDiskRemote::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+void IDiskRemote::removeSharedRecursive(const String & path, bool delete_metadata_only)
 {
-    std::unordered_map<String, std::vector<String>> paths_to_remove;
-    removeMetadataRecursive(path, paths_to_remove);
-
-    if (!keep_all_batch_data)
-    {
-        std::vector<String> remove_from_remote;
-        for (auto && [local_path, remote_paths] : paths_to_remove)
-        {
-            if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
-                remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
-        }
-        removeFromRemoteFS(remove_from_remote);
-    }
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
+    removeMetadataRecursive(path, fs_paths_keeper);
+    if (!delete_metadata_only)
+        removeFromRemoteFS(fs_paths_keeper);
 }
 
 
@@ -690,7 +590,7 @@ String IDiskRemote::getUniqueId(const String & path) const
     auto metadata = readMetadata(path);
     String id;
     if (!metadata.remote_fs_objects.empty())
-        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].relative_path;
+        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
     return id;
 }
 

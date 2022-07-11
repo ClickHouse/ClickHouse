@@ -2,7 +2,6 @@
 
 from commit_status_helper import get_commit
 
-
 def _filter_statuses(statuses):
     """
     Squash statuses to latest state
@@ -20,6 +19,7 @@ def _filter_statuses(statuses):
 
 
 class RerunHelper:
+
     def __init__(self, gh, pr_info, check_name):
         self.gh = gh
         self.pr_info = pr_info
@@ -30,9 +30,6 @@ class RerunHelper:
     def is_already_finished_by_status(self):
         # currently we agree even for failed statuses
         for status in self.statuses:
-            if self.check_name in status.context and status.state in (
-                "success",
-                "failure",
-            ):
+            if self.check_name in status.context and status.state in ('success', 'failure'):
                 return True
         return False

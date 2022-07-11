@@ -1,5 +1,5 @@
 ---
-sidebar_position: 201
+toc_priority: 201
 ---
 
 # quantiles Functions {#quantiles-functions}

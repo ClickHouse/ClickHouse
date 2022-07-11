@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET max_block_size = 65505;
-
 SELECT 'uniqTheta many agrs';
 
 SELECT

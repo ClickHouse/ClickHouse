@@ -78,7 +78,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     /// Remove files on disk and checksums
     for (const String & removed_file : remove_files)
     {
-        if (checksums.files.contains(removed_file))
+        if (checksums.files.count(removed_file))
             checksums.files.erase(removed_file);
     }
 

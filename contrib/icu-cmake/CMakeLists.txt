@@ -212,9 +212,7 @@ set(ICUUC_SOURCES
 "${ICU_SOURCE_DIR}/common/ubiditransform.cpp"
 "${ICU_SOURCE_DIR}/common/pluralmap.cpp"
 "${ICU_SOURCE_DIR}/common/static_unicode_sets.cpp"
-"${ICU_SOURCE_DIR}/common/restrace.cpp"
-"${ICU_SOURCE_DIR}/common/emojiprops.cpp"
-"${ICU_SOURCE_DIR}/common/lstmbe.cpp")
+"${ICU_SOURCE_DIR}/common/restrace.cpp")
 
 set(ICUI18N_SOURCES
 "${ICU_SOURCE_DIR}/i18n/ucln_in.cpp"
@@ -400,6 +398,7 @@ set(ICUI18N_SOURCES
 "${ICU_SOURCE_DIR}/i18n/sharedbreakiterator.cpp"
 "${ICU_SOURCE_DIR}/i18n/scientificnumberformatter.cpp"
 "${ICU_SOURCE_DIR}/i18n/dayperiodrules.cpp"
+"${ICU_SOURCE_DIR}/i18n/nounit.cpp"
 "${ICU_SOURCE_DIR}/i18n/number_affixutils.cpp"
 "${ICU_SOURCE_DIR}/i18n/number_compact.cpp"
 "${ICU_SOURCE_DIR}/i18n/number_decimalquantity.cpp"
@@ -447,21 +446,12 @@ set(ICUI18N_SOURCES
 "${ICU_SOURCE_DIR}/i18n/formattedvalue.cpp"
 "${ICU_SOURCE_DIR}/i18n/formattedval_iterimpl.cpp"
 "${ICU_SOURCE_DIR}/i18n/formattedval_sbimpl.cpp"
-"${ICU_SOURCE_DIR}/i18n/formatted_string_builder.cpp"
-"${ICU_SOURCE_DIR}/i18n/measunit_extra.cpp"
-"${ICU_SOURCE_DIR}/i18n/number_symbolswrapper.cpp"
-"${ICU_SOURCE_DIR}/i18n/number_usageprefs.cpp"
-"${ICU_SOURCE_DIR}/i18n/numrange_capi.cpp"
-"${ICU_SOURCE_DIR}/i18n/pluralranges.cpp"
-"${ICU_SOURCE_DIR}/i18n/units_complexconverter.cpp"
-"${ICU_SOURCE_DIR}/i18n/units_converter.cpp"
-"${ICU_SOURCE_DIR}/i18n/units_data.cpp"
-"${ICU_SOURCE_DIR}/i18n/units_router.cpp")
+"${ICU_SOURCE_DIR}/i18n/formatted_string_builder.cpp")
 
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
 set(ICUDATA_SOURCES
-    "${ICUDATA_SOURCE_DIR}/icudt70l_dat.S"
+    "${ICUDATA_SOURCE_DIR}/icudt66l_dat.S"
     "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" # Without this cmake can incorrectly detects library type (OBJECT) instead of SHARED/STATIC
 )
 

@@ -23,7 +23,6 @@ class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
 {
     friend class LogSource;
     friend class LogSink;
-    friend class LogRestoreTask;
     friend struct shared_ptr_helper<StorageLog>;
 
 public:
@@ -32,7 +31,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -52,9 +51,8 @@ public:
     bool supportsSubcolumns() const override { return true; }
     ColumnSizeByName getColumnSizes() const override;
 
-    bool hasDataToBackup() const override { return true; }
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
+    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),

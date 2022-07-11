@@ -15,7 +15,7 @@ private:
     SerializationPtr dict_inner_serialization;
 
 public:
-    explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
+    SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
     void enumerateStreams(
         SubstreamPath & path,

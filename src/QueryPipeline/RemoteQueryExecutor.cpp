@@ -210,7 +210,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
-void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
+void RemoteQueryExecutor::sendQuery()
 {
     if (sent_query)
         return;
@@ -237,7 +237,13 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
-    modified_client_info.query_kind = query_kind;
+    modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    /// Set initial_query_id to query_id for the clickhouse-benchmark.
+    ///
+    /// (since first query of clickhouse-benchmark will be issued as SECONDARY_QUERY,
+    ///  due to it executes queries via RemoteBlockInputStream)
+    if (modified_client_info.initial_query_id.empty())
+        modified_client_info.initial_query_id = query_id;
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
@@ -356,7 +362,7 @@ std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs
         else
             return read(*read_context);
     }
-    throw Exception("Found duplicate uuids while processing query", ErrorCodes::DUPLICATED_PART_UUIDS);
+    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
 }
 
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
@@ -432,10 +438,8 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
         default:
             got_unknown_packet_from_replica = true;
-            throw Exception(
-                ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
-                "Unknown packet {} from one of the following replicas: {}",
-                packet.type,
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
                 connections->dumpAddresses());
     }
 
@@ -505,7 +509,7 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
     }
     else
     {
-        /// Drain connections synchronously without suppressing errors.
+        /// Drain connections synchronously w/o suppressing errors.
         CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
         ConnectionCollector::drainConnections(*connections, /* throw_error= */ true);
         CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
@@ -565,13 +569,12 @@ void RemoteQueryExecutor::sendExternalTables()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
-                        context, QueryProcessingStage::Complete, storage_snapshot, query_info);
+                        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
                     Pipe pipe = cur->read(
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
-                        storage_snapshot, query_info, context,
+                        metadata_snapshot, query_info, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     if (pipe.empty())

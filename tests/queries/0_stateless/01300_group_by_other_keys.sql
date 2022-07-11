@@ -1,5 +1,3 @@
-set max_block_size = 65505;
-
 set optimize_group_by_function_keys = 1;
 
 SELECT round(max(log(2) * number), 6) AS k FROM numbers(10000000) GROUP BY number % 2, number % 3, (number % 2 + number % 3) % 2 ORDER BY k;

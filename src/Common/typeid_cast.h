@@ -25,8 +25,7 @@ namespace DB
   * In the rest, behaves like a dynamic_cast.
   */
 template <typename To, typename From>
-requires std::is_reference_v<To>
-To typeid_cast(From & from)
+std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
 {
     try
     {
@@ -44,8 +43,7 @@ To typeid_cast(From & from)
 
 
 template <typename To, typename From>
-requires std::is_pointer_v<To>
-To typeid_cast(From * from)
+std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
 {
     try
     {
@@ -62,8 +60,7 @@ To typeid_cast(From * from)
 
 
 template <typename To, typename From>
-requires is_shared_ptr_v<To>
-To typeid_cast(const std::shared_ptr<From> & from)
+std::enable_if_t<is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr<From> & from)
 {
     try
     {

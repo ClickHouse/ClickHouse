@@ -1,11 +1,14 @@
 ---
-sidebar_position: 66
-sidebar_label: ClickHouse Keeper
+toc_priority: 66
+toc_title: ClickHouse Keeper
 ---
 
-# ClickHouse Keeper {#clickHouse-keeper}
+# [pre-production] ClickHouse Keeper {#clickHouse-keeper}
 
 ClickHouse server uses [ZooKeeper](https://zookeeper.apache.org/) coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is an alternative coordination system compatible with ZooKeeper.
+
+!!! warning "Warning"
+    This feature is currently in the pre-production stage. We test it in our CI and on small internal installations.
 
 ## Implementation details {#implementation-details}
 
@@ -13,11 +16,10 @@ ZooKeeper is one of the first well-known open-source coordination systems. It's 
 
 By default, ClickHouse Keeper provides the same guarantees as ZooKeeper (linearizable writes, non-linearizable reads). It has a compatible client-server protocol, so any standard ZooKeeper client can be used to interact with ClickHouse Keeper. Snapshots and logs have an incompatible format with ZooKeeper, but `clickhouse-keeper-converter` tool allows to convert ZooKeeper data to ClickHouse Keeper snapshot. Interserver protocol in ClickHouse Keeper is also incompatible with ZooKeeper so mixed ZooKeeper / ClickHouse Keeper cluster is impossible.
 
-ClickHouse Keeper supports Access Control List (ACL) the same way as [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) does. ClickHouse Keeper supports the same set of permissions and has the identical built-in schemes: `world`, `auth`, `digest`, `host` and `ip`. Digest authentication scheme uses pair `username:password`. Password is encoded in Base64.
+ClickHouse Keeper supports Access Control List (ACL) the same way as [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) does. ClickHouse Keeper supports the same set of permissions and has the identical built-in schemes: `world`, `auth`, `digest`, `host` and `ip`. Digest authentication scheme uses pair `username:password`. Password is encoded in Base64. 
 
-:::note
-External integrations are not supported.
-:::
+!!! info "Note"
+    External integrations are not supported.
 
 ## Configuration {#configuration}
 
@@ -65,9 +67,6 @@ The main parameters for each `<server>` are:
 -    `hostname` — Hostname where this server is placed.
 -    `port` — Port where this server listens for connections.
 
-:::note
-In the case of a change in the topology of your ClickHouse Keeper cluster (eg. replacing a server), please make sure to keep the mapping `server_id` to `hostname` consistent and avoid shuffling or reusing an existing `server_id` for different servers (eg. it can happen if your rely on automation scripts to deploy ClickHouse Keeper)
-:::
 
 Examples of configuration for quorum with three nodes can be found in [integration tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) with `test_keeper_` prefix. Example configuration for server #1:
 
@@ -120,7 +119,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ## Four Letter Word Commands {#four-letter-word-commands}
 
-ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.
+ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
 
 The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
 
@@ -322,28 +321,3 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 4. Copy snapshot to ClickHouse server nodes with a configured `keeper` or start ClickHouse Keeper instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become a leader.
 
 [Original article](https://clickhouse.com/docs/en/operations/clickhouse-keeper/) <!--hide-->
-
-## Recovering after losing quorum
-
-Because Clickhouse Keeper uses Raft it can tolerate certain amount of node crashes depending on the cluster size. \
-E.g. for a 3-node cluster, it will continue working correctly if only 1 node crashes.
-
-Cluster configuration can be dynamically configured but there are some limitations. Reconfiguration relies on Raft also
-so to add/remove a node from the cluster you need to have a quorum. If you lose too many nodes in your cluster at the same time without any chance
-of starting them again, Raft will stop working and not allow you to reconfigure your cluster using the convenvtional way.
-
-Nevertheless, Clickhouse Keeper has a recovery mode which allows you to forcfully reconfigure your cluster with only 1 node.
-This should be done only as your last resort if you cannot start your nodes again, or start a new instance on the same endpoint.
-
-Important things to note before continuing:
-- Make sure that the failed nodes cannot connect to the cluster again.
-- Do not start any of the new nodes until it's specified in the steps.
-
-After making sure that the above things are true, you need to do following:
-1. Pick a single Keeper node to be your new leader. Be aware that the data of that node will be used for the entire cluster so we recommend to use a node with the most up to date state.
-2. Before doing anything else, make a backup of the `log_storage_path` and `snapshot_storage_path` folders of the picked node.
-3. Reconfigure the cluster on all of the nodes you want to use.
-4. Send the four letter command `rcvr` to the node you picked which will move the node to the recovery mode OR stop Keeper instance on the picked node and start it again with the `--force-recovery` argument.
-5. One by one, start Keeper instances on the new nodes making sure that `mntr` returns `follower` for the `zk_server_state` before starting the next one.
-6. While in the recovery mode, the leader node will return error message for `mntr` command until it achieves quorum with the new nodes and refuse any requests from the client and the followers.
-7. After quorum is achieved, the leader node will return to the normal mode of operation, accepting all the requests using Raft - verify with `mntr` which should return `leader` for the `zk_server_state`.

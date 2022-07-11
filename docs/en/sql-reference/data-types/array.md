@@ -1,11 +1,11 @@
 ---
-sidebar_position: 52
-sidebar_label: Array(T)
+toc_priority: 52
+toc_title: Array(T)
 ---
 
 # Array(t) {#data-type-array}
 
-An array of `T`-type items, with the starting array index as 1. `T` can be any data type, including an array.
+An array of `T`-type items. `T` can be any data type, including an array.
 
 ## Creating an Array {#creating-an-array}
 

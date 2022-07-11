@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/FieldToDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
@@ -33,9 +32,6 @@ namespace ErrorCodes
 
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
 {
-    if (ASTLiteral * literal = node->as<ASTLiteral>())
-        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
-
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
@@ -376,7 +372,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
                         Field prev_value = assert_cast<const ColumnConst &>(*prev.column).getField();
                         Field curr_value = assert_cast<const ColumnConst &>(*elem.column).getField();
 
-                        if (!always_false_map.contains(elem.name))
+                        if (!always_false_map.count(elem.name))
                         {
                             always_false_map[elem.name] = prev_value != curr_value;
                         }

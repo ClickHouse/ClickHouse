@@ -29,7 +29,7 @@ namespace ErrorCodes
 MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     Block header,
     const MergeTreeData & storage_,
-    const StorageSnapshotPtr & storage_snapshot_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
     UInt64 max_block_size_rows_,
@@ -41,7 +41,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     std::optional<ParallelReadingExtension> extension_)
     : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
-    , storage_snapshot(storage_snapshot_)
+    , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
@@ -267,7 +267,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     };
 
     UInt64 recommended_rows = estimate_num_rows(*task, task->range_reader);
-    UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(current_max_block_size_rows, recommended_rows));
+    UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
 

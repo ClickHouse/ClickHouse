@@ -61,9 +61,7 @@ static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
         }
         case DB::MySQLReplication::TABLE_MAP_EVENT:
         {
-            DB::MySQLReplication::TableMapEventHeader map_event_header;
-            map_event_header.parse(*event_payload);
-            event = std::make_shared<DB::MySQLReplication::TableMapEvent>(std::move(header), map_event_header);
+            event = std::make_shared<DB::MySQLReplication::TableMapEvent>(std::move(header));
             event->parseEvent(*event_payload);
             last_table_map_event = std::static_pointer_cast<DB::MySQLReplication::TableMapEvent>(event);
             break;

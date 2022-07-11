@@ -1,4 +1,4 @@
-# session_log {#system_tables-session_log}
+# system.session_log {#system_tables-session_log}
 
 Contains information about all successful and failed login and logout events.
 

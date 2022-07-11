@@ -1,5 +1,5 @@
 ---
-sidebar_position: 145
+toc_priority: 145
 ---
 
 # rankCorr {#agg_function-rankcorr}

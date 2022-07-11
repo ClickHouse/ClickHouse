@@ -30,7 +30,7 @@ public:
     /// Default initialization - by nullptr.
     MultiVersion() = default;
 
-    explicit MultiVersion(std::unique_ptr<const T> && value)
+    MultiVersion(std::unique_ptr<const T> && value)
     {
         set(std::move(value));
     }

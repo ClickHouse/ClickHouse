@@ -1,6 +1,6 @@
 ---
-sidebar_position: 55
-sidebar_label: "Функции для работы с IP-адресами"
+toc_priority: 55
+toc_title: "Функции для работы с IP-адресами"
 ---
 
 # Функции для работы с IP-адресами {#funktsii-dlia-raboty-s-ip-adresami}

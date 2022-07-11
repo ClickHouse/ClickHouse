@@ -1,9 +1,10 @@
 ---
-sidebar_label: Aggregate Functions
-sidebar_position: 33
+toc_folder_title: Aggregate Functions
+toc_priority: 33
+toc_title: Introduction
 ---
 
-# Aggregate Functions 
+# Aggregate Functions {#aggregate-functions}
 
 Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) way as expected by database experts.
 

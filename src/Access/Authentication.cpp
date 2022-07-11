@@ -31,9 +31,9 @@ namespace
         return (Util::encodeDoubleSHA1(password) == password_double_sha1);
     }
 
-    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256, const String & salt)
+    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256)
     {
-        return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
+        return Util::encodeSHA256(password) == password_sha256;
     }
 
     bool checkPasswordDoubleSHA1MySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_double_sha1)
@@ -87,9 +87,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::KERBEROS:
                 return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
 
-            case AuthenticationType::SSL_CERTIFICATE:
-                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
-
             case AuthenticationType::MAX:
                 break;
         }
@@ -113,9 +110,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-            case AuthenticationType::SSL_CERTIFICATE:
-                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
-
             case AuthenticationType::MAX:
                 break;
         }
@@ -132,7 +126,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 return checkPasswordPlainText(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::SHA256_PASSWORD:
-                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary(), auth_data.getSalt());
+                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
@@ -142,31 +136,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
-
-            case AuthenticationType::SSL_CERTIFICATE:
-                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
-
-            case AuthenticationType::MAX:
-                break;
-        }
-    }
-
-    if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
-    {
-        switch (auth_data.getType())
-        {
-            case AuthenticationType::NO_PASSWORD:
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-            case AuthenticationType::SHA256_PASSWORD:
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            case AuthenticationType::LDAP:
-                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
-
-            case AuthenticationType::KERBEROS:
-                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
-
-            case AuthenticationType::SSL_CERTIFICATE:
-                return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
 
             case AuthenticationType::MAX:
                 break;

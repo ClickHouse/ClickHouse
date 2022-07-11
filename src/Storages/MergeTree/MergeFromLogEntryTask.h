@@ -25,7 +25,7 @@ public:
 
 protected:
     /// Both return false if we can't execute merge.
-    ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
+    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override

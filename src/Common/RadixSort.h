@@ -37,12 +37,12 @@
   */
 struct RadixSortAllocator
 {
-    static void * allocate(size_t size)
+    void * allocate(size_t size)
     {
         return ::operator new(size);
     }
 
-    static void deallocate(void * ptr, size_t size)
+    void deallocate(void * ptr, size_t size)
     {
         ::operator delete(ptr, size);
     }
@@ -513,11 +513,6 @@ public:
     static void executeLSD(Element * arr, size_t size)
     {
         radixSortLSDInternal<false>(arr, size, false, nullptr);
-    }
-
-    static void executeLSD(Element * arr, size_t size, bool reverse)
-    {
-        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
     }
 
     /** This function will start to sort inplace (modify 'arr')

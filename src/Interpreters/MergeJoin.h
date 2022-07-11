@@ -102,6 +102,8 @@ private:
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
     Block totals;
     std::atomic<bool> is_in_memory{true};
+    const bool nullable_right_side;
+    const bool nullable_left_side;
     const bool is_any_join;
     const bool is_all_join;
     const bool is_semi_join;

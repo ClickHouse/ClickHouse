@@ -25,7 +25,7 @@ public:
     };
 
     MergeTreeDataPartType() : value(UNKNOWN) {}
-    MergeTreeDataPartType(Value value_) : value(value_) {} /// NOLINT
+    MergeTreeDataPartType(Value value_) : value(value_) {}
 
     bool operator==(const MergeTreeDataPartType & other) const
     {

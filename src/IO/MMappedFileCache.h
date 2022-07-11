@@ -27,7 +27,7 @@ private:
     using Base = LRUCache<UInt128, MMappedFile, UInt128TrivialHash>;
 
 public:
-    explicit MMappedFileCache(size_t max_size_in_bytes)
+    MMappedFileCache(size_t max_size_in_bytes)
         : Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.

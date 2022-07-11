@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
@@ -12,22 +11,22 @@ using DatabaseAndTableName = std::pair<String, String>;
 
 /** BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] |
   *          DICTIONARY [db.]dictionary_name [AS [db.]dictionary_name_in_backup] |
-  *          TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  *          ALL TEMPORARY TABLES [EXCEPT ...] |
-  *          DATABASE database_name [EXCEPT ...] [AS database_name_in_backup] |
-  *          ALL DATABASES [EXCEPT ...] } [,...]
-  *        [ON CLUSTER 'cluster_name']
+  *          DATABASE database_name [AS database_name_in_backup] |
+  *          ALL DATABASES |
+  *          TEMPORARY TABLE table_name [AS table_name_in_backup]
+  *          ALL TEMPORARY TABLES |
+  *          EVERYTHING } [,...]
   *        TO { File('path/') |
   *             Disk('disk_name', 'path/')
   *        [SETTINGS base_backup = {File(...) | Disk(...)}]
   *
   * RESTORE { TABLE [db.]table_name_in_backup [INTO [db.]table_name] [PARTITION[S] partition_expr [,...]] |
   *           DICTIONARY [db.]dictionary_name_in_backup [INTO [db.]dictionary_name] |
+  *           DATABASE database_name_in_backup [INTO database_name] |
+  *           ALL DATABASES |
   *           TEMPORARY TABLE table_name_in_backup [INTO table_name] |
-  *           ALL TEMPORARY TABLES [EXCEPT ...] |
-  *           DATABASE database_name_in_backup [EXCEPT ...] [INTO database_name] |
-  *           ALL DATABASES [EXCEPT ...] } [,...]
-  *         [ON CLUSTER 'cluster_name']
+  *           ALL TEMPORARY TABLES |
+  *           EVERYTHING } [,...]
   *         FROM {File(...) | Disk(...)}
   *
   * Notes:
@@ -45,7 +44,7 @@ using DatabaseAndTableName = std::pair<String, String>;
   * The "WITH BASE" clause allows to set a base backup. Only differences made after the base backup will be
   * included in a newly created backup, so this option allows to make an incremental backup.
   */
-class ASTBackupQuery : public IAST, public ASTQueryWithOnCluster
+class ASTBackupQuery : public IAST
 {
 public:
     enum Kind
@@ -58,8 +57,12 @@ public:
     enum ElementType
     {
         TABLE,
+        DICTIONARY,
         DATABASE,
         ALL_DATABASES,
+        TEMPORARY_TABLE,
+        ALL_TEMPORARY_TABLES,
+        EVERYTHING,
     };
 
     struct Element
@@ -67,8 +70,6 @@ public:
         ElementType type;
         DatabaseAndTableName name;
         DatabaseAndTableName new_name;
-        bool name_is_in_temp_db = false;
-        bool new_name_is_in_temp_db = false;
         ASTs partitions;
         std::set<String> except_list;
     };
@@ -87,6 +88,5 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
 };
 }

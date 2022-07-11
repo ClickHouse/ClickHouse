@@ -1,3 +1,6 @@
+add_executable (remove_symlink_directory remove_symlink_directory.cpp)
+target_link_libraries (remove_symlink_directory PRIVATE dbms)
+
 add_executable (merge_selector merge_selector.cpp)
 target_link_libraries (merge_selector PRIVATE dbms)
 
@@ -9,3 +12,13 @@ target_link_libraries (get_current_inserts_in_replicated PRIVATE dbms clickhouse
 
 add_executable (get_abandonable_lock_in_all_partitions get_abandonable_lock_in_all_partitions.cpp)
 target_link_libraries (get_abandonable_lock_in_all_partitions PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper)
+
+add_executable (transform_part_zk_nodes transform_part_zk_nodes.cpp)
+target_link_libraries (transform_part_zk_nodes
+    PRIVATE
+        boost::program_options
+        clickhouse_common_config
+        clickhouse_common_zookeeper
+        dbms
+        string_utils
+)

@@ -27,11 +27,11 @@ private:
       * @see http://www.artima.com/cppsource/safebool.html
       * Взято из mysql++.
       */
-    typedef MYSQL_ROW Row::*private_bool_type; /// NOLINT
+    typedef MYSQL_ROW Row::*private_bool_type;
 
 public:
     /** Для возможности отложенной инициализации. */
-    Row() /// NOLINT
+    Row()
     {
     }
 
@@ -77,7 +77,7 @@ public:
     /** Преобразование в bool.
       * (Точнее - в тип, который преобразуется в bool, и с которым больше почти ничего нельзя сделать.)
       */
-    operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; } /// NOLINT
+    operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; }
 
     enum enum_field_types getFieldType(size_t i);
 

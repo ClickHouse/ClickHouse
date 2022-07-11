@@ -144,7 +144,7 @@ public:
         }
     }
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    void create(AggregateDataPtr __restrict place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
@@ -447,7 +447,7 @@ public:
         }
     }
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    void create(AggregateDataPtr __restrict place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)

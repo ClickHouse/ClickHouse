@@ -5,7 +5,7 @@
 #include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -17,7 +17,7 @@ namespace DB
 class DNSResolver : private boost::noncopyable
 {
 public:
-    using IPAddresses = std::vector<Poco::Net::IPAddress>;
+    typedef std::vector<Poco::Net::IPAddress> IPAddresses;
 
     static DNSResolver & instance();
 
@@ -47,20 +47,14 @@ public:
     void dropCache();
 
     /// Updates all known hosts in cache.
-    /// Returns true if IP of any host has been changed or an element was dropped (too many failures)
-    bool updateCache(UInt32 max_consecutive_failures);
+    /// Returns true if IP of any host has been changed.
+    bool updateCache();
 
     ~DNSResolver();
 
 private:
-    template <typename UpdateF, typename ElemsT>
-
-    bool updateCacheImpl(
-        UpdateF && update_func,
-        ElemsT && elems,
-        UInt32 max_consecutive_failures,
-        const String & notfound_log_msg,
-        const String & dropped_log_msg);
+    template<typename UpdateF, typename ElemsT>
+    bool updateCacheImpl(UpdateF && update_func, ElemsT && elems, const String & log_msg);
 
     DNSResolver();
 

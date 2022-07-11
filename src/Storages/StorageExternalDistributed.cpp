@@ -15,7 +15,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -172,7 +172,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 
 Pipe StorageExternalDistributed::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -184,7 +184,7 @@ Pipe StorageExternalDistributed::read(
     {
         pipes.emplace_back(shard->read(
             column_names,
-            storage_snapshot,
+            metadata_snapshot,
             query_info,
             context,
             processed_stage,

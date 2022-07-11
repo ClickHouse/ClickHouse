@@ -105,7 +105,7 @@ void selectWithinPartition(
 
 LevelMergeSelector::PartsRange LevelMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge)
+    const size_t max_total_size_to_merge)
 {
     Estimator estimator;
 

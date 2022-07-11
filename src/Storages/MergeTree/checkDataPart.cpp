@@ -98,8 +98,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
-    SerializationInfoByName serialization_infos(columns_txt, SerializationInfo::Settings{ratio_of_defaults, false});
+    SerializationInfoByName serialization_infos(columns_txt, {});
     auto serialization_path = path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME;
 
     if (disk->exists(serialization_path))
@@ -136,7 +135,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             IMergeTreeDataPart::Checksums projection_checksums_data;
             const auto & projection_path = file_path;
 
-            if (projection->getType() == MergeTreeDataPartType::COMPACT)
+            if (part_type == MergeTreeDataPartType::COMPACT)
             {
                 auto proj_path = file_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
                 auto file_buf = disk->readFile(proj_path);
@@ -175,7 +174,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 auto projection_checksum_it = projection_checksums_data.files.find(projection_file_name);
 
                 /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-                if (projection_checksum_it == projection_checksums_data.files.end() && !files_without_checksums.contains(projection_file_name))
+                if (projection_checksum_it == projection_checksums_data.files.end() && !files_without_checksums.count(projection_file_name))
                 {
                     auto projection_txt_checksum_it = projection_checksum_files_txt.find(file_name);
                     if (projection_txt_checksum_it == projection_checksum_files_txt.end()
@@ -251,7 +250,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto checksum_it = checksums_data.files.find(file_name);
 
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-        if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
+        if (checksum_it == checksums_data.files.end() && !files_without_checksums.count(file_name))
         {
             auto txt_checksum_it = checksum_files_txt.find(file_name);
             if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)

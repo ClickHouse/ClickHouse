@@ -18,11 +18,11 @@ public:
         , max_streams(context->getSettingsRef().max_threads)
     {
         if (options.shard_num)
-            context->addSpecialScalar(
+            context->addLocalScalar(
                 "_shard_num",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
         if (options.shard_count)
-            context->addSpecialScalar(
+            context->addLocalScalar(
                 "_shard_count",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
     }
@@ -47,7 +47,7 @@ public:
     /// then we can cache the scalars forever (for any query that doesn't use the virtual storage either), but if it does use the virtual
     /// storage then we can only keep the scalar result around while we are working with that source block
     /// You can find more details about this under ExecuteScalarSubqueriesMatcher::visit
-    bool usesViewSource() const { return uses_view_source; }
+    bool usesViewSource() { return uses_view_source; }
 
 protected:
     ASTPtr query_ptr;

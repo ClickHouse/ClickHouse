@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+toc_priority: 1
 ---
 
 # count {#agg_function-count}

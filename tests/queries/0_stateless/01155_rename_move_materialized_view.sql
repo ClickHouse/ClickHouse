@@ -1,7 +1,5 @@
 -- Tags: no-parallel
 
-SET prefer_localhost_replica = 1;
-
 DROP DATABASE IF EXISTS test_01155_ordinary;
 DROP DATABASE IF EXISTS test_01155_atomic;
 

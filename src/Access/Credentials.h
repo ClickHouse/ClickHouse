@@ -21,6 +21,7 @@ public:
 protected:
     [[noreturn]] static void throwNotReady();
 
+protected:
     bool is_ready = false;
     String user_name;
 };
@@ -35,17 +36,6 @@ public:
     explicit AlwaysAllowCredentials(const String & user_name_);
 
     void setUserName(const String & user_name_);
-};
-
-class SSLCertificateCredentials
-    : public Credentials
-{
-public:
-    explicit SSLCertificateCredentials(const String & user_name_, const String & common_name_);
-    const String & getCommonName() const;
-
-private:
-    String common_name;
 };
 
 class BasicCredentials

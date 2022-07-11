@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/StringRef.h>
-
 #include <Common/Arena.h>
 
 /**

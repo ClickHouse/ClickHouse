@@ -1,7 +1,5 @@
 #include <Poco/Net/NetException.h>
 
-#include <base/scope_guard.h>
-
 #include <IO/WriteBufferFromPocoSocket.h>
 
 #include <Common/Exception.h>
@@ -40,13 +38,8 @@ void WriteBufferFromPocoSocket::nextImpl()
         return;
 
     Stopwatch watch;
+
     size_t bytes_written = 0;
-
-    SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
-    });
-
     while (bytes_written < offset())
     {
         ssize_t res = 0;
@@ -77,6 +70,9 @@ void WriteBufferFromPocoSocket::nextImpl()
 
         bytes_written += res;
     }
+
+    ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)

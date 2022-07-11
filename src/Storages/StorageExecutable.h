@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
@@ -31,7 +31,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,

@@ -13,7 +13,6 @@
 
 #include <iterator>
 #include <base/sort.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -46,8 +45,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different names of columns:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
-    if ((actual.type && !expected.type) || (!actual.type && expected.type)
-        || (actual.type && expected.type && !actual.type->equals(*expected.type)))
+    if (!actual.type->equals(*expected.type))
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different types:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
@@ -120,11 +118,6 @@ Block::Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
 
 
 Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
-{
-    initializeIndexByName();
-}
-
-Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
 {
     initializeIndexByName();
 }
@@ -271,18 +264,8 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
+const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
 {
-    if (case_insensitive)
-    {
-        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); });
-        if (found == data.end())
-        {
-            return nullptr;
-        }
-        return &*found;
-    }
-
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
     {
@@ -292,23 +275,19 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
 }
 
 
-const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool case_insensitive) const
+const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
 {
-    const auto * result = findByName(name, case_insensitive);
+    const auto * result = findByName(name);
     if (!result)
-        throw Exception(
-            "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     return *result;
 }
 
 
-bool Block::has(const std::string & name, bool case_insensitive) const
+bool Block::has(const std::string & name) const
 {
-    if (case_insensitive)
-        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); })
-            != data.end();
-
     return index_by_name.end() != index_by_name.find(name);
 }
 
@@ -317,8 +296,8 @@ size_t Block::getPositionByName(const std::string & name) const
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-        throw Exception(
-            "Not found column " + name + " in block. There are only columns: " + dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     return it->second;
 }
@@ -741,6 +720,18 @@ void convertToFullIfSparse(Block & block)
     for (auto & column : block)
         column.column = recursiveRemoveSparse(column.column);
 }
+
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
+{
+    auto current_column = block.getByName(column.getNameInStorage()).column;
+    current_column = current_column->decompress();
+
+    if (column.isSubcolumn())
+        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), current_column);
+
+    return current_column;
+}
+
 
 Block materializeBlock(const Block & block)
 {

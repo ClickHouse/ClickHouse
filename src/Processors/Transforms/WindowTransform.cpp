@@ -7,7 +7,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -23,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_COLUMN;
 }
 
 // Interface for true window functions. It's not much of an interface, they just
@@ -208,7 +206,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
     {
         column = std::move(column)->convertToFullColumnIfConst();
     }
-    input_header.setColumns(input_columns);
+    input_header.setColumns(std::move(input_columns));
 
     // Initialize window function workspaces.
     workspaces.reserve(functions.size());
@@ -488,7 +486,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
         }
     }
 
-    return std::tuple<RowNumber, int64_t>{x, offset};
+    return std::tuple{x, offset};
 }
 
 auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
@@ -505,7 +503,7 @@ auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
     assert(oo == 0);
 #endif
 
-    return std::tuple<RowNumber, int64_t>{x, o};
+    return std::tuple{x, o};
 }
 
 
@@ -988,23 +986,7 @@ void WindowTransform::writeOutCurrentRow()
             auto * buf = ws.aggregate_function_state.data();
             // FIXME does it also allocate the result on the arena?
             // We'll have to pass it out with blocks then...
-
-            if (a->isState())
-            {
-                /// AggregateFunction's states should be inserted into column using specific way
-                auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(result_column);
-                if (!res_col_aggregate_function)
-                {
-                    throw Exception("State function " + a->getName() + " inserts results into non-state column ",
-                                    ErrorCodes::ILLEGAL_COLUMN);
-                }
-                res_col_aggregate_function->insertFrom(buf);
-            }
-            else
-            {
-                a->insertResultInto(buf, *result_column, arena.get());
-            }
-
+            a->insertResultInto(buf, *result_column, arena.get());
         }
     }
 
@@ -1999,7 +1981,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
+        const auto supertype = getLeastSupertype({argument_types[0], argument_types[2]});
         if (!supertype)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

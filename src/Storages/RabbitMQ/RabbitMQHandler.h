@@ -7,7 +7,6 @@
 #include <amqpcpp/linux_tcp.h>
 #include <base/types.h>
 #include <amqpcpp/libuv.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {

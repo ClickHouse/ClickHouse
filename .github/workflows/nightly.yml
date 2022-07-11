@@ -7,7 +7,6 @@ env:
 "on":
   schedule:
     - cron: '13 3 * * *'
-  workflow_dispatch:
 
 jobs:
   DockerHubPushAarch64:
@@ -72,52 +71,3 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
-  BuilderCoverity:
-    needs: DockerHubPush
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          BUILD_NAME=coverity
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          TEMP_PATH=${{runner.temp}}/build_check
-          EOF
-          echo "COVERITY_TOKEN=${{ secrets.COVERITY_TOKEN }}" >> "$GITHUB_ENV"
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        id: coverity-checkout
-        uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
-      - name: Upload Coverity Analysis
-        if: ${{ success() || failure() }}
-        run: |
-          curl --form token="${COVERITY_TOKEN}" \
-            --form email='security+coverity@clickhouse.com' \
-            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tgz" \
-            --form version="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::6}" \
-            --form description="Nighly Scan: $(date +'%Y-%m-%dT%H:%M:%S')" \
-            https://scan.coverity.com/builds?project=ClickHouse%2FClickHouse
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 221
+toc_priority: 221
 ---
 
 # stochasticLinearRegression {#agg_functions-stochasticlinearregression}

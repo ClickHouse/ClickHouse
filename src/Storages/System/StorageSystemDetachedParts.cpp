@@ -31,7 +31,7 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
 
 Pipe StorageSystemDetachedParts::read(
     const Names & /* column_names */,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -41,7 +41,7 @@ Pipe StorageSystemDetachedParts::read(
     StoragesInfoStream stream(query_info, context);
 
     /// Create the result.
-    Block block = storage_snapshot->metadata->getSampleBlock();
+    Block block = metadata_snapshot->getSampleBlock();
     MutableColumns new_columns = block.cloneEmptyColumns();
 
     while (StoragesInfo info = stream.next())

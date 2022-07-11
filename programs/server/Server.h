@@ -2,7 +2,7 @@
 
 #include <Server/IServer.h>
 
-#include <Daemon/BaseDaemon.h>
+#include <daemon/BaseDaemon.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.

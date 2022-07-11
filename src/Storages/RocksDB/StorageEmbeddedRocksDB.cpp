@@ -28,7 +28,7 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/sort.h>
 
 #include <rocksdb/db.h>
@@ -240,7 +240,7 @@ public:
             WriteBufferFromString wb(serialized_keys[rows_processed]);
             key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
             wb.finalize();
-            slices_keys[rows_processed] = serialized_keys[rows_processed];
+            slices_keys[rows_processed] = std::move(serialized_keys[rows_processed]);
 
             ++it;
             ++rows_processed;
@@ -432,19 +432,19 @@ void StorageEmbeddedRocksDB::initDB()
 
 Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     FieldVectorPtr keys;
     bool all_scan = false;
 
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block sample_block = metadata_snapshot->getSampleBlock();
     auto primary_key_data_type = sample_block.getByName(primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info);
     if (all_scan)
@@ -464,7 +464,7 @@ Pipe StorageEmbeddedRocksDB::read(
         Pipes pipes;
 
         size_t num_keys = keys->size();
-        size_t num_threads = std::min<size_t>(num_streams, keys->size());
+        size_t num_threads = std::min(size_t(num_streams), keys->size());
 
         assert(num_keys <= std::numeric_limits<uint32_t>::max());
         assert(num_threads <= std::numeric_limits<uint32_t>::max());

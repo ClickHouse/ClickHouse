@@ -7,7 +7,7 @@
 #include <Common/assert_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -76,26 +76,26 @@ StoragePostgreSQL::StoragePostgreSQL(
 
 Pipe StoragePostgreSQL::read(
     const Names & column_names_,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
     unsigned)
 {
-    storage_snapshot->check(column_names_);
+    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
 
     /// Connection is already made to the needed database, so it should not be present in the query;
     /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
-        query_info_, storage_snapshot->metadata->getColumns().getOrdinary(),
+        query_info_, metadata_snapshot->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
         WhichDataType which(column_data.type);
         if (which.isEnum())
             column_data.type = std::make_shared<DataTypeString>();
@@ -425,6 +425,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
             configuration.host = configuration.addresses[0].first;
             configuration.port = configuration.addresses[0].second;
         }
+
         configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
@@ -435,8 +436,6 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         if (engine_args.size() >= 7)
             configuration.on_conflict = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
     }
-    for (const auto & address : configuration.addresses)
-        context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
 
     return configuration;
 }

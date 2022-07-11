@@ -21,7 +21,7 @@ class AggregateFunctionResample final : public IAggregateFunctionHelper<Aggregat
 {
 private:
     /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
-    static constexpr size_t max_elements = 1048576;
+    const size_t MAX_ELEMENTS = 1048576;
 
     AggregateFunctionPtr nested_function;
 
@@ -75,7 +75,7 @@ public:
             total = (sum - 1) / step; // total = (end - begin + step - 1) / step
         }
 
-        if (total > max_elements)
+        if (total > MAX_ELEMENTS)
             throw Exception("The range given in function "
                     + getName() + " contains too many elements",
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);

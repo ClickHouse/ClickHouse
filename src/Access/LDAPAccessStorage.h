@@ -37,7 +37,7 @@ public:
 
     String getLDAPServerName() const;
 
-    // IAccessStorage implementations.
+public: // IAccessStorage implementations.
     virtual const char * getStorageType() const override;
     virtual String getStorageParamsJSON() const override;
     virtual bool isReadOnly() const override { return true; }
@@ -52,8 +52,9 @@ private: // IAccessStorage implementations.
     virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
-    virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
+    virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const override;
 
+private:
     void setConfiguration(AccessControl * access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 

@@ -21,21 +21,19 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-FLAKY_TRIES_COUNT = 10
+TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
-
-NO_CHANGES_MSG = "Nothing to run"
 
 
 def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
-def get_changed_tests_to_run(pr_info, repo_path):
-    result = set()
+def get_tests_to_run(pr_info):
+    result = set([])
     changed_files = pr_info["changed_files"]
 
     if changed_files is None:
@@ -45,7 +43,7 @@ def get_changed_tests_to_run(pr_info, repo_path):
         if "tests/integration/test_" in fpath:
             logging.info("File %s changed and seems like integration test", fpath)
             result.add(fpath.split("/")[2])
-    return filter_existing_tests(result, repo_path)
+    return list(result)
 
 
 def filter_existing_tests(tests_to_run, repo_path):
@@ -209,9 +207,6 @@ class ClickhouseIntegrationTestsRunner:
         self.image_versions = self.params["docker_images_with_versions"]
         self.shuffle_groups = self.params["shuffle_test_groups"]
         self.flaky_check = "flaky check" in self.params["context_name"]
-        self.bugfix_validate_check = (
-            "bugfix validate check" in self.params["context_name"]
-        )
         # if use_tmpfs is not set we assume it to be true, otherwise check
         self.use_tmpfs = "use_tmpfs" not in self.params or self.params["use_tmpfs"]
         self.disable_net_host = (
@@ -246,8 +241,7 @@ class ClickhouseIntegrationTestsRunner:
             return name + ":latest"
         return name
 
-    def get_single_image_version(self):
-        name = self.get_images_names()[0]
+    def get_image_version(self, name: str):
         if name in self.image_versions:
             return self.image_versions[name]
         logging.warn(
@@ -461,10 +455,6 @@ class ClickhouseIntegrationTestsRunner:
                 if test not in main_counters[state]:
                     main_counters[state].append(test)
 
-        for state in ("SKIPPED",):
-            for test in current_counters[state]:
-                main_counters[state].append(test)
-
     def _get_runner_image_cmd(self, repo_path):
         image_cmd = ""
         if self._can_run_with(
@@ -473,7 +463,7 @@ class ClickhouseIntegrationTestsRunner:
         ):
             for img in self.get_images_names():
                 if img == "clickhouse/integration-tests-runner":
-                    runner_version = self.get_single_image_version()
+                    runner_version = self.get_image_version(img)
                     logging.info(
                         "Can run with custom docker image version %s", runner_version
                     )
@@ -712,13 +702,14 @@ class ClickhouseIntegrationTestsRunner:
 
         return counters, tests_times, log_paths
 
-    def run_flaky_check(self, repo_path, build_path, should_fail=False):
+    def run_flaky_check(self, repo_path, build_path):
         pr_info = self.params["pr_info"]
 
-        tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
+        # pytest swears, if we require to run some tests which was renamed or deleted
+        tests_to_run = filter_existing_tests(get_tests_to_run(pr_info), repo_path)
         if not tests_to_run:
             logging.info("No tests to run found")
-            return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
+            return "success", "Nothing to run", [("Nothing to run", "OK")], ""
 
         self._install_clickhouse(build_path)
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
@@ -728,29 +719,26 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
-        for i in range(tires_num):
+        for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1
+                repo_path, "flaky", tests_to_run, 1, 1
             )
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
-                description_prefix = "Failed tests found: "
+                description_prefix = "Flaky tests found: "
                 result_state = "failure"
-                if not should_fail:
-                    break
+                break
             if counters["ERROR"]:
-                description_prefix = "Failed tests found: "
+                description_prefix = "Flaky tests found: "
                 logging.info("Found error tests: %s", " ".join(counters["ERROR"]))
                 # NOTE "error" result state will restart the whole test task,
                 # so we use "failure" here
                 result_state = "failure"
-                if not should_fail:
-                    break
-            assert len(counters["FLAKY"]) == 0 or should_fail
+                break
+            assert len(counters["FLAKY"]) == 0
             logging.info("Try is OK, all tests passed, going to clear env")
             clear_ip_tables_and_restart_daemons()
             logging.info("And going to sleep for some time")
@@ -785,10 +773,8 @@ class ClickhouseIntegrationTestsRunner:
         return result_state, status_text, test_result, logs
 
     def run_impl(self, repo_path, build_path):
-        if self.flaky_check or self.bugfix_validate_check:
-            return self.run_flaky_check(
-                repo_path, build_path, should_fail=self.bugfix_validate_check
-            )
+        if self.flaky_check:
+            return self.run_flaky_check(repo_path, build_path)
 
         self._install_clickhouse(build_path)
         logging.info(

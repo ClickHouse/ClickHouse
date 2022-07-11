@@ -43,7 +43,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -120,7 +120,7 @@ private:
     HandleKafkaErrorMode handle_error_mode;
 
     SettingsChanges createSettingsAdjustments();
-    ConsumerBufferPtr createReadBuffer(size_t consumer_number);
+    ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
     /// If named_collection is specified.
     String collection_name;

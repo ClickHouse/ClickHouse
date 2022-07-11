@@ -30,7 +30,7 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
         throw Exception("Incorrect number of arguments for aggregate function " + name,
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const DataTypePtr & data_type = arguments[0];
+    DataTypePtr data_type = arguments[0];
 
     if (isInteger(data_type) || isFloat(data_type))
         return AggregateFunctionPtr(createWithNumericType<AggregationFunctionDeltaSum>(

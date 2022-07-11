@@ -761,9 +761,9 @@ private:
 
         FileDescriptor() = default;
 
-        FileDescriptor(FileDescriptor && rhs) noexcept : fd(rhs.fd) { rhs.fd = -1; }
+        FileDescriptor(FileDescriptor && rhs) : fd(rhs.fd) { rhs.fd = -1; }
 
-        FileDescriptor & operator=(FileDescriptor && rhs) noexcept
+        FileDescriptor & operator=(FileDescriptor && rhs)
         {
             if (this == &rhs)
                 return *this;

@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
@@ -17,7 +16,7 @@ struct ExternalDataSourceConfiguration
 {
     String host;
     UInt16 port = 0;
-    String username = "default";
+    String username;
     String password;
     String database;
     String table;
@@ -111,14 +110,8 @@ struct URLBasedDataSourceConfiguration
 
 struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
-    S3Settings::AuthSettings auth_settings;
-    S3Settings::ReadWriteSettings rw_settings;
-};
-
-
-struct StorageS3ClusterConfiguration : StorageS3Configuration
-{
-    String cluster_name;
+    String access_key_id;
+    String secret_access_key;
 };
 
 struct URLBasedDataSourceConfig

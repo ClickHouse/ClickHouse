@@ -1,6 +1,6 @@
 ---
-sidebar_position: 16
-sidebar_label: Star Schema Benchmark
+toc_priority: 16
+toc_title: Star Schema Benchmark
 ---
 
 # Star Schema Benchmark {#star-schema-benchmark}
@@ -15,7 +15,7 @@ $ make
 
 Генерация данных:
 
-:::danger "Внимание"
+!!! warning "Внимание"
     -s 100 – dbgen генерирует 600 миллионов строк (67 ГБ)
 -s 1000 – dbgen генерирует 6 миллиардов строк (занимает много времени)
 

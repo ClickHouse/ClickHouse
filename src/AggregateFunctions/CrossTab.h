@@ -117,7 +117,7 @@ template <typename Data>
 class AggregateFunctionCrossTab : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>
 {
 public:
-    explicit AggregateFunctionCrossTab(const DataTypes & arguments)
+    AggregateFunctionCrossTab(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>({arguments}, {})
     {
     }

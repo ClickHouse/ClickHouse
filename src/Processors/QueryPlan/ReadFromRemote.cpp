@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -24,24 +23,34 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
+static ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
+{
+    /// Convert header structure to expected.
+    /// Also we ignore constants from result and replace it with constants from header.
+    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
+    return ActionsDAG::makeConvertingActions(
+        block.getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        true);
+}
+
+void addConvertingActions(QueryPlan & plan, const Block & header)
+{
+    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
+        return;
+
+    auto convert_actions_dag = getConvertingDAG(plan.getCurrentDataStream().header, header);
+    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
+    plan.addStep(std::move(converting));
+}
+
 static void addConvertingActions(Pipe & pipe, const Block & header)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
         return;
 
-    auto get_converting_dag = [](const Block & block_, const Block & header_)
-    {
-        /// Convert header structure to expected.
-        /// Also we ignore constants from result and replace it with constants from header.
-        /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
-        return ActionsDAG::makeConvertingActions(
-            block_.getColumnsWithTypeAndName(),
-            header_.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            true);
-    };
-
-    auto convert_actions = std::make_shared<ExpressionActions>(get_converting_dag(pipe.getHeader(), header));
+    auto convert_actions = std::make_shared<ExpressionActions>(getConvertingDAG(pipe.getHeader(), header));
     pipe.addSimpleTransform([&](const Block & cur_header, Pipe::StreamType) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(cur_header, convert_actions);
@@ -60,6 +69,28 @@ static String formattedAST(const ASTPtr & ast)
     ast->format(ast_format_settings);
     return buf.str();
 }
+
+static std::unique_ptr<QueryPlan> createLocalPlan(
+    const ASTPtr & query_ast,
+    const Block & header,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    UInt32 shard_num,
+    UInt32 shard_count)
+{
+    checkStackSize();
+
+    auto query_plan = std::make_unique<QueryPlan>();
+
+    InterpreterSelectQuery interpreter(
+        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+    interpreter.buildQueryPlan(*query_plan);
+
+    addConvertingActions(*query_plan, header);
+
+    return query_plan;
+}
+
 
 ReadFromRemote::ReadFromRemote(
     ClusterProxy::IStreamFactory::Shards shards_,
@@ -142,9 +173,11 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
                 max_remote_delay = std::max(try_result.staleness, max_remote_delay);
         }
 
-        if (try_results.empty() || local_delay < max_remote_delay)
+        /// We disable this branch in case of parallel reading from replicas, because createLocalPlan will call
+        /// InterpreterSelectQuery directly and it will be too ugly to pass ParallelReplicasCoordinator or some callback there.
+        if (!context->getClientInfo().collaborate_with_initiator && (try_results.empty() || local_delay < max_remote_delay))
         {
-            auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count, coordinator);
+            auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count);
 
             return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),

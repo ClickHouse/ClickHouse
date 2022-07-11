@@ -1,5 +1,3 @@
--- Tags: no-random-settings
-
 SELECT sum(cityHash64(*)) FROM test.hits SETTINGS max_threads=40;
 
 -- We had a bug which lead to additional compressed data read. test.hits compressed size is about 1.2Gb, but we read more then 3Gb.

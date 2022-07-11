@@ -32,25 +32,26 @@ protected:
     virtual void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const = 0;
 
 public:
-    explicit IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
+    IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
     {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(ColumnsDescription(Self::getNamesAndTypes(), Self::getNamesAndAliases()));
-        setInMemoryMetadata(storage_metadata);
+        StorageInMemoryMetadata metadata_;
+        metadata_.setColumns(ColumnsDescription(Self::getNamesAndTypes(), Self::getNamesAndAliases()));
+        setInMemoryMetadata(metadata_);
     }
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        storage_snapshot->check(column_names);
+        auto virtuals_names_and_types = getVirtuals();
+        metadata_snapshot->check(column_names, virtuals_names_and_types, getStorageID());
 
-        Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+        Block sample_block = metadata_snapshot->getSampleBlockWithVirtuals(virtuals_names_and_types);
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 

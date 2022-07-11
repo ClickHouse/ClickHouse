@@ -23,7 +23,7 @@ void BlockIO::reset()
     /// TODO Do we need also reset callbacks? In which order?
 }
 
-BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
+BlockIO & BlockIO::operator= (BlockIO && rhs)
 {
     if (this == &rhs)
         return *this;
@@ -46,16 +46,6 @@ BlockIO::~BlockIO()
 {
     reset();
 }
-
-void BlockIO::setAllDataSent() const
-{
-    /// The following queries does not have process_list_entry:
-    /// - internal
-    /// - SHOW PROCESSLIST
-    if (process_list_entry)
-        (*process_list_entry)->setAllDataSent();
-}
-
 
 }
 

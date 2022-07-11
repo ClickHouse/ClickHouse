@@ -6,7 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <base/insertAtEnd.h>
+#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
@@ -37,7 +37,7 @@ namespace
             if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
+            settings = std::move(new_settings_ast->as<const ASTSettingsProfileElements &>().elements);
             return true;
         });
     }
@@ -102,8 +102,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             if (!settings)
                 settings = std::make_shared<ASTSettingsProfileElements>();
-
-            insertAtEnd(settings->elements, std::move(new_settings));
+            boost::range::push_back(settings->elements, std::move(new_settings));
             continue;
         }
 

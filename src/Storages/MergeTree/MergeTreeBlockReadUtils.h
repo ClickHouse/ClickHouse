@@ -22,12 +22,7 @@ using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredict
   * so that you can calculate the DEFAULT expression for these columns.
   * Adds them to the `columns`.
   */
-NameSet injectRequiredColumns(
-    const MergeTreeData & storage,
-    const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeData::DataPartPtr & part,
-    bool with_subcolumns,
-    Names & columns);
+NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::DataPartPtr & part, Names & columns);
 
 
 /// A batch of work for MergeTreeThreadSelectBlockInputStream
@@ -60,9 +55,9 @@ struct MergeTreeReadTask
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, size_t part_index_in_query_,
+        const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
         const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
-        const NamesAndTypesList & pre_columns_, bool remove_prewhere_column_, bool should_reorder_,
+        const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
         MergeTreeBlockSizePredictorPtr && size_predictor_);
 };
 
@@ -78,11 +73,10 @@ struct MergeTreeReadTaskColumns
 
 MergeTreeReadTaskColumns getReadTaskColumns(
     const MergeTreeData & storage,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
-    const PrewhereInfoPtr & prewhere_info,
-    bool with_subcolumns);
+    const PrewhereInfoPtr & prewhere_info);
 
 struct MergeTreeBlockSizePredictor
 {
@@ -92,7 +86,7 @@ struct MergeTreeBlockSizePredictor
     void startBlock();
 
     /// Updates statistic for more accurate prediction
-    void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = calculateDecay());
+    void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = DECAY());
 
     /// Return current block size (after update())
     inline size_t getBlockSize() const
@@ -118,7 +112,7 @@ struct MergeTreeBlockSizePredictor
             : 0;
     }
 
-    inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
+    inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = DECAY())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
         double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));
@@ -131,7 +125,7 @@ struct MergeTreeBlockSizePredictor
     /// After n=NUM_UPDATES_TO_TARGET_WEIGHT updates v_{n} = (1 - TARGET_WEIGHT) * v_{0} + TARGET_WEIGHT * v_{target}
     static constexpr double TARGET_WEIGHT = 0.5;
     static constexpr size_t NUM_UPDATES_TO_TARGET_WEIGHT = 8192;
-    static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
+    static double DECAY() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
 

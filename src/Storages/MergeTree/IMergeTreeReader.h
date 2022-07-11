@@ -44,13 +44,13 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows);
     /// Evaluate defaulted columns if necessary.
-    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
+    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
 
     /// If part metadata is not equal to storage metadata, than
     /// try to perform conversions of columns.
-    void performRequiredConversions(Columns & res_columns) const;
+    void performRequiredConversions(Columns & res_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }

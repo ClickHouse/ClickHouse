@@ -6,7 +6,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
-#include <Common/CurrentThread.h>
 
 #include <IO/SeekableReadBuffer.h>
 
@@ -42,53 +41,20 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-            ? CurrentThread::get().getThreadGroup()
-            : MainThreadStatus::getInstance().getThreadGroup();
-
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
-    auto task = std::make_shared<std::packaged_task<Result()>>([request, running_group, query_context]
+    auto task = std::make_shared<std::packaged_task<Result()>>([request]
     {
-        ThreadStatus thread_status;
-
-        /// To be able to pass ProfileEvents.
-        if (running_group)
-            thread_status.attachQuery(running_group);
-
-        /// Save query context if any, because cache implementation needs it.
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
-
         setThreadName("VFSRead");
-
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
         Stopwatch watch(CLOCK_MONOTONIC);
-
-        ReadBufferFromRemoteFSGather::ReadResult result;
-        try
-        {
-            result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
-        }
-        catch (...)
-        {
-            if (running_group)
-                CurrentThread::detachQuery();
-            throw;
-        }
-
+        auto [bytes_read, offset] = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
         watch.stop();
 
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, result.offset ? result.size - result.offset : result.size);
+        ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
 
-        thread_status.detachQuery(/* if_not_detached */true);
-
-        return Result{ .size = result.size, .offset = result.offset };
+        return Result{ .size = bytes_read, .offset = offset };
     });
 
     auto future = task->get_future();

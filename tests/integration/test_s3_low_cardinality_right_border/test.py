@@ -65,7 +65,6 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", main_configs=["configs/s3.xml"], with_minio=True)
 
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -87,17 +86,12 @@ CREATE TABLE s3_low_cardinality
 ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS storage_policy = 's3',  min_bytes_for_wide_part = 0, index_granularity = 1024;
-    """
-    )
+    """)
 
     node1.query("INSERT INTO s3_low_cardinality SELECT 'aaaaaa' FROM numbers(600000)")
-    node1.query(
-        "INSERT INTO s3_low_cardinality SELECT toString(number) FROM numbers(100000)"
-    )
+    node1.query("INSERT INTO s3_low_cardinality SELECT toString(number) FROM numbers(100000)")
     node1.query("INSERT INTO s3_low_cardinality SELECT 'bbbbbb' FROM numbers(500000)")
-    node1.query(
-        "INSERT INTO s3_low_cardinality SELECT toString(number + 100000000) FROM numbers(100000)"
-    )
+    node1.query("INSERT INTO s3_low_cardinality SELECT toString(number + 100000000) FROM numbers(100000)")
 
     node1.query("OPTIMIZE TABLE s3_low_cardinality FINAL")
 

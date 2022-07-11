@@ -27,16 +27,10 @@ public:
 
     String getFileName() const override;
 
-    void setReadUntilPosition(size_t position) override;
-
-    void setReadUntilEnd() override;
-
 private:
     bool nextImpl() override;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
-
-    size_t file_offset_of_buffer_end = 0;
 };
 
 }

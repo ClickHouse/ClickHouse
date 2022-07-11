@@ -17,7 +17,7 @@
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
@@ -225,10 +225,6 @@ namespace
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 read_bytes_size += 2;
                 break;
-            case ValueType::vtDate32:
-                assert_cast<ColumnInt32 &>(column).insertValue(Int32(value.getDate().getExtenedDayNum()));
-                read_bytes_size += 4;
-                break;
             case ValueType::vtDateTime:
             {
                 ReadBufferFromString in(value);
@@ -337,11 +333,8 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
     if (!settings->fetch_by_name)
     {
         if (description.sample_block.columns() != connection->result.getNumFields())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                "mysqlxx::UseQueryResult contains {} columns while {} expected",
-                connection->result.getNumFields(),
-                description.sample_block.columns());
+            throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
+                + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
         for (const auto idx : collections::range(0, connection->result.getNumFields()))
             position_mapping[idx] = idx;
@@ -365,10 +358,18 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
         }
 
         if (!missing_names.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                "mysqlxx::UseQueryResult must contain columns: {}",
-                fmt::join(missing_names, ", "));
+        {
+            WriteBufferFromOwnString exception_message;
+            for (auto iter = missing_names.begin(); iter != missing_names.end(); ++iter)
+            {
+                if (iter != missing_names.begin())
+                    exception_message << ", ";
+                exception_message << *iter;
+            }
+
+            throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+        }
     }
 }
 

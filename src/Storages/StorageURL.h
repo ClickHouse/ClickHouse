@@ -30,7 +30,7 @@ class IStorageURLBase : public IStorage
 public:
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -80,7 +80,7 @@ protected:
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -88,16 +88,14 @@ protected:
 
     virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
-        const ColumnsDescription & columns_description,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    bool isColumnOriented() const override;
-
 private:
-    virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
+    virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
 };
 
 class StorageURLSink : public SinkToStorage
@@ -145,9 +143,9 @@ public:
         return "URL";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/, const StorageSnapshotPtr & storage_snapshot) const override
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageMetadataPtr & metadata_snapshot) const override
     {
-        return storage_snapshot->metadata->getSampleBlock();
+        return metadata_snapshot->getSampleBlock();
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
@@ -172,7 +170,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,

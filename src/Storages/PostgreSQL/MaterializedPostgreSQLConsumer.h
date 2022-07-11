@@ -5,7 +5,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
@@ -22,9 +22,6 @@ struct StorageInfo
 
     StorageInfo(StoragePtr storage_, const PostgreSQLTableStructure::Attributes & attributes_)
         : storage(storage_), attributes(attributes_) {}
-
-    StorageInfo(StoragePtr storage_, PostgreSQLTableStructure::Attributes && attributes_)
-        : storage(storage_), attributes(std::move(attributes_)) {}
 };
 using StorageInfos = std::unordered_map<String, StorageInfo>;
 
@@ -122,13 +119,11 @@ private:
 
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
-    static void assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx);
-
     /// lsn - log sequnce nuumber, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
-        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
+        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half);
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }
 

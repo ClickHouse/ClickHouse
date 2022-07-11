@@ -1,6 +1,6 @@
 #include "DiskWebServer.h"
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -165,12 +165,14 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     auto remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
     remote_path = remote_path.string().substr(url.size());
 
-    std::vector<BlobPathWithSize> blobs_to_read;
-    blobs_to_read.emplace_back(remote_path, iter->second.size);
+    RemoteMetadata meta(path, remote_path);
+    meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, path, blobs_to_read, getContext(), read_settings);
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(path, url, meta, getContext(), threadpool_read, read_settings);
+
+    if (threadpool_read)
     {
         auto reader = IDiskRemote::getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);

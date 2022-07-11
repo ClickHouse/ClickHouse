@@ -27,7 +27,7 @@ public:
     String getName() const override { return "SystemStackTrace"; }
     static NamesAndTypesList getNamesAndTypes();
 
-    explicit StorageSystemStackTrace(const StorageID & table_id_);
+    StorageSystemStackTrace(const StorageID & table_id_);
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

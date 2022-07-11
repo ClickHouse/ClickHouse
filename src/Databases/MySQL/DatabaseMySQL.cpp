@@ -61,7 +61,7 @@ DatabaseMySQL::DatabaseMySQL(
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
     , database_settings(std::move(settings_))
-    , mysql_pool(std::move(pool)) /// NOLINT
+    , mysql_pool(std::move(pool))
 {
     try
     {
@@ -152,7 +152,10 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
 
         /// Unset settings
-        std::erase_if(storage_children, [&](const ASTPtr & element) { return element.get() == ast_storage->settings; });
+        storage_children.erase(
+            std::remove_if(storage_children.begin(), storage_children.end(),
+                           [&](const ASTPtr & element) { return element.get() == ast_storage->settings; }),
+            storage_children.end());
         ast_storage->settings = nullptr;
     }
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,

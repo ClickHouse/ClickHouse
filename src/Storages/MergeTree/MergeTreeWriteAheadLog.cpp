@@ -197,8 +197,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
                 {},
-                CompressionCodecFactory::instance().get("NONE", {}),
-                NO_TRANSACTION_PTR);
+                CompressionCodecFactory::instance().get("NONE", {}));
 
             part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);

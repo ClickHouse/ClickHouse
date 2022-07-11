@@ -24,7 +24,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -35,7 +35,8 @@ public:
                                               .readFromParts(
                                                   parts,
                                                   column_names,
-                                                  storage_snapshot,
+                                                  metadata_snapshot,
+                                                  metadata_snapshot,
                                                   query_info,
                                                   context,
                                                   max_block_size,
@@ -79,7 +80,7 @@ public:
 
 protected:
     /// Used in part mutation.
-    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
         , storage(part_->storage)

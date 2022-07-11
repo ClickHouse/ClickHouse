@@ -16,20 +16,12 @@
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <base/scope_guard.h>
 extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
-
-/// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
         bool _allocations_flag_prev_val##n = memory_tracker_always_throw_logical_error_on_allocation; \
         memory_tracker_always_throw_logical_error_on_allocation = val; \
         SCOPE_EXIT({ memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
-
-/// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL(n, val) ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val)
-
-/// NOLINTNEXTLINE
 #define DENY_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, true)
-
-/// NOLINTNEXTLINE
 #define ALLOW_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, false)
 #else
 #define DENY_ALLOCATIONS_IN_SCOPE static_assert(true)
@@ -125,10 +117,6 @@ public:
     void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);
 
-    Int64 getHardLimit() const
-    {
-        return hard_limit.load(std::memory_order_relaxed);
-    }
     Int64 getSoftLimit() const
     {
         return soft_limit.load(std::memory_order_relaxed);

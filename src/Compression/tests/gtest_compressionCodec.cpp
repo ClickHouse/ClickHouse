@@ -316,7 +316,7 @@ CodecTestSequence operator+(CodecTestSequence && left, const CodecTestSequence &
 
 std::vector<CodecTestSequence> operator+(const std::vector<CodecTestSequence> & left, const std::vector<CodecTestSequence> & right)
 {
-    std::vector<CodecTestSequence> result(left);
+    std::vector<CodecTestSequence> result(std::move(left));
     std::move(std::begin(right), std::end(right), std::back_inserter(result));
 
     return result;

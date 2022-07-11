@@ -1,8 +1,7 @@
 [
-  "test_dns_cache/test.py::test_dns_cache_update",
-  "test_dns_cache/test.py::test_ip_change_drop_dns_cache",
-  "test_dns_cache/test.py::test_ip_change_update_dns_cache",
-  "test_dns_cache/test.py::test_user_access_ip_change[node0]",
-  "test_dns_cache/test.py::test_user_access_ip_change[node1]",
-  "test_dns_cache/test.py::test_host_is_drop_from_cache_after_consecutive_failures"
+  "test_host_ip_change/test.py::test_dns_cache_update",
+  "test_host_ip_change/test.py::test_ip_change_drop_dns_cache",
+  "test_host_ip_change/test.py::test_ip_change_update_dns_cache",
+  "test_host_ip_change/test.py::test_user_access_ip_change[node0]",
+  "test_host_ip_change/test.py::test_user_access_ip_change[node1]"
 ]

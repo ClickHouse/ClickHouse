@@ -49,10 +49,6 @@ public:
     {
         return file_name;
     }
-
-    Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
-
-    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 };
 
 
@@ -61,7 +57,7 @@ public:
 class ReadBufferFromFilePRead : public ReadBufferFromFile
 {
 public:
-    explicit ReadBufferFromFilePRead(
+    ReadBufferFromFilePRead(
         const std::string & file_name_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = -1,
@@ -84,7 +80,7 @@ private:
     OpenedFileCache::OpenedFilePtr file;
 
 public:
-    explicit ReadBufferFromFilePReadWithDescriptorsCache(
+    ReadBufferFromFilePReadWithDescriptorsCache(
         const std::string & file_name_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = -1,

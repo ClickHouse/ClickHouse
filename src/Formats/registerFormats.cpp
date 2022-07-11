@@ -13,7 +13,6 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
-void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 
 /// Formats for both input/output.
@@ -37,8 +36,6 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatJSONCompactEachRow(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
-void registerInputFormatProtobufList(FormatFactory & factory);
-void registerOutputFormatProtobufList(FormatFactory & factory);
 void registerInputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory);
@@ -72,13 +69,11 @@ void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
-void registerOutputFormatPrometheus(FormatFactory & factory);
 
 /// Input only formats.
 
 void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory);
-void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 
@@ -89,7 +84,6 @@ void registerInputFormatHiveText(FormatFactory & factory);
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
-void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 
 void registerArrowSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory);
@@ -102,10 +96,8 @@ void registerNativeSchemaReader(FormatFactory & factory);
 void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory);
 void registerAvroSchemaReader(FormatFactory & factory);
 void registerProtobufSchemaReader(FormatFactory & factory);
-void registerProtobufListSchemaReader(FormatFactory & factory);
 void registerLineAsStringSchemaReader(FormatFactory & factory);
 void registerJSONAsStringSchemaReader(FormatFactory & factory);
-void registerJSONAsObjectSchemaReader(FormatFactory & factory);
 void registerRawBLOBSchemaReader(FormatFactory & factory);
 void registerMsgPackSchemaReader(FormatFactory & factory);
 void registerCapnProtoSchemaReader(FormatFactory & factory);
@@ -126,7 +118,6 @@ void registerFormats()
     registerFileSegmentationEngineJSONEachRow(factory);
     registerFileSegmentationEngineRegexp(factory);
     registerFileSegmentationEngineJSONAsString(factory);
-    registerFileSegmentationEngineJSONAsObject(factory);
     registerFileSegmentationEngineJSONCompactEachRow(factory);
 
     registerInputFormatNative(factory);
@@ -147,8 +138,6 @@ void registerFormats()
     registerInputFormatJSONCompactEachRow(factory);
     registerOutputFormatJSONCompactEachRow(factory);
     registerInputFormatProtobuf(factory);
-    registerOutputFormatProtobufList(factory);
-    registerInputFormatProtobufList(factory);
     registerOutputFormatProtobuf(factory);
     registerInputFormatTemplate(factory);
     registerOutputFormatTemplate(factory);
@@ -182,12 +171,10 @@ void registerFormats()
     registerOutputFormatMarkdown(factory);
     registerOutputFormatPostgreSQLWire(factory);
     registerOutputFormatCapnProto(factory);
-    registerOutputFormatPrometheus(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
-    registerInputFormatJSONAsObject(factory);
 #if USE_HIVE
     registerInputFormatHiveText(factory);
 #endif
@@ -196,7 +183,6 @@ void registerFormats()
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
-    registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(factory);
 
     registerArrowSchemaReader(factory);
     registerParquetSchemaReader(factory);
@@ -209,10 +195,8 @@ void registerFormats()
     registerRowBinaryWithNamesAndTypesSchemaReader(factory);
     registerAvroSchemaReader(factory);
     registerProtobufSchemaReader(factory);
-    registerProtobufListSchemaReader(factory);
     registerLineAsStringSchemaReader(factory);
     registerJSONAsStringSchemaReader(factory);
-    registerJSONAsObjectSchemaReader(factory);
     registerRawBLOBSchemaReader(factory);
     registerMsgPackSchemaReader(factory);
     registerCapnProtoSchemaReader(factory);

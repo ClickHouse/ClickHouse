@@ -6,8 +6,6 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Core/Protocol.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -20,12 +18,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_)
     : WithContext(context_)
     , session(getContext(), ClientInfo::Interface::LOCAL)
     , send_progress(send_progress_)
-    , send_profile_events(send_profile_events_)
-    , server_display_name(server_display_name_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
@@ -62,11 +58,6 @@ void LocalConnection::updateProgress(const Progress & value)
     state->progress.incrementPiecewiseAtomically(value);
 }
 
-void LocalConnection::getProfileEvents(Block & block)
-{
-    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, block, last_sent_snapshots);
-}
-
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
@@ -86,22 +77,17 @@ void LocalConnection::sendQuery(
     if (!current_database.empty())
         query_context->setCurrentDatabase(current_database);
 
+    CurrentThread::QueryScope query_scope_holder(query_context);
 
     state.reset();
     state.emplace();
 
     state->query_id = query_id;
     state->query = query;
-    state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
-    state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-    CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
 
     if (send_progress)
         state->after_send_progress.restart();
-
-    if (send_profile_events)
-        state->after_send_profile_events.restart();
 
     next_packet_type.reset();
 
@@ -154,17 +140,17 @@ void LocalConnection::sendQuery(
     catch (const Exception & e)
     {
         state->io.onException();
-        state->exception.reset(e.clone());
+        state->exception.emplace(e);
     }
     catch (const std::exception & e)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
     }
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -175,11 +161,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (state->pushing_async_executor)
     {
-        state->pushing_async_executor->push(block);
+        state->pushing_async_executor->push(std::move(block));
     }
     else if (state->pushing_executor)
     {
-        state->pushing_executor->push(block);
+        state->pushing_executor->push(std::move(block));
     }
 }
 
@@ -201,6 +187,9 @@ void LocalConnection::finishQuery()
 {
     next_packet_type = Protocol::Server::EndOfStream;
 
+    if (!state)
+        return;
+
     if (state->executor)
     {
         state->executor.reset();
@@ -216,7 +205,6 @@ void LocalConnection::finishQuery()
 
     state->io.onFinish();
     state.reset();
-    last_sent_snapshots.clear();
 }
 
 bool LocalConnection::poll(size_t)
@@ -243,16 +231,6 @@ bool LocalConnection::poll(size_t)
             return true;
         }
 
-        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            Block block;
-            state->after_send_profile_events.restart();
-            next_packet_type = Protocol::Server::ProfileEvents;
-            getProfileEvents(block);
-            state->block.emplace(std::move(block));
-            return true;
-        }
-
         try
         {
             pollImpl();
@@ -260,17 +238,17 @@ bool LocalConnection::poll(size_t)
         catch (const Exception & e)
         {
             state->io.onException();
-            state->exception.reset(e.clone());
+            state->exception.emplace(e);
         }
         catch (const std::exception & e)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+            state->exception.emplace(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -320,21 +298,6 @@ bool LocalConnection::poll(size_t)
         {
             next_packet_type = Protocol::Server::ProfileInfo;
             state->profile_info = state->executor->getProfileInfo();
-            return true;
-        }
-    }
-
-    if (state->is_finished && !state->sent_profile_events)
-    {
-        state->sent_profile_events = true;
-
-        if (send_profile_events && state->executor)
-        {
-            Block block;
-            state->after_send_profile_events.restart();
-            next_packet_type = Protocol::Server::ProfileEvents;
-            getProfileEvents(block);
-            state->block.emplace(std::move(block));
             return true;
         }
     }
@@ -392,9 +355,9 @@ Packet LocalConnection::receivePacket()
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
     {
-        case Protocol::Server::Totals:
-        case Protocol::Server::Extremes:
-        case Protocol::Server::Log:
+        case Protocol::Server::Totals: [[fallthrough]];
+        case Protocol::Server::Extremes: [[fallthrough]];
+        case Protocol::Server::Log: [[fallthrough]];
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
@@ -434,7 +397,7 @@ Packet LocalConnection::receivePacket()
         }
         case Protocol::Server::Exception:
         {
-            packet.exception.reset(state->exception->clone());
+            packet.exception = std::make_unique<Exception>(*state->exception);
             next_packet_type.reset();
             break;
         }
@@ -496,14 +459,9 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-ServerConnectionPtr LocalConnection::createConnection(
-    const ConnectionParameters &,
-    ContextPtr current_context,
-    bool send_progress,
-    bool send_profile_events,
-    const String & server_display_name)
+ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress)
 {
-    return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(current_context, send_progress);
 }
 
 

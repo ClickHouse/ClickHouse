@@ -68,7 +68,7 @@ public:
         const DataTypes & arguments,
         const Array & params) const = 0;
 
-    virtual ~IAggregateFunctionCombinator() = default;
+    virtual ~IAggregateFunctionCombinator() {}
 };
 
 using AggregateFunctionCombinatorPtr = std::shared_ptr<const IAggregateFunctionCombinator>;

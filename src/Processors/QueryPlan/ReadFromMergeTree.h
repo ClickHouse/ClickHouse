@@ -89,7 +89,8 @@ public:
         Names virt_column_names_,
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
-        StorageSnapshotPtr storage_snapshot,
+        StorageMetadataPtr metadata_snapshot_,
+        StorageMetadataPtr metadata_snapshot_base_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_,
@@ -100,8 +101,7 @@ public:
         bool enable_parallel_reading
     );
 
-    static constexpr auto name = "ReadFromMergeTree";
-    String getName() const override { return name; }
+    String getName() const override { return "ReadFromMergeTree"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -141,8 +141,8 @@ private:
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
 
-    StorageSnapshotPtr storage_snapshot;
-    StorageMetadataPtr metadata_for_reading;
+    StorageMetadataPtr metadata_snapshot;
+    StorageMetadataPtr metadata_snapshot_base;
 
     ContextPtr context;
 

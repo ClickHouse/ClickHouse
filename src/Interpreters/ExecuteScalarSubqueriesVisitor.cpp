@@ -76,7 +76,7 @@ static bool worthConvertingToLiteral(const Block & scalar)
 {
     const auto * scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
-    return !useless_literal_types.contains(scalar_type_name);
+    return !useless_literal_types.count(scalar_type_name);
 }
 
 static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
@@ -113,18 +113,14 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     bool is_local = false;
 
     Block scalar;
-    if (data.only_analyze)
-    {
-        /// Don't use scalar cache during query analysis
-    }
-    else if (data.local_scalars.contains(scalar_query_hash_str))
+    if (data.local_scalars.count(scalar_query_hash_str))
     {
         hit = true;
         scalar = data.local_scalars[scalar_query_hash_str];
         is_local = true;
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
     }
-    else if (data.scalars.contains(scalar_query_hash_str))
+    else if (data.scalars.count(scalar_query_hash_str))
     {
         hit = true;
         scalar = data.scalars[scalar_query_hash_str];

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 26
-sidebar_label: 客户端开发库
+toc_priority: 26
+toc_title: 客户端开发库
 ---
 
 # 第三方开发库 {#client-libraries-from-third-party-developers}

@@ -19,8 +19,8 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -426,7 +426,19 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         std::move(block),
         views_data.source_storage->getVirtuals()));
 
+    /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+    ///
+    /// - We copy Context inside InterpreterSelectQuery to support
+    ///   modification of context (Settings) for subqueries
+    /// - InterpreterSelectQuery lives shorter than query pipeline.
+    ///   It's used just to build the query pipeline and no longer needed
+    /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+    ///   **can** take a reference to Context from InterpreterSelectQuery
+    ///   (the problem raises only when function uses context from the
+    ///    execute*() method, like FunctionDictGet do)
+    /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
     InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
+
     auto pipeline = select.buildQueryPipeline();
     pipeline.resize(1);
 
@@ -683,7 +695,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
             return Status::Ready;
 
         if (any_exception)
-            output.pushException(any_exception);
+            output.pushException(std::move(any_exception));
 
         output.finish();
         return Status::Finished;
@@ -696,7 +708,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 {
     try
     {
-        std::rethrow_exception(ptr);
+        std::rethrow_exception(std::move(ptr));
     }
     catch (DB::Exception & exception)
     {
@@ -724,7 +736,7 @@ void FinalizingViewsTransform::work()
             if (!any_exception)
                 any_exception = status.exception;
 
-            view.setException(addStorageToException(status.exception, view.table_id));
+            view.setException(addStorageToException(std::move(status.exception), view.table_id));
         }
         else
         {

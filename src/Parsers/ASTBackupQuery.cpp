@@ -1,9 +1,6 @@
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <IO/Operators.h>
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -14,50 +11,31 @@ namespace
     using Element = ASTBackupQuery::Element;
     using ElementType = ASTBackupQuery::ElementType;
 
-    void formatTypeWithName(const DatabaseAndTableName & name, bool name_is_in_temp_db, ElementType type, bool show_type, const IAST::FormatSettings & format)
+    void formatName(const DatabaseAndTableName & name, ElementType type, const IAST::FormatSettings & format)
     {
         switch (type)
         {
-            case ElementType::TABLE:
+            case ElementType::TABLE: [[fallthrough]];
+            case ElementType::DICTIONARY:
             {
-                if (show_type)
-                {
-                    format.ostr << (format.hilite ? IAST::hilite_keyword : "");
-                    if (name_is_in_temp_db)
-                        format.ostr << " TEMPORARY TABLE";
-                    else
-                        format.ostr << " TABLE";
-                    format.ostr << (format.hilite ? IAST::hilite_none : "");
-                }
-
                 format.ostr << " ";
-                if (!name_is_in_temp_db && !name.first.empty())
+                if (!name.first.empty())
                     format.ostr << backQuoteIfNeed(name.first) << ".";
                 format.ostr << backQuoteIfNeed(name.second);
                 break;
             }
             case ElementType::DATABASE:
             {
-                if (show_type)
-                {
-                    format.ostr << (format.hilite ? IAST::hilite_keyword : "");
-                    if (name_is_in_temp_db)
-                        format.ostr << " ALL TEMPORARY TABLES";
-                    else
-                        format.ostr << " DATABASE";
-                    format.ostr << (format.hilite ? IAST::hilite_none : "");
-                }
-
-                if (!name_is_in_temp_db)
-                    format.ostr << " " << backQuoteIfNeed(name.first);
+                format.ostr << " " << backQuoteIfNeed(name.first);
                 break;
             }
-            case ElementType::ALL_DATABASES:
+            case ElementType::TEMPORARY_TABLE:
             {
-                if (show_type)
-                    format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " ALL DATABASES" << (format.hilite ? IAST::hilite_none : "");
+                format.ostr << " " << backQuoteIfNeed(name.second);
                 break;
             }
+            default:
+                break;
         }
     }
 
@@ -77,36 +55,32 @@ namespace
         }
     }
 
-    void formatExceptList(const std::set<String> & except_list, const IAST::FormatSettings & format)
-    {
-        if (except_list.empty())
-            return;
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT "
-                    << (format.hilite ? IAST::hilite_none : "");
-        bool need_comma = false;
-        for (const auto & item : except_list)
-        {
-            if (std::exchange(need_comma, true))
-                format.ostr << ",";
-            format.ostr << " " << backQuoteIfNeed(item);
-        }
-    }
-
     void formatElement(const Element & element, Kind kind, const IAST::FormatSettings & format)
     {
-        formatTypeWithName(element.name, element.name_is_in_temp_db, element.type, true, format);
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " ";
+        switch (element.type)
+        {
+            case ElementType::TABLE: format.ostr << "TABLE"; break;
+            case ElementType::DICTIONARY: format.ostr << "DICTIONARY"; break;
+            case ElementType::DATABASE: format.ostr << "DATABASE"; break;
+            case ElementType::ALL_DATABASES: format.ostr << "ALL DATABASES"; break;
+            case ElementType::TEMPORARY_TABLE: format.ostr << "TEMPORARY TABLE"; break;
+            case ElementType::ALL_TEMPORARY_TABLES: format.ostr << "ALL TEMPORARY TABLES"; break;
+            case ElementType::EVERYTHING: format.ostr << "EVERYTHING"; break;
+        }
+        format.ostr << (format.hilite ? IAST::hilite_none : "");
 
-        formatPartitions(element.partitions, format);
-        formatExceptList(element.except_list, format);
+        formatName(element.name, element.type, format);
 
-        bool new_name_is_different = (element.new_name != element.name) || (element.new_name_is_in_temp_db != element.name_is_in_temp_db);
-        if (new_name_is_different)
+        bool under_another_name = !element.new_name.first.empty() || !element.new_name.second.empty();
+        if (under_another_name)
         {
             format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " " << ((kind == Kind::BACKUP) ? "AS" : "INTO")
                         << (format.hilite ? IAST::hilite_none : "");
-            bool show_type = (element.new_name_is_in_temp_db != element.name_is_in_temp_db);
-            formatTypeWithName(element.new_name, element.new_name_is_in_temp_db, element.type, show_type, format);
+            formatName(element.new_name, element.type, format);
         }
+
+        formatPartitions(element.partitions, format);
     }
 
     void formatElements(const std::vector<Element> & elements, Kind kind, const IAST::FormatSettings & format)
@@ -138,49 +112,9 @@ namespace
                 format.ostr << ", ";
             settings->format(format);
         }
-    }
 
-
-    void setDatabaseInElements(ASTBackupQuery::Elements & elements, const String & new_database)
-    {
-        for (auto & element : elements)
-        {
-            if (element.type == ASTBackupQuery::TABLE)
-            {
-                if (element.name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
-                    element.name.first = new_database;
-                if (element.new_name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
-                    element.new_name.first = new_database;
-            }
-        }
-    }
-
-    ASTPtr rewriteSettingsWithoutOnCluster(ASTPtr settings, const WithoutOnClusterASTRewriteParams & params)
-    {
-        SettingsChanges changes;
-        if (settings)
-            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
-
-        boost::remove_erase_if(
-            changes,
-            [](const SettingChange & change)
-            {
-                const String & name = change.name;
-                return (name == "internal") || (name == "async") || (name == "shard_num") || (name == "replica_num");
-            });
-
-        changes.emplace_back("internal", true);
-        changes.emplace_back("async", false);
-        changes.emplace_back("shard_num", params.shard_index);
-        changes.emplace_back("replica_num", params.replica_index);
-
-        auto out_settings = std::make_shared<ASTSetQuery>();
-        out_settings->changes = std::move(changes);
-        out_settings->is_standalone = false;
-        return out_settings;
     }
 }
-
 
 String ASTBackupQuery::getID(char) const
 {
@@ -200,7 +134,6 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
                 << (format.hilite ? hilite_none : "");
 
     formatElements(elements, kind, format);
-    formatOnCluster(format);
 
     format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (format.hilite ? hilite_none : "");
     backup_name->format(format);
@@ -208,15 +141,5 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
     if (settings || base_backup_name)
         formatSettings(settings, base_backup_name, format);
 }
-
-ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
-{
-    auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
-    new_query->cluster.clear();
-    new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
-    setDatabaseInElements(new_query->elements, params.default_database);
-    return new_query;
-}
-
 
 }

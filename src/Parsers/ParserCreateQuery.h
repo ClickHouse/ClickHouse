@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTIdentifier_fwd.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTNameTypePair.h>
-#include <Parsers/CommonParsers.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
+
 
 namespace DB
 {
@@ -133,7 +133,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_type{"TYPE"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
-    ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserExpression expression_parser;
 
@@ -186,21 +185,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
 
     Pos pos_before_specifier = pos;
-    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
+    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) ||
+        s_ephemeral.ignore(pos, expected) || s_alias.ignore(pos, expected))
     {
         default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
 
         /// should be followed by an expression
         if (!expr_parser.parse(pos, default_expression, expected))
-            return false;
-    }
-    else if (s_ephemeral.ignore(pos, expected))
-    {
-        default_specifier = "EPHEMERAL";
-        if (!literal_parser.parse(pos, default_expression, expected) && type)
-            default_expression = std::make_shared<ASTLiteral>(Field());
-
-        if (!default_expression && !type)
             return false;
     }
 
