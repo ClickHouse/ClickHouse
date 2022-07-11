@@ -270,6 +270,7 @@ private:
     bool is_initialized = false;
     Names non_const_virtual_column_names;
     bool need_read_deleted_mask = false;
+    ColumnUInt8::Ptr deleted_rows;
 };
 
 }

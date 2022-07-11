@@ -608,7 +608,6 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
-    new_data_part->loadDeletedMask();
     new_data_part->setBytesOnDisk(new_data_part->data_part_storage->calculateTotalSizeOnDisk());
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
@@ -1497,8 +1496,8 @@ private:
         /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
         if (ctx->source_part->hasLightweightDelete())
         {
-            const auto & deleted_rows_col = ctx->source_part->getDeletedMask().getDeletedRows();
-            const auto & source_data = deleted_rows_col.getData();
+            const auto & deleted_rows_col = ctx->source_part->getDeletedMask();
+            const auto & source_data = deleted_rows_col->getData();
             data.insert(source_data.begin(), source_data.begin() + ctx->source_part->rows_count);
 
             has_deleted_rows = true;

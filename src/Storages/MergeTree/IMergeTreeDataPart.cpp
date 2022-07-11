@@ -648,7 +648,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
-        loadDeletedMask();
     }
     catch (...)
     {
@@ -1215,14 +1214,14 @@ void IMergeTreeDataPart::loadColumns(bool require)
 /// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
-    return part_type == MergeTreeDataPartType::Wide && parent_part == nullptr && projection_parts.size() == 0;
+    return part_type == MergeTreeDataPartType::Wide && parent_part == nullptr && projection_parts.empty();
 }
 
-void IMergeTreeDataPart::loadDeletedMask()
+const MergeTreeDataPartDeletedMask::DeletedRows IMergeTreeDataPart::getDeletedMask() const
 {
-    if (part_type == Type::Compact)
-        return;
+    MergeTreeDataPartDeletedMask deleted_mask {};
 
+    /// Check if deleted mask file exists.
     if (data_part_storage->exists(deleted_mask.name))
     {
         data_part_storage->loadDeletedRowsMask(deleted_mask);
@@ -1234,10 +1233,13 @@ void IMergeTreeDataPart::loadDeletedMask()
                     "(loaded {} rows, expected {} rows).",
                     data_part_storage->getDiskPath(), deleted_mask.name, name, deleted_mask.getDeletedRows().size(), rows_count);
     }
+
+    return std::move(deleted_mask.getDeletedRowsPtr());
 }
 
 void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask)
 {
+    MergeTreeDataPartDeletedMask deleted_mask {};
     deleted_mask.setDeletedRows(new_mask);
     data_part_storage->writeDeletedRowsMask(deleted_mask);
 }

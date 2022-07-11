@@ -77,6 +77,9 @@ try
 
     /// The chunk after deleted mask applied maybe empty. But the empty chunk means done of read rows.
     bool need_read_deleted_mask = data_part->hasLightweightDelete();
+    ColumnUInt8::Ptr deleted_rows_col;
+    if (need_read_deleted_mask)
+        deleted_rows_col = data_part->getDeletedMask();
 
     do
     {
@@ -96,8 +99,7 @@ try
 
                 if (need_read_deleted_mask)
                 {
-                    const auto & deleted_rows_col = data_part->getDeletedMask().getDeletedRows();
-                    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col.getData();
+                    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col->getData();
 
                     size_t pos = current_row - rows_read;
 
