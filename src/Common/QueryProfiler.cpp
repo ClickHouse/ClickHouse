@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 

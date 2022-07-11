@@ -1,5 +1,5 @@
 #include <unistd.h>
-#include <errno.h>
+#include <cerrno>
 #include <cassert>
 #include <sys/stat.h>
 

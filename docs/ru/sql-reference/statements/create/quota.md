@@ -1,6 +1,6 @@
 ---
-toc_priority: 42
-toc_title: "Квота"
+sidebar_position: 42
+sidebar_label: "Квота"
 ---
 
 # CREATE QUOTA {#create-quota-statement}

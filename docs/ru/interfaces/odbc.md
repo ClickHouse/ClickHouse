@@ -1,6 +1,6 @@
 ---
-toc_priority: 23
-toc_title: "ODBC-драйвер"
+sidebar_position: 23
+sidebar_label: "ODBC-драйвер"
 ---
 
 

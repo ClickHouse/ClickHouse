@@ -6,11 +6,11 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -155,6 +155,11 @@ bool PipelineExecutor::checkTimeLimit()
     return continuing;
 }
 
+void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
+{
+    read_progress_callback = std::move(callback);
+}
+
 void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
@@ -185,10 +190,10 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
     auto & context = tasks.getThreadContext(thread_num);
     LOG_TRACE(log,
               "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
-              (context.total_time_ns / 1e9),
-              (context.execution_time_ns / 1e9),
-              (context.processing_time_ns / 1e9),
-              (context.wait_time_ns / 1e9));
+              context.total_time_ns / 1e9,
+              context.execution_time_ns / 1e9,
+              context.processing_time_ns / 1e9,
+              context.wait_time_ns / 1e9);
 #endif
 }
 
@@ -263,14 +268,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads, profile_processors);
+    tasks.init(num_threads, profile_processors, read_progress_callback.get());
     tasks.fill(queue);
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
-    OpenTelemetrySpanHolder span("PipelineExecutor::executeImpl()");
-
     initializeExecution(num_threads);
 
     using ThreadsData = std::vector<ThreadFromGlobalPool>;

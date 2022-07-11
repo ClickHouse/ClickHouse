@@ -12,7 +12,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <base/shared_ptr_helper.h>
 #include <memory>
 
 
@@ -61,10 +60,8 @@ namespace DB
  *
 **/
 
-class StorageMaterializedPostgreSQL final : public shared_ptr_helper<StorageMaterializedPostgreSQL>, public IStorage, WithContext
+class StorageMaterializedPostgreSQL final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageMaterializedPostgreSQL>;
-
 public:
     StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
@@ -72,18 +69,29 @@ public:
     StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
 
+    StorageMaterializedPostgreSQL(
+        const StorageID & table_id_,
+        bool is_attach_,
+        const String & remote_database_name,
+        const String & remote_table_name,
+        const postgres::ConnectionInfo & connection_info,
+        const StorageInMemoryMetadata & storage_metadata,
+        ContextPtr context_,
+        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
+
     String getName() const override { return "MaterializedPostgreSQL"; }
 
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
-    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
+    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
     NamesAndTypesList getVirtuals() const override;
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -121,17 +129,6 @@ public:
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     bool supportsFinal() const override { return true; }
-
-protected:
-    StorageMaterializedPostgreSQL(
-        const StorageID & table_id_,
-        bool is_attach_,
-        const String & remote_database_name,
-        const String & remote_table_name,
-        const postgres::ConnectionInfo & connection_info,
-        const StorageInMemoryMetadata & storage_metadata,
-        ContextPtr context_,
-        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(

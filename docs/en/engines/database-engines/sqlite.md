@@ -1,23 +1,23 @@
 ---
-toc_priority: 32
-toc_title: SQLite
+sidebar_position: 55
+sidebar_label: SQLite
 ---
 
-# SQLite {#sqlite}
+# SQLite
 
-Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and SQLite. 
+Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and SQLite.
 
 ## Creating a Database {#creating-a-database}
 
 ``` sql
-    CREATE DATABASE sqlite_database 
+    CREATE DATABASE sqlite_database
     ENGINE = SQLite('db_path')
 ```
 
 **Engine Parameters**
 
 -   `db_path` — Path to a file with SQLite database.
-    
+
 ## Data Types Support {#data_types-support}
 
 |  SQLite   | ClickHouse                                              |
@@ -44,7 +44,7 @@ SHOW TABLES FROM sqlite_db;
 ``` text
 ┌──name───┐
 │ table1  │
-│ table2  │  
+│ table2  │
 └─────────┘
 ```
 

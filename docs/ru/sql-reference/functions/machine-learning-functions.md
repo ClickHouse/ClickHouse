@@ -1,6 +1,6 @@
 ---
-toc_priority: 64
-toc_title: "Функции машинного обучения"
+sidebar_position: 64
+sidebar_label: "Функции машинного обучения"
 ---
 
 # Функции машинного обучения {#funktsii-mashinnogo-obucheniia}

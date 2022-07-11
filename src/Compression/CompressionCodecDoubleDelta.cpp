@@ -13,7 +13,7 @@
 #include <IO/BitHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <string.h>
+#include <cstring>
 #include <algorithm>
 #include <cstdlib>
 #include <type_traits>
@@ -520,7 +520,7 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
-    if (UInt32(2 + bytes_to_skip) > source_size)
+    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
@@ -544,7 +544,7 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
 
 void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = UInt8(CompressionMethodByte::DoubleDelta);
+    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::DoubleDelta);
     factory.registerCompressionCodecWithType("DoubleDelta", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {

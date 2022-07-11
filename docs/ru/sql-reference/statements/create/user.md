@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: "Пользователь"
+sidebar_position: 39
+sidebar_label: "Пользователь"
 ---
 
 # CREATE USER {#create-user-statement}
@@ -29,11 +29,13 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `IDENTIFIED WITH no_password`
 -   `IDENTIFIED WITH plaintext_password BY 'qwerty'`
 -   `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
--   `IDENTIFIED WITH sha256_hash BY 'hash'`
+-   `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
 -   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 -   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
 -   `IDENTIFIED WITH ldap SERVER 'server_name'`
 -   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
+
+Для идентификации с sha256_hash используя `SALT` - хэш должен быть вычислен от конкатенации 'password' и 'salt'.
 
 ## Пользовательский хост
 
@@ -52,7 +54,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `CREATE USER mira@'localhost'` — Эквивалентно `HOST LOCAL`.
 -   `CREATE USER mira@'192.168.%.%'` — Эквивалентно `HOST LIKE`.
 
-!!! info "Внимание"
+:::info "Внимание"
     ClickHouse трактует конструкцию `user_name@'address'` как имя пользователя целиком. То есть технически вы можете создать несколько пользователей с одинаковыми `user_name`, но разными частями конструкции после `@`, но лучше так не делать.
 
 ## Секция GRANTEES {#grantees}

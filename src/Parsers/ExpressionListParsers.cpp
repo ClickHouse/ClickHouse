@@ -755,13 +755,61 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected 
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
 
-
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserOrderByElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
+bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto command_list = std::make_shared<ASTExpressionList>();
+    node = command_list;
+
+    ParserToken s_comma(TokenType::Comma);
+    ParserToken s_open(TokenType::OpeningRoundBracket);
+    ParserToken s_close(TokenType::ClosingRoundBracket);
+    ParserExpressionWithOptionalAlias p_expression(false);
+    ParserList p_command(std::make_unique<ParserExpressionWithOptionalAlias>(false),
+                          std::make_unique<ParserToken>(TokenType::Comma), true);
+
+    do
+    {
+        Pos begin = pos;
+        ASTPtr command;
+        if (!s_open.ignore(pos, expected))
+        {
+            pos = begin;
+            if (!p_expression.parse(pos, command, expected))
+            {
+                return false;
+            }
+            auto list = std::make_shared<ASTExpressionList>(',');
+            list->children.push_back(command);
+            command = std::move(list);
+        }
+        else
+        {
+            if (!p_command.parse(pos, command, expected))
+                return false;
+
+            if (!s_close.ignore(pos, expected))
+                break;
+        }
+
+        command_list->children.push_back(command);
+    }
+    while (s_comma.ignore(pos, expected));
+
+    return true;
+}
+
+bool ParserGroupingSetsExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserGroupingSetsExpressionListElements grouping_sets_elements;
+    return grouping_sets_elements.parse(pos, node, expected);
+
+}
 
 bool ParserInterpolateExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

@@ -1,6 +1,6 @@
 ---
-toc_priority: 33
-toc_title: ReplacingMergeTree
+sidebar_position: 33
+sidebar_label: ReplacingMergeTree
 ---
 
 # ReplacingMergeTree {#replacingmergetree}
@@ -28,9 +28,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Описание параметров запроса смотрите в [описании запроса](../../../engines/table-engines/mergetree-family/replacingmergetree.md).
 
-!!! note "Внимание"
+    :::note "Внимание"
     Уникальность строк определяется `ORDER BY` секцией таблицы, а не `PRIMARY KEY`.
-
+    :::
 **Параметры ReplacingMergeTree**
 
 -   `ver` — столбец с номером версии. Тип `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр.
@@ -38,7 +38,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     При слиянии `ReplacingMergeTree` оставляет только строку для каждого уникального ключа сортировки:
 
     - Последнюю в выборке, если `ver` не задан. Под выборкой здесь понимается набор строк в наборе кусков данных, участвующих в слиянии. Последний по времени создания кусок (последняя вставка) будет последним в выборке. Таким образом, после дедупликации для каждого значения ключа сортировки останется самая последняя строка из самой последней вставки.
-    - С максимальной версией, если `ver` задан.
+    - С максимальной версией, если `ver` задан. Если `ver` одинаковый у нескольких строк, то для них используется правило -- если `ver` не задан, т.е. в результате слияния останется самая последняя строка из самой последней вставки.
 
 **Секции запроса**
 
@@ -48,9 +48,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-!!! attention "Внимание"
+    :::note "Внимание"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-
+    :::
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (

@@ -1,8 +1,8 @@
 ---
-toc_title: ALL
+sidebar_label: ALL
 ---
 
-# ALL Clause {#select-all}
+# ALL Clause
 
 If there are multiple matching rows in the table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`. If both `ALL` and `DISTINCT` specified, exception will be thrown.
 

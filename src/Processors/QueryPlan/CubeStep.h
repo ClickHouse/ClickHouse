@@ -13,7 +13,7 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class CubeStep : public ITransformingStep
 {
 public:
-    CubeStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_);
+    CubeStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_);
 
     String getName() const override { return "Cube"; }
 
@@ -21,7 +21,11 @@ public:
 
     const Aggregator::Params & getParams() const;
 private:
-    AggregatingTransformParamsPtr params;
+    void updateOutputStream() override;
+
+    size_t keys_size;
+    Aggregator::Params params;
+    bool final;
 };
 
 }

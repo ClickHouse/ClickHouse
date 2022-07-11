@@ -1,9 +1,9 @@
 ---
-toc_priority: 40
-toc_title: Configuring an External Dictionary
+sidebar_position: 40
+sidebar_label: Configuring an External Dictionary
 ---
 
-# Configuring an External Dictionary {#dicts-external-dicts-dict}
+# Configuring an External Dictionary
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 

@@ -1,9 +1,9 @@
 ---
-toc_priority: 48
-toc_title: Date32
+sidebar_position: 48
+sidebar_label: Date32
 ---
 
-# Date32 {#data_type-datetime32}
+# Date32
 
 A date. Supports the date range same with [Datetime64](../../sql-reference/data-types/datetime64.md). Stored in four bytes as the number of days since 1925-01-01. Allows storing values till 2283-11-11. 
 

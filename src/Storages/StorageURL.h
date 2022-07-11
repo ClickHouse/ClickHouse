@@ -2,7 +2,6 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
@@ -94,7 +93,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
@@ -115,6 +114,7 @@ public:
 
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
+    void onException() override;
     void onFinish() override;
 
 private:
@@ -122,9 +122,8 @@ private:
     OutputFormatPtr writer;
 };
 
-class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL : public IStorageURLBase
 {
-    friend struct shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
         const String & uri_,
@@ -153,6 +152,8 @@ public:
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
+
+    static ASTs::iterator collectHeaders(ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context);
 };
 
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
 
@@ -9,13 +7,34 @@
 namespace DB
 {
 
+struct QueryPlanResourceHolder;
+
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public shared_ptr_helper<StorageMerge>, public IStorage, WithContext
+class StorageMerge final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageMerge>;
 public:
+    using DBToTableSetMap = std::map<String, std::set<String>>;
+
+    StorageMerge(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
+        const DBToTableSetMap & source_databases_and_tables_,
+        ContextPtr context_);
+
+    StorageMerge(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
+        const String & source_table_regexp_,
+        ContextPtr context_);
+
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
@@ -32,7 +51,8 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -54,8 +74,6 @@ public:
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
 
 private:
-    using DBToTableSetMap = std::map<String, std::set<String>>;
-
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
     std::optional<DBToTableSetMap> source_databases_and_tables;
@@ -88,24 +106,6 @@ private:
     ColumnSizeByName getColumnSizes() const override;
 
 protected:
-    StorageMerge(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & comment,
-        const String & source_database_name_or_regexp_,
-        bool database_is_regexp_,
-        const DBToTableSetMap & source_databases_and_tables_,
-        ContextPtr context_);
-
-    StorageMerge(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & comment,
-        const String & source_database_name_or_regexp_,
-        bool database_is_regexp_,
-        const String & source_table_regexp_,
-        ContextPtr context_);
-
     struct AliasData
     {
         String name;
@@ -116,6 +116,7 @@ protected:
     using Aliases = std::vector<AliasData>;
 
     Pipe createSources(
+        QueryPlanResourceHolder & resources,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,

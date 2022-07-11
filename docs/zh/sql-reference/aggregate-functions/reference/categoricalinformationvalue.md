@@ -1,5 +1,5 @@
 ---
-toc_priority: 250
+sidebar_position: 250
 ---
 
 # categoricalInformationValue {#categoricalinformationvalue}

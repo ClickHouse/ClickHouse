@@ -17,7 +17,7 @@ services:
             - type: ${keeper_fs:-tmpfs}
               source: ${keeper_db_dir1:-}
               target: /var/lib/clickhouse-keeper
-        entrypoint: "clickhouse keeper --config=/etc/clickhouse-keeper/keeper_config1.xml --log-file=/var/log/clickhouse-keeper/clickhouse-keeper.log --errorlog-file=/var/log/clickhouse-keeper/clickhouse-keeper.err.log"
+        entrypoint: "${keeper_cmd_prefix:-clickhouse keeper} --config=/etc/clickhouse-keeper/keeper_config1.xml --log-file=/var/log/clickhouse-keeper/clickhouse-keeper.log --errorlog-file=/var/log/clickhouse-keeper/clickhouse-keeper.err.log"
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -47,7 +47,7 @@ services:
             - type: ${keeper_fs:-tmpfs}
               source: ${keeper_db_dir2:-}
               target: /var/lib/clickhouse-keeper
-        entrypoint: "clickhouse keeper --config=/etc/clickhouse-keeper/keeper_config2.xml --log-file=/var/log/clickhouse-keeper/clickhouse-keeper.log --errorlog-file=/var/log/clickhouse-keeper/clickhouse-keeper.err.log"
+        entrypoint: "${keeper_cmd_prefix:-clickhouse keeper} --config=/etc/clickhouse-keeper/keeper_config2.xml --log-file=/var/log/clickhouse-keeper/clickhouse-keeper.log --errorlog-file=/var/log/clickhouse-keeper/clickhouse-keeper.err.log"
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -77,7 +77,7 @@ services:
             - type: ${keeper_fs:-tmpfs}
               source: ${keeper_db_dir3:-}
               target: /var/lib/clickhouse-keeper
-        entrypoint: "clickhouse keeper --config=/etc/clickhouse-keeper/keeper_config3.xml --log-file=/var/log/clickhouse-keeper/clickhouse-keeper.log --errorlog-file=/var/log/clickhouse-keeper/clickhouse-keeper.err.log"
+        entrypoint: "${keeper_cmd_prefix:-clickhouse keeper} --config=/etc/clickhouse-keeper/keeper_config3.xml --log-file=/var/log/clickhouse-keeper/clickhouse-keeper.log --errorlog-file=/var/log/clickhouse-keeper/clickhouse-keeper.err.log"
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN

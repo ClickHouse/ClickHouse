@@ -1,6 +1,6 @@
 ---
-toc_priority: 12
-toc_title: ExternalDistributed
+sidebar_position: 12
+sidebar_label: ExternalDistributed
 ---
 
 # ExternalDistributed {#externaldistributed}

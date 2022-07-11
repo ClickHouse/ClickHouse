@@ -13,7 +13,7 @@
   *
   * Example: when we do aggregation by the visitor ID, the performance increase is more than 5 times.
   * This is because of following reasons:
-  * - in Yandex, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
+  * - in Metrica web analytics system, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
   * - in typical implementation of standard library, hash function for integers is trivial and just use lower bits;
   * - traffic is non-uniformly distributed across a day;
   * - we are using open-addressing linear probing hash tables that are most critical to hash function quality,
@@ -296,6 +296,19 @@ struct UInt128HashCRC32
     }
 };
 
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+
+struct UInt128HashCRC32
+{
+    size_t operator()(UInt128 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = __crc32cd(crc, x.items[0]);
+        crc = __crc32cd(crc, x.items[1]);
+        return crc;
+    }
+};
+
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -335,6 +348,21 @@ struct UInt256HashCRC32
         crc = _mm_crc32_u64(crc, x.items[1]);
         crc = _mm_crc32_u64(crc, x.items[2]);
         crc = _mm_crc32_u64(crc, x.items[3]);
+        return crc;
+    }
+};
+
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+
+struct UInt256HashCRC32
+{
+    size_t operator()(UInt256 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = __crc32cd(crc, x.items[0]);
+        crc = __crc32cd(crc, x.items[1]);
+        crc = __crc32cd(crc, x.items[2]);
+        crc = __crc32cd(crc, x.items[3]);
         return crc;
     }
 };

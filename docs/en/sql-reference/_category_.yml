@@ -1,0 +1,7 @@
+position: 15
+label: 'SQL Reference'
+collapsible: true
+collapsed: true
+link:
+  type: doc
+  id: en/sql-reference/index

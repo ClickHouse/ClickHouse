@@ -1,0 +1,36 @@
+clickhouse-client --query_kind secondary_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+Expression ((Projection + Before ORDER BY))
+Header: dummy String
+  Aggregating
+  Header: toString(dummy) String
+    Expression (Before GROUP BY)
+    Header: toString(dummy) String
+      ReadFromStorage (SystemOne)
+      Header: dummy UInt8
+clickhouse-local --query_kind secondary_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+Expression ((Projection + Before ORDER BY))
+Header: dummy String
+  Aggregating
+  Header: toString(dummy) String
+    Expression (Before GROUP BY)
+    Header: toString(dummy) String
+      ReadFromStorage (SystemOne)
+      Header: dummy UInt8
+clickhouse-client --query_kind initial_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+Expression ((Projection + Before ORDER BY))
+Header: dummy String
+  Aggregating
+  Header: dummy UInt8
+    Expression (Before GROUP BY)
+    Header: dummy UInt8
+      ReadFromStorage (SystemOne)
+      Header: dummy UInt8
+clickhouse-local --query_kind initial_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+Expression ((Projection + Before ORDER BY))
+Header: dummy String
+  Aggregating
+  Header: dummy UInt8
+    Expression (Before GROUP BY)
+    Header: dummy UInt8
+      ReadFromStorage (SystemOne)
+      Header: dummy UInt8

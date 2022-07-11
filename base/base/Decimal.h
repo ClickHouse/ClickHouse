@@ -49,7 +49,7 @@ struct Decimal
     using NativeType = T;
 
     constexpr Decimal() = default;
-    constexpr Decimal(Decimal<T> &&) = default;
+    constexpr Decimal(Decimal<T> &&) noexcept = default;
     constexpr Decimal(const Decimal<T> &) = default;
 
     constexpr Decimal(const T & value_): value(value_) {}
@@ -57,7 +57,7 @@ struct Decimal
     template <typename U>
     constexpr Decimal(const Decimal<U> & x): value(x.value) {}
 
-    constexpr Decimal<T> & operator = (Decimal<T> &&) = default;
+    constexpr Decimal<T> & operator=(Decimal<T> &&) noexcept = default;
     constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
 
     constexpr operator T () const { return value; }

@@ -1,8 +1,8 @@
 ---
-toc_priority: 6
+sidebar_position: 6
 ---
 
-# any {#agg_function-any}
+# any
 
 Selects the first encountered value.
 The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.

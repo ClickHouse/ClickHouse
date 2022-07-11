@@ -1,6 +1,7 @@
 #include "StoragePolicy.h"
 #include "DiskFactory.h"
 #include "DiskLocal.h"
+#include "createVolume.h"
 
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
@@ -62,7 +63,12 @@ StoragePolicy::StoragePolicy(
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
     {
-        auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME, std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)}, 0, false);
+        auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME,
+            std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)},
+            /* max_data_part_size_= */ 0,
+            /* are_merges_avoided_= */ false,
+            /* perform_ttl_move_on_insert_= */ true,
+            VolumeLoadBalancing::ROUND_ROBIN);
         volumes.emplace_back(std::move(default_volume));
     }
 
@@ -282,7 +288,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
     for (const auto & volume : getVolumes())
     {
-        if (new_volume_names.count(volume->getName()) == 0)
+        if (!new_volume_names.contains(volume->getName()))
             throw Exception("New storage policy " + backQuote(name) + " shall contain volumes of old one", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_set<String> new_disk_names;
@@ -290,7 +296,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
             new_disk_names.insert(disk->getName());
 
         for (const auto & disk : volume->getDisks())
-            if (new_disk_names.count(disk->getName()) == 0)
+            if (!new_disk_names.contains(disk->getName()))
                 throw Exception("New storage policy " + backQuote(name) + " shall contain disks of old one", ErrorCodes::BAD_ARGUMENTS);
     }
 }
@@ -387,7 +393,7 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (result->policies.count(name) == 0)
+        if (!result->policies.contains(name))
             throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
 
         policy->checkCompatibleWith(result->policies[name]);

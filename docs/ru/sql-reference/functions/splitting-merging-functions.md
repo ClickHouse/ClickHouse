@@ -1,6 +1,6 @@
 ---
-toc_priority: 47
-toc_title: "Функции разбиения и слияния строк и массивов"
+sidebar_position: 47
+sidebar_label: "Функции разбиения и слияния строк и массивов"
 ---
 
 # Функции разбиения и слияния строк и массивов {#funktsii-razbieniia-i-sliianiia-strok-i-massivov}

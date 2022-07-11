@@ -1,7 +1,7 @@
 ---
 toc_hidden_folder: true
-toc_priority: 42
-toc_title: "Манипуляции с индексами"
+sidebar_position: 42
+sidebar_label: "Манипуляции с индексами"
 ---
 
 # Манипуляции с индексами {#manipuliatsii-s-indeksami}
@@ -9,9 +9,9 @@ toc_title: "Манипуляции с индексами"
 Добавить или удалить индекс можно с помощью операций
 
 ``` sql
-ALTER TABLE [db.]name ADD INDEX name expression TYPE type GRANULARITY value [FIRST|AFTER name]
-ALTER TABLE [db.]name DROP INDEX name
-ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX name expression TYPE type GRANULARITY value [FIRST|AFTER name]
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX name
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX name IN PARTITION partition_name
 ```
 
 Поддерживается только таблицами семейства `*MergeTree`.

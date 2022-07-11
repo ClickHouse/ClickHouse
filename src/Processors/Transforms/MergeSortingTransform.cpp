@@ -92,12 +92,13 @@ MergeSortingTransform::MergeSortingTransform(
     const SortDescription & description_,
     size_t max_merged_block_size_,
     UInt64 limit_,
+    bool increase_sort_description_compile_attempts,
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
-    : SortingTransform(header, description_, max_merged_block_size_, limit_)
+    : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
@@ -202,6 +203,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                     0,
                     description,
                     max_merged_block_size,
+                    SortingQueueStrategy::Batch,
                     limit,
                     nullptr,
                     quiet,

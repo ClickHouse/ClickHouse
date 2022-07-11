@@ -10,7 +10,7 @@
 
 #include "config_functions.h"
 
-/** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
+/** FastOps is a fast vector math library from Mikhail Parakhin, https://www.linkedin.com/in/mikhail-parakhin/
   * Enabled by default.
   */
 #if USE_FASTOPS

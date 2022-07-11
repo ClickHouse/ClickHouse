@@ -24,8 +24,8 @@ void registerFunctionsExternalDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionDictGetString>();
     factory.registerFunction<FunctionDictGetHierarchy>();
     factory.registerFunction<FunctionDictIsIn>();
-    factory.registerFunction<FunctionDictGetChildren>();
-    factory.registerFunction<FunctionDictGetDescendants>();
+    factory.registerFunction<FunctionDictGetChildrenOverloadResolver>();
+    factory.registerFunction<FunctionDictGetDescendantsOverloadResolver>();
     factory.registerFunction<FunctionDictGetUInt8OrDefault>();
     factory.registerFunction<FunctionDictGetUInt16OrDefault>();
     factory.registerFunction<FunctionDictGetUInt32OrDefault>();

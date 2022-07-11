@@ -22,7 +22,7 @@ static void assertGranuleBlocksStructure(const Blocks & granule_index_blocks)
     Block prev_block;
     for (size_t index = 0; index < granule_index_blocks.size(); ++index)
     {
-        Block granule_index_block = granule_index_blocks[index];
+        const Block & granule_index_block = granule_index_blocks[index];
 
         if (index != 0)
             assertBlocksHaveEqualStructure(prev_block, granule_index_block, "Granule blocks of bloom filter has difference structure.");

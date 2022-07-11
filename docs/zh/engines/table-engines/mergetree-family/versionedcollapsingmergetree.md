@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: "版本折叠MergeTree"
+sidebar_position: 37
+sidebar_label: "版本折叠MergeTree"
 ---
 
 # VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
@@ -53,7 +53,7 @@ VersionedCollapsingMergeTree(sign, version)
 
 <summary>不推荐使用的创建表的方法</summary>
 
-!!! attention "注意"
+    :::info "注意"
     不要在新项目中使用此方法。 如果可能，请将旧项目切换到上述方法。
 
 ``` sql

@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Функции"
-toc_priority: 32
-toc_title: "Введение"
+sidebar_label: "Функции"
+sidebar_position: 32
 ---
 
 # Функции {#funktsii}
@@ -63,11 +62,10 @@ str -> str != Referer
 Функции можно создавать из лямбда выражений с помощью [CREATE FUNCTION](../statements/create/function.md). Для удаления таких функций используется выражение [DROP FUNCTION](../statements/drop.md#drop-function).
 
 ## Исполняемые пользовательские функции {#executable-user-defined-functions}
-ClickHouse может вызывать внешнюю программу или скрипт для обработки данных. Такие функции описываются в [конфигурационном файле](../../operations/configuration-files.md). Путь к нему должен быть указан в настройке `user_defined_executable_functions_config` в основной конфигурации. В пути можно использовать символ подстановки `*`, тогда будут загружены все файлы, соответствующие шаблону. Пример:
-``` xml
-<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
-```
-Файлы с описанием функций ищутся относительно каталога, заданного в настройке `user_files_path`.
+
+ClickHouse может вызывать любую внешнюю исполняемую программу или скрипт для обработки данных.
+
+Конфигурация исполняемых пользовательских функций может находиться в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [user_defined_executable_functions_config](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_defined_executable_functions_config).
 
 Конфигурация функции содержит следующие настройки:
 
@@ -84,7 +82,7 @@ ClickHouse может вызывать внешнюю программу или 
 -   `command_write_timeout` - время ожидания записи данных в команду stdin в миллисекундах. Значение по умолчанию 10000. Необязательная настройка.
 -   `pool_size` - размер пула команд. Необязательная настройка. Значение по умолчанию `16`.
 -   `send_chunk_header` - управляет отправкой количества строк перед отправкой блока данных для обработки. Необязательная настройка. Значение по умолчанию `false`.
--   `execute_direct` - Если `execute_direct` = `1`, то будет произведен поиск `command` в папке user_scripts. Дополнительные аргументы скрипта можно указать с помощью разделителя пробелов. Пример: `script_name arg1 arg2`. Если `execute_direct` = `0`, `command` передается как аргумент для `bin/sh -c`. Значение по умолчанию `1`. Необязательный параметр.
+-   `execute_direct` - Если `execute_direct` = `1`, то будет произведен поиск `command` в папке user_scripts, указанной в [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Дополнительные аргументы скрипта можно указать с помощью разделителя пробелов. Пример: `script_name arg1 arg2`. Если `execute_direct` = `0`, `command` передается как аргумент для `bin/sh -c`. Значение по умолчанию `1`. Необязательный параметр.
 -   `lifetime` - интервал перезагрузки функций в секундах. Если задан `0`, то функция не перезагружается.
 
 Команда должна читать аргументы из `STDIN` и выводить результат в `STDOUT`. Обработка должна выполняться в цикле. То есть после обработки группы аргументов команда должна ожидать следующую группу.
@@ -176,22 +174,24 @@ SELECT test_function_sum(2, 2);
 Создание `test_function_sum_json` с именноваными аргументами и форматом [JSONEachRow](../../interfaces/formats.md#jsoneachrow) с использованием конфигурации XML.
 Файл test_function.xml.
 ```xml
-<function>
-    <type>executable</type>
-    <name>test_function_sum_json</name>
-    <return_type>UInt64</return_type>
-    <return_name>result_name</return_name>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_1</name>
-    </argument>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_2</name>
-    </argument>
-    <format>JSONEachRow</format>
-    <command>test_function_sum_json.py</command>
-</function>
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>test_function_sum_json.py</command>
+    </function>
+</functions>
 ```
 
 Файл скрипта внутри папки `user_scripts` `test_function_sum_json.py`.
@@ -224,6 +224,50 @@ SELECT test_function_sum_json(2, 2);
 ┌─test_function_sum_json(2, 2)─┐
 │                            4 │
 └──────────────────────────────┘
+```
+
+Исполняемые пользовательские функции могут принимать константные параметры, их конфигурация является частью настройки `command` (работает только для пользовательских функций с типом `executable`).
+Файл test_function_parameter_python.xml.
+```xml
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_parameter_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+    </function>
+</functions>
+```
+
+Файл скрипта внутри папки `user_scripts` `test_function_parameter_python.py`.
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+Query:
+
+``` sql
+SELECT test_function_parameter_python(1)(2);
+```
+
+Result:
+
+``` text
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
 ```
 
 ## Обработка ошибок {#obrabotka-oshibok}

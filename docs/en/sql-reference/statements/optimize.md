@@ -1,14 +1,15 @@
 ---
-toc_priority: 47
-toc_title: OPTIMIZE
+sidebar_position: 47
+sidebar_label: OPTIMIZE
 ---
 
-# OPTIMIZE Statement {#misc_operations-optimize}
+# OPTIMIZE Statement
 
 This query tries to initialize an unscheduled merge of data parts for tables.
 
-!!! warning "Warning"
-    `OPTIMIZE` can’t fix the `Too many parts` error.
+:::warning
+`OPTIMIZE` can’t fix the `Too many parts` error.
+:::
 
 **Syntax**
 
@@ -27,16 +28,19 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engin
 
 You can specify how long (in seconds) to wait for inactive replicas to execute `OPTIMIZE` queries by the [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
 
-!!! info "Note"
-    If the `replication_alter_partitions_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+:::note    
+If the `replication_alter_partitions_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+:::
 
-## BY expression {#by-expression}
+## BY expression
 
 If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](../../sql-reference/statements/select/index.md#columns-expression) or [`EXCEPT`](../../sql-reference/statements/select/index.md#except-modifier) expressions. The explictly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
 
-!!! note "Note"
-    Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) and [ALIAS](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.
-    Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an `ALIAS` column.
+:::note    
+Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) and [ALIAS](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.
+
+Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an `ALIAS` column.
+:::
 
 **Syntax**
 

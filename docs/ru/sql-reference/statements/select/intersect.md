@@ -1,5 +1,5 @@
 ---
-toc_title: INTERSECT
+sidebar_label: INTERSECT
 ---
 
 # Секция INTERSECT {#intersect-clause}
