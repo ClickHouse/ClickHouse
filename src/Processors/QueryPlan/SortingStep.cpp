@@ -41,13 +41,15 @@ SortingStep::SortingStep(
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    , type(Type::Full)
     , result_description(description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
     , size_limits(size_limits_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
-    , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
+    , max_bytes_before_external_sort(max_bytes_before_external_sort_)
+    , tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
 {
     /// TODO: check input_stream is partially sorted by the same description.
@@ -62,6 +64,7 @@ SortingStep::SortingStep(
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
+    , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
@@ -78,6 +81,7 @@ SortingStep::SortingStep(
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
+    , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
