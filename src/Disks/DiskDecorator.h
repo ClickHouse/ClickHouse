@@ -71,6 +71,7 @@ public:
     DiskType getType() const override { return delegate->getType(); }
     bool isRemote() const override { return delegate->isRemote(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
+    bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;

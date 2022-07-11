@@ -1646,7 +1646,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             {
                 // vector of indexes of useful ranges
                 auto result = ann_condition->getUsefulRanges(granule);
-                bool is_skipped = result.empty();
+                if (result.empty())
+                {
+                    ++granules_dropped;
+                }
 
                 for (auto range : result)
                 {
@@ -1660,9 +1663,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     else
                         res.back().end = data_range.end;
                 }
-
-                if (is_skipped)
-                    ++granules_dropped;
                 continue;
             }
 

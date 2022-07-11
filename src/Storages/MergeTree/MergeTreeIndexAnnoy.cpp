@@ -53,7 +53,7 @@ void AnnoyIndexSerialize<Dist>::deserialize(ReadBuffer& istr)
 }
 
 template<typename Dist>
-float AnnoyIndexSerialize<Dist>::getNumOfDimensions() const
+uint64_t AnnoyIndexSerialize<Dist>::getNumOfDimensions() const
 {
     return Base::get_f();
 }
@@ -96,7 +96,7 @@ void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 
 void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    int dimension;
+    uint64_t dimension;
     readIntBinary(dimension, istr);
     index_base = std::make_shared<AnnoyIndex>(dimension);
     index_base->deserialize(istr);
@@ -106,7 +106,7 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
 MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    int index_param_)
+    uint64_t index_param_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_param(index_param_)
@@ -176,7 +176,6 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
     
         const auto & columns = column_tuple->getColumns();
 
-        ///TODO swap iteration for less memory
         std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
         for (const auto& column : columns)
         {
@@ -300,18 +299,9 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context);
 };
 
-MergeTreeIndexFormat MergeTreeIndexAnnoy::getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & relative_path_prefix) const
-{
-    if (data_part_storage->exists(relative_path_prefix + ".idx2"))
-        return {2, ".idx2"};
-    else if (data_part_storage->exists(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /* unknown */, ""};
-}
-
 MergeTreeIndexPtr AnnoyIndexCreator(const IndexDescription & index)
 {
-    int param = index.arguments[0].get<int>();
+    uint64_t param = index.arguments[0].get<uint64_t>();
     return std::make_shared<MergeTreeIndexAnnoy>(index, param);
 }
 

@@ -480,7 +480,9 @@ For example:
     -   `NOT startsWith(s, 'test')`
 :::
 
-In addition to skip indices, there are also [Approximate Nearest Neighbor Search Indexes](../../../engines/table-engines/mergetree-family/replication.md).
+
+## Approximate Nearest Neighbor Search Indexes [experimental] {#table_engines-ANNIndex}
+In addition to skip indices, there are also [Approximate Nearest Neighbor Search Indexes](../../../engines/table-engines/mergetree-family/annindexes.md).
 
 ## Projections {#projections}
 Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
@@ -1033,4 +1035,7 @@ Examples of working configurations can be found in integration tests directory (
 -   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 -   `_partition_value` — Values (a tuple) of a `partition by` expression.
 -   `_sample_factor` — Sample factor (from the query).
+<<<<<<< HEAD
 
+=======
+>>>>>>> b08c032f8fc64d398045ad21324b5269cf5cd171

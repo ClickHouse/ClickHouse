@@ -1,23 +1,24 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
-#include <Backups/BackupCoordinationHelpers.h>
+#include <Backups/BackupCoordinationStatusSync.h>
 
 
 namespace DB
 {
 
-/// Stores restore temporary information in Zookeeper, used to perform RESTORE ON CLUSTER.
-class RestoreCoordinationDistributed : public IRestoreCoordination
+/// Implementation of the IRestoreCoordination interface performing coordination via ZooKeeper. It's necessary for "RESTORE ON CLUSTER".
+class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationDistributed(const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper);
-    ~RestoreCoordinationDistributed() override;
+    RestoreCoordinationRemote(const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper);
+    ~RestoreCoordinationRemote() override;
 
     /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
     void setStatus(const String & current_host, const String & new_status, const String & message) override;
-    Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts) override;
-    Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms) override;
+    void setErrorStatus(const String & current_host, const Exception & exception) override;
+    Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) override;
+    Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;

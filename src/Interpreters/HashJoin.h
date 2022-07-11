@@ -173,6 +173,17 @@ public:
 
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
+    JoinPipelineType pipelineType() const override
+    {
+        /// No need to process anything in the right stream if it's a dictionary will just join the left stream with it.
+        bool is_filled = from_storage_join || data->type == Type::DICT;
+        if (is_filled)
+            return JoinPipelineType::FilledRight;
+
+        /// Default pipeline processes right stream at first and then left.
+        return JoinPipelineType::FillRightFirst;
+    }
+
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
       * Use only after all calls to joinBlock was done.

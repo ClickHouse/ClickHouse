@@ -166,7 +166,7 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
     // Match rpns with supported types and extract information
     const bool prewhere_is_valid = matchRPNWhere(rpn_prewhere_clause, prewhere_info);
     const bool where_is_valid = matchRPNWhere(rpn_where_clause, where_info);
-    const bool limit_is_valid = matchRPNLimit(rpn_limit, query_information->limit);
+    const bool limit_is_valid = matchRPNLimit(rpn_limit, prewhere_is_valid ? prewhere_info.limit : where_info.limit);
     const bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, order_by_info);
 
     // Query without LIMIT clause is not supported
@@ -184,7 +184,7 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
     // Search type should be in WHERE or PREWHERE clause
     if (prewhere_is_valid || where_is_valid)
     {
-        query_information = std::move(where_is_valid ? where_info : prewhere_info);
+        query_information = std::move(prewhere_is_valid ? prewhere_info : where_info);
     }
 
     if (order_by_is_valid)
@@ -470,24 +470,52 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANN
         ++iter;
     }
 
+    ///TODO: optimize
     if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
     {
+        Float64 float_element_of_target_vector;
+        Int64 int_element_of_target_vector;
+        
         for (const auto & value : iter->tuple_literal.value())
         {
-            expr.target.emplace_back(value.get<float>());
+            if (value.tryGet(float_element_of_target_vector))
+            {
+                expr.target.emplace_back(float_element_of_target_vector);
+            }
+            else if (value.tryGet(int_element_of_target_vector))
+            {
+                expr.target.emplace_back(static_cast<float>(int_element_of_target_vector));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in target vector. Only float or int are supported.");
+            }
         }
         ++iter;
     }
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
+        Float64 float_element_of_target_vector;
+        Int64 int_element_of_target_vector;
+        
         for (const auto & value : iter->array_literal.value())
         {
-            expr.target.emplace_back(value.get<float>());
+            if (value.tryGet(float_element_of_target_vector))
+            {
+                expr.target.emplace_back(float_element_of_target_vector);
+            }
+            else if (value.tryGet(int_element_of_target_vector))
+            {
+                expr.target.emplace_back(static_cast<float>(int_element_of_target_vector));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in target vector. Only float or int are supported.");
+            }
         }
         ++iter;
     }
-
 
     while (iter != end)
     {
