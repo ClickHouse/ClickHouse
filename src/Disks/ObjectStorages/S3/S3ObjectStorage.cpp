@@ -545,7 +545,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         getClient(config, config_prefix, context),
         getSettings(config, config_prefix, context),
-        version_id, s3_capabilities, new_namespace, cache);
+        version_id, s3_capabilities, new_namespace, nullptr);
 }
 
 }

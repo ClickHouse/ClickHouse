@@ -63,7 +63,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     if (!file_size)
         file_size = tryGetSizeFromFilePath(path);
 
-    /// For now we cannot allow asynchrnous reader from local filesystem when CachedObjectStorage is used.
+    /// For now we cannot allow asynchronous reader from local filesystem when CachedObjectStorage is used.
     ReadSettings modified_settings{read_settings};
     switch (modified_settings.local_fs_method)
     {

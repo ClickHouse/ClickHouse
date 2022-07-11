@@ -55,11 +55,11 @@ void registerDiskHDFS(DiskFactory & factory)
 
 #ifdef NDEBUG
         bool use_cache = true;
- #else
+#else
         /// Current S3 cache implementation lead to allocations in destructor of
         /// read buffer.
         bool use_cache = false;
- #endif
+#endif
 
         if (config.getBool(config_prefix + ".cache_enabled", use_cache))
         {
