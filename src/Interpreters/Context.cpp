@@ -228,8 +228,10 @@ struct ContextSharedPart
     mutable std::unique_ptr<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::unique_ptr<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
 
-    mutable ThrottlerPtr replicated_fetches_throttler; /// A server-wide throttler for replicated fetches
-    mutable ThrottlerPtr replicated_sends_throttler; /// A server-wide throttler for replicated sends
+    mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
+    mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
+    mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
+    mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -1928,6 +1930,26 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
             settings.max_replicated_sends_network_bandwidth_for_server);
 
     return shared->replicated_sends_throttler;
+}
+
+ThrottlerPtr Context::getRemoteReadThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->remote_read_throttler)
+        shared->remote_read_throttler = std::make_shared<Throttler>(
+            settings.max_remote_read_network_bandwidth_for_server);
+
+    return shared->remote_read_throttler;
+}
+
+ThrottlerPtr Context::getRemoteWriteThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->remote_write_throttler)
+        shared->remote_write_throttler = std::make_shared<Throttler>(
+            settings.max_remote_write_network_bandwidth_for_server);
+
+    return shared->remote_write_throttler;
 }
 
 bool Context::hasDistributedDDL() const

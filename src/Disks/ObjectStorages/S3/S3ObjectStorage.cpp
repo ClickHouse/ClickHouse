@@ -114,15 +114,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-
-    ReadSettings disk_read_settings{read_settings};
-    if (cache)
-    {
-        if (IFileCache::isReadOnly())
-            disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
-        disk_read_settings.remote_fs_cache = cache;
-    }
+    ReadSettings disk_read_settings = patchSettings(read_settings);
 
     auto settings_ptr = s3_settings.get();
 
@@ -153,18 +145,9 @@ std::unique_ptr<SeekableReadBuffer> S3ObjectStorage::readObject( /// NOLINT
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
-    ReadSettings disk_read_settings{read_settings};
-    if (cache)
-    {
-        if (IFileCache::isReadOnly())
-            disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
-        disk_read_settings.remote_fs_cache = cache;
-    }
-
+    ReadSettings disk_read_settings = patchSettings(read_settings);
     return std::make_unique<ReadBufferFromS3>(client.get(), bucket, path, version_id, settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
 }
-
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
     const std::string & path,
@@ -174,12 +157,14 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    WriteSettings disk_write_settings = patchSettings(write_settings);
+
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     bool cache_on_write = cache
         && fs::path(path).extension() != ".tmp"
-        && write_settings.enable_filesystem_cache_on_write_operations
+        && disk_write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
 
     auto settings_ptr = s3_settings.get();
@@ -189,7 +174,9 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         path,
         settings_ptr->s3_settings,
         attributes,
-        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()),
+        buf_size,
+        threadPoolCallbackRunner(getThreadPoolWriter()),
+        disk_write_settings,
         cache_on_write ? cache : nullptr);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(finalize_callback), path);
@@ -457,6 +444,19 @@ void S3ObjectStorage::copyObject(const std::string & object_from, const std::str
         copyObjectImpl(bucket, object_from, bucket, object_to, head, object_to_attributes);
 }
 
+ReadSettings S3ObjectStorage::patchSettings(const ReadSettings & read_settings) const
+{
+    ReadSettings settings{read_settings};
+    if (cache)
+    {
+        if (IFileCache::isReadOnly())
+            settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+
+        settings.remote_fs_cache = cache;
+    }
+    return IObjectStorage::patchSettings(settings);
+}
+
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
 {
     s3_settings.set(std::move(s3_settings_));
@@ -489,6 +489,7 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
 {
     s3_settings.set(getSettings(config, config_prefix, context));
     client.set(getClient(config, config_prefix, context));
+    applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)

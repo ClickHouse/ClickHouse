@@ -4,6 +4,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/IFileCache.h>
+#include <Common/Throttler.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -61,6 +62,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
     ScheduleFunc schedule_,
+    const WriteSettings & write_settings_,
     FileCachePtr cache_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
@@ -70,6 +72,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , s3_settings(s3_settings_)
     , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
+    , write_settings(write_settings_)
     , cache(cache_)
 {
     allocateBuffer();
@@ -331,6 +334,8 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 {
     auto outcome = client_ptr->UploadPart(task.req);
+    if (write_settings.throttler)
+        write_settings.throttler->add(bytes);
 
     if (outcome.IsSuccess())
     {
@@ -460,9 +465,12 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
+    size_t bytes = task.req.GetContentLength();
     auto outcome = client_ptr->PutObject(task.req);
-    bool with_pool = static_cast<bool>(schedule);
+    if (write_settings.throttler)
+        write_settings.throttler->add(bytes);
 
+    bool with_pool = static_cast<bool>(schedule);
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else
