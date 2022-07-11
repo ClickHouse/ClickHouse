@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS 02354_annoy;
 
 CREATE TABLE 02354_annoy
