@@ -16,7 +16,7 @@ struct OpenTelemetrySpan
     UInt64 start_time_us;
     UInt64 finish_time_us;
     Map attributes;
-    bool is_ready;
+    bool is_ready = false;
     // I don't understand how Links work, namely, which direction should they
     // point to, and how they are related with parent_span_id, so no Links for now.
 };
