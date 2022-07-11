@@ -56,6 +56,10 @@ def test_simple_select(started_cluster):
         node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')")
         == str(sum(range(0, 100))) + "\n"
     )
+    assert (
+        node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String')")
+        == str(sum(range(0, 100))) + "\n"
+    )
 
     assert (
         node.query("SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') where key = 42")
@@ -125,6 +129,10 @@ def test_secure_connection(started_cluster):
     assert node.query("SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')") == "100\n"
     assert (
         node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')")
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String', 'ssl=true')")
         == str(sum(range(0, 100))) + "\n"
     )
 

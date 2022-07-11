@@ -1,6 +1,4 @@
 #include <Common/Exception.h>
-#include <Common/parseAddress.h>
-#include <Common/quoteString.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -12,9 +10,10 @@
 #include <TableFunctions/TableFunctionMongoDB.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
-#include "registerTableFunctions.h"
-
+#include <TableFunctions/registerTableFunctions.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ColumnsDescription.h>
+
 
 namespace DB
 {
@@ -30,8 +29,8 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
         ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto storage = std::make_shared<StorageMongoDB>( 
-    StorageID(configuration_->database, table_name), 
+    auto storage = std::make_shared<StorageMongoDB>(
+    StorageID(configuration_->database, table_name),
     configuration_->host,
     configuration_->port,
     configuration_->database,
@@ -54,7 +53,7 @@ ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr cont
 void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
-    if (!func_args.arguments) 
+    if (!func_args.arguments)
         throw Exception("Table function 'mongodb' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     ASTs & args = func_args.arguments->children;
@@ -78,20 +77,21 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 
             auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
 
-            auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-            auto * arg_value_literal = arg_value_ast->as<ASTLiteral>();
-            if (arg_value_literal)
-            {
-                auto arg_value = arg_value_literal->value;
-                if (arg_name == "structure")
-                    structure_ = arg_value.safeGet<String>();
-                else if (arg_name == "options")
-                    main_arguments.push_back(function_args[1]);
-            }
-        } 
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+            if (arg_name == "structure")
+                structure_ = checkAndGetLiteralArgument<String>(function_args[1], "structure");
+            else if (arg_name == "options")
+                main_arguments.push_back(function_args[1]);
+        }
+        else if (i == 5)
+        {
+            structure_ = checkAndGetLiteralArgument<String>(args[i], "structure");
+        }
+        else if (i == 6)
+        {
+            main_arguments.push_back(args[i]);
+        }
     }
+
     configuration_ = StorageMongoDB::getConfiguration(main_arguments, context);
 }
 
