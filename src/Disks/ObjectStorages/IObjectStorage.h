@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 #include <map>
+#include <mutex>
 #include <optional>
 
 #include <Poco/Timestamp.h>
@@ -157,6 +158,19 @@ public:
 
 protected:
     FileCachePtr cache;
+
+protected:
+    /// Should be called from implementation of applyNewSettings()
+    void applyRemoteThrottlingSettings(ContextPtr context);
+
+    /// Should be used by implementation of read* and write* methods
+    ReadSettings patchSettings(const ReadSettings & read_settings) const;
+    WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
+private:
+    mutable std::mutex throttlers_mutex;
+    ThrottlerPtr read_throttler;
+    ThrottlerPtr write_throttler;
 };
 
 using ObjectStoragePtr = std::unique_ptr<IObjectStorage>;

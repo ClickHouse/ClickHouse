@@ -47,4 +47,28 @@ void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object
     out->finalize();
 }
 
+void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
+{
+    std::unique_lock lock{throttlers_mutex};
+    read_throttler = context->getRemoteReadThrottler();
+    write_throttler = context->getRemoteWriteThrottler();
+}
+
+ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
+{
+    std::unique_lock lock{throttlers_mutex};
+    ReadSettings settings{read_settings};
+    settings.throttler = read_throttler;
+    return settings;
+}
+
+WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
+{
+    std::unique_lock lock{throttlers_mutex};
+    WriteSettings settings{write_settings};
+    settings.throttler = write_throttler;
+    return settings;
+}
+
+
 }
