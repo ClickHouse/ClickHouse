@@ -1,7 +1,7 @@
-clickhouse_add_executable (pre_compressor compressor.cpp)
+add_executable (pre_compressor compressor.cpp)
 target_link_libraries(pre_compressor PUBLIC ch_contrib::zstd)
 
-clickhouse_add_executable (decompressor decompressor.cpp)
+add_executable (decompressor decompressor.cpp)
 target_link_libraries(decompressor PUBLIC ch_contrib::zstd)
 
 add_custom_target (compressor)
