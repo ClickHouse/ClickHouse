@@ -19,18 +19,20 @@ public:
     DeflateQplJobHWPool();
     ~DeflateQplJobHWPool();
 
-    bool & jobPoolReady() { return job_pool_ready;}
-
     qpl_job * acquireJob(uint32_t * job_id);
 
-    qpl_job * releaseJob(uint32_t job_id);
+    static qpl_job * releaseJob(uint32_t job_id);
+
+    static const bool & isJobPoolReady() { return job_pool_ready; }
 
     static DeflateQplJobHWPool & instance();
 
-private:
-    bool tryLockJob(size_t index);
+    static constexpr auto MAX_HW_JOB_NUMBER = 1024;
 
-    void unLockJob(uint32_t index) { hw_job_ptr_locks[index].store(false); }
+private:
+    static bool tryLockJob(size_t index);
+
+    static void unLockJob(uint32_t index) { hw_job_ptr_locks[index].store(false); }
 
     class ReleaseJobObjectGuard
     {
@@ -43,16 +45,15 @@ private:
         ~ReleaseJobObjectGuard(){ hw_job_ptr_locks[index].store(false); }
     };
 
-    static constexpr auto JOB_NUMBER = 1024;
-    static constexpr qpl_path_t PATH = qpl_path_hardware;
-    static qpl_job * hw_job_ptr_pool[JOB_NUMBER];
-    static std::atomic_bool hw_job_ptr_locks[JOB_NUMBER];
+    /// Entire buffer for storing all job objects
+    static std::unique_ptr<uint8_t[]> hw_jobs_buffer;
+    /// Job pool for storing all job object pointers
+    static std::array<qpl_job *, DeflateQplJobHWPool::MAX_HW_JOB_NUMBER> hw_job_ptr_pool;
+    /// Locks for accessing each job object pointers
+    static std::array<std::atomic_bool, DeflateQplJobHWPool::MAX_HW_JOB_NUMBER> hw_job_ptr_locks;
     static bool job_pool_ready;
-    static std::unique_ptr<uint8_t[]> hw_job_buffer;
-    Poco::Logger * log;
     std::mt19937 random_engine;
     std::uniform_int_distribution<int> distribution;
-
 };
 
 class SoftwareCodecDeflateQpl
@@ -76,8 +77,8 @@ public:
     HardwareCodecDeflateQpl();
     ~HardwareCodecDeflateQpl();
     int32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
-    int32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
-    int32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
+    int32_t doDecompressDataSynchronous(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
+    int32_t doDecompressDataAsynchronous(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
     /// Flush result for previous asynchronous decompression requests.Must be used following with several calls of doDecompressDataReq.
     void flushAsynchronousDecompressRequests();
 
@@ -88,6 +89,7 @@ private:
     std::map<uint32_t, qpl_job *> decomp_async_job_map;
     Poco::Logger * log;
 };
+
 class CompressionCodecDeflateQpl : public ICompressionCodec
 {
 public:
