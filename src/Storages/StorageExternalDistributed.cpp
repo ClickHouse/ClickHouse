@@ -92,10 +92,13 @@ StorageExternalDistributed::StorageExternalDistributed(
                 postgres_conf.set(configuration);
                 postgres_conf.addresses = addresses;
 
+                const auto & settings = context->getSettingsRef();
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
                     postgres_conf,
-                    context->getSettingsRef().postgresql_connection_pool_size,
-                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+                    settings.postgresql_connection_pool_size,
+                    settings.postgresql_connection_pool_wait_timeout,
+                    POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+                    settings.postgresql_connection_pool_auto_close_connection);
 
                 shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
                 break;

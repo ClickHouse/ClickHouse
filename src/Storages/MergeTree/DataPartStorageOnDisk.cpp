@@ -628,7 +628,7 @@ void DataPartStorageOnDisk::backup(
     auto disk = volume->getDisk();
     auto temp_dir_it = temp_dirs.find(disk);
     if (temp_dir_it == temp_dirs.end())
-        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup/")).first;
+        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
     auto temp_dir_owner = temp_dir_it->second;
     fs::path temp_dir = temp_dir_owner->getPath();
     fs::path temp_part_dir = temp_dir / part_path_in_backup.relative_path();
@@ -637,11 +637,11 @@ void DataPartStorageOnDisk::backup(
     /// For example,
     /// part_path_in_backup = /data/test/table/0_1_1_0
     /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0
-    /// tmp_part_dir = tmp/backup/1aaaaaa/data/test/table/0_1_1_0
+    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0
     /// Or, for projections:
     /// part_path_in_backup = /data/test/table/0_1_1_0/prjmax.proj
     /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0/prjmax.proj
-    /// tmp_part_dir = tmp/backup/1aaaaaa/data/test/table/0_1_1_0/prjmax.proj
+    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0/prjmax.proj
 
     for (const auto & [filepath, checksum] : checksums.files)
     {
@@ -861,7 +861,6 @@ std::string DataPartStorageBuilderOnDisk::getRelativePath() const
 
 void DataPartStorageBuilderOnDisk::createDirectories()
 {
-    LOG_INFO(&Poco::Logger::get("DEBUG"), "CREATING DIRECTORY {}", (fs::path(root_path) / part_dir).string());
     transaction->createDirectories(fs::path(root_path) / part_dir);
 }
 
