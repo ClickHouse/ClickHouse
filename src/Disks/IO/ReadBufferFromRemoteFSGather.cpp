@@ -115,7 +115,7 @@ SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBufferImpl(c
     auto hdfs_uri = path.substr(0, begin_of_path);
     LOG_TEST(log, "HDFS uri: {}, path: {}", hdfs_path, hdfs_uri);
 
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config, settings);
 }
 #endif
 
