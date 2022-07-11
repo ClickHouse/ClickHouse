@@ -203,6 +203,7 @@ void TCPHandler::runImpl()
          */
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
+        bool query_duration_already_logged = false;
 
         try
         {
@@ -380,6 +381,10 @@ void TCPHandler::runImpl()
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
 
+            watch.stop();
+            LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
+            query_duration_already_logged = true;
+
             if (state.is_connection_closed)
                 break;
 
@@ -506,9 +511,11 @@ void TCPHandler::runImpl()
              */
         }
 
-        watch.stop();
-
-        LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
+        if (!query_duration_already_logged)
+        {
+            watch.stop();
+            LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
+        }
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();

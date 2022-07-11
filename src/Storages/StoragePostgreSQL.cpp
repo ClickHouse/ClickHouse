@@ -447,9 +447,12 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
+        const auto & settings = args.getContext()->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            args.getContext()->getSettingsRef().postgresql_connection_pool_size,
-            args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
+            settings.postgresql_connection_pool_size,
+            settings.postgresql_connection_pool_wait_timeout,
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,
