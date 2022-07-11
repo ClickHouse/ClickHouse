@@ -59,14 +59,14 @@ SortingStep::SortingStep(
 
 SortingStep::SortingStep(
     const DataStream & input_stream_,
-    SortDescription prefix_description_,
-    SortDescription result_description_,
+    const SortDescription & prefix_description_,
+    const SortDescription & result_description_,
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , type(Type::FinishSorting)
-    , prefix_description(std::move(prefix_description_))
-    , result_description(std::move(result_description_))
+    , prefix_description(prefix_description_)
+    , result_description(result_description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
@@ -77,12 +77,12 @@ SortingStep::SortingStep(
 
 SortingStep::SortingStep(
     const DataStream & input_stream,
-    SortDescription sort_description_,
+    const SortDescription & sort_description_,
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::MergingSorted)
-    , result_description(std::move(sort_description_))
+    , result_description(sort_description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
