@@ -7,12 +7,7 @@ include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
-if (USE_MUSL)
-    # Only clickhouse-keeper can be built with musl currently
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" OFF)
-else ()
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
-endif ()
+option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
 option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
@@ -41,17 +36,15 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
 
 # https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
-if (ENABLE_ODBC AND NOT USE_MUSL)
+if (ENABLE_ODBC)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
         ${ENABLE_CLICKHOUSE_ALL})
 else ()
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" OFF)
 endif ()
 
-if (NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
-        ${ENABLE_CLICKHOUSE_ALL})
-endif ()
+option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
+    ${ENABLE_CLICKHOUSE_ALL})
 
 # https://presentations.clickhouse.com/matemarketing_2020/
 option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENABLE_CLICKHOUSE_ALL})
@@ -453,17 +446,13 @@ else ()
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-static-files-disk-uploader" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-static-files-disk-uploader)
     endif ()
-
     if (ENABLE_CLICKHOUSE_KEEPER)
-        if (NOT BUILD_STANDALONE_KEEPER AND CREATE_KEEPER_SYMLINK)
+        if (NOT BUILD_STANDALONE_KEEPER)
             add_custom_target (clickhouse-keeper ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper DEPENDS clickhouse)
             install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         endif()
 
-        # otherwise we don't build keeper
-        if (BUILD_STANDALONE_KEEPER OR CREATE_KEEPER_SYMLINK)
-            list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper)
-        endif()
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper)
     endif ()
     if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
         add_custom_target (clickhouse-keeper-converter ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-converter DEPENDS clickhouse)

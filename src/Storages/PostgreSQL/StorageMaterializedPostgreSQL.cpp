@@ -1,7 +1,7 @@
 #include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
@@ -352,7 +352,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
 
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
         return ast_expression;
     }
 

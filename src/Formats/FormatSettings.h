@@ -170,8 +170,6 @@ struct FormatSettings
 
     struct
     {
-        bool input_flatten_google_wrappers = false;
-        bool output_nullables_with_google_wrappers = false;
         /**
          * Some buffers (kafka / rabbit) split the rows internally using callback,
          * and always send one row per message, so we can push there formats

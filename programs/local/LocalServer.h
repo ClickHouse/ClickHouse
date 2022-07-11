@@ -6,7 +6,7 @@
 #include <Common/ProgressIndication.h>
 #include <Common/StatusFile.h>
 #include <Common/InterruptListener.h>
-#include <Loggers/Loggers.h>
+#include <loggers/Loggers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 

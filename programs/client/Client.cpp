@@ -4,7 +4,7 @@
 #include <iostream>
 #include <iomanip>
 #include <optional>
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
@@ -125,9 +125,13 @@ std::vector<String> Client::loadWarningMessages()
                 continue;
 
             case Protocol::Server::Progress:
+                continue;
             case Protocol::Server::ProfileInfo:
+                continue;
             case Protocol::Server::Totals:
+                continue;
             case Protocol::Server::Extremes:
+                continue;
             case Protocol::Server::Log:
                 continue;
 

@@ -83,11 +83,11 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
 
     if (function->name == "and")
     {
-        for (const auto & child : function->arguments->children)
-            if (extractPathImpl(*child, res, context, allow_unrestricted))
-                return true;
-
-        return false;
+        const auto & children = function->arguments->children;
+        return std::any_of(
+            std::begin(children),
+            std::end(children),
+            [&](const auto & child) { return extractPathImpl(*child, res, context, allow_unrestricted); });
     }
 
     const auto & args = function->arguments->as<ASTExpressionList &>();
@@ -136,8 +136,11 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
             }
             else if (Tuple tuple; literal->value.tryGet(tuple))
             {
-                for (auto element : tuple)
-                    res.emplace_back(element.safeGet<String>(), ZkPathType::Exact);
+                std::transform(
+                    std::begin(tuple),
+                    std::end(tuple),
+                    std::back_inserter(res),
+                    [](auto element) { return std::make_pair(element.template safeGet<String>(), ZkPathType::Exact); });
             }
             else
                 return false;
@@ -279,16 +282,19 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         if (!prefix.empty())
         {
             // Remove nodes that do not match specified prefix
-            std::erase_if(nodes, [&prefix, &path_part] (const String & node)
+            nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&prefix, &path_part] (const String & node)
             {
                 return (path_part + '/' + node).substr(0, prefix.size()) != prefix;
-            });
+            }), nodes.end());
         }
 
         std::vector<std::future<Coordination::GetResponse>> futures;
-        futures.reserve(nodes.size());
-        for (const String & node : nodes)
-            futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
+        futures.reserve(std::size(nodes));
+        std::transform(
+            std::begin(nodes),
+            std::end(nodes),
+            std::back_inserter(futures),
+            [&zookeeper, &path_part](const String & node) { return zookeeper->asyncTryGet(path_part + '/' + node); });
 
         for (size_t i = 0, size = nodes.size(); i < size; ++i)
         {

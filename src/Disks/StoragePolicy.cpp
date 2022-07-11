@@ -1,7 +1,6 @@
 #include "StoragePolicy.h"
 #include "DiskFactory.h"
 #include "DiskLocal.h"
-#include "createVolume.h"
 
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>

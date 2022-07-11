@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <BridgeHelper/XDBCBridgeHelper.h>
+#include <Bridge/XDBCBridgeHelper.h>
 
 namespace Poco
 {

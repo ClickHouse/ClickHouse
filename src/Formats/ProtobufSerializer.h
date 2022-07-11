@@ -41,7 +41,6 @@ public:
         const google::protobuf::Descriptor & message_descriptor,
         bool with_length_delimiter,
         bool with_envelope,
-        bool flatten_google_wrappers,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(
@@ -50,7 +49,6 @@ public:
         const google::protobuf::Descriptor & message_descriptor,
         bool with_length_delimiter,
         bool with_envelope,
-        bool defaults_for_nullable_google_wrappers,
         ProtobufWriter & writer);
 };
 

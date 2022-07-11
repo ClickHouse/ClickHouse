@@ -6,7 +6,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <base/errnoToString.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/sleep.h>
 #include <Poco/Logger.h>
 #include <Common/ErrorCodes.h>
@@ -56,7 +56,7 @@ LocalFileHolder::~LocalFileHolder()
     }
 }
 
-RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBuffer>(buff_size)
+RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
 {
 }
 

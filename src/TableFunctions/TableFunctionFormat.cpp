@@ -49,11 +49,12 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
-    ReadBufferIterator read_buffer_iterator = [&]()
+    auto read_buffer_creator = [&]()
     {
         return std::make_unique<ReadBufferFromString>(data);
     };
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
+
+    return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, context);
 }
 
 Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr context) const

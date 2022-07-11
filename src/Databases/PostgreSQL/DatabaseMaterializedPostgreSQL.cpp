@@ -5,7 +5,7 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Macros.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>

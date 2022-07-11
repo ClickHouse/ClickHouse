@@ -187,11 +187,6 @@ bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
     return volume->getDisk()->isRemote();
 }
 
-bool MergeTreeDataPartCompact::isStoredOnRemoteDiskWithZeroCopySupport() const
-{
-    return volume->getDisk()->supportZeroCopyReplication();
-}
-
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
 {
     removeIfNeeded();

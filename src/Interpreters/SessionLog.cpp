@@ -97,7 +97,6 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS)
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -106,11 +105,8 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"HTTP",                   static_cast<Int8>(Interface::HTTP)},
             {"gRPC",                   static_cast<Int8>(Interface::GRPC)},
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
-            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
-            {"Local",                  static_cast<Int8>(Interface::LOCAL)},
-            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)}
+            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)}
         });
-    static_assert(magic_enum::enum_count<Interface>() == 7);
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 

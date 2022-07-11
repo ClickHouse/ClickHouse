@@ -435,7 +435,8 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
     }
 
     nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
-    std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
+    auto it = std::remove_if(inputs.begin(), inputs.end(), [&](const Node * node) { return !visited_nodes.contains(node); });
+    inputs.erase(it, inputs.end());
 }
 
 static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)

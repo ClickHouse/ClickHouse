@@ -80,7 +80,7 @@ protected:
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
-        std::unique_ptr<Exception> & current_exception);
+        std::optional<Exception> & current_exception);
 
     static void clearTerminal();
     void showClientVersion();
@@ -112,7 +112,6 @@ private:
     void receiveLogs(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQuery();
-    void cancelQuery();
 
     void onProgress(const Progress & value);
     void onData(Block & block, ASTPtr parsed_query);
@@ -146,7 +145,7 @@ private:
         std::vector<Arguments> & hosts_and_ports_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
-    void updateSuggest(const ASTPtr & ast);
+    void updateSuggest(const ASTCreateQuery & ast_create);
 
     void initQueryIdFormats();
 

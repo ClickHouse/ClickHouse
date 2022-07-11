@@ -543,6 +543,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+    executeColumnIfNeeded(arguments[0]);
+
     /// Let's denote x_i' = maskedExecute(x_i, mask).
     /// 1) AND(x_0, x_1, x_2, ..., x_n)
     /// We will support mask_i = x_0 & x_1 & ... & x_i.
@@ -565,7 +567,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     /// The result is !mask_n.
 
     bool inverted = Name::name != NameAnd::name;
-    UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
+    UInt8 null_value = UInt8(Name::name == NameAnd::name);
     IColumn::Filter mask(arguments[0].column->size(), 1);
 
     /// If result is nullable, we need to create null bytemap of the resulting column.

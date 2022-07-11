@@ -100,6 +100,8 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         if (sync)
             file->sync();
     }
+
+    part->storage.lockSharedData(*part);
 }
 
 MergedBlockOutputStream::Finalizer::~Finalizer()

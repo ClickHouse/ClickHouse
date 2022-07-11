@@ -28,8 +28,6 @@ protected:
     ReadBuffer & in;
 };
 
-using CommonDataTypeChecker = std::function<DataTypePtr(const DataTypePtr &, const DataTypePtr &)>;
-
 /// Base class for schema inference for formats that read data row by row.
 /// It reads data row by row (up to max_rows_to_read), determines types of columns
 /// for each row and compare them with types from the previous rows. If some column
@@ -40,13 +38,11 @@ using CommonDataTypeChecker = std::function<DataTypePtr(const DataTypePtr &, con
 class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, bool allow_bools_as_numbers_ = false);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_, bool allow_bools_as_numbers_ = false);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_, bool allow_bools_as_numbers_ = false);
 
     NamesAndTypesList readSchema() override;
-
-    void setCommonTypeChecker(CommonDataTypeChecker checker) { common_type_checker = checker; }
 
 protected:
     /// Read one row and determine types of columns in it.
@@ -63,7 +59,7 @@ private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
     DataTypes default_types;
-    CommonDataTypeChecker common_type_checker;
+    bool allow_bools_as_numbers;
     std::vector<String> column_names;
 };
 
@@ -75,11 +71,9 @@ private:
 class IRowWithNamesSchemaReader : public ISchemaReader
 {
 public:
-    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr, bool allow_bools_as_numbers_ = false);
     NamesAndTypesList readSchema() override;
     bool hasStrictOrderOfColumns() const override { return false; }
-
-    void setCommonTypeChecker(CommonDataTypeChecker checker) { common_type_checker = checker; }
 
 protected:
     /// Read one row and determine types of columns in it.
@@ -91,7 +85,7 @@ protected:
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
-    CommonDataTypeChecker common_type_checker;
+    bool allow_bools_as_numbers;
 };
 
 /// Base class for schema inference for formats that don't need any data to

@@ -59,20 +59,23 @@ namespace Format
         {
             size_t i = 0;
             bool should_delete = true;
-            std::erase_if(
-                str,
-                [&i, &should_delete, &str](char)
-                {
-                    bool is_double_brace = (str[i] == '{' && str[i + 1] == '{') || (str[i] == '}' && str[i + 1] == '}');
-                    ++i;
-                    if (is_double_brace && should_delete)
+            str.erase(
+                std::remove_if(
+                    str.begin(),
+                    str.end(),
+                    [&i, &should_delete, &str](char)
                     {
-                        should_delete = false;
-                        return true;
-                    }
-                    should_delete = true;
-                    return false;
-                });
+                        bool is_double_brace = (str[i] == '{' && str[i + 1] == '{') || (str[i] == '}' && str[i + 1] == '}');
+                        ++i;
+                        if (is_double_brace && should_delete)
+                        {
+                            should_delete = false;
+                            return true;
+                        }
+                        should_delete = true;
+                        return false;
+                    }),
+                str.end());
         };
 
         index_positions.emplace_back();

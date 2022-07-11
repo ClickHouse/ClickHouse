@@ -21,7 +21,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -504,8 +504,10 @@ void IMergeTreeDataPart::removeIfNeeded()
 
         if (parent_part)
         {
-            auto [can_remove, _] = canRemovePart();
-            projectionRemove(parent_part->getFullRelativePath(), !can_remove);
+            std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
+            if (!keep_shared_data.has_value())
+                return;
+            projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
         }
         else
             remove();
@@ -1418,9 +1420,6 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (part_is_probably_removed_from_disk)
         return true;
 
-    if (state == State::Temporary)
-        return true;
-
     DiskPtr disk = volume->getDisk();
     if (!disk->exists(getFullRelativePath()))
         return true;
@@ -1519,6 +1518,8 @@ try
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
         sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
+
+    storage.lockSharedData(*this);
 }
 catch (...)
 {
@@ -1533,13 +1534,21 @@ catch (...)
         throw;
 }
 
-std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
+void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
+{
+    if (name == old_part_name)
+        return;
+
+    storage.unlockSharedData(*this, old_part_name);
+}
+
+std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
     /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
-        return std::make_pair(false, NameSet{});
+        return true;
 
-    return storage.unlockSharedData(*this);
+    return !storage.unlockSharedData(*this);
 }
 
 void IMergeTreeDataPart::initializePartMetadataManager()
@@ -1559,7 +1568,9 @@ void IMergeTreeDataPart::remove() const
     assert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
-    auto [can_remove, files_not_to_remove] = canRemovePart();
+    std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
+    if (!keep_shared_data.has_value())
+        return;
 
     if (!isStoredOnDisk())
         return;
@@ -1570,7 +1581,7 @@ void IMergeTreeDataPart::remove() const
     if (isProjectionPart())
     {
         LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
-        projectionRemove(parent_part->getFullRelativePath(), !can_remove);
+        projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
         return;
     }
 
@@ -1602,7 +1613,7 @@ void IMergeTreeDataPart::remove() const
         LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
         try
         {
-            disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);
+            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
         }
         catch (...)
         {
@@ -1619,7 +1630,7 @@ void IMergeTreeDataPart::remove() const
     {
         if (e.code() == std::errc::no_such_file_or_directory)
         {
-            LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, to));
             return;
         }
         throw;
@@ -1629,9 +1640,7 @@ void IMergeTreeDataPart::remove() const
     std::unordered_set<String> projection_directories;
     for (const auto & [p_name, projection_part] : projection_parts)
     {
-        /// NOTE: projections currently unsupported with zero copy replication.
-        /// TODO: fix it.
-        projection_part->projectionRemove(to, !can_remove);
+        projection_part->projectionRemove(to, *keep_shared_data);
         projection_directories.emplace(p_name + ".proj");
     }
 
@@ -1639,7 +1648,7 @@ void IMergeTreeDataPart::remove() const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);
+        disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
     }
     else
     {
@@ -1668,15 +1677,16 @@ void IMergeTreeDataPart::remove() const
             request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
             request.emplace_back(fs::path(to) / TXN_VERSION_METADATA_FILE_NAME, true);
 
-            disk->removeSharedFiles(request, !can_remove, files_not_to_remove);
+            disk->removeSharedFiles(request, *keep_shared_data);
             disk->removeDirectory(to);
         }
         catch (...)
         {
             /// Recursive directory removal does many excessive "stat" syscalls under the hood.
+
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(fs::path(to) / "", !can_remove, files_not_to_remove);
+            disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
         }
     }
 }
@@ -1697,7 +1707,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data, {});
+        disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
     }
     else
     {
@@ -1721,8 +1731,8 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
             request.emplace_back(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
             request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
 
-            disk->removeSharedFiles(request, keep_shared_data, {});
-            disk->removeSharedRecursive(to, keep_shared_data, {});
+            disk->removeSharedFiles(request, keep_shared_data);
+            disk->removeSharedRecursive(to, keep_shared_data);
         }
         catch (...)
         {
@@ -1730,7 +1740,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data, {});
+            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
          }
      }
  }
@@ -1779,7 +1789,6 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
     renameTo(getRelativePathForDetachedPart(prefix), true);
-    part_is_probably_removed_from_disk = true;
 }
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const

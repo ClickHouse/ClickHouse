@@ -309,26 +309,23 @@ void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
     DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
-void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_all, const NameSet & files_to_keep)
+void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
 {
     if (cache_disk->exists(path))
-        cache_disk->removeSharedRecursive(path, keep_all, files_to_keep);
-    DiskDecorator::removeSharedRecursive(path, keep_all, files_to_keep);
+        cache_disk->removeSharedRecursive(path, keep_s3);
+    DiskDecorator::removeSharedRecursive(path, keep_s3);
 }
 
 
-void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all, const NameSet & files_to_keep)
+void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_s3)
 {
     for (const auto & file : files)
     {
         if (cache_disk->exists(file.path))
-        {
-            bool keep_file = keep_all || files_to_keep.contains(fs::path(file.path).filename());
-            cache_disk->removeSharedFile(file.path, keep_file);
-        }
+            cache_disk->removeSharedFile(file.path, keep_s3);
     }
 
-    DiskDecorator::removeSharedFiles(files, keep_all, files_to_keep);
+    DiskDecorator::removeSharedFiles(files, keep_s3);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)

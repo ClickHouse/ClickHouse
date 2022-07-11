@@ -105,8 +105,6 @@ public:
 
     virtual bool isStoredOnRemoteDisk() const = 0;
 
-    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
-
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
@@ -357,6 +355,9 @@ public:
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
+    /// Cleanup shared locks made with old name after part renaming
+    virtual void cleanupOldName(const String & old_part_name) const;
+
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
@@ -515,17 +516,7 @@ protected:
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 
-    /// Checks that part can be actually removed from disk.
-    /// In ordinary scenario always returns true, but in case of
-    /// zero-copy replication part can be hold by some other replicas.
-    ///
-    /// If method return false than only metadata of part from
-    /// local storage can be removed, leaving data in remove FS untouched.
-    ///
-    /// If method return true, than files can be actually removed from remote
-    /// storage storage, excluding files in the second returned argument.
-    /// They can be hardlinks to some newer parts.
-    std::pair<bool, NameSet> canRemovePart() const;
+    std::optional<bool> keepSharedDataInDecoupledStorage() const;
 
     void initializePartMetadataManager();
 

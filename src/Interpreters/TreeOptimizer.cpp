@@ -21,7 +21,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -77,7 +76,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
     /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
     /// might be in positional GROUP BY.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(Int64(-1)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -139,18 +138,10 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            else
+            else if (!function_factory.get(function->name, context)->isInjective({}))
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
-
-                if (!function_builder)
-                    function_builder = function_factory.get(function->name, context);
-
-                if (!function_builder->isInjective({}))
-                {
-                    ++i;
-                    continue;
-                }
+                ++i;
+                continue;
             }
 
             /// copy shared pointer to args in order to ensure lifetime

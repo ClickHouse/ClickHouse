@@ -42,7 +42,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <base/sleep.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Storages/LiveView/StorageBlocks.h>
 
@@ -315,7 +315,9 @@ namespace
         switch (kind)
         {
             case IntervalKind::Nanosecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
             case IntervalKind::Microsecond:
+                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
             case IntervalKind::Millisecond:
                 throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
@@ -750,7 +752,9 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
     switch (window_interval_kind)
     {
         case IntervalKind::Nanosecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Microsecond:
+            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Millisecond:
             throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
@@ -789,7 +793,9 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     switch (window_interval_kind)
     {
         case IntervalKind::Nanosecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Microsecond:
+            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Millisecond:
             throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
 

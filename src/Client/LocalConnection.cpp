@@ -154,17 +154,17 @@ void LocalConnection::sendQuery(
     catch (const Exception & e)
     {
         state->io.onException();
-        state->exception.reset(e.clone());
+        state->exception.emplace(e);
     }
     catch (const std::exception & e)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
     }
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -260,17 +260,17 @@ bool LocalConnection::poll(size_t)
         catch (const Exception & e)
         {
             state->io.onException();
-            state->exception.reset(e.clone());
+            state->exception.emplace(e);
         }
         catch (const std::exception & e)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+            state->exception.emplace(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -392,9 +392,9 @@ Packet LocalConnection::receivePacket()
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
     {
-        case Protocol::Server::Totals:
-        case Protocol::Server::Extremes:
-        case Protocol::Server::Log:
+        case Protocol::Server::Totals: [[fallthrough]];
+        case Protocol::Server::Extremes: [[fallthrough]];
+        case Protocol::Server::Log: [[fallthrough]];
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
@@ -434,7 +434,7 @@ Packet LocalConnection::receivePacket()
         }
         case Protocol::Server::Exception:
         {
-            packet.exception.reset(state->exception->clone());
+            packet.exception = std::make_unique<Exception>(*state->exception);
             next_packet_type.reset();
             break;
         }

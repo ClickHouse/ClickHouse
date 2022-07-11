@@ -1,15 +1,12 @@
 #include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Common/assert_cast.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -287,40 +284,6 @@ namespace
             return true;
         });
     }
-
-    bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
-    {
-        bool async;
-        if (ParserKeyword{"ASYNC"}.ignore(pos, expected))
-            async = true;
-        else if (ParserKeyword{"SYNC"}.ignore(pos, expected))
-            async = false;
-        else
-            return false;
-
-        SettingsChanges changes;
-        if (settings)
-        {
-            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
-        }
-
-        boost::remove_erase_if(changes, [](const SettingChange & change) { return change.name == "async"; });
-        changes.emplace_back("async", async);
-
-        auto new_settings = std::make_shared<ASTSetQuery>();
-        new_settings->changes = std::move(changes);
-        new_settings->is_standalone = false;
-        settings = new_settings;
-        return true;
-    }
-
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
-        });
-    }
 }
 
 
@@ -338,9 +301,6 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseElements(pos, expected, elements))
         return false;
 
-    String cluster;
-    parseOnCluster(pos, expected, cluster);
-
     if (!ParserKeyword{(kind == Kind::BACKUP) ? "TO" : "FROM"}.ignore(pos, expected))
         return false;
 
@@ -351,7 +311,6 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr settings;
     ASTPtr base_backup_name;
     parseSettings(pos, expected, settings, base_backup_name);
-    parseSyncOrAsync(pos, expected, settings);
 
     auto query = std::make_shared<ASTBackupQuery>();
     node = query;
@@ -361,7 +320,6 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->backup_name = std::move(backup_name);
     query->base_backup_name = std::move(base_backup_name);
     query->settings = std::move(settings);
-    query->cluster = std::move(cluster);
 
     return true;
 }

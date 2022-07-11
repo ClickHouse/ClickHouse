@@ -26,7 +26,7 @@ void MergeTreeSink::onStart()
 {
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context);
+    storage.delayInsertOrThrowIfNeeded();
 }
 
 void MergeTreeSink::onFinish()

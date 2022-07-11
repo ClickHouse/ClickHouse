@@ -1159,12 +1159,7 @@ public:
     }
 
     void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
         if constexpr (is_any)
             if (this->data(place).has())
@@ -1172,7 +1167,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 if (flags[i])
                 {
@@ -1184,7 +1179,7 @@ public:
         }
         else
         {
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 this->data(place).changeIfBetter(*columns[0], i, arena);
                 if constexpr (is_any)
@@ -1194,8 +1189,7 @@ public:
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
+        size_t batch_size,
         AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
@@ -1209,7 +1203,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 if (!null_map[i] && flags[i])
                 {
@@ -1221,7 +1215,7 @@ public:
         }
         else
         {
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 if (!null_map[i])
                 {

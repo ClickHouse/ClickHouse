@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -224,11 +224,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    WithoutOnClusterASTRewriteParams params;
-    params.default_database = address_in_cluster.default_database;
-    params.shard_index = address_in_cluster.shard_index;
-    params.replica_index = address_in_cluster.replica_index;
-    query = query_on_cluster->getRewrittenASTWithoutOnCluster(params);
+    query = query_on_cluster->getRewrittenASTWithoutOnCluster(address_in_cluster.default_database);
     query_on_cluster = nullptr;
 }
 

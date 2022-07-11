@@ -33,7 +33,7 @@ public:
 
     UInt64 getSize() const override;
     std::optional<UInt128> getChecksum() const override { return checksum; }
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
+    std::unique_ptr<ReadBuffer> getReadBuffer() const override;
 
     String getFilePath() const { return file_path; }
     DiskPtr getDisk() const { return disk; }

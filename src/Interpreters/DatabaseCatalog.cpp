@@ -14,7 +14,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>

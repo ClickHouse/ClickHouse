@@ -1,5 +1,5 @@
 #include <IO/ParallelReadBuffer.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Logger.h>
 
 namespace DB
@@ -13,39 +13,8 @@ namespace ErrorCodes
 
 }
 
-struct ParallelReadBuffer::ReadWorker
-{
-    explicit ReadWorker(SeekableReadBufferPtr reader_) : reader(std::move(reader_)), range(reader->getRemainingReadRange())
-    {
-        assert(range.right);
-        bytes_left = *range.right - range.left + 1;
-    }
-
-    auto hasSegment() const
-    {
-        return current_segment_index < segments.size();
-    }
-
-    auto nextSegment()
-    {
-        assert(hasSegment());
-        auto next_segment = std::move(segments[current_segment_index]);
-        ++current_segment_index;
-        range.left += next_segment.size();
-        return next_segment;
-    }
-
-    SeekableReadBufferPtr reader;
-    std::vector<Memory<>> segments;
-    size_t current_segment_index = 0;
-    bool finished{false};
-    SeekableReadBuffer::Range range;
-    size_t bytes_left{0};
-    std::atomic_bool cancel{false};
-};
-
 ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers_)
-    : SeekableReadBuffer(nullptr, 0)
+    : SeekableReadBufferWithSize(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
@@ -106,10 +75,11 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     if (!read_workers.empty())
     {
         auto & front_worker = read_workers.front();
+        auto & segments = front_worker->segments;
         current_position = front_worker->range.left;
         while (true)
         {
-            next_condvar.wait(lock, [&] { return emergency_stop || front_worker->hasSegment(); });
+            next_condvar.wait(lock, [&] { return emergency_stop || !segments.empty(); });
 
             if (emergency_stop)
                 handleEmergencyStop();
@@ -146,10 +116,10 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     return offset;
 }
 
-std::optional<size_t> ParallelReadBuffer::getFileSize()
+std::optional<size_t> ParallelReadBuffer::getTotalSize()
 {
     std::lock_guard lock{mutex};
-    return reader_factory->getFileSize();
+    return reader_factory->getTotalSize();
 }
 
 off_t ParallelReadBuffer::getPosition()
@@ -160,13 +130,13 @@ off_t ParallelReadBuffer::getPosition()
 bool ParallelReadBuffer::currentWorkerReady() const
 {
     assert(!read_workers.empty());
-    return read_workers.front()->finished || read_workers.front()->hasSegment();
+    return read_workers.front()->finished || !read_workers.front()->segments.empty();
 }
 
 bool ParallelReadBuffer::currentWorkerCompleted() const
 {
     assert(!read_workers.empty());
-    return read_workers.front()->finished && !read_workers.front()->hasSegment();
+    return read_workers.front()->finished && read_workers.front()->segments.empty();
 }
 
 void ParallelReadBuffer::handleEmergencyStop()
@@ -216,7 +186,7 @@ bool ParallelReadBuffer::nextImpl()
 
         auto & front_worker = read_workers.front();
         /// Read data from first segment of the first reader
-        if (front_worker->hasSegment())
+        if (!front_worker->segments.empty())
         {
             current_segment = front_worker->nextSegment();
             if (currentWorkerCompleted())
@@ -252,7 +222,7 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 
             Buffer buffer = read_worker->reader->buffer();
             size_t bytes_to_copy = std::min(buffer.size(), read_worker->bytes_left);
-            Memory<> new_segment(bytes_to_copy);
+            Segment new_segment(bytes_to_copy, &arena);
             memcpy(new_segment.data(), buffer.begin(), bytes_to_copy);
             read_worker->reader->ignore(bytes_to_copy);
             read_worker->bytes_left -= bytes_to_copy;

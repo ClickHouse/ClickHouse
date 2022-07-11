@@ -1,9 +1,3 @@
----
-sidebar_label: Settings
-sidebar_position: 52
-slug: /en/operations/settings/settings
----
-
 # Settings {#settings}
 
 ## distributed_product_mode {#distributed-product-mode}
@@ -1820,7 +1814,7 @@ ignoring check result for the source table, and will insert rows lost because of
 
 ## insert_deduplication_token {#insert_deduplication_token}
 
-The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
+The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
 
@@ -1846,7 +1840,7 @@ INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
 -- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
 
--- the next insert will be deduplicated because insert_deduplication_token
+-- the next insert will be deduplicated because insert_deduplication_token 
 -- is the same as one of the previous
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
 
@@ -2433,6 +2427,17 @@ Possible values:
 
 Default value: 0.
 
+## background_pool_size {#background_pool_size}
+
+Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from the `default` profile at the ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related [MergeTree settings](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree), such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 

@@ -12,7 +12,7 @@
 #include <boost/circular_buffer.hpp>
 
 #include <base/shared_ptr_helper.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Storages/MergeTree/IExecutableTask.h>
@@ -187,11 +187,6 @@ public:
     {
         wait();
     }
-
-    /// Handler for hot-reloading
-    /// Supports only increasing the number of threads and tasks, because
-    /// implementing tasks eviction will definitely be too error-prone and buggy.
-    void increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count);
 
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);

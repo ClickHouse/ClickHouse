@@ -206,7 +206,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
 
             writeIntBinary(plain_hashing.count(), marks);
-            writeIntBinary(static_cast<UInt64>(0), marks);
+            writeIntBinary(UInt64(0), marks);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), data_part->getSerialization(*name_and_type),
@@ -246,9 +246,9 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
             writeIntBinary(plain_hashing.count(), marks);
-            writeIntBinary(static_cast<UInt64>(0), marks);
+            writeIntBinary(UInt64(0), marks);
         }
-        writeIntBinary(static_cast<UInt64>(0), marks);
+        writeIntBinary(UInt64(0), marks);
     }
 
     plain_file->next();

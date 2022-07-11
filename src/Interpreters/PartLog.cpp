@@ -109,13 +109,13 @@ bool PartLog::addNewPart(
     return addNewParts(current_context, {part}, elapsed_ns, execution_status);
 }
 
-static inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
 }
 
 
-static inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }

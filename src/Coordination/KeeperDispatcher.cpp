@@ -278,7 +278,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(config, configuration_and_settings->enable_ipv6);
+        server->startup(configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -365,11 +365,6 @@ void KeeperDispatcher::shutdown()
     }
 
     LOG_DEBUG(log, "Dispatcher shut down");
-}
-
-void KeeperDispatcher::forceRecovery()
-{
-    server->forceRecovery();
 }
 
 KeeperDispatcher::~KeeperDispatcher()
@@ -540,18 +535,10 @@ void KeeperDispatcher::updateConfigurationThread()
 
         try
         {
-            using namespace std::chrono_literals;
             if (!server->checkInit())
             {
                 LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
-                std::this_thread::sleep_for(5000ms);
-                continue;
-            }
-
-            if (server->isRecovering())
-            {
-                LOG_INFO(log, "Server is recovering, will not apply configuration until recovery is finished");
-                std::this_thread::sleep_for(5000ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
                 continue;
             }
 
@@ -564,9 +551,6 @@ void KeeperDispatcher::updateConfigurationThread()
             bool done = false;
             while (!done)
             {
-                if (server->isRecovering())
-                    break;
-
                 if (shutdown_called)
                     return;
 
@@ -588,11 +572,6 @@ void KeeperDispatcher::updateConfigurationThread()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-}
-
-bool KeeperDispatcher::isServerActive() const
-{
-    return checkInit() && hasLeader() && !server->isRecovering();
 }
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
