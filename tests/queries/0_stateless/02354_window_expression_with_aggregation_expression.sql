@@ -10,3 +10,7 @@ FROM
 
 ) AS t
 GROUP BY b;
+
+-- { echoOn }
+SELECT arrayMap(x -> (x + 1), groupArray(number) OVER ()) AS result
+FROM numbers(10);
