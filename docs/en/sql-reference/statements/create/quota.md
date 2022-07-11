@@ -1,9 +1,9 @@
 ---
-toc_priority: 42
-toc_title: QUOTA
+sidebar_position: 42
+sidebar_label: QUOTA
 ---
 
-# CREATE QUOTA {#create-quota-statement}
+# CREATE QUOTA
 
 Creates a [quota](../../../operations/access-rights.md#quotas-management) that can be assigned to a user or a role.
 

@@ -1,6 +1,6 @@
 ---
-toc_priority: 40
-toc_title: "Роль"
+sidebar_position: 40
+sidebar_label: "Роль"
 ---
 
 # CREATE ROLE {#create-role-statement}

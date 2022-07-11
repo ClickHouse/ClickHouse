@@ -7,7 +7,8 @@
 #include <mutex>
 #include <atomic>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -48,7 +49,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        auto res = getImpl(key, lock);
+        auto res = getImpl(key);
         if (res)
             ++hits;
         else
@@ -61,7 +62,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        setImpl(key, mapped, lock);
+        setImpl(key, mapped);
     }
 
     void remove(const Key & key)
@@ -91,7 +92,7 @@ public:
         {
             std::lock_guard cache_lock(mutex);
 
-            auto val = getImpl(key, cache_lock);
+            auto val = getImpl(key);
             if (val)
             {
                 ++hits;
@@ -129,7 +130,7 @@ public:
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            setImpl(key, token->value, cache_lock);
+            setImpl(key, token->value);
             result = true;
         }
 
@@ -189,7 +190,7 @@ protected:
 
     using Cells = std::unordered_map<Key, Cell, HashFunction>;
 
-    Cells cells;
+    Cells cells TSA_GUARDED_BY(mutex);
 
     mutable std::mutex mutex;
 private:
@@ -200,8 +201,8 @@ private:
         explicit InsertToken(LRUCache & cache_) : cache(cache_) {}
 
         std::mutex mutex;
-        bool cleaned_up = false; /// Protected by the token mutex
-        MappedPtr value; /// Protected by the token mutex
+        bool cleaned_up TSA_GUARDED_BY(mutex) = false;
+        MappedPtr value TSA_GUARDED_BY(mutex);
 
         LRUCache & cache;
         size_t refcount = 0; /// Protected by the cache mutex
@@ -221,6 +222,7 @@ private:
         InsertTokenHolder() = default;
 
         void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             key = key_;
             token = token_;
@@ -228,6 +230,7 @@ private:
         }
 
         void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -258,21 +261,21 @@ private:
     friend struct InsertTokenHolder;
 
 
-    InsertTokenById insert_tokens;
+    InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
-    LRUQueue queue;
+    LRUQueue queue TSA_GUARDED_BY(mutex);
 
     /// Total weight of values.
-    size_t current_size = 0;
+    size_t current_size TSA_GUARDED_BY(mutex) = 0;
     const size_t max_size;
     const size_t max_elements_size;
 
     std::atomic<size_t> hits {0};
     std::atomic<size_t> misses {0};
 
-    WeightFunction weight_function;
+    const WeightFunction weight_function;
 
-    MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+    MappedPtr getImpl(const Key & key) TSA_REQUIRES(mutex)
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -288,7 +291,7 @@ private:
         return cell.value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+    void setImpl(const Key & key, const MappedPtr & mapped) TSA_REQUIRES(mutex)
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -321,7 +324,7 @@ private:
         removeOverflow();
     }
 
-    void removeOverflow()
+    void removeOverflow() TSA_REQUIRES(mutex)
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();

@@ -4,7 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Core/SortCursor.h>
 #include <Common/StackTrace.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
@@ -153,7 +153,7 @@ struct RowRef
         return true;
     }
 
-    bool hasEqualSortColumnsWith(const RowRef & other)
+    bool hasEqualSortColumnsWith(const RowRef & other) const
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
@@ -197,7 +197,7 @@ struct RowRefWithOwnedChunk
         sort_columns = &owned_chunk->sort_columns;
     }
 
-    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other)
+    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);

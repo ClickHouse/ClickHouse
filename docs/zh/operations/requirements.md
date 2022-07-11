@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: "必备条件"
+sidebar_position: 44
+sidebar_label: "必备条件"
 ---
 
 # 必备条件 {#requirements}

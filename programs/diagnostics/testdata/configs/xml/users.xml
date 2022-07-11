@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <!-- See also the files in users.d directory where the settings can be overridden. -->
+    <!-- Profiles of settings. -->
+    <include_from>../include/xml/user-include.xml</include_from>
+
+    <profiles>
+        <!-- Default settings. -->
+        <default>
+            <!-- Maximum memory usage for processing single query, in bytes. -->
+            <max_memory_usage>10000000000</max_memory_usage>
+
+            <load_balancing>random</load_balancing>
+            <log_query_threads>1</log_query_threads>
+        </default>
+        <!-- Profile that allows only read queries. -->
+        <readonly>
+            <readonly>1</readonly>
+        </readonly>
+    </profiles>
+    <!-- Users and ACL. -->
+    <users>
+        <test_user>
+            <include incl="test_user"></include>
+        </test_user>
+        <!-- If user name was not specified, 'default' user is used. -->
+        <default>
+            <password>REPLACE_ME</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <!-- Settings profile for user. -->
+            <profile>default</profile>
+            <!-- Quota for user. -->
+            <quota>default</quota>
+            <!-- User can create other users and grant rights to them. -->
+            <!-- <access_management>1</access_management> -->
+        </default>
+    </users>
+    <!-- Quotas. -->
+    <quotas>
+        <!-- Name of quota. -->
+        <default>
+            <!-- Limits for time interval. You could specify many intervals with different limits. -->
+            <interval>
+                <!-- Length of interval. -->
+                <duration>3600</duration>
+
+                <!-- No limits. Just calculate resource usage for time interval. -->
+                <queries>0</queries>
+                <errors>0</errors>
+                <result_rows>0</result_rows>
+                <read_rows>0</read_rows>
+                <execution_time>0</execution_time>
+            </interval>
+        </default>
+    </quotas>
+</clickhouse>

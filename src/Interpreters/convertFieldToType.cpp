@@ -52,7 +52,7 @@ namespace
 {
 
 template <typename From, typename To>
-static Field convertNumericTypeImpl(const Field & from)
+Field convertNumericTypeImpl(const Field & from)
 {
     To result;
     if (!accurate::convertNumeric(from.get<From>(), result))
@@ -61,7 +61,7 @@ static Field convertNumericTypeImpl(const Field & from)
 }
 
 template <typename To>
-static Field convertNumericType(const Field & from, const IDataType & type)
+Field convertNumericType(const Field & from, const IDataType & type)
 {
     if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
         return convertNumericTypeImpl<UInt64, To>(from);
@@ -84,7 +84,7 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 
 
 template <typename From, typename T>
-static Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
@@ -96,7 +96,7 @@ static Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T
 
 
 template <typename T>
-static Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
     const String & str_value = from.get<String>();
     T value = type.parseFromString(str_value);
@@ -104,7 +104,7 @@ static Field convertStringToDecimalType(const Field & from, const DataTypeDecima
 }
 
 template <typename From, typename T>
-static Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
     auto field = from.get<DecimalField<From>>();
     T value = convertDecimals<DataTypeDecimal<From>, DataTypeDecimal<T>>(field.getValue(), field.getScale(), type.getScale());
@@ -112,7 +112,7 @@ static Field convertDecimalToDecimalType(const Field & from, const DataTypeDecim
 }
 
 template <typename To>
-static Field convertDecimalType(const Field & from, const To & type)
+Field convertDecimalType(const Field & from, const To & type)
 {
     if (from.getType() == Field::Types::UInt64)
         return convertIntToDecimalType<UInt64>(from, type);
@@ -193,6 +193,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal256> *>(&type)) return convertDecimalType(src, *ptype);
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {

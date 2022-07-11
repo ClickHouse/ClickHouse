@@ -14,7 +14,7 @@
 namespace DB
 {
 
-class MergeFromLogEntryTask : public shared_ptr_helper<MergeFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
+class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
 public:
     template <class Callback>

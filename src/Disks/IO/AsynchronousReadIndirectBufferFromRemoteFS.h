@@ -51,6 +51,8 @@ public:
 
     String getInfoForLog() override;
 
+    size_t getFileSize() override;
+
 private:
     bool nextImpl() override;
 
@@ -58,7 +60,7 @@ private:
 
     bool hasPendingDataToRead();
 
-    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
     AsynchronousReaderPtr reader;
 
@@ -77,8 +79,6 @@ private:
     size_t bytes_to_ignore = 0;
 
     std::optional<size_t> read_until_position;
-
-    bool must_read_until_position;
 
     Poco::Logger * log;
 };

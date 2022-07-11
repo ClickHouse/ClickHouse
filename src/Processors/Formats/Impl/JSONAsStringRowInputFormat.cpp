@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>
@@ -52,6 +52,7 @@ void JSONAsRowInputFormat::readSuffix()
     {
         assertChar(']', *buf);
         skipWhitespaceIfAny(*buf);
+        data_in_square_brackets = false;
     }
     if (!buf->eof() && *buf->position() == ';')
     {
@@ -220,12 +221,12 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONAsString", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
 {
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerJSONAsStringSchemaReader(FormatFactory & factory)
@@ -250,12 +251,12 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory)
 {
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsObject", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONAsObject", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
 void registerJSONAsObjectSchemaReader(FormatFactory & factory)

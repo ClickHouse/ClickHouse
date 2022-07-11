@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: USER
+sidebar_position: 45
+sidebar_label: USER
 ---
 
 # ALTER USER {#alter-user-statement}

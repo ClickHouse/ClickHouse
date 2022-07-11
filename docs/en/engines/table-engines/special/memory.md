@@ -1,9 +1,9 @@
 ---
-toc_priority: 44
-toc_title: Memory
+sidebar_position: 110
+sidebar_label:  Memory
 ---
 
-# Memory Table Engine {#memory}
+# Memory Table Engine
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
@@ -15,4 +15,4 @@ Normally, using this table engine is not justified. However, it can be used for 
 
 The Memory engine is used by the system for temporary tables with external query data (see the section “External data for processing a query”), and for implementing `GLOBAL IN` (see the section “IN operators”).
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/memory/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/memory/) <!--hide-->

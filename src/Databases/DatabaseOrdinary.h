@@ -25,7 +25,7 @@ public:
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
 
-    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata) override;
+    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata, bool is_startup) override;
 
     void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore) override;
 
@@ -35,9 +35,6 @@ public:
         ContextPtr context,
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
-
-    /// This database can contain tables to backup.
-    bool hasTablesToBackup() const override { return true; }
 
 protected:
     virtual void commitAlterTable(

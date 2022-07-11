@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -7,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 
 #include <Common/config.h>
@@ -31,6 +32,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperSet;
     extern const Event ZooKeeperList;
     extern const Event ZooKeeperCheck;
+    extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
@@ -539,7 +541,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
             Error::ZMARSHALLINGERROR);
 
     if (err != Error::ZOK)
-        throw Exception("Error received in reply to auth request. Code: " + DB::toString(int32_t(err)) + ". Message: " + String(errorMessage(err)),
+        throw Exception("Error received in reply to auth request. Code: " + DB::toString(static_cast<int32_t>(err)) + ". Message: " + String(errorMessage(err)),
             Error::ZMARSHALLINGERROR);
 }
 
@@ -563,8 +565,8 @@ void ZooKeeper::sendThread()
             {
                 /// Wait for the next request in queue. No more than operation timeout. No more than until next heartbeat time.
                 UInt64 max_wait = std::min(
-                    UInt64(std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count()),
-                    UInt64(operation_timeout.totalMilliseconds()));
+                    static_cast<UInt64>(std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count()),
+                    static_cast<UInt64>(operation_timeout.totalMilliseconds()));
 
                 RequestInfo info;
                 if (requests_queue.tryPop(info, max_wait))
@@ -1166,11 +1168,13 @@ void ZooKeeper::set(
 
 void ZooKeeper::list(
     const String & path,
+    ListRequestType list_request_type,
     ListCallback callback,
     WatchCallback watch)
 {
-    ZooKeeperListRequest request;
+    ZooKeeperFilteredListRequest request;
     request.path = path;
+    request.list_request_type = list_request_type;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
@@ -1197,6 +1201,21 @@ void ZooKeeper::check(
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
+}
+
+void ZooKeeper::sync(
+     const String & path,
+     SyncCallback callback)
+{
+    ZooKeeperSyncRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperSyncRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
 
 

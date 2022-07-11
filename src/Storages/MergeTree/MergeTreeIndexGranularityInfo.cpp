@@ -13,16 +13,16 @@ namespace ErrorCodes
     extern const int UNKNOWN_PART_TYPE;
 }
 
-std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const DiskPtr & disk, const String & path_to_part)
+std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage)
 {
-    if (disk->exists(path_to_part))
+    if (data_part_storage->exists())
     {
-        for (DiskDirectoryIteratorPtr it = disk->iterateDirectory(path_to_part); it->isValid(); it->next())
+        for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
         {
-            const auto & ext = fs::path(it->path()).extension();
+            const auto & ext = fs::path(it->name()).extension();
             if (ext == getNonAdaptiveMrkExtension()
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE)
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide)
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact))
                 return ext;
         }
     }
@@ -38,7 +38,7 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
     /// Granularity is fixed
     if (!storage.canUseAdaptiveGranularity())
     {
-        if (type != MergeTreeDataPartType::WIDE)
+        if (type != MergeTreeDataPartType::Wide)
             throw Exception("Only Wide parts can be used with non-adaptive granularity.", ErrorCodes::NOT_IMPLEMENTED);
         setNonAdaptive();
     }
@@ -46,9 +46,9 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
         setAdaptive(storage_settings->index_granularity_bytes);
 }
 
-void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const DiskPtr & disk, const String & path_to_part)
+void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage)
 {
-    auto mrk_ext = getMarksExtensionFromFilesystem(disk, path_to_part);
+    auto mrk_ext = getMarksExtensionFromFilesystem(data_part_storage);
     if (mrk_ext && *mrk_ext == getNonAdaptiveMrkExtension())
         setNonAdaptive();
 }
@@ -69,11 +69,11 @@ void MergeTreeIndexGranularityInfo::setNonAdaptive()
 
 size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) const
 {
-    if (type == MergeTreeDataPartType::WIDE)
+    if (type == MergeTreeDataPartType::Wide)
         return is_adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
-    else if (type == MergeTreeDataPartType::COMPACT)
+    else if (type == MergeTreeDataPartType::Compact)
         return getAdaptiveMrkSizeCompact(columns_num);
-    else if (type == MergeTreeDataPartType::IN_MEMORY)
+    else if (type == MergeTreeDataPartType::InMemory)
         return 0;
     else
         throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
@@ -87,11 +87,11 @@ size_t getAdaptiveMrkSizeCompact(size_t columns_num)
 
 std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
 {
-    if (part_type == MergeTreeDataPartType::WIDE)
+    if (part_type == MergeTreeDataPartType::Wide)
         return ".mrk2";
-    else if (part_type == MergeTreeDataPartType::COMPACT)
+    else if (part_type == MergeTreeDataPartType::Compact)
         return ".mrk3";
-    else if (part_type == MergeTreeDataPartType::IN_MEMORY)
+    else if (part_type == MergeTreeDataPartType::InMemory)
         return "";
     else
         throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);

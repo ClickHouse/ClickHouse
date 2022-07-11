@@ -1,9 +1,9 @@
 ---
-toc_priority: 58
-toc_title: Expression
+sidebar_position: 58
+sidebar_label: Expression
 ---
 
-# Expression {#expression}
+# Expression
 
 Expressions are used for representing lambdas in high-order functions.
 

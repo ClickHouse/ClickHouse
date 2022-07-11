@@ -96,9 +96,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (groupBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
-        s.one_line
+        if (!group_by_with_grouping_sets)
+        {
+            s.one_line
             ? groupBy()->formatImpl(s, state, frame)
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        }
     }
 
     if (group_by_with_rollup)
@@ -106,6 +109,20 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_cube)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
+
+    if (group_by_with_grouping_sets)
+    {
+        auto nested_frame = frame;
+        nested_frame.surround_each_list_element_with_parens = true;
+        nested_frame.expression_list_prepend_whitespace = false;
+        nested_frame.indent++;
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
+        s.ostr << " (";
+        s.one_line
+        ? groupBy()->formatImpl(s, state, nested_frame)
+        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, nested_frame);
+        s.ostr << ")";
+    }
 
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
@@ -405,7 +422,7 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.count(expr))
+    else if (positions.contains(expr))
     {
         size_t pos = positions[expr];
         children.erase(children.begin() + pos);
@@ -418,7 +435,7 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 
 ASTPtr & ASTSelectQuery::getExpression(Expression expr)
 {
-    if (!positions.count(expr))
+    if (!positions.contains(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
 }

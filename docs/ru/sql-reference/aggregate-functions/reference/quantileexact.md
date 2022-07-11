@@ -1,5 +1,5 @@
 ---
-toc_priority: 202
+sidebar_position: 202
 ---
 
 # Функции quantileExact {#quantileexact-functions}

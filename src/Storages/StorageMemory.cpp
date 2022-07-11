@@ -1,6 +1,7 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <boost/noncopyable.hpp>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -11,8 +12,9 @@
 #include <Columns/ColumnObject.h>
 
 #include <IO/WriteHelpers.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -21,12 +23,15 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
-#include <Backups/IBackupEntriesBatch.h>
-#include <Backups/IRestoreTask.h>
+#include <Backups/IBackupEntriesLazyBatch.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
-#include <Poco/TemporaryFile.h>
 
 
 namespace DB
@@ -35,11 +40,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 
-class MemorySource : public SourceWithProgress
+class MemorySource : public ISource
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
 public:
@@ -50,7 +55,7 @@ public:
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
@@ -314,7 +319,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
-    auto pipeline = interpreter->execute();
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
     Blocks out;
@@ -377,189 +382,206 @@ void StorageMemory::truncate(
 }
 
 
-class MemoryBackupEntriesBatch : public shared_ptr_helper<MemoryBackupEntriesBatch>, public IBackupEntriesBatch
+namespace
 {
-private:
-    friend struct shared_ptr_helper<MemoryBackupEntriesBatch>;
-
-    MemoryBackupEntriesBatch(
-        const StorageMetadataPtr & metadata_snapshot_, const std::shared_ptr<const Blocks> blocks_, UInt64 max_compress_block_size_)
-        : IBackupEntriesBatch({"data.bin", "index.mrk", "sizes.json"})
-        , metadata_snapshot(metadata_snapshot_)
-        , blocks(blocks_)
-        , max_compress_block_size(max_compress_block_size_)
+    class MemoryBackup : public IBackupEntriesLazyBatch, boost::noncopyable
     {
-    }
-
-    static constexpr const size_t kDataBinPos = 0;
-    static constexpr const size_t kIndexMrkPos = 1;
-    static constexpr const size_t kSizesJsonPos = 2;
-    static constexpr const size_t kSize = 3;
-
-    void initialize()
-    {
-        std::call_once(initialized_flag, [this]()
+    public:
+        MemoryBackup(
+            const StorageMetadataPtr & metadata_snapshot_,
+            const std::shared_ptr<const Blocks> blocks_,
+            const String & data_path_in_backup,
+            const DiskPtr & temp_disk_,
+            UInt64 max_compress_block_size_)
+            : metadata_snapshot(metadata_snapshot_)
+            , blocks(blocks_)
+            , temp_disk(temp_disk_)
+            , max_compress_block_size(max_compress_block_size_)
         {
-            temp_dir_owner.emplace();
-            auto temp_dir = temp_dir_owner->path();
-            fs::create_directories(temp_dir);
+            fs::path data_path_in_backup_fs = data_path_in_backup;
+            data_bin_pos = file_paths.size();
+            file_paths.emplace_back(data_path_in_backup_fs / "data.bin");
+            index_mrk_pos= file_paths.size();
+            file_paths.emplace_back(data_path_in_backup_fs / "index.mrk");
+            columns_txt_pos = file_paths.size();
+            file_paths.emplace_back(data_path_in_backup_fs / "columns.txt");
+            count_txt_pos = file_paths.size();
+            file_paths.emplace_back(data_path_in_backup_fs / "count.txt");
+            sizes_json_pos = file_paths.size();
+            file_paths.emplace_back(data_path_in_backup_fs / "sizes.json");
+        }
+
+    private:
+        size_t getSize() const override
+        {
+            return file_paths.size();
+        }
+
+        const String & getName(size_t i) const override
+        {
+            return file_paths[i];
+        }
+
+        BackupEntries generate() override
+        {
+            BackupEntries backup_entries;
+            backup_entries.resize(file_paths.size());
+
+            temp_dir_owner.emplace(temp_disk);
+            fs::path temp_dir = temp_dir_owner->getPath();
+            temp_disk->createDirectories(temp_dir);
 
             /// Writing data.bin
-            constexpr char data_file_name[] = "data.bin";
-            String data_file_path = temp_dir + "/" + data_file_name;
             IndexForNativeFormat index;
             {
-                auto data_out_compressed = std::make_unique<WriteBufferFromFile>(data_file_path);
+                auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
+                auto data_out_compressed = temp_disk->writeFile(data_file_path);
                 CompressedWriteBuffer data_out{*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size};
                 NativeWriter block_out{data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
+                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path)};
             }
 
             /// Writing index.mrk
-            constexpr char index_file_name[] = "index.mrk";
-            String index_file_path = temp_dir + "/" + index_file_name;
             {
-                auto index_out_compressed = std::make_unique<WriteBufferFromFile>(index_file_path);
-                CompressedWriteBuffer index_out{*index_out_compressed};
-                index.write(index_out);
+                auto index_mrk_path = temp_dir / fs::path{file_paths[index_mrk_pos]}.filename();
+                auto index_mrk_out_compressed = temp_disk->writeFile(index_mrk_path);
+                CompressedWriteBuffer index_mrk_out{*index_mrk_out_compressed};
+                index.write(index_mrk_out);
+                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path)};
+            }
+
+            /// Writing columns.txt
+            {
+                auto columns_desc = metadata_snapshot->getColumns().getAllPhysical().toString();
+                backup_entries[columns_txt_pos] = {file_paths[columns_txt_pos], std::make_shared<BackupEntryFromMemory>(columns_desc)};
+            }
+
+            /// Writing count.txt
+            {
+                size_t num_rows = 0;
+                for (const auto & block : *blocks)
+                    num_rows += block.rows();
+                backup_entries[count_txt_pos] = {file_paths[count_txt_pos], std::make_shared<BackupEntryFromMemory>(toString(num_rows))};
             }
 
             /// Writing sizes.json
-            constexpr char sizes_file_name[] = "sizes.json";
-            String sizes_file_path = temp_dir + "/" + sizes_file_name;
-            FileChecker file_checker{sizes_file_path};
-            file_checker.update(data_file_path);
-            file_checker.update(index_file_path);
-            file_checker.save();
-
-            file_paths[kDataBinPos] = data_file_path;
-            file_sizes[kDataBinPos] = file_checker.getFileSize(data_file_path);
-
-            file_paths[kIndexMrkPos] = index_file_path;
-            file_sizes[kIndexMrkPos] = file_checker.getFileSize(index_file_path);
-
-            file_paths[kSizesJsonPos] = sizes_file_path;
-            file_sizes[kSizesJsonPos] = fs::file_size(sizes_file_path);
+            {
+                auto sizes_json_path = temp_dir / fs::path{file_paths[sizes_json_pos]}.filename();
+                FileChecker file_checker{temp_disk, sizes_json_path};
+                for (size_t i = 0; i != file_paths.size(); ++i)
+                {
+                    if (i == sizes_json_pos)
+                        continue;
+                    file_checker.update(temp_dir / fs::path{file_paths[i]}.filename());
+                }
+                file_checker.save();
+                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path)};
+            }
 
             /// We don't need to keep `blocks` any longer.
             blocks.reset();
             metadata_snapshot.reset();
-        });
-    }
 
-    std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) override
-    {
-        initialize();
-        return createReadBufferFromFileBase(file_paths[index], {});
-    }
+            return backup_entries;
+        }
 
-    UInt64 getSize(size_t index) override
-    {
-        initialize();
-        return file_sizes[index];
-    }
-
-    StorageMetadataPtr metadata_snapshot;
-    std::shared_ptr<const Blocks> blocks;
-    UInt64 max_compress_block_size;
-    std::once_flag initialized_flag;
-    std::optional<Poco::TemporaryFile> temp_dir_owner;
-    std::array<String, kSize> file_paths;
-    std::array<UInt64, kSize> file_sizes;
-};
-
-
-BackupEntries StorageMemory::backupData(ContextPtr context, const ASTs & partitions)
-{
-    if (!partitions.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
-
-    return MemoryBackupEntriesBatch::create(getInMemoryMetadataPtr(), data.get(), context->getSettingsRef().max_compress_block_size)
-        ->getBackupEntries();
+        StorageMetadataPtr metadata_snapshot;
+        std::shared_ptr<const Blocks> blocks;
+        DiskPtr temp_disk;
+        std::optional<TemporaryFileOnDisk> temp_dir_owner;
+        UInt64 max_compress_block_size;
+        Strings file_paths;
+        size_t data_bin_pos, index_mrk_pos, columns_txt_pos, count_txt_pos, sizes_json_pos;
+    };
 }
 
-
-class MemoryRestoreTask : public IRestoreTask
+void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-public:
-    MemoryRestoreTask(
-        std::shared_ptr<StorageMemory> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+    auto temp_disk = backup_entries_collector.getContext()->getTemporaryVolume()->getDisk(0);
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
+    backup_entries_collector.addBackupEntries(
+        std::make_shared<MemoryBackup>(getInMemoryMetadataPtr(), data.get(), data_path_in_backup, temp_disk, max_compress_block_size)
+            ->getBackupEntries());
+}
+
+void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    auto backup = restorer.getBackup();
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed() && total_size_bytes)
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+
+    auto temp_disk = restorer.getContext()->getTemporaryVolume()->getDisk(0);
+
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup, temp_disk]
+        { storage->restoreDataImpl(backup, data_path_in_backup, temp_disk); });
+}
+
+void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk)
+{
+    /// Our data are in the StripeLog format.
+
+    fs::path data_path_in_backup_fs = data_path_in_backup;
+
+    /// Reading index.mrk
+    IndexForNativeFormat index;
     {
+        String index_file_path = data_path_in_backup_fs / "index.mrk";
+        if (!backup->fileExists(index_file_path))
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
+
+        auto backup_entry = backup->readFile(index_file_path);
+        auto in = backup_entry->getReadBuffer();
+        CompressedReadBuffer compressed_in{*in};
+        index.read(compressed_in);
     }
 
-    RestoreTasks run() override
+    /// Reading data.bin
+    Blocks new_blocks;
+    size_t new_bytes = 0;
+    size_t new_rows = 0;
     {
-        /// Our data are in the StripeLog format.
+        String data_file_path = data_path_in_backup_fs / "data.bin";
+        if (!backup->fileExists(data_file_path))
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file_path);
 
-        /// Reading index.mrk
-        IndexForNativeFormat index;
+        auto backup_entry = backup->readFile(data_file_path);
+        std::unique_ptr<ReadBuffer> in = backup_entry->getReadBuffer();
+        std::optional<TemporaryFileOnDisk> temp_data_file;
+        if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
         {
-            String index_file_path = data_path_in_backup + "index.mrk";
-            auto backup_entry = backup->readFile(index_file_path);
-            auto in = backup_entry->getReadBuffer();
-            CompressedReadBuffer compressed_in{*in};
-            index.read(compressed_in);
+            temp_data_file.emplace(temporary_disk);
+            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getPath());
+            copyData(*in, *out);
+            out.reset();
+            in = createReadBufferFromFileBase(temp_data_file->getPath(), {});
         }
+        std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
+        CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
+        NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
 
-        /// Reading data.bin
-        Blocks new_blocks;
-        size_t new_bytes = 0;
-        size_t new_rows = 0;
+        while (auto block = block_in.read())
         {
-            String data_file_path = data_path_in_backup + "data.bin";
-            auto backup_entry = backup->readFile(data_file_path);
-            std::unique_ptr<ReadBuffer> in = backup_entry->getReadBuffer();
-            std::optional<Poco::TemporaryFile> temp_data_copy;
-            if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
-            {
-                temp_data_copy.emplace();
-                auto temp_data_copy_out = std::make_unique<WriteBufferFromFile>(temp_data_copy->path());
-                copyData(*in, *temp_data_copy_out);
-                temp_data_copy_out.reset();
-                in = createReadBufferFromFileBase(temp_data_copy->path(), {});
-            }
-            std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
-            CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
-            NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
-
-            while (auto block = block_in.read())
-            {
-                new_bytes += block.bytes();
-                new_rows += block.rows();
-                new_blocks.push_back(std::move(block));
-            }
+            new_bytes += block.bytes();
+            new_rows += block.rows();
+            new_blocks.push_back(std::move(block));
         }
-
-        /// Append old blocks with the new ones.
-        auto old_blocks = storage->data.get();
-        Blocks old_and_new_blocks = *old_blocks;
-        old_and_new_blocks.insert(old_and_new_blocks.end(), std::make_move_iterator(new_blocks.begin()), std::make_move_iterator(new_blocks.end()));
-
-        /// Finish restoring.
-        storage->data.set(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
-        storage->total_size_bytes += new_bytes;
-        storage->total_size_rows += new_rows;
-
-        return {};
     }
 
-private:
-    std::shared_ptr<StorageMemory> storage;
-    BackupPtr backup;
-    String data_path_in_backup;
-    ContextMutablePtr context;
-};
+    /// Append old blocks with the new ones.
+    auto old_blocks = data.get();
+    Blocks old_and_new_blocks = *old_blocks;
+    old_and_new_blocks.insert(old_and_new_blocks.end(), std::make_move_iterator(new_blocks.begin()), std::make_move_iterator(new_blocks.end()));
 
-
-RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
-{
-    if (!partitions.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
-
-    return std::make_unique<MemoryRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageMemory>>(shared_from_this()), backup, data_path_in_backup, context);
+    /// Finish restoring.
+    data.set(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
+    total_size_bytes += new_bytes;
+    total_size_rows += new_rows;
 }
 
 
@@ -589,7 +611,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+        return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
     },
     {
         .supports_settings = true,

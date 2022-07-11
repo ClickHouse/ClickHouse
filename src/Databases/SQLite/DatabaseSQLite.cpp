@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -145,7 +145,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
     if (!columns)
         return StoragePtr{};
 
-    auto storage = StorageSQLite::create(
+    auto storage = std::make_shared<StorageSQLite>(
         StorageID(database_name, table_name),
         sqlite_db,
         database_path,
@@ -173,12 +173,16 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    auto storage = fetchTable(table_name, local_context, false);
+    StoragePtr storage;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        storage = fetchTable(table_name, local_context, false);
+    }
     if (!storage)
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "SQLite table {}.{} does not exist",
-                            database_name, table_name);
+                            getDatabaseName(), table_name);
         return nullptr;
     }
     auto table_storage_define = database_engine_define->clone();

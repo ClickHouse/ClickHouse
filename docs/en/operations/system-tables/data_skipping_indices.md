@@ -1,4 +1,4 @@
-# system.data_skipping_indices {#system-data-skipping-indices}
+# data_skipping_indices
 
 Contains information about existing data skipping indices in all the tables.
 

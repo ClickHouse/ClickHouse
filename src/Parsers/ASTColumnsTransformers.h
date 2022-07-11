@@ -30,6 +30,8 @@ public:
         return res;
     }
     void transform(ASTs & nodes) const override;
+    void appendColumnName(WriteBuffer & ostr) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
     // Case 1  APPLY (quantile(0.9))
     String func_name;
@@ -59,6 +61,8 @@ public:
     void transform(ASTs & nodes) const override;
     void setPattern(String pattern);
     bool isColumnMatching(const String & column_name) const;
+    void appendColumnName(WriteBuffer & ostr) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -76,11 +80,12 @@ public:
         ASTPtr clone() const override
         {
             auto replacement = std::make_shared<Replacement>(*this);
-            replacement->children.clear();
             replacement->expr = expr->clone();
-            replacement->children.push_back(replacement->expr);
             return replacement;
         }
+
+        void appendColumnName(WriteBuffer & ostr) const override;
+        void updateTreeHashImpl(SipHash & hash_state) const override;
 
         String name;
         ASTPtr expr;
@@ -98,6 +103,8 @@ public:
         return clone;
     }
     void transform(ASTs & nodes) const override;
+    void appendColumnName(WriteBuffer & ostr) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

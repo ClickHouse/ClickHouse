@@ -1,17 +1,17 @@
-#include "StorageXDBC.h"
+#include <Storages/StorageXDBC.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageURL.h>
+#include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/StorageURL.h>
-#include <Storages/transformQueryForExternalDatabase.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -140,7 +140,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         chooseCompressionMethod(uri, compression_method));
 }
 
-bool StorageXDBC::isColumnOriented() const
+bool StorageXDBC::supportsSubsetOfColumns() const
 {
     return true;
 }
@@ -173,11 +173,11 @@ namespace
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
                 args.getContext()->getSettingsRef().http_receive_timeout.value,
-                engine_args[0]->as<ASTLiteral &>().value.safeGet<String>());
+                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"));
             return std::make_shared<StorageXDBC>(
                 args.table_id,
-                engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-                engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
+                checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),
+                checkAndGetLiteralArgument<String>(engine_args[2], "table_name"),
                 args.columns,
                 args.comment,
                 args.getContext(),

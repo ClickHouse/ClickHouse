@@ -1,9 +1,9 @@
 ---
-toc_priority: 45
-toc_title: USER
+sidebar_position: 45
+sidebar_label: USER
 ---
 
-# ALTER USER {#alter-user-statement}
+# ALTER USER
 
 Changes ClickHouse user accounts.
 
@@ -21,7 +21,7 @@ ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
 
 To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statements/grant.md#grant-access-management) privilege.
 
-## GRANTEES Clause {#grantees}
+## GRANTEES Clause
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#grant-privigele-syntax). Options of the `GRANTEES` clause:
 
@@ -32,7 +32,7 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 
-## Examples {#alter-user-examples}
+## Examples
 
 Set assigned roles as default:
 
