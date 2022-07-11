@@ -54,17 +54,20 @@ public:
 private:
     void updateOutputStream() override;
 
-    // enum class Type
-    // {
-    //     Full,
-    //     FinishSorting,
-    //     MergingSorted,
-    // };
+    void finishSorting(QueryPipelineBuilder & pipeline);
+    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & sort_desc, UInt64 limit_);
 
-    // Type type;
+    enum class Type
+    {
+        Full,
+        FinishSorting,
+        MergingSorted,
+    };
 
-    SortDescription prefix_description;
-    SortDescription result_description;
+    Type type;
+
+    const SortDescription prefix_description;
+    const SortDescription result_description;
     size_t max_block_size;
     UInt64 limit;
     SizeLimits size_limits;

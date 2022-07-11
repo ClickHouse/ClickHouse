@@ -8,6 +8,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include "Core/SortDescription.h"
 
 namespace DB
 {
@@ -102,10 +103,64 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
+void SortingStep::finishSorting(QueryPipelineBuilder & pipeline)
+{
+    if (pipeline.getNumStreams() > 1)
+    {
+        auto transform = std::make_shared<MergingSortedTransform>(
+            pipeline.getHeader(), pipeline.getNumStreams(), prefix_description, max_block_size, SortingQueueStrategy::Batch, 0);
+
+        pipeline.addTransform(std::move(transform));
+    }
+
+    pipeline.addSimpleTransform(
+        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+
+            return std::make_shared<PartialSortingTransform>(header, result_description, limit);
+        });
+
+    bool increase_sort_description_compile_attempts = true;
+
+    /// NOTE limits are not applied to the size of temporary sets in FinishSortingTransform
+    pipeline.addSimpleTransform(
+        [&, increase_sort_description_compile_attempts](const Block & header) mutable -> ProcessorPtr
+        {
+            /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan
+                  * To property support min_count_to_compile_sort_description.
+                  */
+            bool increase_sort_description_compile_attempts_current = increase_sort_description_compile_attempts;
+
+            if (increase_sort_description_compile_attempts)
+                increase_sort_description_compile_attempts = false;
+
+            return std::make_shared<FinishSortingTransform>(
+                header, prefix_description, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current);
+        });
+}
+
+void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & sort_desc, const UInt64 limit_)
+{
+    if (pipeline.getNumStreams() > 1)
+    {
+        auto transform = std::make_shared<MergingSortedTransform>(
+            pipeline.getHeader(),
+            pipeline.getNumStreams(),
+            sort_desc,
+            max_block_size,
+            SortingQueueStrategy::Batch,
+            limit_);
+
+        pipeline.addTransform(std::move(transform));
+    }
+}
+
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto input_sort_mode = input_streams.front().sort_mode;
-    const SortDescription& input_sort_desc = input_streams.front().sort_description;
+    const SortDescription & input_sort_desc = input_streams.front().sort_description;
 
     if (input_sort_mode == DataStream::SortMode::Stream && input_sort_desc.hasPrefix(result_description))
         return;
@@ -113,27 +168,36 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     /// merge sorted
     if (input_sort_mode == DataStream::SortMode::Chunk && input_sort_desc.hasPrefix(result_description))
     {
-        if (pipeline.getNumStreams() > 1)
-        {
-            auto transform = std::make_shared<MergingSortedTransform>(
-                pipeline.getHeader(), pipeline.getNumStreams(), result_description, max_block_size, SortingQueueStrategy::Batch, limit);
-
-            pipeline.addTransform(std::move(transform));
-        }
+        mergingSorted(pipeline, result_description, limit);
         return;
     }
 
     /// finish shorting
     if (input_sort_mode == DataStream::SortMode::Chunk && result_description.hasPrefix(input_sort_desc))
     {
-        if (pipeline.getNumStreams() > 1)
+        finishSorting(pipeline);
+        return;
+    }
+
+    if (type == Type::FinishSorting)
+    {
+        bool need_finish_sorting = (prefix_description.size() < result_description.size());
+        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
+        if (need_finish_sorting)
         {
-            auto transform = std::make_shared<MergingSortedTransform>(
-                pipeline.getHeader(), pipeline.getNumStreams(), prefix_description, max_block_size, SortingQueueStrategy::Batch, 0);
-
-            pipeline.addTransform(std::move(transform));
+            finishSorting(pipeline);
         }
+        return;
+    }
 
+    if (type == Type::MergingSorted)
+    { /// If there are several streams, then we merge them into one
+        mergingSorted(pipeline, result_description, limit);
+        return;
+    }
+
+    /// Full sorting
+    {
         pipeline.addSimpleTransform(
             [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
@@ -143,87 +207,54 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 return std::make_shared<PartialSortingTransform>(header, result_description, limit);
             });
 
+        StreamLocalLimits limits;
+        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+        limits.size_limits = size_limits;
+
+        pipeline.addSimpleTransform(
+            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<LimitsCheckingTransform>(header, limits);
+            });
+
         bool increase_sort_description_compile_attempts = true;
 
-        /// NOTE limits are not applied to the size of temporary sets in FinishSortingTransform
         pipeline.addSimpleTransform(
-            [&, increase_sort_description_compile_attempts](const Block & header) mutable -> ProcessorPtr
+            [&, increase_sort_description_compile_attempts](
+                const Block & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
             {
-                /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan
-                  * To property support min_count_to_compile_sort_description.
-                  */
+                if (stream_type == QueryPipelineBuilder::StreamType::Totals)
+                    return nullptr;
+
+                /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
+              * To property support min_count_to_compile_sort_description.
+              */
                 bool increase_sort_description_compile_attempts_current = increase_sort_description_compile_attempts;
 
                 if (increase_sort_description_compile_attempts)
                     increase_sort_description_compile_attempts = false;
 
-                return std::make_shared<FinishSortingTransform>(
+                return std::make_shared<MergeSortingTransform>(
                     header,
-                    prefix_description,
                     result_description,
                     max_block_size,
                     limit,
-                    increase_sort_description_compile_attempts_current);
-            });
-        return;
-    }
-
-    /// Full sorting
-    {
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
-
-            return std::make_shared<PartialSortingTransform>(header, result_description, limit);
-        });
-
-        StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
-        limits.size_limits = size_limits;
-
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
-
-            return std::make_shared<LimitsCheckingTransform>(header, limits);
-        });
-
-        bool increase_sort_description_compile_attempts = true;
-
-        pipeline.addSimpleTransform([&, increase_sort_description_compile_attempts](const Block & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
-        {
-            if (stream_type == QueryPipelineBuilder::StreamType::Totals)
-                return nullptr;
-
-            /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
-              * To property support min_count_to_compile_sort_description.
-              */
-            bool increase_sort_description_compile_attempts_current = increase_sort_description_compile_attempts;
-
-            if (increase_sort_description_compile_attempts)
-                increase_sort_description_compile_attempts = false;
-
-            return std::make_shared<MergeSortingTransform>(
-                    header, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current,
+                    increase_sort_description_compile_attempts_current,
                     max_bytes_before_remerge / pipeline.getNumStreams(),
                     remerge_lowered_memory_bytes_ratio,
                     max_bytes_before_external_sort,
                     tmp_volume,
                     min_free_disk_space);
-        });
+            });
 
         /// If there are several streams, then we merge them into one
         if (pipeline.getNumStreams() > 1)
         {
             auto transform = std::make_shared<MergingSortedTransform>(
-                    pipeline.getHeader(),
-                    pipeline.getNumStreams(),
-                    result_description,
-                    max_block_size,
-                    SortingQueueStrategy::Batch,
-                    limit);
+                pipeline.getHeader(), pipeline.getNumStreams(), result_description, max_block_size, SortingQueueStrategy::Batch, limit);
 
             pipeline.addTransform(std::move(transform));
         }
