@@ -51,7 +51,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         query = urllib.parse.urlparse(self.path).query
         params = urllib.parse.parse_qs(query, keep_blank_values=True)
-        if 'delete' in params:
+        if "delete" in params:
             self.send_response(501)
             self.send_header("Content-Type", "application/xml")
             self.end_headers()
