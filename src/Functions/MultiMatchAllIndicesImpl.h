@@ -80,6 +80,12 @@ struct MultiMatchAllIndicesImpl
 
         offsets.resize(haystack_offsets.size());
 
+        if (needles_arr.empty())
+        {
+            std::fill(offsets.begin(), offsets.end(), 0);
+            return;
+        }
+
         const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
@@ -179,6 +185,14 @@ struct MultiMatchAllIndicesImpl
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
                 needles.emplace_back(needles_data_string->getDataAt(j).toView());
+            }
+
+            if (needles.empty())
+            {
+                offsets[i] = (i == 0) ? 0 : offsets[i-1];
+                prev_haystack_offset = haystack_offsets[i];
+                prev_needles_offset = needles_offsets[i];
+                continue;
             }
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
