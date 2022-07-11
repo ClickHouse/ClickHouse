@@ -1,4 +1,3 @@
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -32,7 +31,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperSet;
     extern const Event ZooKeeperList;
     extern const Event ZooKeeperCheck;
-    extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
@@ -1168,13 +1166,11 @@ void ZooKeeper::set(
 
 void ZooKeeper::list(
     const String & path,
-    ListRequestType list_request_type,
     ListCallback callback,
     WatchCallback watch)
 {
-    ZooKeeperFilteredListRequest request;
+    ZooKeeperListRequest request;
     request.path = path;
-    request.list_request_type = list_request_type;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
@@ -1201,21 +1197,6 @@ void ZooKeeper::check(
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
-}
-
-void ZooKeeper::sync(
-     const String & path,
-     SyncCallback callback)
-{
-    ZooKeeperSyncRequest request;
-    request.path = path;
-
-    RequestInfo request_info;
-    request_info.request = std::make_shared<ZooKeeperSyncRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
-
-    pushRequest(std::move(request_info));
-    ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
 
 

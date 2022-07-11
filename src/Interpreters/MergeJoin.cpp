@@ -31,12 +31,9 @@ namespace ErrorCodes
 namespace
 {
 
-String deriveTempName(const String & name, JoinTableSide block_side)
+String deriveTempName(const String & name)
 {
-    if (block_side == JoinTableSide::Left)
-        return "--pmj_cond_left_" + name;
-    else
-        return "--pmj_cond_right_" + name;
+    return "--" + name;
 }
 
 /*
@@ -45,7 +42,7 @@ String deriveTempName(const String & name, JoinTableSide block_side)
  * 0 converted to NULL and such rows won't be joined,
  * 1 converted to 0 (any constant non-NULL value to join)
  */
-ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name, JoinTableSide block_side)
+ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name)
 {
     size_t res_size = block.rows();
     auto data_col = ColumnUInt8::create(res_size, 0);
@@ -63,10 +60,10 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
 
     ColumnPtr res_col = ColumnNullable::create(std::move(data_col), std::move(null_map));
     DataTypePtr res_col_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-    String res_name = deriveTempName(src_column_name, block_side);
+    String res_name = deriveTempName(src_column_name);
 
     if (block.has(res_name))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Conflicting column name '{}' in block {}", res_name, block.dumpStructure());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Conflicting column name '{}'", res_name);
 
     return {res_col, res_col_type, res_name};
 }
@@ -520,8 +517,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     {
         JoinCommon::checkTypesOfMasks({}, "", right_sample_block, mask_column_name_right);
 
-        key_names_left.push_back(deriveTempName(mask_column_name_left, JoinTableSide::Left));
-        key_names_right.push_back(deriveTempName(mask_column_name_right, JoinTableSide::Right));
+        key_names_left.push_back(deriveTempName(mask_column_name_left));
+        key_names_right.push_back(deriveTempName(mask_column_name_right));
     }
 
     key_names_left.insert(key_names_left.end(), onexpr.key_names_left.begin(), onexpr.key_names_left.end());
@@ -563,7 +560,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 /// Has to be called even if totals are empty
 void MergeJoin::setTotals(const Block & totals_block)
 {
-    IJoin::setTotals(totals_block);
+    totals = totals_block;
     mergeRightBlocks();
 
     if (is_right || is_full)
@@ -580,7 +577,7 @@ void MergeJoin::mergeRightBlocks()
 
 void MergeJoin::mergeInMemoryRightBlocks()
 {
-    std::lock_guard lock(rwlock);
+    std::unique_lock lock(rwlock);
 
     if (right_blocks.empty())
         return;
@@ -613,7 +610,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
 void MergeJoin::mergeFlushedRightBlocks()
 {
-    std::lock_guard lock(rwlock);
+    std::unique_lock lock(rwlock);
 
     auto callback = [&](const Block & block)
     {
@@ -638,7 +635,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 {
     if (is_in_memory)
     {
-        std::lock_guard lock(rwlock);
+        std::unique_lock lock(rwlock);
 
         if (!is_in_memory)
         {
@@ -738,7 +735,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
 
     if (needConditionJoinColumn())
-        block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
+        block.erase(deriveTempName(mask_column_name_left));
 
     JoinCommon::restoreLowCardinalityInplace(block, lowcard_keys);
 }
@@ -1129,9 +1126,9 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
     if (needConditionJoinColumn())
     {
         if (block_side == JoinTableSide::Left)
-            block.insert(condtitionColumnToJoinable(block, mask_column_name_left, block_side));
+            block.insert(condtitionColumnToJoinable(block, mask_column_name_left));
         else
-            block.insert(condtitionColumnToJoinable(block, mask_column_name_right, block_side));
+            block.insert(condtitionColumnToJoinable(block, mask_column_name_right));
     }
 }
 

@@ -10,21 +10,21 @@ namespace DB
   *          DICTIONARY [db.]dictionary_name [AS [db.]dictionary_name_in_backup] |
   *          DATABASE database_name [AS database_name_in_backup] [EXCEPT TABLES ...] |
   *          TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  *          ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
+  *          ALL TEMPORARY TABLES [EXCEPT ...] |
+  *          ALL DATABASES [EXCEPT ...] } [,...]
   *        [ON CLUSTER 'cluster_name']
   *        TO { File('path/') |
-  *             Disk('disk_name', 'path/') }
-  *        [SETTINGS ...]
+  *             Disk('disk_name', 'path/')
+  *        [SETTINGS base_backup = {File(...) | Disk(...)}]
   *
   * RESTORE { TABLE [db.]table_name_in_backup [AS [db.]table_name] [PARTITION[S] partition_expr [,...]] |
   *          DICTIONARY [db.]dictionary_name_in_backup [AS [db.]dictionary_name] |
   *          DATABASE database_name_in_backup [AS database_name] [EXCEPT TABLES ...] |
   *          TEMPORARY TABLE table_name_in_backup [AS table_name] |
-  *          ALL [EXCEPT {TABLES|DATABASES} ...] } [,...]
+  *          ALL TEMPORARY TABLES [EXCEPT ...] |
+  *          ALL DATABASES [EXCEPT ...] } [,...]
   *         [ON CLUSTER 'cluster_name']
-  *         FROM { File('path/') |
-  *                Disk('disk_name', 'path/') }
-  *        [SETTINGS ...]
+  *         FROM {File(...) | Disk(...)}
   */
 class ParserBackupQuery : public IParserBase
 {

@@ -24,7 +24,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
+[INTO OUTFILE filename [COMPRESSION type] ]
 [FORMAT format]
 ```
 

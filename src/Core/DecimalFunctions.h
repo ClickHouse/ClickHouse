@@ -156,7 +156,7 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
     using T = typename DecimalType::NativeType;
     const auto whole = decimal.value / scale_multiplier;
     auto fractional = decimal.value % scale_multiplier;
-    if (whole && fractional < T(0))
+    if (fractional < T(0))
         fractional *= T(-1);
 
     return {whole, fractional};
@@ -199,7 +199,7 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
     /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
     T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
-        if (decimal.value / scale_multiplier && result < T(0))
+        if (result < T(0))
             result = -result;
 
     return result;

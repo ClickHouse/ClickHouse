@@ -5,7 +5,6 @@
 #include "Utils.h"
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
-#include <Common/quoteString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -21,14 +20,10 @@ namespace postgres
 {
 
 PoolWithFailover::PoolWithFailover(
-    const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
-    size_t pool_size,
-    size_t pool_wait_timeout_,
-    size_t max_tries_,
-    bool auto_close_connection_)
-    : pool_wait_timeout(pool_wait_timeout_)
-    , max_tries(max_tries_)
-    , auto_close_connection(auto_close_connection_)
+        const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
+        size_t pool_size, size_t pool_wait_timeout_, size_t max_tries_)
+        : pool_wait_timeout(pool_wait_timeout_)
+        , max_tries(max_tries_)
 {
     LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
@@ -45,14 +40,10 @@ PoolWithFailover::PoolWithFailover(
 }
 
 PoolWithFailover::PoolWithFailover(
-    const DB::StoragePostgreSQLConfiguration & configuration,
-    size_t pool_size,
-    size_t pool_wait_timeout_,
-    size_t max_tries_,
-    bool auto_close_connection_)
+        const DB::StoragePostgreSQLConfiguration & configuration,
+        size_t pool_size, size_t pool_wait_timeout_, size_t max_tries_)
     : pool_wait_timeout(pool_wait_timeout_)
     , max_tries(max_tries_)
-    , auto_close_connection(auto_close_connection_)
 {
     LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
@@ -103,9 +94,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
                     LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
-                    error_message << fmt::format(
-                        "Try {}. Connection to {} failed with error: {}\n",
-                        try_idx + 1, DB::backQuote(replica.connection_info.host_port), pqxx_error.what());
+                    error_message << "Try " << try_idx + 1 << ". Connection to `" << replica.connection_info.host_port << "` failed: " << pqxx_error.what() << "\n";
 
                     replica.pool->returnObject(std::move(connection));
                     continue;
@@ -116,7 +105,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                     throw;
                 }
 
-                auto connection_holder = std::make_unique<ConnectionHolder>(replica.pool, std::move(connection), auto_close_connection);
+                auto connection_holder = std::make_unique<ConnectionHolder>(replica.pool, std::move(connection));
 
                 /// Move all traversed replicas to the end.
                 if (replicas.size() > 1)

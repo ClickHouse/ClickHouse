@@ -3,7 +3,7 @@ sidebar_position: 53
 sidebar_label: USE
 ---
 
-# USE Statement
+# USE Statement {#use}
 
 ``` sql
 USE db

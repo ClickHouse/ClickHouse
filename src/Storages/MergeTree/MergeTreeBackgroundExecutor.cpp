@@ -5,7 +5,6 @@
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Common/noexcept_scope.h>
 
 
 namespace DB
@@ -63,12 +62,6 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     threads_count = new_threads_count;
 }
 
-template <class Queue>
-size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
-{
-    std::lock_guard lock(mutex);
-    return max_tasks_count;
-}
 
 template <class Queue>
 bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
@@ -119,7 +112,6 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 {
-    /// FIXME Review exception-safety of this, remove NOEXCEPT_SCOPE and ALLOW_ALLOCATIONS_IN_SCOPE if possible
     DENY_ALLOCATIONS_IN_SCOPE;
 
     /// All operations with queues are considered no to do any allocations
@@ -138,8 +130,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (const Exception & e)
     {
-        NOEXCEPT_SCOPE;
-        ALLOW_ALLOCATIONS_IN_SCOPE;
         if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
             LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
         else
@@ -147,8 +137,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
-        NOEXCEPT_SCOPE;
-        ALLOW_ALLOCATIONS_IN_SCOPE;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -161,11 +149,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             erase_from_active();
 
             /// This is significant to order the destructors.
-            {
-                NOEXCEPT_SCOPE;
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-                item->task.reset();
-            }
+            item->task.reset();
             item->is_done.set();
             item = nullptr;
             return;
@@ -197,8 +181,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         }
         catch (const Exception & e)
         {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
             if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
                 LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
             else
@@ -206,23 +188,15 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         }
         catch (...)
         {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
 
         /// We have to call reset() under a lock, otherwise a race is possible.
         /// Imagine, that task is finally completed (last execution returned false),
         /// we removed the task from both queues, but still have pointer.
         /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
-        {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            item->task.reset();
-        }
-
+        item->task.reset();
         item->is_done.set();
         item = nullptr;
     }
@@ -256,8 +230,6 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
         }
         catch (...)
         {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }

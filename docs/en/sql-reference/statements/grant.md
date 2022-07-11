@@ -3,14 +3,14 @@ sidebar_position: 38
 sidebar_label: GRANT
 ---
 
-# GRANT Statement
+# GRANT Statement {#grant}
 
 -   Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
 -   Assigns roles to user accounts or to the other roles.
 
 To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants-statement) statement.
 
-## Granting Privilege Syntax
+## Granting Privilege Syntax {#grant-privigele-syntax}
 
 ``` sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -23,7 +23,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 The `WITH GRANT OPTION` clause grants `user` or `role` with permission to execute the `GRANT` query. Users can grant privileges of the same scope they have and less.
 The `WITH REPLACE OPTION` clause replace old privileges by new privileges for the `user` or `role`, if is not specified it appends privileges.
 
-## Assigning Role Syntax
+## Assigning Role Syntax {#assign-role-syntax}
 
 ``` sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -35,7 +35,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
-## Usage
+## Usage {#grant-usage}
 
 To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can grant privileges only inside the scope of your account privileges.
 
@@ -61,7 +61,7 @@ Access to the `system` database is always allowed (since this database is used f
 
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to execute the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
-## Privileges
+## Privileges {#grant-privileges}
 
 Privilege is a permission to execute specific kind of queries.
 
@@ -170,7 +170,6 @@ Hierarchy of privileges:
     -   `SYSTEM FLUSH`
         -   `SYSTEM FLUSH DISTRIBUTED`
         -   `SYSTEM FLUSH LOGS`
-    -   `CLUSTER` (see also `access_control_improvements.on_cluster_queries_require_cluster_grant` configuration directive)
 -   [INTROSPECTION](#grant-introspection)
     -   `addressToLine`
     -   `addressToLineWithInlines`
@@ -222,7 +221,7 @@ If a user or a role has no privileges, it is displayed as [NONE](#grant-none) pr
 
 Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
 
-### SELECT
+### SELECT {#grant-select}
 
 Allows executing [SELECT](../../sql-reference/statements/select/index.md) queries.
 
@@ -240,7 +239,7 @@ GRANT SELECT(x,y) ON db.table TO john
 
 This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
-### INSERT
+### INSERT {#grant-insert}
 
 Allows executing [INSERT](../../sql-reference/statements/insert-into.md) queries.
 
@@ -258,7 +257,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 The granted privilege allows `john` to insert data to the `x` and/or `y` columns in `db.table`.
 
-### ALTER
+### ALTER {#grant-alter}
 
 Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries according to the following hierarchy of privileges:
 
@@ -305,7 +304,7 @@ Examples of how this hierarchy is treated:
 -   The `DETACH` operation needs the [DROP](#grant-drop) privilege.
 -   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
-### CREATE
+### CREATE {#grant-create}
 
 Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
 
@@ -320,7 +319,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 -   To delete the created table, a user needs [DROP](#grant-drop).
 
-### DROP
+### DROP {#grant-drop}
 
 Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach) queries according to the following hierarchy of privileges:
 
@@ -330,19 +329,19 @@ Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH
     -   `DROP VIEW`. Level: `VIEW`
     -   `DROP DICTIONARY`. Level: `DICTIONARY`
 
-### TRUNCATE
+### TRUNCATE {#grant-truncate}
 
 Allows executing [TRUNCATE](../../sql-reference/statements/misc.md#truncate-statement) queries.
 
 Privilege level: `TABLE`.
 
-### OPTIMIZE
+### OPTIMIZE {#grant-optimize}
 
 Allows executing [OPTIMIZE TABLE](../../sql-reference/statements/misc.md#misc_operations-optimize) queries.
 
 Privilege level: `TABLE`.
 
-### SHOW
+### SHOW {#grant-show}
 
 Allows executing `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries according to the following hierarchy of privileges:
 
@@ -356,7 +355,7 @@ Allows executing `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries according to th
 
 A user has the `SHOW` privilege if it has any other privilege concerning the specified table, dictionary or database.
 
-### KILL QUERY
+### KILL QUERY {#grant-kill-query}
 
 Allows executing [KILL](../../sql-reference/statements/misc.md#kill-query-statement) queries according to the following hierarchy of privileges:
 
@@ -366,7 +365,7 @@ Privilege level: `GLOBAL`.
 
 `KILL QUERY` privilege allows one user to kill queries of other users.
 
-### ACCESS MANAGEMENT
+### ACCESS MANAGEMENT {#grant-access-management}
 
 Allows a user to execute queries that manage users, roles and row policies.
 
@@ -396,7 +395,7 @@ Allows a user to execute queries that manage users, roles and row policies.
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
-### SYSTEM
+### SYSTEM {#grant-system}
 
 Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) queries according to the following hierarchy of privileges.
 
@@ -426,7 +425,7 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
 
 The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `SYSTEM RELOAD DICTIONARY ON *.*` privilege.
 
-### INTROSPECTION
+### INTROSPECTION {#grant-introspection}
 
 Allows using [introspection](../../operations/optimizing-performance/sampling-query-profiler.md) functions.
 
@@ -436,7 +435,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
     -   `addressToSymbol`. Level: `GLOBAL`
     -   `demangle`. Level: `GLOBAL`
 
-### SOURCES
+### SOURCES {#grant-sources}
 
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
@@ -457,7 +456,7 @@ Examples:
 -   To create a table with the [MySQL table engine](../../engines/table-engines/integrations/mysql.md), you need `CREATE TABLE (ON db.table_name)` and `MYSQL` privileges.
 -   To use the [mysql table function](../../sql-reference/table-functions/mysql.md), you need `CREATE TEMPORARY TABLE` and `MYSQL` privileges.
 
-### dictGet
+### dictGet {#grant-dictget}
 
 -   `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
@@ -470,15 +469,15 @@ Privilege level: `DICTIONARY`.
 -   `GRANT dictGet ON mydb.mydictionary TO john`
 -   `GRANT dictGet ON mydictionary TO john`
 
-### ALL
+### ALL {#grant-all}
 
 Grants all the privileges on regulated entity to a user account or a role.
 
-### NONE
+### NONE {#grant-none}
 
 Doesn’t grant any privileges.
 
-### ADMIN OPTION
+### ADMIN OPTION {#admin-option-privilege}
 
 The `ADMIN OPTION` privilege allows a user to grant their role to another user.
 

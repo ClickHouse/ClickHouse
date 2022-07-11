@@ -2,20 +2,15 @@
 
 #include <chrono>
 #include <mutex>
-#include <Common/ProfileEvents.h>
 #include <Interpreters/ProcessList.h>
-
-namespace ProfileEvents
-{
-    extern const Event MemoryOvercommitWaitTimeMicroseconds;
-}
 
 using namespace std::chrono_literals;
 
 constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
 
 OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
-    : picked_tracker(nullptr)
+    : max_wait_time(ZERO_MICROSEC)
+    , picked_tracker(nullptr)
     , cancellation_state(QueryCancellationState::NONE)
     , global_mutex(global_mutex_)
     , freed_memory(0)
@@ -25,12 +20,19 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
     , allow_release(true)
 {}
 
-OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
+void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
+{
+    std::lock_guard guard(overcommit_m);
+    max_wait_time = wait_time * 1us;
+}
+
+bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
+
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
     if (OvercommitTrackerBlockerInThread::isBlocked())
-        return OvercommitResult::NONE;
+        return true;
     // NOTE: Do not change the order of locks
     //
     // global_mutex must be acquired before overcommit_m, because
@@ -42,10 +44,8 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
     size_t id = next_id++;
 
-    auto max_wait_time = tracker->getOvercommitWaitingTime();
-
     if (max_wait_time == ZERO_MICROSEC)
-        return OvercommitResult::DISABLED;
+        return true;
 
     pickQueryToExclude();
     assert(cancellation_state != QueryCancellationState::NONE);
@@ -59,7 +59,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         // picked_tracker to be not null pointer.
         assert(cancellation_state == QueryCancellationState::SELECTED);
         cancellation_state = QueryCancellationState::NONE;
-        return OvercommitResult::DISABLED;
+        return true;
     }
     if (picked_tracker == tracker)
     {
@@ -67,19 +67,16 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         // It may happen even when current state is RUNNING, because
         // ThreadStatus::~ThreadStatus may call MemoryTracker::alloc.
         cancellation_state = QueryCancellationState::RUNNING;
-        return OvercommitResult::SELECTED;
+        return true;
     }
 
     allow_release = true;
 
     required_memory += amount;
-    auto wait_start_time = std::chrono::system_clock::now();
     bool timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
     {
         return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
     });
-    auto wait_end_time = std::chrono::system_clock::now();
-    ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
 
     required_memory -= amount;
     bool still_need = !(id < id_to_release); // True if thread wasn't released
@@ -93,12 +90,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     // As we don't need to free memory, we can continue execution of the selected query.
     if (required_memory == 0 && cancellation_state == QueryCancellationState::SELECTED)
         reset();
-    if (timeout)
-        return OvercommitResult::TIMEOUTED;
-    if (still_need)
-        return OvercommitResult::NOT_ENOUGH_FREED;
-    else
-        return OvercommitResult::MEMORY_FREED;
+    return timeout || still_need;
 }
 
 void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
@@ -121,7 +113,7 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
-    std::lock_guard lk(overcommit_m);
+    std::unique_lock<std::mutex> lk(overcommit_m);
     if (picked_tracker == tracker)
     {
         reset();

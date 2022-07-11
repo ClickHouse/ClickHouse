@@ -25,6 +25,7 @@ RUN apt-get update -y \
             brotli
 
 COPY ./stress /stress
+COPY ./download_previous_release /download_previous_release
 COPY run.sh /
 
 ENV DATASETS="hits visits"

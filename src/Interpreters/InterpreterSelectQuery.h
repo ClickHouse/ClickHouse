@@ -12,7 +12,6 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
-#include <QueryPipeline/Pipe.h>
 
 #include <Columns/FilterDescription.h>
 
@@ -52,27 +51,21 @@ public:
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const ContextPtr & context_,
-        const SelectQueryOptions &,
-        const Names & required_result_column_names_ = Names{});
-
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        const ContextMutablePtr & context_,
+        ContextPtr context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const ContextPtr & context_,
+        ContextPtr context_,
         Pipe input_pipe_,
         const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const ContextPtr & context_,
+        ContextPtr context_,
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
@@ -81,7 +74,7 @@ public:
     /// TODO: Find a general way of sharing sets among different interpreters, such as subqueries.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const ContextPtr & context_,
+        ContextPtr context_,
         const SelectQueryOptions &,
         SubqueriesForSets subquery_for_sets_,
         PreparedSets prepared_sets_);
@@ -92,12 +85,12 @@ public:
     BlockIO execute() override;
 
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan) override;
+    virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    void ignoreWithTotals() override;
+    virtual void ignoreWithTotals() override;
 
     ASTPtr getQuery() const { return query_ptr; }
 
@@ -112,7 +105,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
+        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_);
 
     Names getRequiredColumns() { return required_columns; }
 
@@ -126,26 +119,12 @@ public:
     void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
 
     /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo(size_t replica_num, size_t replica_count);
-
-    static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
-    static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
+    void setProperClientInfo();
 
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const ContextPtr & context_,
-        std::optional<Pipe> input_pipe,
-        const StoragePtr & storage_,
-        const SelectQueryOptions &,
-        const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
-        SubqueriesForSets subquery_for_sets_ = {},
-        PreparedSets prepared_sets_ = {});
-
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        const ContextMutablePtr & context_,
+        ContextPtr context_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,

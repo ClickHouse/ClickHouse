@@ -1,6 +1,8 @@
 #include <Backups/BackupIO_File.h>
+#include <Common/Exception.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -48,10 +50,17 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 
 void BackupWriterFile::removeFilesAfterFailure(const Strings & file_names)
 {
-    for (const auto & file_name : file_names)
-        fs::remove(path / file_name);
-    if (fs::is_directory(path) && fs::is_empty(path))
-        fs::remove(path);
+    try
+    {
+        for (const auto & file_name : file_names)
+            fs::remove(path / file_name);
+        if (fs::is_directory(path) && fs::is_empty(path))
+            fs::remove(path);
+    }
+    catch (...)
+    {
+        LOG_WARNING(&Poco::Logger::get("BackupWriterFile"), "RemoveFilesAfterFailure: {}", getCurrentExceptionMessage(false));
+    }
 }
 
 }

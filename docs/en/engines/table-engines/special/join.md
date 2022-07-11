@@ -3,7 +3,7 @@ sidebar_position: 70
 sidebar_label: Join
 ---
 
-# Join Table Engine
+# Join Table Engine {#join}
 
 Optional prepared data structure for usage in [JOIN](../../../sql-reference/statements/select/join.md#select-join) operations.
 
@@ -23,19 +23,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
-## Engine Parameters
+**Engine Parameters**
 
-### join_strictness
-
-`join_strictness` – [JOIN strictness](../../../sql-reference/statements/select/join.md#select-join-types).
-
-### join_type
-
-`join_type` – [JOIN type](../../../sql-reference/statements/select/join.md#select-join-types).
-
-### Key columns
-
-`k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
+-   `join_strictness` – [JOIN strictness](../../../sql-reference/statements/select/join.md#select-join-types).
+-   `join_type` – [JOIN type](../../../sql-reference/statements/select/join.md#select-join-types).
+-   `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
 Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters do not match, ClickHouse does not throw an exception and may return incorrect data.
 
@@ -64,28 +56,12 @@ Main use-cases for `Join`-engine tables are following:
 
 When creating a table, the following settings are applied:
 
-#### join_use_nulls
-
-[join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
-
-#### max_rows_in_join
-
-[max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
-
-#### max_bytes_in_join
-
-[max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
-
-#### join_overflow_mode
-
-[join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
-
-#### join_any_take_last_row
-
-[join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
-#### join_use_nulls
-
-[persistent](../../../operations/settings/settings.md#persistent)
+-   [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [persistent](../../../operations/settings/settings.md#persistent)
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
@@ -151,3 +127,4 @@ ALTER TABLE id_val_join DELETE WHERE id = 3;
 └────┴─────┘
 ```
 
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/join/) <!--hide-->

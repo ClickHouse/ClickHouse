@@ -3,10 +3,10 @@ sidebar_position: 40
 sidebar_label: UPDATE
 ---
 
-# ALTER TABLE … UPDATE Statements
+# ALTER TABLE … UPDATE Statements {#alter-table-update-statements}
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] WHERE filter_expr
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 Manipulates data matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).

@@ -223,13 +223,6 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    commit.create_status(
-        context="Simple Check",
-        description="Skipped",
-        state="success",
-        target_url=GITHUB_RUN_URL,
-    )
-
     if description_error:
         print(
             "::error ::Cannot run, PR description does not match the template: "
@@ -260,7 +253,16 @@ if __name__ == "__main__":
         )
         sys.exit(1)
     else:
-        print("::notice ::Can run")
-        commit.create_status(
-            context=NAME, description=description, state="pending", target_url=url
-        )
+        if "pr-documentation" in pr_info.labels or "pr-doc-fix" in pr_info.labels:
+            commit.create_status(
+                context=NAME,
+                description="Skipping checks for documentation",
+                state="success",
+                target_url=url,
+            )
+            print("::notice ::Can run, but it's documentation PR, skipping")
+        else:
+            print("::notice ::Can run")
+            commit.create_status(
+                context=NAME, description=description, state="pending", target_url=url
+            )

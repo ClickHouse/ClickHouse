@@ -248,7 +248,7 @@ public:
         return removeOnCluster<ASTAlterQuery>(clone(), params.default_database);
     }
 
-    QueryKind getQueryKind() const override { return QueryKind::Alter; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

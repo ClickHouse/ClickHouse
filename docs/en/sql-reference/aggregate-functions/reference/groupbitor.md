@@ -2,7 +2,7 @@
 sidebar_position: 126
 ---
 
-# groupBitOr
+# groupBitOr {#groupbitor}
 
 Applies bitwise `OR` for series of numbers.
 

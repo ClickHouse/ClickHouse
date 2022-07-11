@@ -2,7 +2,7 @@
 sidebar_label: WHERE
 ---
 
-# WHERE Clause
+# WHERE Clause {#select-where}
 
 `WHERE` clause allows to filter the data that is coming from [FROM](../../../sql-reference/statements/select/from.md) clause of `SELECT`.
 

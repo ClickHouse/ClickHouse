@@ -14,7 +14,7 @@ sidebar_label: EXCHANGE
 **Синтаксис**
 
 ```sql
-EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
+EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B
 ```
 
 ## EXCHANGE TABLES {#exchange_tables}
@@ -24,7 +24,7 @@ EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 **Синтаксис**
 
 ```sql
-EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
+EXCHANGE TABLES [db0.]table_A AND [db1.]table_B
 ```
 
 ## EXCHANGE DICTIONARIES {#exchange_dictionaries}
@@ -34,7 +34,7 @@ EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
 **Синтаксис**
 
 ```sql
-EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
+EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B
 ```
 
 **Смотрите также**

@@ -1,5 +1,5 @@
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONUtils.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -71,7 +71,7 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
-    NullOutput out;
+    String tmp;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
     switch (escaping_rule)
@@ -80,19 +80,19 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             /// Empty field, just skip spaces
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedStringInto(out, buf);
+            readEscapedString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
-            readQuotedFieldInto(out, buf);
+            readQuotedFieldIntoString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::CSV:
-            readCSVStringInto(out, buf, format_settings.csv);
+            readCSVString(tmp, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
             skipJSONField(buf, StringRef(field_name, field_name_len));
             break;
         case FormatSettings::EscapingRule::Raw:
-            readStringInto(out, buf);
+            readString(tmp, buf);
             break;
         default:
             __builtin_unreachable();
@@ -219,13 +219,13 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             if constexpr (read_string)
                 readQuotedString(result, buf);
             else
-                readQuotedField(result, buf);
+                readQuotedFieldIntoString(result, buf);
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
                 readJSONString(result, buf);
             else
-                readJSONField(result, buf);
+                readJSONFieldIntoString(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -452,7 +452,7 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
             return buf.eof() ? type : nullptr;
         }
         case FormatSettings::EscapingRule::JSON:
-            return JSONUtils::getDataTypeFromField(field);
+            return getDataTypeFromJSONField(field);
         case FormatSettings::EscapingRule::CSV:
         {
             if (!format_settings.csv.input_format_use_best_effort_in_schema_inference)

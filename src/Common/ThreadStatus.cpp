@@ -148,19 +148,28 @@ ThreadStatus::ThreadStatus()
 
 ThreadStatus::~ThreadStatus()
 {
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
+    try
+    {
+        if (untracked_memory > 0)
+            memory_tracker.alloc(untracked_memory);
+        else
+            memory_tracker.free(-untracked_memory);
+    }
+    catch (const DB::Exception &)
+    {
+        /// It's a minor tracked memory leak here (not the memory itself but it's counter).
+        /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
+        tryLogCurrentException(log);
+    }
 
     if (thread_group)
     {
-        ThreadGroupStatus::ProfileEventsCountersAndMemory counters
-        {
+        std::lock_guard guard(thread_group->mutex);
+        thread_group->finished_threads_counters_memory.emplace_back(ThreadGroupStatus::ProfileEventsCountersAndMemory{
             performance_counters.getPartiallyAtomicSnapshot(),
             memory_tracker.get(),
-            thread_id
-        };
-
-        std::lock_guard guard(thread_group->mutex);
-        thread_group->finished_threads_counters_memory.emplace_back(std::move(counters));
+            thread_id,
+        });
         thread_group->threads.erase(this);
     }
 

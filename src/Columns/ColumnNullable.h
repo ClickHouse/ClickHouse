@@ -199,9 +199,7 @@ public:
     /// columns.
     void applyNullMap(const ColumnNullable & other);
     void applyNullMap(const ColumnUInt8 & map);
-    void applyNullMap(const NullMap & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
-    void applyNegatedNullMap(const NullMap & map);
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
@@ -211,7 +209,7 @@ private:
     WrappedPtr null_map;
 
     template <bool negative>
-    void applyNullMapImpl(const NullMap & map);
+    void applyNullMapImpl(const ColumnUInt8 & map);
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 

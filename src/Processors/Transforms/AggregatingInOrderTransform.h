@@ -4,7 +4,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/finalizeChunk.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
 
 namespace DB
 {
@@ -56,7 +56,6 @@ private:
     MutableColumns res_aggregate_columns;
 
     AggregatingTransformParamsPtr params;
-    ColumnsMask aggregates_mask;
 
     InputOrderInfoPtr group_by_info;
     /// For sortBlock()
@@ -91,14 +90,25 @@ private:
 class FinalizeAggregatedTransform : public ISimpleTransform
 {
 public:
-    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_);
+    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
+        : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
+        , params(params_) {}
 
-    void transform(Chunk & chunk) override;
+    void transform(Chunk & chunk) override
+    {
+        if (params->final)
+            finalizeChunk(chunk);
+        else if (!chunk.getChunkInfo())
+        {
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            chunk.setChunkInfo(std::move(info));
+        }
+    }
+
     String getName() const override { return "FinalizeAggregatedTransform"; }
 
 private:
     AggregatingTransformParamsPtr params;
-    ColumnsMask aggregates_mask;
 };
 
 

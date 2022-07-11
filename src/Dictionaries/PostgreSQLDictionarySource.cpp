@@ -78,37 +78,37 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadAll()
+Pipe PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadBase(load_all_query);
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadUpdatedAll()
+Pipe PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
     return loadBase(load_update_query);
 }
 
-QueryPipeline PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadBase(query);
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     return loadBase(query);
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadBase(const String & query)
+Pipe PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    return QueryPipeline(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size));
+    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size));
 }
 
 
@@ -191,13 +191,10 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
         const auto settings_config_prefix = config_prefix + ".postgresql";
         auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key) || key.starts_with("replica"); };
         auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context, has_config_key);
-        const auto & settings = context->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
-            configuration.replicas_configurations,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+                    configuration.replicas_configurations,
+                    context->getSettingsRef().postgresql_connection_pool_size,
+                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         PostgreSQLDictionarySource::Configuration dictionary_configuration
         {

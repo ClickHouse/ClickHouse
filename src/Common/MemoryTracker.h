@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
@@ -74,21 +73,13 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    std::atomic<std::chrono::microseconds> max_wait_time;
-
     std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
-
-    bool log_peak_memory_usage_in_destructor = true;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
-    /// allocImpl(...) and free(...) should not be used directly
-    friend struct CurrentMemoryTracker;
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-    void free(Int64 size);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
@@ -100,7 +91,26 @@ public:
 
     VariableContext level;
 
-    void adjustWithUntrackedMemory(Int64 untracked_memory);
+    /** Call the following functions before calling of corresponding operations with memory allocators.
+      */
+    void alloc(Int64 size);
+
+    void allocNoThrow(Int64 size);
+
+    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
+
+    void realloc(Int64 old_size, Int64 new_size)
+    {
+        Int64 addition = new_size - old_size;
+        if (addition > 0)
+            alloc(addition);
+        else
+            free(-addition);
+    }
+
+    /** This function should be called after memory deallocation.
+      */
+    void free(Int64 size);
 
     Int64 get() const
     {
@@ -176,13 +186,6 @@ public:
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
 
-    std::chrono::microseconds getOvercommitWaitingTime()
-    {
-        return max_wait_time.load(std::memory_order_relaxed);
-    }
-
-    void setOvercommitWaitingTime(UInt64 wait_time);
-
     void setOvercommitTracker(OvercommitTracker * tracker) noexcept
     {
         overcommit_tracker.store(tracker, std::memory_order_relaxed);
@@ -203,7 +206,7 @@ public:
     void set(Int64 to);
 
     /// Prints info about peak memory consumption into log.
-    void logPeakMemoryUsage();
+    void logPeakMemoryUsage() const;
 };
 
 extern MemoryTracker total_memory_tracker;

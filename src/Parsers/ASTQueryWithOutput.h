@@ -18,7 +18,6 @@ public:
     ASTPtr format;
     ASTPtr settings_ast;
     ASTPtr compression;
-    ASTPtr compression_level;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 

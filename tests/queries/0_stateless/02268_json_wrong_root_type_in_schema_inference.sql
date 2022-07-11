@@ -1,3 +1,5 @@
+-- Tags: no-backward-compatibility-check:22.4.1.1
+
 insert into function file('02268_data.jsonl', 'TSV') select 1;
 select * from file('02268_data.jsonl'); --{serverError CANNOT_EXTRACT_TABLE_STRUCTURE}
 

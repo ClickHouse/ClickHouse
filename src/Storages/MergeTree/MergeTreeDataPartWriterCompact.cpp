@@ -11,7 +11,6 @@ namespace ErrorCodes
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeData::DataPartPtr & data_part_,
-    DataPartStorageBuilderPtr data_part_storage_builder_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
@@ -19,18 +18,20 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : MergeTreeDataPartWriterOnDisk(data_part_, std::move(data_part_storage_builder_), columns_list_, metadata_snapshot_,
+    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
-    , plain_file(data_part_storage_builder->writeFile(
-            MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
+    , plain_file(data_part->volume->getDisk()->writeFile(
+            part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
+            WriteMode::Rewrite,
             settings_.query_write_settings))
     , plain_hashing(*plain_file)
-    , marks_file(data_part_storage_builder->writeFile(
-            MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
-            4096,
-            settings_.query_write_settings))
+    , marks_file(data_part->volume->getDisk()->writeFile(
+        part_path + MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
+        4096,
+        WriteMode::Rewrite,
+        settings_.query_write_settings))
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();

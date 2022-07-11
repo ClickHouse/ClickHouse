@@ -1,7 +1,9 @@
 #include <Backups/BackupIO_Disk.h>
+#include <Common/Exception.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -47,10 +49,17 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
 
 void BackupWriterDisk::removeFilesAfterFailure(const Strings & file_names)
 {
-    for (const auto & file_name : file_names)
-        disk->removeFileIfExists(path / file_name);
-    if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
-        disk->removeDirectory(path);
+    try
+    {
+        for (const auto & file_name : file_names)
+            disk->removeFileIfExists(path / file_name);
+        if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
+            disk->removeDirectory(path);
+    }
+    catch (...)
+    {
+        LOG_WARNING(&Poco::Logger::get("BackupWriterDisk"), "RemoveFilesAfterFailure: {}", getCurrentExceptionMessage(false));
+    }
 }
 
 }
