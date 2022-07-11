@@ -177,7 +177,7 @@ void MetadataStorageFromDiskTransaction::commit()
             toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
 
     {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
+        std::lock_guard lock(metadata_storage.metadata_mutex);
         for (size_t i = 0; i < operations.size(); ++i)
         {
             try
@@ -292,20 +292,14 @@ void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 {
     auto metadata = metadata_storage.readMetadata(path);
     metadata->setReadOnly();
-
-    auto data = metadata->serializeToString();
-    if (!data.empty())
-        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(
         metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
-
-    auto data = metadata->serializeToString();
-    if (!data.empty())
-        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)
@@ -327,10 +321,7 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
     {
         metadata = metadata_storage.readMetadata(path);
         metadata->addObject(blob_name, size_in_bytes);
-
-        auto data = metadata->serializeToString();
-        if (!data.empty())
-            addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
+        writeStringToFile(path, metadata->serializeToString());
     }
     else
     {
