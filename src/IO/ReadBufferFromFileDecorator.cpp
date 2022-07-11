@@ -53,9 +53,4 @@ bool ReadBufferFromFileDecorator::nextImpl()
     return result;
 }
 
-size_t ReadBufferFromFileDecorator::getFileSize()
-{
-    return getFileSizeFromReadBuffer(*impl);
-}
-
 }

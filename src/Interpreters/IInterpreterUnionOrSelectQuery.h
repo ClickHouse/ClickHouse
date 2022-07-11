@@ -8,27 +8,21 @@
 
 namespace DB
 {
-
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
-        : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
-    {
-    }
-
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
         : query_ptr(query_ptr_)
-        , context(context_)
+        , context(Context::createCopy(context_))
         , options(options_)
         , max_streams(context->getSettingsRef().max_threads)
     {
         if (options.shard_num)
-            context->addSpecialScalar(
+            context->addLocalScalar(
                 "_shard_num",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
         if (options.shard_count)
-            context->addSpecialScalar(
+            context->addLocalScalar(
                 "_shard_count",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
     }
@@ -38,7 +32,7 @@ public:
 
     virtual void ignoreWithTotals() = 0;
 
-    ~IInterpreterUnionOrSelectQuery() override = default;
+    virtual ~IInterpreterUnionOrSelectQuery() override = default;
 
     Block getSampleBlock() { return result_header; }
 
@@ -55,24 +49,15 @@ public:
     /// You can find more details about this under ExecuteScalarSubqueriesMatcher::visit
     bool usesViewSource() const { return uses_view_source; }
 
-    /// Add limits from external query.
-    void addStorageLimits(const StorageLimitsList & limits);
-
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;
     Block result_header;
     SelectQueryOptions options;
-    StorageLimitsList storage_limits;
-
     size_t max_streams = 1;
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
     bool uses_view_source = false;
-
-    /// Set quotas to query pipeline.
-    void setQuota(QueryPipeline & pipeline) const;
-
-    static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };
 }
+

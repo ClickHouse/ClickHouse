@@ -16,8 +16,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
-#include <Storages/TableLockHolder.h>
-#include <Common/logger_useful.h>
+#include <Common/RWLock.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -25,9 +24,6 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Core/Block.h>
-
-#include <Storages/IStorage_fwd.h>
-#include <Storages/IKVStorage.h>
 
 namespace DB
 {
@@ -65,9 +61,6 @@ public:
 
     template <bool use_flags, bool multiple_disjuncts, typename T>
     void setUsed(const T & f);
-
-    template <bool use_flags, bool multiple_disjunct>
-    void setUsed(const Block * block, size_t row_num, size_t offset);
 
     template <bool use_flags, bool multiple_disjuncts, typename T>
     bool getUsed(const T & f);
@@ -171,18 +164,12 @@ public:
     /// Used by joinGet function that turns StorageJoin into a dictionary.
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
+    /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
+      */
+    void setTotals(const Block & block) override { totals = block; }
+    const Block & getTotals() const override { return totals; }
+
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
-
-    JoinPipelineType pipelineType() const override
-    {
-        /// No need to process anything in the right stream if it's a dictionary will just join the left stream with it.
-        bool is_filled = from_storage_join || data->type == Type::DICT;
-        if (is_filled)
-            return JoinPipelineType::FilledRight;
-
-        /// Default pipeline processes right stream at first and then left.
-        return JoinPipelineType::FillRightFirst;
-    }
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
@@ -349,7 +336,7 @@ public:
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(TableLockHolder rwlock_holder)
+    void setLock(RWLockImpl::LockHolder rwlock_holder)
     {
         storage_join_lock = rwlock_holder;
     }
@@ -400,9 +387,11 @@ private:
 
     Poco::Logger * log;
 
+    Block totals;
+
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
-    TableLockHolder storage_join_lock = nullptr;
+    RWLockImpl::LockHolder storage_join_lock = nullptr;
 
     void dataMapInit(MapsVariant &);
 

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: 配置文件设置
+toc_priority: 48
+toc_title: 配置文件设置
 ---
 
 ## 更改配置文件设置 {#alter-settings-profile-statement}

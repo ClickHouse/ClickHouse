@@ -1,8 +1,8 @@
 ---
-sidebar_label: INTERSECT
+toc_title: INTERSECT
 ---
 
-# INTERSECT Clause
+# INTERSECT Clause {#intersect-clause}
 
 The `INTERSECT` clause returns only those rows that result from both the first and the second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
 

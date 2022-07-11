@@ -214,7 +214,7 @@ public:
     ActionsDAGPtr clone() const;
 
     /// Execute actions for header. Input block must have empty columns.
-    /// Result should be equal to the execution of ExpressionActions built from this DAG.
+    /// Result should be equal to the execution of ExpressionActions build form this DAG.
     /// Actions are not changed, no expressions are compiled.
     ///
     /// In addition, check that result constants are constants according to DAG.
@@ -273,10 +273,6 @@ public:
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Index of initial actions must contain column_name.
     SplitResult splitActionsForFilter(const std::string & column_name) const;
-
-    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
-    /// The second contains the rest.
-    SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
 
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.

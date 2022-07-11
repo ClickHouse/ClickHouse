@@ -54,7 +54,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
     assert(index < size());
-    return memoryIsZero(chars.data() + index * n, 0, n);
+    return memoryIsZero(chars.data() + index * n, n);
 }
 
 void ColumnFixedString::insert(const Field & x)

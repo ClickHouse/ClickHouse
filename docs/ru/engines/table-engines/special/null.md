@@ -1,6 +1,6 @@
 ---
-sidebar_position: 38
-sidebar_label: 'Null'
+toc_priority: 38
+toc_title: 'Null'
 ---
 
 При записи в таблицу типа Null, данные игнорируются. При чтении из таблицы типа Null, возвращается пустота.

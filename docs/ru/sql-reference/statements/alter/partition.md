@@ -1,6 +1,6 @@
 ---
-sidebar_position: 38
-sidebar_label: PARTITION
+toc_priority: 38
+toc_title: PARTITION
 ---
 
 # Манипуляции с партициями и кусками {#alter_manipulations-with-partitions}
@@ -25,7 +25,7 @@ sidebar_label: PARTITION
 ## DETACH PARTITION\|PART {#alter_detach-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
+ALTER TABLE table_name DETACH PARTITION|PART partition_expr
 ```
 
 Перемещает заданную партицию в директорию `detached`. Сервер не будет знать об этой партиции до тех пор, пока вы не выполните запрос [ATTACH](#alter_attach-partition).
@@ -46,7 +46,7 @@ ALTER TABLE mt DETACH PART 'all_2_2_0';
 ## DROP PARTITION\|PART {#alter_drop-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+ALTER TABLE table_name DROP PARTITION|PART partition_expr
 ```
 
 Удаляет партицию. Партиция помечается как неактивная и будет полностью удалена примерно через 10 минут.
@@ -65,7 +65,7 @@ ALTER TABLE mt DROP PART 'all_4_4_0';
 ## DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partition_expr
+ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 ```
 
 Удаляет из `detached` кусок или все куски, принадлежащие партиции.
@@ -74,7 +74,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partiti
 ## ATTACH PARTITION\|PART {#alter_attach-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
+ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
 ```
 
 Добавляет данные в таблицу из директории `detached`. Можно добавить данные как для целой партиции, так и для отдельного куска. Примеры:
@@ -97,7 +97,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
 ``` sql
-ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
+ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
 Копирует партицию из таблицы `table1` в таблицу `table2`.
@@ -113,7 +113,7 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 ## REPLACE PARTITION {#alter_replace-partition}
 
 ``` sql
-ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
+ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
 Копирует партицию из таблицы `table1` в таблицу `table2` с заменой существующих данных в `table2`. Данные из `table1` не удаляются.
@@ -128,7 +128,7 @@ ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM ta
 ## MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
 
 ``` sql
-ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
+ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
 Перемещает партицию из таблицы `table_source` в таблицу `table_dest` (добавляет к существующим данным в `table_dest`) с удалением данных из таблицы `table_source`.
@@ -143,7 +143,7 @@ ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO T
 ## CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
+ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ```
 
 Сбрасывает все значения в столбце для заданной партиции. Если для столбца определено значение по умолчанию (в секции `DEFAULT`), то будет выставлено это значение.
@@ -157,7 +157,7 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ## CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
+ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ```
 
 Работает как `CLEAR COLUMN`, но сбрасывает индексы вместо данных в столбцах.
@@ -165,14 +165,14 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION 
 ## FREEZE PARTITION {#alter_freeze-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
 ```
 
 Создаёт резервную копию для заданной партиции. Если выражение `PARTITION` опущено, резервные копии будут созданы для всех партиций.
 
-    :::note "Примечание"
+!!! note "Примечание"
     Создание резервной копии не требует остановки сервера.
-    :::
+
 Для таблиц старого стиля имя партиций можно задавать в виде префикса (например, `2019`). В этом случае, резервные копии будут созданы для всех соответствующих партиций. Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
 Запрос формирует для текущего состояния таблицы жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
@@ -181,9 +181,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [W
 -   `N` — инкрементальный номер резервной копии.
 -   если задан параметр `WITH NAME`, то вместо инкрементального номера используется значение параметра `'backup_name'`.
 
-    :::note "Примечание"
+!!! note "Примечание"
     При использовании [нескольких дисков для хранения данных таблицы](../../statements/alter/index.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
-    :::
+
 Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит `chmod` для всех файлов, запрещая запись в них.
 
 Обратите внимание, запрос `ALTER TABLE t FREEZE PARTITION` не реплицируется. Он создает резервную копию только на локальном сервере. После создания резервной копии данные из `/var/lib/clickhouse/shadow/` можно скопировать на удалённый сервер, а локальную копию удалить.
@@ -205,7 +205,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [W
 ## UNFREEZE PARTITION {#alter_unfreeze-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
 ```
 
 Удаляет с диска "замороженные" партиции с указанным именем. Если секция `PARTITION` опущена, запрос удаляет резервную копию всех партиций сразу.
@@ -213,7 +213,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WIT
 ## FETCH PARTITION\|PART {#alter_fetch-partition}
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
 Загружает партицию с другого сервера. Этот запрос работает только для реплицированных таблиц.
@@ -250,7 +250,7 @@ ALTER TABLE users ATTACH PART 201901_2_2_0;
 Перемещает партицию или кусок данных на другой том или диск для таблиц с движком `MergeTree`. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](../../statements/alter/index.md#table_engine-mergetree-multiple-volumes).
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
 ```
 
 Запрос `ALTER TABLE t MOVE`:
@@ -273,7 +273,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 Синтаксис:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 ```
 
 ### Пример
@@ -293,7 +293,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 Синтаксис:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table DELETE [IN PARTITION partition_id] WHERE filter_expr
 ```
 
 ### Пример

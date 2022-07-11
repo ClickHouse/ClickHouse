@@ -2,7 +2,6 @@ set (SRCS
     argsToConfig.cpp
     coverage.cpp
     demangle.cpp
-    getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getPageSize.cpp
@@ -17,11 +16,13 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    ReplxxLineReader.cpp
     StringRef.cpp
     safeExit.cpp
-    throwError.cpp
 )
+
+if (ENABLE_REPLXX)
+    list (APPEND SRCS ReplxxLineReader.cpp)
+endif ()
 
 if (USE_DEBUG_HELPERS)
     get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)

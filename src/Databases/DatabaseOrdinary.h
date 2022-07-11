@@ -25,7 +25,7 @@ public:
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
 
-    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata, bool is_startup) override;
+    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata) override;
 
     void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore) override;
 

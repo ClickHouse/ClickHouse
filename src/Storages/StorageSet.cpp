@@ -1,5 +1,6 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -10,6 +11,7 @@
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
@@ -256,7 +258,7 @@ void registerStorageSet(StorageFactory & factory)
             set_settings.loadFromQuery(*args.storage_def);
 
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
-        return std::make_shared<StorageSet>(
+        return StorageSet::create(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }

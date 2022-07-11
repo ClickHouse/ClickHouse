@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
-#include <cstring>
+#include <string.h>
 #include <boost/program_options/options_description.hpp>
 
 namespace DB
@@ -122,7 +122,7 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
     for (auto setting : settings.all())
     {
         const auto & name = setting.getName();
-        if (config.has(name) && !setting.isObsolete())
+        if (config.has(name))
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."

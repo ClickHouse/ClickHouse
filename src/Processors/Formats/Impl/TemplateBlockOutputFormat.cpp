@@ -3,6 +3,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -16,9 +17,15 @@ namespace ErrorCodes
 TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
                                                      ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                                                      std::string row_between_delimiter_)
-    : IOutputFormat(header_, out_), settings(settings_), serializations(header_.getSerializations()), format(std::move(format_))
+    : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_))
     , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
+    const auto & sample = getPort(PortKind::Main).getHeader();
+    size_t columns = sample.columns();
+    serializations.resize(columns);
+    for (size_t i = 0; i < columns; ++i)
+        serializations[i] = sample.safeGetByPosition(i).type->getDefaultSerialization();
+
     /// Validate format string for whole output
     size_t data_idx = format.format_idx_to_column_idx.size() + 1;
     for (size_t i = 0; i < format.format_idx_to_column_idx.size(); ++i)

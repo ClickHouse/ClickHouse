@@ -1,11 +1,6 @@
 #include <iostream>
-#include <string>
-#include <vector>
-#include <memory>
-#include <queue>
 
 #include <boost/program_options.hpp>
-#include <boost/algorithm/string.hpp>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
@@ -16,9 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
-#include <Common/parseGlobs.h>
 
-#include <re2/re2.h>
 
 static void setupLogging(const std::string & log_level)
 {
@@ -30,57 +23,7 @@ static void setupLogging(const std::string & log_level)
     Poco::Logger::root().setLevel(log_level);
 }
 
-
-static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool try_get)
-{
-    auto pattern_prefix = pattern.substr(0, pattern.find_first_of("*?{"));
-    boost::algorithm::trim_if(pattern_prefix, [](char s){ return s == '.'; });
-
-    auto matcher = std::make_unique<re2::RE2>(DB::makeRegexpPatternFromGlobs(pattern));
-
-    std::vector<std::string> result;
-    std::queue<std::string> working_queue;
-    working_queue.emplace(pattern_prefix);
-
-    while (!working_queue.empty())
-    {
-        auto node = working_queue.front();
-        working_queue.pop();
-
-        /// Disclose one more layer
-        Poco::Util::AbstractConfiguration::Keys keys;
-        configuration->keys(node, keys);
-
-        /// This is a leave
-        if (keys.empty())
-        {
-            if (!re2::RE2::FullMatch(node, *matcher))
-                continue;
-
-
-            if (try_get)
-            {
-                auto value = configuration->getString(node, "");
-                if (!value.empty())
-                    result.emplace_back(value);
-            }
-            else
-            {
-                result.emplace_back(configuration->getString(node));
-            }
-            continue;
-        }
-
-        /// Add new nodes to working queue
-        for (const auto & key : keys)
-            working_queue.emplace(fmt::format("{}.{}", node, key));
-    }
-
-    return result;
-}
-
-
-static std::vector<std::string> extractFromConfig(
+static std::string extractFromConfig(
         const std::string & config_path, const std::string & key, bool process_zk_includes, bool try_get = false)
 {
     DB::ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
@@ -95,15 +38,10 @@ static std::vector<std::string> extractFromConfig(
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }
     DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
-
-    /// Check if a key has globs.
-    if (key.find_first_of("*?{") != std::string::npos)
-        return extactFromConfigAccordingToGlobs(configuration, key, try_get);
-
-    /// Do not throw exception if not found.
+    // do not throw exception if not found
     if (try_get)
-        return {configuration->getString(key, "")};
-    return {configuration->getString(key)};
+        return configuration->getString(key, "");
+    return configuration->getString(key);
 }
 
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -153,8 +91,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::notify(options);
 
         setupLogging(log_level);
-        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, try_get))
-            std::cout << value << std::endl;
+        std::cout << extractFromConfig(config_path, key, process_zk_includes, try_get) << std::endl;
     }
     catch (...)
     {

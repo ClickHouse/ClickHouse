@@ -1,8 +1,8 @@
 ---
-sidebar_position: 194
+toc_priority: 194
 ---
 
-# uniqHLL12
+# uniqHLL12 {#agg_function-uniqhll12}
 
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
