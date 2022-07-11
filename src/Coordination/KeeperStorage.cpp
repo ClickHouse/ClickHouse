@@ -916,6 +916,12 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to delete an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
+
         const auto update_parent_pzxid = [&]()
         {
             auto parent_path = parentPath(request.path);
@@ -1061,6 +1067,12 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*zk_request);
 
         std::vector<KeeperStorage::Delta> new_deltas;
+
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         if (!storage.uncommitted_state.getNode(request.path))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
@@ -1322,6 +1334,12 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
     preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & digest) const override
     {
         Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
+
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         auto & uncommitted_state = storage.uncommitted_state;
         if (!uncommitted_state.getNode(request.path))
@@ -1889,8 +1907,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 {
     if (new_last_zxid)
     {
-        if (*new_last_zxid == 108366)
-            LOG_INFO(&Poco::Logger::get("LOGGER"), "Processing {}", *new_last_zxid);
         if (uncommitted_transactions.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
 
