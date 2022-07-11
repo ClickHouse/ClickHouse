@@ -154,8 +154,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             buildCurrentChildInterpreter(
                 ast->list_of_selects->children.at(query_num),
                 require_full_header ? Names() : current_required_result_column_names,
-                std::move(subqueries_for_sets_), std::move(prepared_sets_))
+                std::move(subqueries_for_sets_), prepared_sets_)
         );
+
+        /// We will pass subqueries_for_sets_ only to the first subquery
+        /// It one will own subqueries_for_sets and query plan to build set, other will just share prepared_sets
+        subqueries_for_sets_ = SubqueriesForSets();
 
         // We need to propagate the uses_view_source flag from children to the (self) parent since, if one of the children uses
         // a view source that means that the parent uses it too and can be cached globally
