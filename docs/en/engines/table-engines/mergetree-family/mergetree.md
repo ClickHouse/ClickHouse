@@ -1035,7 +1035,3 @@ Examples of working configurations can be found in integration tests directory (
 -   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 -   `_partition_value` — Values (a tuple) of a `partition by` expression.
 -   `_sample_factor` — Sample factor (from the query).
-<<<<<<< HEAD
-
-=======
->>>>>>> b08c032f8fc64d398045ad21324b5269cf5cd171
