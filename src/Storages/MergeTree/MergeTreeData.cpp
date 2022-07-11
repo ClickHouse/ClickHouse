@@ -3190,6 +3190,15 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
 
             if ((*it)->getState() != DataPartState::Active)
             {
+                /// It's not clear what to do if we try to activate part that was removed in transaction.
+                /// It may happen only in ReplicatedMergeTree, so let's simply throw LOGICAL_ERROR for now.
+                chassert((*it)->version.isRemovalTIDLocked());
+                if ((*it)->version.removal_tid_lock == Tx::PrehistoricTID.getHash())
+                    (*it)->version.unlockRemovalTID(Tx::PrehistoricTID, TransactionInfoContext{getStorageID(), (*it)->name});
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot activate part {} that was removed by transaction ({})",
+                                    (*it)->name, (*it)->version.removal_tid_lock);
+
                 addPartContributionToColumnAndSecondaryIndexSizes(*it);
                 addPartContributionToDataVolume(*it);
                 modifyPartState(it, DataPartState::Active);

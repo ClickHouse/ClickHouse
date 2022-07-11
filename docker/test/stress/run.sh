@@ -47,7 +47,8 @@ function configure()
 
     # we mount tests folder from repo to /usr/share
     ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
-    ln -s /usr/share/clickhouse-test/ci/download_previous_release.py /usr/bin/download_previous_release
+    ln -s /usr/share/clickhouse-test/ci/download_release_packets.py /usr/bin/download_release_packets
+    ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
@@ -267,16 +268,31 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 
 echo -e "Backward compatibility check\n"
 
+echo "Get previous release tag"
+previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
+echo $previous_release_tag
+
+echo "Clone previous release repository"
+git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
+
 echo "Download previous release server"
 mkdir previous_release_package_folder
-clickhouse-client --query="SELECT version()" | download_previous_release && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
+
+echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
 
-if [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
+# Check if we cloned previous release repository successfully
+if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
+    echo -e "Backward compatibility check: Failed to clone previous release tests\tFAIL" >> /test_output/test_results.tsv
+elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
+then
+    echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
+else
+    echo -e "Successfully cloned previous release tests\tOK" >> /test_output/test_results.tsv
     echo -e "Successfully downloaded previous release packets\tOK" >> /test_output/test_results.tsv
 
     # Uninstall current packages
@@ -310,7 +326,7 @@ then
 
     mkdir tmp_stress_output
 
-    ./stress --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1200 \
+    ./stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --backward-compatibility-check --output-folder tmp_stress_output --global-time-limit=1200 \
         && echo -e 'Backward compatibility check: Test script exit code\tOK' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
     rm -rf tmp_stress_output
@@ -336,6 +352,8 @@ then
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
 
     # Error messages (we should ignore some errors)
+    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38629 ("pp.proj, errno: 21")
+    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
     echo "Check for Error messages in server log:"
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -358,6 +376,8 @@ then
                -e "and a merge is impossible: we didn't find" \
                -e "found in queue and some source parts for it was lost" \
                -e "is lost forever." \
+               -e "pp.proj, errno: 21" \
+               -e "Unknown index: idx." \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
@@ -400,8 +420,6 @@ then
 
     # Remove file bc_check_fatal_messages.txt if it's empty
     [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
-else
-    echo -e "Backward compatibility check: Failed to download previous release packets\tFAIL" >> /test_output/test_results.tsv
 fi
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
