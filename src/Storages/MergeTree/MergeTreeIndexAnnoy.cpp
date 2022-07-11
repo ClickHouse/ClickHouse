@@ -6,21 +6,21 @@
 #include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/castColumn.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
 
 
 namespace DB
 {
 
-namespace Annoy
+namespace ApproximateNearestNeighbour
 {
 
 template<typename Dist>
 void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
 {
-    if (!Base::_built)
-    {
-        throw Exception("Annoy Index should be built before serialization", ErrorCodes::LOGICAL_ERROR);
-    }
+    assert(Base::_built);
     writeIntBinary(Base::_s, ostr);
     writeIntBinary(Base::_n_items, ostr);
     writeIntBinary(Base::_n_nodes, ostr);
@@ -53,7 +53,7 @@ void AnnoyIndexSerialize<Dist>::deserialize(ReadBuffer& istr)
 }
 
 template<typename Dist>
-float AnnoyIndexSerialize<Dist>::getSpaceDim() const
+uint64_t AnnoyIndexSerialize<Dist>::getNumOfDimensions() const
 {
     return Base::get_f();
 }
@@ -65,6 +65,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int INCORRECT_DATA;
 }
 
 MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)
@@ -89,7 +90,7 @@ bool MergeTreeIndexGranuleAnnoy::empty() const
 
 void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(index_base->get_f(), ostr); // write dimension
+    writeIntBinary(index_base->getNumOfDimensions(), ostr); // write dimension
     index_base->serialize(ostr);
 }
 
@@ -102,9 +103,10 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
 }
 
 
-MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(const String & index_name_,
-                                                                const Block & index_sample_block_,
-                                                                int index_param_)
+MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(
+    const String & index_name_,
+    const Block & index_sample_block_,
+    uint64_t index_param_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_param(index_param_)
@@ -127,8 +129,9 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 {
     if (*pos >= block.rows())
         throw Exception(
-                "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+            ErrorCodes::LOGICAL_ERROR,
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.", 
+            toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -139,26 +142,58 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
-    const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
-    const auto & columns = column_tuple->getColumns();
-
-    std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
-    for (size_t j = 0; j < columns.size(); ++j)
+    const auto & column_array = typeid_cast<const ColumnArray*>(column_cut.get());
+    if (column_array)
     {
-        const auto& pod_array = typeid_cast<const ColumnFloat32*>(columns[j].get())->getData();
-        for (size_t i = 0; i < pod_array.size(); ++i)
+        const auto & data = column_array->getData();
+        const auto & array = typeid_cast<const ColumnFloat32&>(data).getData();
+        const auto & offsets = column_array->getOffsets();
+        size_t num_rows = column_array->size();
+
+        /// All sizes are the same
+        size_t size = offsets[1] - offsets[0];
+        for (size_t i = 0; i < num_rows - 1; ++ i)
         {
-            data[i].push_back(pod_array[i]);
+            if (offsets[i + 1] - offsets[i] != size)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays should have same length");
+            }
+        }
+        index_base = std::make_shared<AnnoyIndex>(size);
+
+        for (size_t current_row = 0; current_row < num_rows; ++current_row)
+        {
+            index_base->add_item(index_base->get_n_items(), &array[offsets[current_row]]);
         }
     }
-    assert(!data.empty());
-    if (!index_base)
+    else
     {
-        index_base = std::make_shared<AnnoyIndex>(data[0].size());
-    }
-    for (const auto& item : data)
-    {
-        index_base->add_item(index_base->get_n_items(), &item[0]);
+        /// Other possible type of column is Tuple
+        const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
+
+        if (!column_tuple)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type was given to index.");
+    
+        const auto & columns = column_tuple->getColumns();
+
+        std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
+        for (size_t j = 0; j < columns.size(); ++j)
+        {
+            const auto& pod_array = typeid_cast<const ColumnFloat32*>(columns[j].get())->getData();
+            for (size_t i = 0; i < pod_array.size(); ++i)
+            {
+                data[i].push_back(pod_array[i]);
+            }
+        }
+        assert(!data.empty());
+        if (!index_base)
+        {
+            index_base = std::make_shared<AnnoyIndex>(data[0].size());
+        }
+        for (const auto& item : data)
+        {
+            index_base->add_item(index_base->get_n_items(), &item[0]);
+        }
     }
 
     *pos += rows_read;
@@ -186,8 +221,13 @@ bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
     UInt64 limit = condition.getLimitCount();
+    UInt64 index_granularity = condition.getIndexGranularity();
     std::optional<float> comp_dist
-        = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistance()) : std::nullopt;
+        = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
+
+    if (comp_dist && comp_dist.value() < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to optimize query with where without distance");
+    
     std::vector<float> target_vec = condition.getTargetVector();
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
@@ -197,10 +237,10 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
     }
     auto annoy = granule->index_base;
 
-    if (condition.getSpaceDim() != annoy->getSpaceDim())
+    if (condition.getNumOfDimensions() != annoy->getNumOfDimensions())
     {
-        throw Exception("The dimension of the space in the request (" + toString(condition.getSpaceDim()) + ") "
-            + "does not match with the dimension in the index (" + toString(annoy->getSpaceDim()) + ")", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("The dimension of the space in the request (" + toString(condition.getNumOfDimensions()) + ") "
+            + "does not match with the dimension in the index (" + toString(annoy->getNumOfDimensions()) + ")", ErrorCodes::INCORRECT_QUERY);
     }
 
     std::vector<int32_t> items;
@@ -209,12 +249,12 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
     dist.reserve(limit);
 
     int k_search = -1;
-    auto settings_str = condition.getSettingsStr();
-    if (!settings_str.empty())
+    auto params_str = condition.getParamsStr();
+    if (!params_str.empty())
     {
         try
         {
-            k_search = std::stoi(settings_str);
+            k_search = std::stoi(params_str);
         }
         catch (...)
         {
@@ -229,7 +269,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         {
             continue;
         }
-        result.insert(items[i] / 8192);
+        result.insert(items[i] / index_granularity);
     }
 
     std::vector<size_t> result_vector;
@@ -261,7 +301,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
 
 MergeTreeIndexPtr AnnoyIndexCreator(const IndexDescription & index)
 {
-    int param = index.arguments[0].get<int>();
+    uint64_t param = index.arguments[0].get<uint64_t>();
     return std::make_shared<MergeTreeIndexAnnoy>(index, param);
 }
 

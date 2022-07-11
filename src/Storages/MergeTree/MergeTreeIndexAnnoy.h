@@ -7,13 +7,12 @@
 #include <annoylib.h>
 #include <kissrandom.h>
 
-
 namespace DB
 {
 
 // auxiliary namespace for working with spotify-annoy library
 // mainly for serialization and deserialization of the index
-namespace Annoy
+namespace ApproximateNearestNeighbour
 {
     using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexSingleThreadedBuildPolicy;
     // TODO: Support different metrics. List of available metrics can be taken from here:
@@ -24,16 +23,16 @@ namespace Annoy
         using Base = ::Annoy::AnnoyIndex<Int32, Float32, Dist, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>;
     public:
         AnnoyIndexSerialize() = delete;
-        explicit AnnoyIndexSerialize(const int dim) : Base::AnnoyIndex(dim) {}
+        explicit AnnoyIndexSerialize(const uint64_t dim) : Base::AnnoyIndex(dim) {}
         void serialize(WriteBuffer& ostr) const;
         void deserialize(ReadBuffer& istr);
-        float getSpaceDim() const;
+        uint64_t getNumOfDimensions() const;
     };
 }
 
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
-    using AnnoyIndex = Annoy::AnnoyIndexSerialize<>;
+    using AnnoyIndex = ANN::AnnoyIndexSerialize<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
@@ -57,10 +56,10 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 {
-    using AnnoyIndex = Annoy::AnnoyIndexSerialize<>;
+    using AnnoyIndex = ANN::AnnoyIndexSerialize<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
-    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, int index_param);
+    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t index_param);
     ~MergeTreeIndexAggregatorAnnoy() override = default;
 
     bool empty() const override;
@@ -69,12 +68,12 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
-    int index_param;
+    const uint64_t index_param;
     AnnoyIndexPtr index_base;
 };
 
 
-class MergeTreeIndexConditionAnnoy final : public ANNCondition::IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionAnnoy final : public ANN::IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionAnnoy(
@@ -91,14 +90,14 @@ public:
     ~MergeTreeIndexConditionAnnoy() override = default;
 
 private:
-    ANNCondition::ANNCondition condition;
+    ANN::ANNCondition condition;
 };
 
 
 class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexAnnoy(const IndexDescription & index_, int index_param_)
+    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t index_param_)
         : IMergeTreeIndex(index_)
         , index_param(index_param_)
     {}
@@ -111,10 +110,10 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
 
 private:
-    int index_param;
+    const uint64_t index_param;
 };
 
 
