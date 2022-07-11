@@ -2127,7 +2127,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to MeiliSearch " + str(ex))
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=10, secure=False):
+    def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
 
