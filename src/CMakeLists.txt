@@ -439,7 +439,7 @@ if (TARGET ch_contrib::avrocpp)
     dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
 endif ()
 
-target_compile_options(clickhouse_common_io PRIVATE -Wno-reserved-identifier)
+set_source_files_properties(Common/CARESPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
 
 if (TARGET OpenSSL::Crypto)
