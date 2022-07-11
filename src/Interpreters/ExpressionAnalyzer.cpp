@@ -1513,10 +1513,10 @@ void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & befor
 
     for (const auto & source_column : source_columns)
     {
-        if (isAggregateFunction(source_column.type))
-            result_columns.push_back(source_column);
-        else
+        if (source_column.type->canBeInsideNullable())
             result_columns.emplace_back(makeNullableSafe(source_column.type), source_column.name);
+        else
+            result_columns.push_back(source_column);
     }
     ExpressionActionsChain::Step & step = chain.lastStep(before_aggregation->getNamesAndTypesList());
 
