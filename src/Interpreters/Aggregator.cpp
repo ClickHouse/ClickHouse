@@ -2167,15 +2167,15 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     return block;
 }
 
-Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
+BlocksList Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
     // clang-format off
     const size_t rows = data_variants.sizeWithoutOverflowRow();
-#define M(NAME)                                                                                                                                 \
-    else if (data_variants.type == AggregatedDataVariants::Type::NAME)                                                                          \
-    {                                                                                                                                           \
-        return convertToBlockImpl(                                                                                                              \
-            *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows).front(); \
+#define M(NAME)                                                                                                                         \
+    else if (data_variants.type == AggregatedDataVariants::Type::NAME)                                                                  \
+    {                                                                                                                                   \
+        return convertToBlockImpl(                                                                                                      \
+            *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows); \
     }
 
     if (false)
@@ -2306,7 +2306,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     if (data_variants.type != AggregatedDataVariants::Type::without_key)
     {
         if (!data_variants.isTwoLevel())
-            blocks.emplace_back(prepareBlockAndFillSingleLevel(data_variants, final));
+            blocks.emplace_back(prepareBlockAndFillSingleLevel(data_variants, final).front());
         else
             blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
     }
@@ -3075,7 +3075,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
         block = prepareBlockAndFillWithoutKey(result, final, is_overflows);
     else
-        block = prepareBlockAndFillSingleLevel(result, final);
+        block = prepareBlockAndFillSingleLevel(result, final).front();
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
     if (!final)

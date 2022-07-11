@@ -182,7 +182,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
             {
                 if (group_by_key)
-                    group_by_block = params->aggregator.prepareBlockAndFillSingleLevel(variants, /* final= */ false);
+                    group_by_block = params->aggregator.prepareBlockAndFillSingleLevel(variants, /* final= */ false).front();
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
                 return;
@@ -293,7 +293,7 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         if (group_by_key)
-            group_by_block = params->aggregator.prepareBlockAndFillSingleLevel(variants, /* final= */ false);
+            group_by_block = params->aggregator.prepareBlockAndFillSingleLevel(variants, /* final= */ false).front();
         else
             params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
         variants.invalidate();
