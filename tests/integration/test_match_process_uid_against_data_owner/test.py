@@ -33,7 +33,7 @@ def test_different_user(started_cluster):
         node.start_clickhouse(start_wait_sec=3)
 
     log = node.grep_in_log("Effective")
-    expected_message = "Effective user of the process \(.*\) does not match the owner of the data \(.*\)\. Run under 'sudo -u .*'\."
+    expected_message = "Effective user of the process (.*) does not match the owner of the data (.*)\\. Run under 'sudo -u .*'\\."
     if re.search(expected_message, log) is None:
         pytest.fail(
             'Expected the server to fail with a message "{}", but the last message is "{}"'.format(
