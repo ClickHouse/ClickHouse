@@ -1086,7 +1086,6 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
 
     auto callback = [promise](const Coordination::ListResponse & response) mutable
     {
-        LOG_INFO(&Poco::Logger::get("LOGGER"), "Got response {}", response.names.size());
         promise->set_value(response);
     };
 
