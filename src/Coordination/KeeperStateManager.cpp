@@ -5,7 +5,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
-#include "IO/ReadHelpers.h"
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -280,6 +280,17 @@ const std::filesystem::path & KeeperStateManager::getOldServerStatePath()
     return old_path;
 }
 
+namespace
+{
+enum ServerStateVersion : uint8_t
+{
+    V1 = 0
+};
+
+constexpr auto current_server_state_version = ServerStateVersion::V1;
+
+}
+
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
     const auto & old_path = getOldServerStatePath();
@@ -292,8 +303,11 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     // calculate checksum
     SipHash hash;
+    hash.update(current_server_state_version);
     hash.update(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
     writeIntBinary(hash.get64(), server_state_file);
+
+    writeIntBinary(static_cast<uint8_t>(current_server_state_version), server_state_file);
 
     server_state_file.write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
     server_state_file.sync();
@@ -319,16 +333,21 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             uint64_t read_checksum;
             readIntBinary(read_checksum, read_buf);
 
-            auto buffer_size = content_size - sizeof read_checksum;
+            uint8_t version;
+            readIntBinary(version, read_buf);
+
+            auto buffer_size = content_size - sizeof read_checksum - sizeof version;
+
             auto state_buf = nuraft::buffer::alloc(buffer_size);
             read_buf.read(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
 
             SipHash hash;
+            hash.update(version);
             hash.update(reinterpret_cast<const char *>(state_buf->data_begin()), state_buf->size());
 
             if (read_checksum != hash.get64())
             {
-                LOG_WARNING(
+                LOG_ERROR(
                     logger,
                     "Invalid checksum while reading state from {}. Got {}, expected {}",
                     path.generic_string(),
@@ -353,20 +372,30 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         auto state = try_read_file(server_state_path);
 
         if (state)
+        {
+            if (std::filesystem::exists(old_path))
+                std::filesystem::remove(old_path);
+
             return state;
+        }
+
+        std::filesystem::remove(server_state_path);
     }
 
     if (std::filesystem::exists(old_path))
     {
-        auto state = try_read_file(server_state_path);
+        auto state = try_read_file(old_path);
 
         if (state)
+        {
+            std::filesystem::rename(old_path, server_state_path);
             return state;
+        }
 
-        std::filesystem::rename(old_path, server_state_path);
+        std::filesystem::remove(old_path);
     }
 
-    LOG_INFO(logger, "No state was read");
+    LOG_WARNING(logger, "No state was read");
     return nullptr;
 }
 
