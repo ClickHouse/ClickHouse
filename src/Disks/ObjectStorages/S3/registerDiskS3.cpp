@@ -51,6 +51,7 @@ void checkWriteAccess(IDisk & disk)
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         file->finalize();
         throw;
     }
