@@ -1211,7 +1211,7 @@ void ZooKeeper::list(
     if (keeper_api_version < Coordination::KeeperApiVersion::V1)
     {
         if (list_request_type != ListRequestType::ALL)
-            throw Exception("Filtered list request type cannot be used because it's not support by the server", Error::ZBADARGUMENTS);
+            throw Exception("Filtered list request type cannot be used because it's not supported by the server", Error::ZBADARGUMENTS);
 
         request = std::make_shared<ZooKeeperListRequest>();
     }
@@ -1227,6 +1227,7 @@ void ZooKeeper::list(
     RequestInfo request_info;
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     request_info.watch = watch;
+    request_info.request = std::move(request);
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);
