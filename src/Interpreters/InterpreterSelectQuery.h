@@ -54,13 +54,17 @@ public:
         const ASTPtr & query_ptr_,
         const ContextPtr & context_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names_ = Names{});
+        const Names & required_result_column_names_ = Names{},
+        SubqueriesForSets subquery_for_sets_ = {},
+        PreparedSets prepared_sets_ = {});
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const ContextMutablePtr & context_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names_ = Names{});
+        const Names & required_result_column_names_ = Names{},
+        SubqueriesForSets subquery_for_sets_ = {},
+        PreparedSets prepared_sets_ = {});
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(

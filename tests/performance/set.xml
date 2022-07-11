@@ -49,4 +49,11 @@
             GROUP BY bitAnd(number, 17)
         ))
     </query>
+
+    <!-- Set is not calculated twice for subquery -->
+    <query>
+    SELECT sum(x)
+    FROM ( SELECT number * 2 AS x FROM numbers({size_large}) ) AS t1
+    WHERE x NOT IN ( SELECT number * 3 AS y FROM numbers({size_large}) )
+    </query>
 </test>

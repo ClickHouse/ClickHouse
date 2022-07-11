@@ -32,13 +32,21 @@ namespace ErrorCodes
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
-    : InterpreterSelectWithUnionQuery(query_ptr_, Context::createCopy(context_), options_, required_result_column_names)
+    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names,
+    SubqueriesForSets subqueries_for_sets_, PreparedSets prepared_sets_)
+    : InterpreterSelectWithUnionQuery(
+        query_ptr_,
+        Context::createCopy(context_),
+        options_,
+        required_result_column_names,
+        std::move(subqueries_for_sets_),
+        std::move(prepared_sets_))
 {
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names,
+    SubqueriesForSets subqueries_for_sets_, PreparedSets prepared_sets_)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
@@ -143,7 +151,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
-            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
+            buildCurrentChildInterpreter(
+                ast->list_of_selects->children.at(query_num),
+                require_full_header ? Names() : current_required_result_column_names,
+                std::move(subqueries_for_sets_), std::move(prepared_sets_))
+        );
+
         // We need to propagate the uses_view_source flag from children to the (self) parent since, if one of the children uses
         // a view source that means that the parent uses it too and can be cached globally
         uses_view_source |= nested_interpreters.back()->usesViewSource();
@@ -236,12 +249,14 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
-InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names)
+InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(
+    const ASTPtr & ast_ptr_, const Names & current_required_result_column_names,
+    SubqueriesForSets subqueries_for_sets_, PreparedSets prepared_sets_)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names, std::move(subqueries_for_sets_), std::move(prepared_sets_));
     else if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names, std::move(subqueries_for_sets_), std::move(prepared_sets_));
     else
         return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
 }

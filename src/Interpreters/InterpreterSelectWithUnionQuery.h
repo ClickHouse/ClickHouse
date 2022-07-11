@@ -2,6 +2,8 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 
 namespace DB
 {
@@ -20,13 +22,17 @@ public:
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names = {});
+        const Names & required_result_column_names = {},
+        SubqueriesForSets subqueries_for_sets_ = {},
+        PreparedSets prepared_sets_ = {});
 
     InterpreterSelectWithUnionQuery(
         const ASTPtr & query_ptr_,
         ContextMutablePtr context_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names = {});
+        const Names & required_result_column_names = {},
+        SubqueriesForSets subqueries_for_sets_ = {},
+        PreparedSets prepared_sets_ = {});
 
     ~InterpreterSelectWithUnionQuery() override;
 
@@ -55,7 +61,9 @@ private:
     Block getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);
 
     std::unique_ptr<IInterpreterUnionOrSelectQuery>
-    buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names);
+    buildCurrentChildInterpreter(
+        const ASTPtr & ast_ptr_, const Names & current_required_result_column_names,
+        SubqueriesForSets subqueries_for_sets_, PreparedSets prepared_sets_);
 };
 
 }

@@ -162,16 +162,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const ContextPtr & context_,
     const SelectQueryOptions & options_,
-    const Names & required_result_column_names_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
+    const Names & required_result_column_names_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, nullptr, options_,
+        required_result_column_names_, {}, std::move(subquery_for_sets_), std::move(prepared_sets_))
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const ContextMutablePtr & context_,
     const SelectQueryOptions & options_,
-    const Names & required_result_column_names_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
+    const Names & required_result_column_names_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, nullptr, options_,
+        required_result_column_names_, {}, std::move(subquery_for_sets_), std::move(prepared_sets_))
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -948,7 +956,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             {
                 const auto & interpolate = elem->as<ASTInterpolateElement &>();
 
-                if (const ColumnWithTypeAndName *result_block_column = result_block.findByName(interpolate.column))
+                if (const ColumnWithTypeAndName * result_block_column = result_block.findByName(interpolate.column))
                 {
                     if (!col_set.insert(result_block_column->name).second)
                         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
@@ -2070,8 +2078,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
             subquery, getSubqueryContext(context),
-            options.copy().subquery().noModify(), required_columns);
-
+            options.copy().subquery().noModify(), required_columns,
+            query_analyzer->getSubqueriesForSets(),
+            query_analyzer->getPreparedSets());
         interpreter_subquery->addStorageLimits(storage_limits);
 
         if (query_analyzer->hasAggregation())
