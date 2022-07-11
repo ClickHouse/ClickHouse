@@ -311,7 +311,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         {
             span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
         }
-
+        span.is_ready = true;
         opentelemetry_span_log->add(span);
     }
 
@@ -690,6 +690,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
                 }
+                span->ready();
                 res = interpreter->execute();
             }
         }
@@ -951,7 +952,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                     span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
                     }
-
+                    span.is_ready = true;
                     opentelemetry_span_log->add(span);
                 }
 

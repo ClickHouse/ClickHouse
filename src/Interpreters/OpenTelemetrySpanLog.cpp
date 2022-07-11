@@ -101,6 +101,11 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 {
     try
     {
+        // If span is not ready we don't try to save it.
+        // It may be broken by bad_alloc when filled or similar
+        if (!is_ready)
+            return;
+
         if (trace_id == UUID())
             return;
 

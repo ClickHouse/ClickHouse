@@ -16,6 +16,7 @@ struct OpenTelemetrySpan
     UInt64 start_time_us;
     UInt64 finish_time_us;
     Map attributes;
+    bool is_ready;
     // I don't understand how Links work, namely, which direction should they
     // point to, and how they are related with parent_span_id, so no Links for now.
 };
@@ -48,6 +49,7 @@ struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
     void addAttribute(const std::string& name, const std::string& value);
     void addAttribute(const Exception & e);
     void addAttribute(std::exception_ptr e);
+    void ready() { this->is_ready = true; }
 
     ~OpenTelemetrySpanHolder();
 };
