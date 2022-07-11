@@ -22,7 +22,7 @@ ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsAndCheck
 {
     auto columns_hash = getSipHash(columns_znode);
     auto checksums = MinimalisticDataPartChecksums::deserializeFrom(checksums_znode);
-    return ReplicatedMergeTreePartHeader(columns_hash, std::move(checksums));
+    return ReplicatedMergeTreePartHeader(std::move(columns_hash), std::move(checksums));
 }
 
 ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(

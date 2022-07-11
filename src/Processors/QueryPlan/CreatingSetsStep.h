@@ -27,6 +27,8 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
+    void updateOutputStream() override;
+
     String description;
     SubqueryForSet subquery_for_set;
     SizeLimits network_transfer_limits;

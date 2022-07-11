@@ -424,7 +424,7 @@ public:
     void setUserScriptsPath(const String & path);
     void setUserDefinedPath(const String & path);
 
-    void addWarningMessage(const String & msg);
+    void addWarningMessage(const String & msg) const;
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -757,6 +757,7 @@ public:
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -917,6 +918,7 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
+        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;

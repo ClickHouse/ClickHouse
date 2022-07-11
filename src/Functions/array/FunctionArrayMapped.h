@@ -342,16 +342,26 @@ public:
                 else if (lambda_result.column->isNullable())
                 {
                     auto result_column = IColumn::mutate(std::move(lambda_result.column));
-                    auto * column_nullable = assert_cast<ColumnNullable *>(result_column.get());
-                    auto & null_map = column_nullable->getNullMapData();
-                    auto nested_column = IColumn::mutate(std::move(column_nullable->getNestedColumnPtr()));
-                    auto & nested_data = assert_cast<ColumnUInt8 *>(nested_column.get())->getData();
-                    for (size_t i = 0; i != nested_data.size(); ++i)
+
+                    if (isColumnConst(*result_column))
                     {
-                        if (null_map[i])
-                            nested_data[i] = 0;
+                        UInt8 value = result_column->empty() ? 0 : result_column->getBool(0);
+                        auto result_type = std::make_shared<DataTypeUInt8>();
+                        lambda_result.column = result_type->createColumnConst(result_column->size(), value);
                     }
-                    lambda_result.column = std::move(nested_column);
+                    else
+                    {
+                        auto * column_nullable = assert_cast<ColumnNullable *>(result_column.get());
+                        auto & null_map = column_nullable->getNullMapData();
+                        auto nested_column = IColumn::mutate(std::move(column_nullable->getNestedColumnPtr()));
+                        auto & nested_data = assert_cast<ColumnUInt8 *>(nested_column.get())->getData();
+                        for (size_t i = 0; i != nested_data.size(); ++i)
+                        {
+                            if (null_map[i])
+                                nested_data[i] = 0;
+                        }
+                        lambda_result.column = std::move(nested_column);
+                    }
                 }
             }
 
