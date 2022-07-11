@@ -157,7 +157,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     size_t buf_size,
     const WriteSettings & write_settings)
 {
-    WriteSettings disk_write_settings = patchSettings(write_settings);
+    WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
 
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
