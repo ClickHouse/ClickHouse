@@ -1,6 +1,6 @@
 ---
-sidebar_position: 45
-sidebar_label: Rounding
+toc_priority: 45
+toc_title: Rounding
 ---
 
 # Rounding Functions {#rounding-functions}
@@ -189,7 +189,7 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 ## roundDuration(num) {#rounddurationnum}
 
-Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. 
+Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function was specifically implemented for a web analytics use case for reporting on session lengths. 
 
 ## roundAge(num) {#roundagenum}
 

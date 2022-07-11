@@ -28,7 +28,7 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/sort.h>
 
 #include <rocksdb/db.h>
@@ -464,7 +464,7 @@ Pipe StorageEmbeddedRocksDB::read(
         Pipes pipes;
 
         size_t num_keys = keys->size();
-        size_t num_threads = std::min<size_t>(num_streams, keys->size());
+        size_t num_threads = std::min(size_t(num_streams), keys->size());
 
         assert(num_keys <= std::numeric_limits<uint32_t>::max());
         assert(num_threads <= std::numeric_limits<uint32_t>::max());

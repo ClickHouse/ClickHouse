@@ -896,7 +896,7 @@ struct JSONExtractTree
             if (element.isInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.contains(value))
+                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.count(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;
@@ -905,7 +905,7 @@ struct JSONExtractTree
             if (element.isUInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.contains(value))
+                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.count(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;

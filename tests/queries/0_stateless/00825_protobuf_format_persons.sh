@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# End-to-end test of serialization/deserialization of a table with different
-# data types to/from Protobuf format.
-#   Cf. 02240_protobuflist_format_persons.sh
-
 # To generate reference file for this test use the following commands:
 # ninja ProtobufDelimitedMessagesSerializer
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
@@ -68,7 +64,7 @@ $CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format
 echo
 echo "Roundtrip:"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE roundtrip_persons_00825 AS persons_00825"
-$CLICKHOUSE_CLIENT --query "INSERT INTO roundtrip_persons_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons:Person' FORMAT Protobuf" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO roundtrip_persons_00825 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons:Person'" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_persons_00825 ORDER BY name"
 rm "$BINARY_FILE_PATH"
 
@@ -82,7 +78,7 @@ $CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format
 echo
 echo "Roundtrip:"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE alt_persons_00825 AS persons_00825"
-$CLICKHOUSE_CLIENT --query "INSERT INTO alt_persons_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons:AltPerson' FORMAT Protobuf" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO alt_persons_00825 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons:AltPerson'" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM alt_persons_00825 ORDER BY name"
 rm "$BINARY_FILE_PATH"
 
@@ -96,7 +92,7 @@ $CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format
 echo
 echo "Roundtrip:"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE str_persons_00825 AS persons_00825"
-$CLICKHOUSE_CLIENT --query "INSERT INTO str_persons_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons:StrPerson' FORMAT Protobuf" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO str_persons_00825 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons:StrPerson'" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM str_persons_00825 ORDER BY name"
 rm "$BINARY_FILE_PATH"
 
@@ -110,7 +106,7 @@ $CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format
 echo
 echo "Roundtrip:"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE syntax2_persons_00825 AS persons_00825"
-$CLICKHOUSE_CLIENT --query "INSERT INTO syntax2_persons_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons_syntax2:Syntax2Person' FORMAT Protobuf" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO syntax2_persons_00825 FORMAT Protobuf SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons_syntax2:Syntax2Person'" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM syntax2_persons_00825 ORDER BY name"
 rm "$BINARY_FILE_PATH"
 

@@ -617,13 +617,13 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
     return false;
 }
 
-StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context);
+    return getStorageSnapshotForQuery(metadata_snapshot, nullptr);
 }
 
 StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
-    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr /*query_context*/) const
+    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query) const
 {
     /// If query doesn't use columns of type Object, don't deduce
     /// concrete types for them, because it required extra round trip.
@@ -989,7 +989,7 @@ void StorageDistributed::drop()
     // (in shutdown()).
     shutdown();
 
-    // Distributed table without sharding_key does not allows INSERTs
+    // Distributed table w/o sharding_key does not allows INSERTs
     if (relative_data_path.empty())
         return;
 
@@ -1376,7 +1376,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     {
         /// Step is 5% of the delay and minimal one second.
         /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
-        const size_t step_ms = std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
+        const size_t step_ms = std::min<double>(1., double(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
         UInt64 delayed_ms = 0;
 
         do {

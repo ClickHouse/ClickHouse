@@ -1,9 +1,9 @@
 ---
-sidebar_label: Web Analytics Data
-description: Dataset consists of two tables containing anonymized web analytics data with hits and visits
+toc_priority: 15
+toc_title: Web Analytics Data
 ---
 
-# Anonymized Web Analytics Data
+# Anonymized Web Analytics Data {#anonymized-web-analytics-data}
 
 Dataset consists of two tables containing anonymized web analytics data with hits (`hits_v1`) and visits (`visits_v1`).
 
@@ -73,6 +73,6 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 ## Example Queries {#example-queries}
 
-[The ClickHouse tutorial](../../tutorial.md) is based on this web analytics dataset, and the recommended way to get started with this dataset is to go through the tutorial.
+[The ClickHouse tutorial](../../getting-started/tutorial.md) is based on this web analytics dataset, and the recommended way to get started with this dataset is to go through the tutorial.
 
 Additional examples of queries to these tables can be found among [stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) of ClickHouse (they are named `test.hits` and `test.visits` there).

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 51
-sidebar_label: view
+toc_priority: 51
+toc_title: view
 ---
 
 ## view {#view}

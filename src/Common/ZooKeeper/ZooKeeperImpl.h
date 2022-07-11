@@ -209,7 +209,7 @@ private:
     std::atomic<XID> next_xid {1};
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
-    std::atomic_flag finalization_started;
+    std::atomic<bool> finalization_started {false};
 
     using clock = std::chrono::steady_clock;
 

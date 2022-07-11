@@ -217,6 +217,3 @@ if __name__ == "__main__":
     post_commit_status(
         gh, pr_info.sha, check_name_with_group, message, status, report_url
     )
-
-    if status == "error":
-        sys.exit(1)

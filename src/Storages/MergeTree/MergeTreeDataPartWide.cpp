@@ -146,11 +146,6 @@ bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
     return volume->getDisk()->isRemote();
 }
 
-bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
-{
-    return volume->getDisk()->supportZeroCopyReplication();
-}
-
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
     removeIfNeeded();
@@ -172,10 +167,10 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     String file_name = ISerialization::getFileNameForStream(name_type, substream_path);
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
                     String bin_file_name = file_name + DATA_FILE_EXTENSION;
-                    if (!checksums.files.contains(mrk_file_name))
+                    if (!checksums.files.count(mrk_file_name))
                         throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + fullPath(volume->getDisk(), path),
                             ErrorCodes::NO_FILE_IN_DATA_PART);
-                    if (!checksums.files.contains(bin_file_name))
+                    if (!checksums.files.count(bin_file_name))
                         throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + fullPath(volume->getDisk(), path),
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                 });

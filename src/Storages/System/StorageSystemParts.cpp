@@ -12,7 +12,6 @@
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Common/hex.h>
-#include <Interpreters/TransactionVersionMetadata.h>
 
 namespace DB
 {
@@ -82,19 +81,13 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
 
         {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-
-        {"visible",                                     std::make_shared<DataTypeUInt8>()},
-        {"creation_tid",                                getTransactionIDDataType()},
-        {"removal_tid",                                 getTransactionIDDataType()},
-        {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
-        {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
     }
     )
 {
 }
 
 void StorageSystemParts::processNextStorage(
-    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -278,29 +271,6 @@ void StorageSystemParts::processNextStorage(
 
         if (columns_mask[src_index++])
             columns[res_index++]->insert(projections);
-
-        if (columns_mask[src_index++])
-        {
-            auto txn = context->getCurrentTransaction();
-            if (txn)
-                columns[res_index++]->insert(part->version.isVisible(*txn));
-            else
-                columns[res_index++]->insert(part_state == State::Active);
-        }
-
-        auto get_tid_as_field = [](const TransactionID & tid) -> Field
-        {
-            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
-        };
-
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->version.creation_tid));
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->version.getRemovalTID()));
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

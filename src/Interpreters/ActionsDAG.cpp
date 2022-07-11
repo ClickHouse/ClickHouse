@@ -334,7 +334,7 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
     NameSet added;
     for (const auto & node : index)
     {
-        if (required_names.contains(node->result_name) && !added.contains(node->result_name))
+        if (required_names.count(node->result_name) && added.count(node->result_name) == 0)
         {
             required_nodes.push_back(node);
             added.insert(node->result_name);
@@ -344,7 +344,7 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
     if (added.size() < required_names.size())
     {
         for (const auto & name : required_names)
-            if (!added.contains(name))
+            if (added.count(name) == 0)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                                 "Unknown column: {}, there are only columns {}", name, dumpNames());
     }
@@ -392,7 +392,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
         /// We cannot remove arrayJoin because it changes the number of rows.
         bool is_array_join = node.type == ActionType::ARRAY_JOIN;
 
-        if (is_array_join && !visited_nodes.contains(&node))
+        if (is_array_join && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -426,7 +426,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
 
         for (const auto * child : node->children)
         {
-            if (!visited_nodes.contains(child))
+            if (visited_nodes.count(child) == 0)
             {
                 stack.push(const_cast<Node *>(child));
                 visited_nodes.insert(child);
@@ -434,8 +434,9 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
         }
     }
 
-    nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
-    std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
+    nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
+    auto it = std::remove_if(inputs.begin(), inputs.end(), [&](const Node * node) { return visited_nodes.count(node) == 0; });
+    inputs.erase(it, inputs.end());
 }
 
 static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)
@@ -534,7 +535,7 @@ Block ActionsDAG::updateHeader(Block header) const
     {
         for (const auto * output : index)
         {
-            if (!node_to_column.contains(output))
+            if (node_to_column.count(output) == 0)
             {
                 std::stack<Frame> stack;
                 stack.push({.node = output});
@@ -547,7 +548,7 @@ Block ActionsDAG::updateHeader(Block header) const
                     while (frame.next_child < node->children.size())
                     {
                         const auto * child = node->children[frame.next_child];
-                        if (!node_to_column.contains(child))
+                        if (node_to_column.count(child) == 0)
                         {
                             stack.push({.node = child});
                             break;
@@ -659,7 +660,7 @@ NameSet ActionsDAG::foldActionsByProjection(
 
         for (const auto * child : node->children)
         {
-            if (!visited_nodes.contains(child))
+            if (visited_nodes.count(child) == 0)
             {
                 stack.push(const_cast<Node *>(child));
                 visited_nodes.insert(child);
@@ -668,9 +669,9 @@ NameSet ActionsDAG::foldActionsByProjection(
     }
 
     /// Clean up unused nodes after folding.
-    std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
-    std::erase_if(index, [&](const Node * node) { return !visited_index_names.contains(node->result_name); });
-    nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
+    std::erase_if(inputs, [&](const Node * node) { return visited_nodes.count(node) == 0; });
+    std::erase_if(index, [&](const Node * node) { return visited_index_names.count(node->result_name) == 0; });
+    nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 
     /// Calculate the required columns after folding.
     NameSet next_required_columns;
@@ -1298,7 +1299,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     /// DFS. Decide if node is needed by split.
     for (const auto & node : nodes)
     {
-        if (!split_nodes.contains(&node))
+        if (split_nodes.count(&node) == 0)
             continue;
 
         auto & cur_data = data[&node];
@@ -1475,7 +1476,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     /// DFS. Decide if node depends on ARRAY JOIN.
     for (const auto & node : nodes)
     {
-        if (visited_nodes.contains(&node))
+        if (visited_nodes.count(&node))
             continue;
 
         visited_nodes.insert(&node);
@@ -1490,7 +1491,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
             {
                 const auto * child = cur.node->children[cur.next_child_to_visit];
 
-                if (!visited_nodes.contains(child))
+                if (visited_nodes.count(child) == 0)
                 {
                     visited_nodes.insert(child);
                     stack.push({.node = child});
@@ -1503,12 +1504,12 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
             if (cur.next_child_to_visit == cur.node->children.size())
             {
                 bool depend_on_array_join = false;
-                if (cur.node->type == ActionType::INPUT && array_joined_columns.contains(cur.node->result_name))
+                if (cur.node->type == ActionType::INPUT && array_joined_columns.count(cur.node->result_name))
                     depend_on_array_join = true;
 
                 for (const auto * child : cur.node->children)
                 {
-                    if (!split_nodes.contains(child))
+                    if (split_nodes.count(child) == 0)
                         depend_on_array_join = true;
                 }
 
@@ -1523,21 +1524,6 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     auto res = split(split_nodes);
     /// Do not remove array joined columns if they are not used.
     /// res.first->project_input = false;
-    return res;
-}
-
-ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
-{
-    std::unordered_set<const Node *> split_nodes;
-    for (const auto & sort_column : sort_columns)
-        if (const auto * node = tryFindInIndex(sort_column))
-            split_nodes.insert(node);
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Sorting column {} wasn't found in the ActionsDAG's index. DAG:\n{}", sort_column, dumpDAG());
-
-    auto res = split(split_nodes);
-    res.second->project_input = project_input;
     return res;
 }
 
@@ -1590,7 +1576,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
             {
                 for (const auto & child : node->children)
                 {
-                    if (!visited_nodes.contains(child))
+                    if (visited_nodes.count(child) == 0)
                     {
                         visited_nodes.insert(child);
                         stack.push(child);
@@ -1623,7 +1609,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
         {
             const auto * child = cur.node->children[cur.next_child_to_visit];
 
-            if (!visited_nodes.contains(child))
+            if (visited_nodes.count(child) == 0)
             {
                 visited_nodes.insert(child);
                 stack.push({.node = child});
@@ -1643,9 +1629,9 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                     allowed_nodes.emplace(cur.node);
             }
 
-            if (predicates.contains(cur.node))
+            if (predicates.count(cur.node))
             {
-                if (allowed_nodes.contains(cur.node))
+                if (allowed_nodes.count(cur.node))
                 {
                     if (allowed.insert(cur.node).second)
                         conjunction.allowed.push_back(cur.node);
@@ -1720,7 +1706,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
     /// DFS. Clone actions.
     for (const auto * predicate : conjunction)
     {
-        if (nodes_mapping.contains(predicate))
+        if (nodes_mapping.count(predicate))
             continue;
 
         stack.push({.node = predicate});
@@ -1732,7 +1718,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
             {
                 const auto * child = cur.node->children[cur.next_child_to_visit];
 
-                if (!nodes_mapping.contains(child))
+                if (nodes_mapping.count(child) == 0)
                 {
                     stack.push({.node = child});
                     break;

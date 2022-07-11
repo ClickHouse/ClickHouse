@@ -4,6 +4,8 @@
 
 #include <Common/filesystemHelpers.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Formats/formatBlock.h>
@@ -55,10 +57,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        /// Do not start user defined script during query analysis. Because user script startup could be heavy.
-        if (input_rows_count == 0)
-            return result_type->createColumn();
-
         auto coordinator = executable_function->getCoordinator();
         const auto & coordinator_configuration = coordinator->getConfiguration();
         const auto & configuration = executable_function->getConfiguration();
@@ -76,15 +74,9 @@ public:
                     command,
                     user_scripts_path);
 
-            if (!FS::exists(script_path))
+            if (!std::filesystem::exists(std::filesystem::path(script_path)))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Executable file {} does not exist inside user scripts folder {}",
-                    command,
-                    user_scripts_path);
-
-            if (!FS::canExecute(script_path))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Executable file {} is not executable inside user scripts folder {}",
                     command,
                     user_scripts_path);
 

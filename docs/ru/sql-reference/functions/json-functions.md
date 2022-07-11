@@ -1,6 +1,6 @@
 ---
-sidebar_position: 56
-sidebar_label: JSON
+toc_priority: 56
+toc_title: JSON
 ---
 
 # Функции для работы с JSON {#funktsii-dlia-raboty-s-json}
@@ -360,9 +360,9 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_EXISTS(path, json)
-    :::
+
 ## JSON_QUERY(json, path) {#json-query}
 
 Парсит JSON и извлекает значение как JSON массив или JSON объект.
@@ -386,9 +386,9 @@ SELECT toTypeName(JSON_QUERY('{"hello":2}', '$.hello'));
 [2]
 String
 ```
-    :::note "Примечание"
+!!! note "Примечание"
     до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_QUERY(path, json)
-    :::
+
 ## JSON_VALUE(json, path) {#json-value}
 
 Парсит JSON и извлекает значение как JSON скаляр.
@@ -407,15 +407,15 @@ SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
 Результат:
 
 ``` text
-world
+"world"
 0
 2
 String
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_VALUE(path, json)
-    :::
+
 ## toJSONString {#tojsonstring}
 
 Сериализует значение в JSON представление. Поддерживаются различные типы данных и вложенные структуры.

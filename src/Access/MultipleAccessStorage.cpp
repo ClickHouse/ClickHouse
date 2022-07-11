@@ -398,7 +398,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 
             for (const auto & storage : *nested_storages)
             {
-                if (!subscriptions.contains(storage))
+                if (!subscriptions.count(storage))
                     added_subscriptions[static_cast<size_t>(type)].push_back({storage, nullptr});
             }
         }
@@ -436,7 +436,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
             auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
             for (auto & [storage, subscription] : added_subscriptions[static_cast<size_t>(type)])
             {
-                if (!subscriptions.contains(storage) && (boost::range::find(*nested_storages, storage) != nested_storages->end())
+                if (!subscriptions.count(storage) && (boost::range::find(*nested_storages, storage) != nested_storages->end())
                     && !handlers_by_type[static_cast<size_t>(type)].empty())
                 {
                     subscriptions.emplace(std::move(storage), std::move(subscription));

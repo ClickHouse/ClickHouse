@@ -45,64 +45,64 @@ private:
     /// This is internal method to use from COW.
     /// It performs shallow copy with copy-ctor and not useful from outside.
     /// If you want to copy column for modification, look at 'mutate' method.
-    [[nodiscard]] virtual MutablePtr clone() const = 0;
+    virtual MutablePtr clone() const = 0;
 
 public:
     /// Name of a Column. It is used in info messages.
-    [[nodiscard]] virtual std::string getName() const { return getFamilyName(); }
+    virtual std::string getName() const { return getFamilyName(); }
 
     /// Name of a Column kind, without parameters (example: FixedString, Array).
-    [[nodiscard]] virtual const char * getFamilyName() const = 0;
+    virtual const char * getFamilyName() const = 0;
 
     /// Type of data that column contains. It's an underlying type: UInt16 for Date, UInt32 for DateTime, so on.
-    [[nodiscard]] virtual TypeIndex getDataType() const = 0;
+    virtual TypeIndex getDataType() const = 0;
 
     /** If column isn't constant, returns itself.
       * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
       */
-    [[nodiscard]] virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
+    virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
     /// If column isn't ColumnLowCardinality, return itself.
     /// If column is ColumnLowCardinality, transforms it to full column.
-    [[nodiscard]] virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
+    virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
 
     /// If column isn't ColumnSparse, return itself.
     /// If column is ColumnSparse, transforms it to full column.
-    [[nodiscard]] virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
+    virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
 
-    [[nodiscard]] Ptr convertToFullIfNeeded() const
+    Ptr convertToFullIfNeeded() const
     {
         return convertToFullColumnIfSparse()->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
     }
 
     /// Creates empty column with the same type.
-    [[nodiscard]] virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
+    virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
     /// Creates column with the same type and specified size.
     /// If size is less current size, then data is cut.
     /// If size is greater, than default values are appended.
-    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
     /// Returns number of values in column.
-    [[nodiscard]] virtual size_t size() const = 0;
+    virtual size_t size() const = 0;
 
     /// There are no values in columns.
-    [[nodiscard]] bool empty() const { return size() == 0; }
+    bool empty() const { return size() == 0; }
 
     /// Returns value of n-th element in universal Field representation.
     /// Is used in rare cases, since creation of Field instance is expensive usually.
-    [[nodiscard]] virtual Field operator[](size_t n) const = 0;
+    virtual Field operator[](size_t n) const = 0;
 
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
-    [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
+    virtual StringRef getDataAt(size_t n) const = 0;
 
     /// Like getData, but has special behavior for columns that contain variable-length strings.
     /// Returns zero-ending memory chunk (i.e. its size is 1 byte longer).
-    [[nodiscard]] virtual StringRef getDataAtWithTerminatingZero(size_t n) const
+    virtual StringRef getDataAtWithTerminatingZero(size_t n) const
     {
         return getDataAt(n);
     }
@@ -110,19 +110,19 @@ public:
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
-    [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const
+    virtual UInt64 get64(size_t /*n*/) const
     {
         throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// If column stores native numeric type, it returns n-th element casted to Float64
     /// Is used in regression methods to cast each features into uniform type
-    [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
+    virtual Float64 getFloat64(size_t /*n*/) const
     {
         throw Exception("Method getFloat64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const
+    virtual Float32 getFloat32(size_t /*n*/) const
     {
         throw Exception("Method getFloat32 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -131,31 +131,31 @@ public:
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const
+    virtual UInt64 getUInt(size_t /*n*/) const
     {
         throw Exception("Method getUInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const
+    virtual Int64 getInt(size_t /*n*/) const
     {
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
-    [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
+    virtual bool isDefaultAt(size_t n) const = 0;
+    virtual bool isNullAt(size_t /*n*/) const { return false; }
 
     /** If column is numeric, return value of n-th element, casted to bool.
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual bool getBool(size_t /*n*/) const
+    virtual bool getBool(size_t /*n*/) const
     {
         throw Exception("Method getBool is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
-    [[nodiscard]] virtual Ptr cut(size_t start, size_t length) const
+    virtual Ptr cut(size_t start, size_t length) const
     {
         MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
@@ -249,7 +249,7 @@ public:
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
     using Filter = PaddedPODArray<UInt8>;
-    [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
+    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will
@@ -262,11 +262,11 @@ public:
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;
-    [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
+    virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
     /// Indexes must be one of the ColumnUInt. For default implementation, see selectIndexImpl from ColumnsCommon.h
-    [[nodiscard]] virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
+    virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
 
     /** Compares (*this)[n] and rhs[m]. Column rhs should have the same type.
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
@@ -279,10 +279,10 @@ public:
       *
       * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
-    [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+    virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
     /// Equivalent to compareAt, but collator is used to compare values.
-    [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
+    virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
     {
         throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing it.", ErrorCodes::BAD_COLLATION);
     }
@@ -297,7 +297,7 @@ public:
                                int direction, int nan_direction_hint) const = 0;
 
     /// Check if all elements in the column have equal values. Return true if column is empty.
-    [[nodiscard]] virtual bool hasEqualValues() const = 0;
+    virtual bool hasEqualValues() const = 0;
 
     enum class PermutationSortDirection : uint8_t
     {
@@ -353,7 +353,7 @@ public:
       */
     using Offset = UInt64;
     using Offsets = PaddedPODArray<Offset>;
-    [[nodiscard]] virtual Ptr replicate(const Offsets & offsets) const = 0;
+    virtual Ptr replicate(const Offsets & offsets) const = 0;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
       * Selector must contain values from 0 to num_columns - 1.
@@ -361,7 +361,7 @@ public:
       */
     using ColumnIndex = UInt64;
     using Selector = PaddedPODArray<ColumnIndex>;
-    [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+    virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -385,15 +385,15 @@ public:
     virtual void ensureOwnership() {}
 
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
-    [[nodiscard]] virtual size_t byteSize() const = 0;
+    virtual size_t byteSize() const = 0;
 
     /// Size of single value in memory (for accounting purposes)
-    [[nodiscard]] virtual size_t byteSizeAt(size_t /*n*/) const = 0;
+    virtual size_t byteSizeAt(size_t /*n*/) const = 0;
 
     /// Size of memory, allocated for column.
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could not be determined.
-    [[nodiscard]] virtual size_t allocatedBytes() const = 0;
+    virtual size_t allocatedBytes() const = 0;
 
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
@@ -406,14 +406,14 @@ public:
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
-    [[nodiscard]] virtual bool structureEquals(const IColumn &) const
+    virtual bool structureEquals(const IColumn &) const
     {
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Returns ration of values in column, that equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
-    [[nodiscard]] virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
+    virtual double getRatioOfDefaultRows(double sample_ratio = 1.0) const = 0; /// NOLINT
 
     /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const = 0;
@@ -423,13 +423,13 @@ public:
     /// Other values are filled by @default_value.
     /// @shift means how much rows to skip from the beginning of current column.
     /// Used to create full column from sparse.
-    [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
+    virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
 
-    [[nodiscard]] virtual SerializationInfoPtr getSerializationInfo() const;
+    virtual SerializationInfoPtr getSerializationInfo() const;
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    [[nodiscard]] virtual Ptr compress() const
+    virtual Ptr compress() const
     {
         /// No compression by default.
         return getPtr();
@@ -437,13 +437,13 @@ public:
 
     /// If it's CompressedColumn, decompress it and return.
     /// Otherwise return itself.
-    [[nodiscard]] virtual Ptr decompress() const
+    virtual Ptr decompress() const
     {
         return getPtr();
     }
 
 
-    [[nodiscard]] static MutablePtr mutate(Ptr ptr)
+    static MutablePtr mutate(Ptr ptr)
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
@@ -463,10 +463,10 @@ public:
     /// Various properties on behaviour of column type.
 
     /// True if column contains something nullable inside. It's true for ColumnNullable, can be true or false for ColumnConst, etc.
-    [[nodiscard]] virtual bool isNullable() const { return false; }
+    virtual bool isNullable() const { return false; }
 
     /// It's a special kind of column, that contain single value, but is not a ColumnConst.
-    [[nodiscard]] virtual bool isDummy() const { return false; }
+    virtual bool isDummy() const { return false; }
 
     /** Memory layout properties.
       *
@@ -486,32 +486,32 @@ public:
       */
 
     /// Values in column have fixed size (including the case when values span many memory segments).
-    [[nodiscard]] virtual bool valuesHaveFixedSize() const { return isFixedAndContiguous(); }
+    virtual bool valuesHaveFixedSize() const { return isFixedAndContiguous(); }
 
     /// Values in column are represented as continuous memory segment of fixed size. Implies valuesHaveFixedSize.
-    [[nodiscard]] virtual bool isFixedAndContiguous() const { return false; }
+    virtual bool isFixedAndContiguous() const { return false; }
 
     /// If isFixedAndContiguous, returns the underlying data array, otherwise throws an exception.
-    [[nodiscard]] virtual StringRef getRawData() const { throw Exception("Column " + getName() + " is not a contiguous block of memory", ErrorCodes::NOT_IMPLEMENTED); }
+    virtual StringRef getRawData() const { throw Exception("Column " + getName() + " is not a contiguous block of memory", ErrorCodes::NOT_IMPLEMENTED); }
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
-    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
+    virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
-    [[nodiscard]] virtual bool isNumeric() const { return false; }
+    virtual bool isNumeric() const { return false; }
 
     /// If the only value column can contain is NULL.
     /// Does not imply type of object, because it can be ColumnNullable(ColumnNothing) or ColumnConst(ColumnNullable(ColumnNothing))
-    [[nodiscard]] virtual bool onlyNull() const { return false; }
+    virtual bool onlyNull() const { return false; }
 
     /// Can be inside ColumnNullable.
-    [[nodiscard]] virtual bool canBeInsideNullable() const { return false; }
+    virtual bool canBeInsideNullable() const { return false; }
 
-    [[nodiscard]] virtual bool lowCardinality() const { return false; }
+    virtual bool lowCardinality() const { return false; }
 
-    [[nodiscard]] virtual bool isSparse() const { return false; }
+    virtual bool isSparse() const { return false; }
 
-    [[nodiscard]] virtual bool isCollationSupported() const { return false; }
+    virtual bool isCollationSupported() const { return false; }
 
     virtual ~IColumn() = default;
     IColumn() = default;
@@ -519,7 +519,7 @@ public:
 
     /** Print column name, size, and recursively print all subcolumns.
       */
-    [[nodiscard]] String dumpStructure() const;
+    String dumpStructure() const;
 
 protected:
     /// Template is to devirtualize calls to insertFrom method.

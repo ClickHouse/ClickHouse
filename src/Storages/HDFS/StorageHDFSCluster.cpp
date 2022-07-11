@@ -11,7 +11,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/narrowPipe.h>
+#include <QueryPipeline/narrowBlockInputStreams.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -93,7 +93,7 @@ Pipe StorageHDFSCluster::read(
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
-                queryToString(query_info.original_query),
+                queryToString(query_info.query),
                 header,
                 context,
                 /*throttler=*/nullptr,

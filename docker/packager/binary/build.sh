@@ -19,65 +19,26 @@ ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 # export CCACHE_LOGFILE=/build/ccache.log
 # export CCACHE_DEBUG=1
 
-
 mkdir -p build/build_docker
 cd build/build_docker
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 env
-
-if [ -n "$MAKE_DEB" ]; then
-  rm -rf /build/packages/root
-fi
+cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
 cache_status
 # clear cache stats
 ccache --zero-stats ||:
 
-if [ "$BUILD_MUSL_KEEPER" == "1" ]
-then
-    # build keeper with musl separately
-    cmake --debug-trycompile --verbose=1 -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-    # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-    ninja $NINJA_FLAGS clickhouse-keeper
-
-    ls -la ./programs/
-    ldd ./programs/clickhouse-keeper
-
-    if [ -n "$MAKE_DEB" ]; then
-      # No quotes because I want it to expand to nothing if empty.
-      # shellcheck disable=SC2086
-      DESTDIR=/build/packages/root ninja $NINJA_FLAGS programs/keeper/install
-    fi
-    rm -f CMakeCache.txt
-
-    # Build the rest of binaries
-    cmake --debug-trycompile --verbose=1 -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-else
-    # Build everything
-    cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-fi
-
-if [ "coverity" == "$COMBINED_OUTPUT" ]
-then
-    mkdir -p /opt/cov-analysis
-
-    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /opt/cov-analysis --strip-components 1
-    export PATH=$PATH:/opt/cov-analysis/bin
-    cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
-    SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
-fi
-
 # No quotes because I want it to expand to nothing if empty.
-# shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-$SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
-
-ls -la ./programs
+# shellcheck disable=SC2086
+ninja $NINJA_FLAGS clickhouse-bundle
 
 cache_status
 
 if [ -n "$MAKE_DEB" ]; then
+  rm -rf /build/packages/root
   # No quotes because I want it to expand to nothing if empty.
   # shellcheck disable=SC2086
   DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
@@ -130,12 +91,6 @@ then
     tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
-fi
-
-if [ "coverity" == "$COMBINED_OUTPUT" ]
-then
-    tar -cv -I pigz -f "coverity-scan.tgz" cov-int
-    mv "coverity-scan.tgz" /output
 fi
 
 # Also build fuzzers if any sanitizer specified

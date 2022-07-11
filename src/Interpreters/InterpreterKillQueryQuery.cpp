@@ -7,7 +7,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
@@ -199,11 +198,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
 
     if (!query.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccessForDDLOnCluster());
 
     BlockIO res_io;
     switch (query.type)
@@ -361,49 +356,6 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
-        break;
-    }
-    case ASTKillQueryQuery::Type::Transaction:
-    {
-        getContext()->checkAccess(AccessType::KILL_TRANSACTION);
-
-        Block transactions_block = getSelectResult("tid, tid_hash, elapsed, is_readonly, state", "system.transactions");
-
-        if (!transactions_block)
-            return res_io;
-
-        const ColumnUInt64 & tid_hash_col = typeid_cast<const ColumnUInt64 &>(*transactions_block.getByName("tid_hash").column);
-
-        auto header = transactions_block.cloneEmpty();
-        header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
-        MutableColumns res_columns = header.cloneEmptyColumns();
-
-        for (size_t i = 0; i < transactions_block.rows(); ++i)
-        {
-            UInt64 tid_hash = tid_hash_col.getUInt(i);
-
-            CancellationCode code = CancellationCode::Unknown;
-            if (!query.test)
-            {
-                auto txn = TransactionLog::instance().tryGetRunningTransaction(tid_hash);
-                if (txn)
-                {
-                    txn->onException();
-                    if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
-                        code = CancellationCode::CancelSent;
-                    else
-                        code = CancellationCode::CancelCannotBeSent;
-                }
-                else
-                {
-                    code = CancellationCode::NotFound;
-                }
-            }
-
-            insertResultRow(i, code, transactions_block, header, res_columns);
-        }
-
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
         break;
     }
     }

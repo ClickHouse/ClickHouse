@@ -1,6 +1,6 @@
 ---
-sidebar_position: 47
-sidebar_label: Splitting and Merging Strings and Arrays
+toc_priority: 47
+toc_title: Splitting and Merging Strings and Arrays
 ---
 
 # Functions for Splitting and Merging Strings and Arrays {#functions-for-splitting-and-merging-strings-and-arrays}

@@ -94,9 +94,8 @@ RUN arch=${TARGETARCH:-amd64} \
         && apt-get update \
         && apt-get --yes -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" upgrade \
         && for package in ${PACKAGES}; do \
-            packages="${packages} ${package}=${VERSION}" \
+            apt-get install --allow-unauthenticated --yes --no-install-recommends "${package}=${VERSION}" || exit 1 \
         ; done \
-        && apt-get install --allow-unauthenticated --yes --no-install-recommends ${packages} || exit 1 \
     ; fi \
     && clickhouse-local -q 'SELECT * FROM system.build_options' \
     && rm -rf \

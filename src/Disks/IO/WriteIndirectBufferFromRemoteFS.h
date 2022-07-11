@@ -18,17 +18,17 @@ public:
     WriteIndirectBufferFromRemoteFS(
         std::unique_ptr<WriteBuffer> impl_,
         CreateMetadataCallback && create_callback_,
-        const String & remote_path_);
+        const String & metadata_file_path_);
 
     ~WriteIndirectBufferFromRemoteFS() override;
 
-    String getFileName() const override { return remote_path; }
+    String getFileName() const override { return metadata_file_path; }
 
 private:
     void finalizeImpl() override;
 
     CreateMetadataCallback create_metadata_callback;
-    String remote_path;
+    String metadata_file_path;
 };
 
 }

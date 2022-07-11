@@ -1,7 +1,6 @@
 DROP TABLE IF EXISTS select_final;
 
 SET do_not_merge_across_partitions_select_final = 1;
-SET max_threads = 0;
 
 CREATE TABLE select_final (t DateTime, x Int32, string String) ENGINE = ReplacingMergeTree() PARTITION BY toYYYYMM(t) ORDER BY (x, t);
 

@@ -121,7 +121,7 @@ void KeeperDispatcher::requestThread()
                         current_batch.clear();
                     }
 
-                    prev_batch = std::move(current_batch);
+                    prev_batch = current_batch;
                     prev_result = result;
                 }
 
@@ -201,7 +201,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
 
         /// Nobody waits for this session id
-        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
+        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.count(session_id_resp.internal_id))
             return;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
@@ -234,7 +234,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         /// If session was already disconnected than we will ignore requests
         std::lock_guard lock(session_to_response_callback_mutex);
-        if (!session_to_response_callback.contains(session_id))
+        if (session_to_response_callback.count(session_id) == 0)
             return false;
     }
 
@@ -278,7 +278,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(config, configuration_and_settings->enable_ipv6);
+        server->startup(configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -365,11 +365,6 @@ void KeeperDispatcher::shutdown()
     }
 
     LOG_DEBUG(log, "Dispatcher shut down");
-}
-
-void KeeperDispatcher::forceRecovery()
-{
-    server->forceRecovery();
 }
 
 KeeperDispatcher::~KeeperDispatcher()
@@ -540,18 +535,10 @@ void KeeperDispatcher::updateConfigurationThread()
 
         try
         {
-            using namespace std::chrono_literals;
             if (!server->checkInit())
             {
                 LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
-                std::this_thread::sleep_for(5000ms);
-                continue;
-            }
-
-            if (server->isRecovering())
-            {
-                LOG_INFO(log, "Server is recovering, will not apply configuration until recovery is finished");
-                std::this_thread::sleep_for(5000ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
                 continue;
             }
 
@@ -564,9 +551,6 @@ void KeeperDispatcher::updateConfigurationThread()
             bool done = false;
             while (!done)
             {
-                if (server->isRecovering())
-                    break;
-
                 if (shutdown_called)
                     return;
 
@@ -588,11 +572,6 @@ void KeeperDispatcher::updateConfigurationThread()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-}
-
-bool KeeperDispatcher::isServerActive() const
-{
-    return checkInit() && hasLeader() && !server->isRecovering();
 }
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)

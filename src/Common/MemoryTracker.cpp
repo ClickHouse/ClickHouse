@@ -10,7 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/OvercommitTracker.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <cmath>

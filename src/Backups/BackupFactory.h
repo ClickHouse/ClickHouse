@@ -24,15 +24,9 @@ public:
     struct CreateParams
     {
         OpenMode open_mode = OpenMode::WRITE;
-        std::optional<UUID> backup_uuid;
         BackupInfo backup_info;
         std::optional<BackupInfo> base_backup_info;
-        String compression_method;
-        int compression_level = -1;
-        String password;
         ContextPtr context;
-        bool is_internal_backup = false;
-        String coordination_zk_path;
     };
 
     static BackupFactory & instance();

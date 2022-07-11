@@ -28,23 +28,6 @@ void ExecutorTasks::rethrowFirstThreadException()
         executor_context->rethrowExceptionIfHas();
 }
 
-void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock)
-{
-    if (!task_queue.empty() && !threads_queue.empty() && !finished)
-    {
-        size_t next_thread = self.thread_number + 1 == num_threads ? 0 : (self.thread_number + 1);
-        auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
-
-        if (threads_queue.has(thread_to_wake))
-            threads_queue.pop(thread_to_wake);
-        else
-            thread_to_wake = threads_queue.popAny();
-
-        lock.unlock();
-        executor_contexts[thread_to_wake]->wakeUp();
-    }
-}
-
 void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 {
     {
@@ -60,7 +43,20 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         if (context.hasTask())
         {
-            tryWakeUpAnyOtherThreadWithTasks(context, lock);
+            if (!task_queue.empty() && !threads_queue.empty())
+            {
+                size_t next_thread = context.thread_number + 1 == num_threads ? 0 : (context.thread_number + 1);
+                auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
+
+                if (threads_queue.has(thread_to_wake))
+                    threads_queue.pop(thread_to_wake);
+                else
+                    thread_to_wake = threads_queue.popAny();
+
+                lock.unlock();
+                executor_contexts[thread_to_wake]->wakeUp();
+            }
+
             return;
         }
 
@@ -124,11 +120,24 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
             queue.pop();
         }
 
-        tryWakeUpAnyOtherThreadWithTasks(context, lock);
+        if (!threads_queue.empty() && !task_queue.empty() && !finished)
+        {
+            size_t next_thread = context.thread_number + 1 == num_threads ? 0 : (context.thread_number + 1);
+            auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
+
+            if (threads_queue.has(thread_to_wake))
+                threads_queue.pop(thread_to_wake);
+            else
+                thread_to_wake = threads_queue.popAny();
+
+            lock.unlock();
+
+            executor_contexts[thread_to_wake]->wakeUp();
+        }
     }
 }
 
-void ExecutorTasks::init(size_t num_threads_, bool profile_processors)
+void ExecutorTasks::init(size_t num_threads_)
 {
     num_threads = num_threads_;
     threads_queue.init(num_threads);
@@ -139,7 +148,7 @@ void ExecutorTasks::init(size_t num_threads_, bool profile_processors)
 
         executor_contexts.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors));
+            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i));
     }
 }
 

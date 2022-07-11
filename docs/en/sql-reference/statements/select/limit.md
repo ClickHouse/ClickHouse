@@ -1,5 +1,5 @@
 ---
-sidebar_label: LIMIT
+toc_title: LIMIT
 ---
 
 # LIMIT Clause {#limit-clause}
@@ -12,9 +12,8 @@ sidebar_label: LIMIT
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
-:::note    
-The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
-:::
+!!! note "Note"
+    The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
 
 ## LIMIT … WITH TIES Modifier {#limit-with-ties}
 

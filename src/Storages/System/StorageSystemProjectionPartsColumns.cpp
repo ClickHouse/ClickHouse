@@ -73,7 +73,7 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
 }
 
 void StorageSystemProjectionPartsColumns::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo

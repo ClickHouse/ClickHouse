@@ -7,7 +7,7 @@
 #include <Common/assert_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>

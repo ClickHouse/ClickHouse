@@ -117,7 +117,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, context);
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot);
 
     Names column_names;
     column_names.push_back("a");

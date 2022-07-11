@@ -1,7 +1,6 @@
 #include "CassandraDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -18,17 +17,13 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                   [[maybe_unused]] ContextPtr global_context,
+                                                    ContextPtr /* global_context */,
                                                     const std::string & /* default_database */,
                                                     bool /*created_from_ddl*/) -> DictionarySourcePtr
     {
 #if USE_CASSANDRA
     setupCassandraDriverLibraryLogging(CASS_LOG_INFO);
-
-    auto source_config_prefix = config_prefix + ".cassandra";
-    global_context->getRemoteHostFilter().checkHostAndPort(config.getString(source_config_prefix + ".host"), toString(config.getUInt(source_config_prefix + ".port", 0)));
-
-    return std::make_unique<CassandraDictionarySource>(dict_struct, config, source_config_prefix, sample_block);
+    return std::make_unique<CassandraDictionarySource>(dict_struct, config, config_prefix + ".cassandra", sample_block);
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.");
@@ -41,7 +36,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #if USE_CASSANDRA
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/CassandraSource.h>

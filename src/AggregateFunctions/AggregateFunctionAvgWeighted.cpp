@@ -39,7 +39,7 @@ bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
     }
 
 template <class First, class ... TArgs>
-IAggregateFunction * create(const IDataType & second_type, TArgs && ... args)
+static IAggregateFunction * create(const IDataType & second_type, TArgs && ... args)
 {
     const WhichDataType which(second_type);
 
@@ -51,7 +51,7 @@ IAggregateFunction * create(const IDataType & second_type, TArgs && ... args)
 
 // Not using helper functions because there are no templates for binary decimal/numeric function.
 template <class... TArgs>
-IAggregateFunction * create(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
+static IAggregateFunction * create(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
 {
     const WhichDataType which(first_type);
 

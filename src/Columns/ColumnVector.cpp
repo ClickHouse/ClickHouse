@@ -228,7 +228,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             if (s >= 256 && s <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 PaddedPODArray<ValueWithIndex<T>> pairs(s);
-                for (UInt32 i = 0; i < static_cast<UInt32>(s); ++i)
+                for (UInt32 i = 0; i < UInt32(s); ++i)
                     pairs[i] = {data[i], i};
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());

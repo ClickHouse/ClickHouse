@@ -162,14 +162,14 @@ SELECT toString(toStartOfMinute(toDateTime(1549483055), 'Europe/London'), 'Europ
 SELECT toString(toStartOfMinute(toDateTime(1549483055), 'Asia/Tokyo'), 'Asia/Tokyo');
 SELECT toString(toStartOfMinute(toDateTime(1549483055), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
-/* toStartOfFiveMinutes */
+/* toStartOfFiveMinute */
 
-SELECT 'toStartOfFiveMinutes';
-SELECT toString(toStartOfFiveMinutes(toDateTime(1549483055), 'Europe/Moscow'), 'Europe/Moscow');
-SELECT toString(toStartOfFiveMinutes(toDateTime(1549483055), 'Europe/Paris'), 'Europe/Paris');
-SELECT toString(toStartOfFiveMinutes(toDateTime(1549483055), 'Europe/London'), 'Europe/London');
-SELECT toString(toStartOfFiveMinutes(toDateTime(1549483055), 'Asia/Tokyo'), 'Asia/Tokyo');
-SELECT toString(toStartOfFiveMinutes(toDateTime(1549483055), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
+SELECT 'toStartOfFiveMinute';
+SELECT toString(toStartOfFiveMinute(toDateTime(1549483055), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfFiveMinute(toDateTime(1549483055), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toStartOfFiveMinute(toDateTime(1549483055), 'Europe/London'), 'Europe/London');
+SELECT toString(toStartOfFiveMinute(toDateTime(1549483055), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toStartOfFiveMinute(toDateTime(1549483055), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toStartOfTenMinutes */
 

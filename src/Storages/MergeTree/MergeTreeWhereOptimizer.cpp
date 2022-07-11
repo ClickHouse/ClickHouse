@@ -314,7 +314,7 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     UInt64 size = 0;
 
     for (const auto & identifier : identifiers)
-        if (column_sizes.contains(identifier))
+        if (column_sizes.count(identifier))
             size += column_sizes.at(identifier);
 
     return size;
@@ -345,7 +345,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        if (!KeyCondition::atom_map.contains(func->name))
+        if (!KeyCondition::atom_map.count(func->name))
             return false;
 
         const auto & args = func->arguments->children;
@@ -367,7 +367,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 
 bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
 {
-    return sorting_key_names.contains(column_name);
+    return sorting_key_names.count(column_name);
 }
 
 
@@ -383,7 +383,7 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers) const
 {
     for (const auto & identifier : identifiers)
-        if (!table_columns.contains(identifier))
+        if (table_columns.count(identifier) == 0)
             return false;
 
     return true;
@@ -411,8 +411,8 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
-        if (array_joined_names.contains(*opt_name) ||
-            array_joined_names.contains(Nested::extractTableName(*opt_name)) ||
+        if (array_joined_names.count(*opt_name) ||
+            array_joined_names.count(Nested::extractTableName(*opt_name)) ||
             (is_final && !isSortingKey(*opt_name)))
             return true;
     }

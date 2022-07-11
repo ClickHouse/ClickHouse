@@ -1,7 +1,6 @@
 ---
-sidebar_position: 62
-sidebar_label: Continuous Integration Checks
-description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
+toc_priority: 62
+toc_title: Continuous Integration Checks
 ---
 
 # Continuous Integration Checks
@@ -54,7 +53,7 @@ the documentation is wrong. Go to the check report and look for `ERROR` and `WAR
 Check that the description of your pull request conforms to the template
 [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and
-write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/)
+write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
 
 ## Push To Dockerhub
@@ -123,12 +122,10 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
 - **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
-  - `clickhouse-client_XXX_all.deb`
+  - `clickhouse-client_XXX_amd64.deb`
   - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
   - `clickhouse-common-staticXXX_amd64.deb`
-  - `clickhouse-server_XXX_all.deb`
-  - `clickhouse_XXX_amd64.buildinfo`
-  - `clickhouse_XXX_amd64.changes`
+  - `clickhouse-server_XXX_amd64.deb`
   - `clickhouse`: Main built binary.
   - `clickhouse-odbc-bridge`
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
@@ -151,7 +148,7 @@ checks page](../development/build.md#you-dont-have-to-build-clickhouse), or buil
 
 
 ## Functional Stateful Tests
-Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
+Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) to run.
 
 
 ## Integration Tests

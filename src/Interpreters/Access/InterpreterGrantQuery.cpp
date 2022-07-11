@@ -17,7 +17,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -113,31 +112,6 @@ namespace
         }
     }
 
-    /// Checks if a grantee is allowed for the current user, throws an exception if not.
-    void checkGranteeIsAllowed(const ContextAccess & current_user_access, const UUID & grantee_id, const IAccessEntity & grantee)
-    {
-        auto current_user = current_user_access.getUser();
-        if (current_user && !current_user->grantees.match(grantee_id))
-            throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
-    }
-
-    /// Checks if grantees are allowed for the current user, throws an exception if not.
-    void checkGranteesAreAllowed(const AccessControl & access_control, const ContextAccess & current_user_access, const std::vector<UUID> & grantee_ids)
-    {
-        auto current_user = current_user_access.getUser();
-        if (!current_user || (current_user->grantees == RolesOrUsersSet::AllTag{}))
-            return;
-
-        for (const auto & id : grantee_ids)
-        {
-            auto entity = access_control.tryRead(id);
-            if (auto role = typeid_cast<RolePtr>(entity))
-                checkGranteeIsAllowed(current_user_access, id, *role);
-            else if (auto user = typeid_cast<UserPtr>(entity))
-                checkGranteeIsAllowed(current_user_access, id, *user);
-        }
-    }
-
     /// Checks if the current user has enough access rights granted with grant option to grant or revoke specified access rights.
     void checkGrantOption(
         const AccessControl & access_control,
@@ -172,13 +146,13 @@ namespace
             if (auto role = typeid_cast<RolePtr>(entity))
             {
                 if (need_check_grantees_are_allowed)
-                    checkGranteeIsAllowed(current_user_access, id, *role);
+                    current_user_access.checkGranteeIsAllowed(id, *role);
                 all_granted_access.makeUnion(role->access);
             }
             else if (auto user = typeid_cast<UserPtr>(entity))
             {
                 if (need_check_grantees_are_allowed)
-                    checkGranteeIsAllowed(current_user_access, id, *user);
+                    current_user_access.checkGranteeIsAllowed(id, *user);
                 all_granted_access.makeUnion(user->access);
             }
         }
@@ -245,13 +219,13 @@ namespace
             if (auto role = typeid_cast<RolePtr>(entity))
             {
                 if (need_check_grantees_are_allowed)
-                    checkGranteeIsAllowed(current_user_access, id, *role);
+                    current_user_access.checkGranteeIsAllowed(id, *role);
                 all_granted_roles.makeUnion(role->granted_roles);
             }
             else if (auto user = typeid_cast<UserPtr>(entity))
             {
                 if (need_check_grantees_are_allowed)
-                    checkGranteeIsAllowed(current_user_access, id, *user);
+                    current_user_access.checkGranteeIsAllowed(id, *user);
                 all_granted_roles.makeUnion(user->granted_roles);
             }
         }
@@ -401,10 +375,8 @@ BlockIO InterpreterGrantQuery::execute()
     {
         auto required_access = getRequiredAccessForExecutingOnCluster(elements_to_grant, elements_to_revoke);
         checkAdminOptionForExecutingOnCluster(*current_user_access, roles_to_grant, roles_to_revoke);
-        checkGranteesAreAllowed(access_control, *current_user_access, grantees);
-        DDLQueryOnClusterParams params;
-        params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        current_user_access->checkGranteesAreAllowed(grantees);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), std::move(required_access));
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.
@@ -418,7 +390,7 @@ BlockIO InterpreterGrantQuery::execute()
     checkAdminOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, roles_to_grant, roles_to_revoke, query.admin_option);
 
     if (need_check_grantees_are_allowed)
-        checkGranteesAreAllowed(access_control, *current_user_access, grantees);
+        current_user_access->checkGranteesAreAllowed(grantees);
 
     /// Update roles and users listed in `grantees`.
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr

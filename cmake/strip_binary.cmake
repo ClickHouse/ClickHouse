@@ -46,7 +46,7 @@ macro(clickhouse_make_empty_debug_info_for_nfpm)
    add_custom_command(TARGET ${EMPTY_DEBUG_TARGET} POST_BUILD
        COMMAND mkdir -p "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug"
        COMMAND touch "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_TARGET}.debug"
-       COMMENT "Adding empty debug info for NFPM" VERBATIM
+       COMMENT "Addiding empty debug info for NFPM" VERBATIM
    )
 
    install(FILES "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_TARGET}.debug" DESTINATION "${CMAKE_INSTALL_LIBDIR}/debug/${CMAKE_INSTALL_FULL_BINDIR}" COMPONENT clickhouse)

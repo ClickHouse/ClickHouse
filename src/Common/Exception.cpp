@@ -4,7 +4,7 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -555,24 +555,13 @@ std::string ParsingException::displayText() const
 {
     try
     {
-        formatted_message = message();
-        bool need_newline = false;
-        if (!file_name.empty())
-        {
-            formatted_message += fmt::format(": (in file/uri {})", file_name);
-            need_newline = true;
-        }
-
-        if (line_number != -1)
-        {
-            formatted_message += fmt::format(": (at row {})", line_number);
-            need_newline = true;
-        }
-
-        if (need_newline)
-            formatted_message += "\n";
+        if (line_number == -1)
+            formatted_message = message();
+        else
+            formatted_message = message() + fmt::format(": (at row {})\n", line_number);
     }
-    catch (...) {}
+    catch (...)
+    {}
 
     if (!formatted_message.empty())
     {

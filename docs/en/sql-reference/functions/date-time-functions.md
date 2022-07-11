@@ -1,6 +1,6 @@
 ---
-sidebar_position: 39
-sidebar_label: Dates and Times
+toc_priority: 39
+toc_title: Dates and Times
 ---
 
 # Functions for Working with Dates and Times {#functions-for-working-with-dates-and-times}
@@ -266,9 +266,8 @@ Result:
 └────────────────┘
 ```
 
-:::note    
-The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
-:::
+!!! attention "Attention"
+    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
 
 ## toStartOfYear {#tostartofyear}
 
@@ -291,9 +290,8 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-:::note    
-The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
-:::
+!!! attention "Attention"
+    The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
 
 ## toMonday {#tomonday}
 
@@ -375,7 +373,7 @@ Result:
 
 -   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
 
-## toStartOfFiveMinutes {#tostartoffiveminutes}
+## toStartOfFiveMinute {#tostartoffiveminute}
 
 Rounds down a date with time to the start of the five-minute interval.
 

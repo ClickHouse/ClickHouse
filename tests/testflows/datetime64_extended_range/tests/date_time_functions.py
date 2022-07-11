@@ -576,13 +576,13 @@ def to_start_of_minutes_interval(self, interval, func):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFiveMinutes(
+    RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_toStartOfFiveMinute(
         "1.0"
     )
 )
-def to_start_of_five_minutes(self):
-    """Check the toStartOfFiveMinutes with DateTime64 extended range."""
-    to_start_of_minutes_interval(interval=5, func="toStartOfFiveMinutes")
+def to_start_of_five_minute(self):
+    """Check the toStartOfFiveMinute with DateTime64 extended range."""
+    to_start_of_minutes_interval(interval=5, func="toStartOfFiveMinute")
 
 
 @TestScenario

@@ -244,30 +244,10 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        const auto & settings = context->getSettingsRef();
+                        /// Fill the rest columns with defaults
                         while (src_index < columns_mask.size())
-                        {
-                            // total_rows
-                            if (src_index == 18 && columns_mask[src_index])
-                            {
-                                if (auto total_rows = table.second->totalRows(settings))
-                                    res_columns[res_index++]->insert(*total_rows);
-                                else
-                                    res_columns[res_index++]->insertDefault();
-                            }
-                            // total_bytes
-                            else if (src_index == 19 && columns_mask[src_index])
-                            {
-                                if (auto total_bytes = table.second->totalBytes(settings))
-                                    res_columns[res_index++]->insert(*total_bytes);
-                                else
-                                    res_columns[res_index++]->insertDefault();
-                            }
-                            /// Fill the rest columns with defaults
-                            else if (columns_mask[src_index])
+                            if (columns_mask[src_index++])
                                 res_columns[res_index++]->insertDefault();
-                            src_index++;
-                        }
                     }
                 }
 
@@ -595,7 +575,7 @@ Pipe StorageSystemTables::read(
     std::vector<UInt8> columns_mask(sample_block.columns());
     for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
     {
-        if (names_set.contains(sample_block.getByPosition(i).name))
+        if (names_set.count(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             res_block.insert(sample_block.getByPosition(i));

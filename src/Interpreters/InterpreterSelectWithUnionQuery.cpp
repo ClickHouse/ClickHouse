@@ -104,7 +104,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             }
             else if (settings.offset)
             {
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(settings.offset)));
+                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.offset)));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
 
@@ -115,15 +115,15 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
                 UInt64 new_limit_length = 0;
                 if (settings.offset == 0)
-                    new_limit_length = std::min(limit_length, static_cast<UInt64>(settings.limit));
+                    new_limit_length = std::min(limit_length, UInt64(settings.limit));
                 else if (settings.offset < limit_length)
-                    new_limit_length =  settings.limit ? std::min(static_cast<UInt64>(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
+                    new_limit_length =  settings.limit ? std::min(UInt64(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
 
                 limit_length_ast->as<ASTLiteral &>().value = Field(new_limit_length);
             }
             else if (settings.limit)
             {
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(settings.limit)));
+                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.limit)));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 

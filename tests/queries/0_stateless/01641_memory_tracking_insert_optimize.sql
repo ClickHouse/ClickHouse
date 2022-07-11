@@ -3,7 +3,7 @@
 drop table if exists data_01641;
 
 -- Disable cache for s3 storage tests because it increases memory usage.
-set enable_filesystem_cache=0;
+set remote_fs_enable_cache=0;
 set remote_filesystem_read_method='read';
 
 create table data_01641 (key Int, value String) engine=MergeTree order by (key, repeat(value, 40)) settings old_parts_lifetime=0, min_bytes_for_wide_part=0;

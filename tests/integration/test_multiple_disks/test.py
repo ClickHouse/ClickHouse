@@ -846,15 +846,14 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 
 @pytest.mark.parametrize(
-    "name,engine,use_metadata_cache",
+    "name,engine",
     [
-        pytest.param("altering_mt", "MergeTree()", "false", id="mt"),
-        pytest.param("altering_mt", "MergeTree()", "true", id="mt_use_metadata_cache"),
+        pytest.param("altering_mt", "MergeTree()", id="mt"),
         # ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
         # SYSTEM STOP MERGES doesn't disable merges assignments
     ],
 )
-def test_alter_move(start_cluster, name, engine, use_metadata_cache):
+def test_alter_move(start_cluster, name, engine):
     try:
         node1.query(
             """
@@ -864,9 +863,9 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy='jbods_with_external', use_metadata_cache={use_metadata_cache}
+            SETTINGS storage_policy='jbods_with_external'
         """.format(
-                name=name, engine=engine, use_metadata_cache=use_metadata_cache
+                name=name, engine=engine
             )
         )
 
@@ -876,8 +875,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
         node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 66)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-10'), 42)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-11'), 43)".format(name))
-        assert node1.query("CHECK TABLE " + name) == "1\n"
-
         used_disks = get_used_disks_for_table(node1, name)
         assert all(
             d.startswith("jbod") for d in used_disks
@@ -895,7 +892,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
                 name, first_part
             )
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -910,7 +906,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
         node1.query(
             "ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part)
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -925,7 +920,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
         node1.query(
             "ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name)
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(
@@ -944,7 +938,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(

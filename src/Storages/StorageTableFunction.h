@@ -104,7 +104,7 @@ public:
         for (const auto & c : column_names)
             cnames += c + " ";
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr());
         auto pipe = storage->read(column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (!pipe.empty() && add_conversion)

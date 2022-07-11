@@ -1,6 +1,6 @@
 ---
-sidebar_position: 55
-sidebar_label: IP Addresses
+toc_priority: 55
+toc_title: IP Addresses
 ---
 
 # Functions for Working with IPv4 and IPv6 Addresses {#functions-for-working-with-ip-addresses}

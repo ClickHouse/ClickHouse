@@ -98,24 +98,8 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
 }
 
 
-void MaterializedPostgreSQLConsumer::assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx)
-{
-    if (column_idx >= buffer.description.sample_block.columns()
-        || column_idx >= buffer.description.types.size()
-        || column_idx >= buffer.columns.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Attempt to insert into buffer at position: {}, but block columns size is {}, types size: {}, columns size: {}, buffer structure: {}",
-            column_idx,
-            buffer.description.sample_block.columns(), buffer.description.types.size(), buffer.columns.size(),
-            buffer.description.sample_block.dumpStructure());
-}
-
-
 void MaterializedPostgreSQLConsumer::insertValue(StorageData::Buffer & buffer, const std::string & value, size_t column_idx)
 {
-    assertCorrectInsertion(buffer, column_idx);
-
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     bool is_nullable = buffer.description.types[column_idx].second;
 
@@ -150,8 +134,6 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData::Buffer & buffer, c
 
 void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData::Buffer & buffer, size_t column_idx)
 {
-    assertCorrectInsertion(buffer, column_idx);
-
     const auto & sample = buffer.description.sample_block.getByPosition(column_idx);
     insertDefaultPostgreSQLValue(*buffer.columns[column_idx], *sample.column);
 }
@@ -178,7 +160,7 @@ T MaterializedPostgreSQLConsumer::unhexN(const char * message, size_t pos, size_
     for (size_t i = 0; i < n; ++i)
     {
         if (i) result <<= 8;
-        result |= static_cast<UInt32>(unhex2(message + pos + 2 * i));
+        result |= UInt32(unhex2(message + pos + 2 * i));
     }
     return result;
 }
@@ -276,14 +258,14 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     {
         case PostgreSQLQuery::INSERT:
         {
-            buffer.columns[num_columns]->insert(static_cast<Int8>(1));
+            buffer.columns[num_columns]->insert(Int8(1));
             buffer.columns[num_columns + 1]->insert(lsn_value);
 
             break;
         }
         case PostgreSQLQuery::DELETE:
         {
-            buffer.columns[num_columns]->insert(static_cast<Int8>(-1));
+            buffer.columns[num_columns]->insert(Int8(-1));
             buffer.columns[num_columns + 1]->insert(lsn_value);
 
             break;
@@ -292,9 +274,9 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         {
             /// Process old value in case changed value is a primary key.
             if (old_value)
-                buffer.columns[num_columns]->insert(static_cast<Int8>(-1));
+                buffer.columns[num_columns]->insert(Int8(-1));
             else
-                buffer.columns[num_columns]->insert(static_cast<Int8>(1));
+                buffer.columns[num_columns]->insert(Int8(1));
 
             buffer.columns[num_columns + 1]->insert(lsn_value);
 
@@ -533,14 +515,13 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
 void MaterializedPostgreSQLConsumer::syncTables()
 {
-    for (const auto & table_name : tables_to_sync)
+    try
     {
-        auto & storage_data = storages.find(table_name)->second;
-        Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
-        storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
-
-        try
+        for (const auto & table_name : tables_to_sync)
         {
+            auto & storage_data = storages.find(table_name)->second;
+            Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
+
             if (result_rows.rows())
             {
                 auto storage = storage_data.storage;
@@ -562,18 +543,13 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
                 CompletedPipelineExecutor executor(io.pipeline);
                 executor.execute();
+
+                storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
             }
         }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
 
-    LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
+        LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
-    try
-    {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
         current_lsn = advanceLSN(tx);
         tables_to_sync.clear();

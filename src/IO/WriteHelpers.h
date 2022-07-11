@@ -805,13 +805,6 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     scale = scale > MaxScale ? MaxScale : scale;
 
     auto components = DecimalUtils::split(datetime64, scale);
-    /// -127914467.877 => whole = -127914467, fraction = 877 => new whole = -127914468(1965-12-12 12:12:12), new fraction = 123(.123) => 1965-12-12 12:12:12.123
-    if (components.whole < 0 && components.fractional != 0)
-    {
-        --components.whole;
-        components.fractional = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale) - components.fractional;
-    }
-
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(LocalDateTime(components.whole, time_zone), buf);
 
     if (scale > 0)
@@ -876,8 +869,8 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
 
 /// Methods for output in binary format.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -995,8 +988,8 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
@@ -1028,8 +1021,8 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
@@ -1061,8 +1054,8 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
@@ -1131,8 +1124,8 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 }
 
 template <typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     if constexpr (sizeof(x) == 2)
         x = __builtin_bswap16(x);
@@ -1145,8 +1138,8 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little 
 }
 
 template <typename T>
-requires is_big_int_v<T>
-inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline std::enable_if_t<is_big_int_v<T>, void>
+writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
@@ -1170,19 +1163,3 @@ struct PcgSerializer
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 }
-
-template<>
-struct fmt::formatter<DB::UUID>
-{
-    template<typename ParseContext>
-    constexpr auto parse(ParseContext & context)
-    {
-        return context.begin();
-    }
-
-    template<typename FormatContext>
-    auto format(const DB::UUID & uuid, FormatContext & context)
-    {
-        return fmt::format_to(context.out(), "{}", toString(uuid));
-    }
-};

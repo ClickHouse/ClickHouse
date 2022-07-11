@@ -16,7 +16,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -1865,7 +1864,7 @@ const char * ParserAlias::restricted_keywords[] =
     "NOT",
     "OFFSET",
     "ON",
-    "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
+    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
     "PREWHERE",
     "RIGHT",
@@ -1934,18 +1933,16 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
-    ASTPtr res;
+    auto res = std::make_shared<ASTColumnsMatcher>();
     if (column_list)
     {
-        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
-        list_matcher->column_list = column_list;
-        res = list_matcher;
+        res->column_list = column_list;
+        res->children.push_back(res->column_list);
     }
     else
     {
-        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res = regexp_matcher;
+        res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        res->children.push_back(regex_node);
     }
 
     ParserColumnsTransformers transformers_p(allowed_transformers);
@@ -2451,35 +2448,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->children.push_back(expr_elem);
     if (locale_node)
         elem->children.push_back(locale_node);
-
-    node = elem;
-
-    return true;
-}
-
-bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword as("AS");
-    ParserExpression element_p;
-    ParserIdentifier ident_p;
-
-    ASTPtr ident;
-    if (!ident_p.parse(pos, ident, expected))
-        return false;
-
-    ASTPtr expr;
-    if (as.ignore(pos, expected))
-    {
-        if (!element_p.parse(pos, expr, expected))
-            return false;
-    }
-    else
-        expr = ident;
-
-    auto elem = std::make_shared<ASTInterpolateElement>();
-    elem->column = ident->getColumnName();
-    elem->expr = expr;
-    elem->children.push_back(expr);
 
     node = elem;
 

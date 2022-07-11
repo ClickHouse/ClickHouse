@@ -40,7 +40,7 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
                 column_names.insert(column.name);
 
             for (const auto & [name, type] : virtual_columns)
-                if (!column_names.contains(name))
+                if (!column_names.count(name))
                     all_columns.emplace_back(name, type);
         }
     }
@@ -148,7 +148,7 @@ void StorageSnapshot::check(const Names & column_names) const
     {
         bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
             || object_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
-            || virtual_columns.contains(name);
+            || virtual_columns.count(name);
 
         if (!has_column)
         {

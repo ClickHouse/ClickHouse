@@ -45,7 +45,7 @@ public:
         const auto & settings_ref = context->getSettingsRef();
 
         if constexpr (internal)
-            return createImpl({}, false /*keep_nullable*/, false /*cast_ipv4_ipv6_default_on_conversion_error*/);
+            return createImpl({}, false /*keep_nullable*/, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
 
         return createImpl({}, settings_ref.cast_keep_nullable, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
     }

@@ -15,6 +15,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.
@@ -57,21 +61,25 @@ struct SortCursorImpl
         reset(block, perm);
     }
 
-    SortCursorImpl(
-        const Block & header,
-        const Columns & columns,
-        const SortDescription & desc_,
-        size_t order_ = 0,
-        IColumn::Permutation * perm = nullptr)
+    SortCursorImpl(const Columns & columns, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
-        reset(columns, header, perm);
+        for (auto & column_desc : desc)
+        {
+            if (!column_desc.column_name.empty())
+                throw Exception("SortDescription should contain column position if SortCursor was used without header.",
+                        ErrorCodes::LOGICAL_ERROR);
+        }
+        reset(columns, {}, perm);
     }
 
     bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Block & block, IColumn::Permutation * perm = nullptr) { reset(block.getColumns(), block, perm); }
+    void reset(const Block & block, IColumn::Permutation * perm = nullptr)
+    {
+        reset(block.getColumns(), block, perm);
+    }
 
     /// Set the cursor to the beginning of the new block.
     void reset(const Columns & columns, const Block & block, IColumn::Permutation * perm = nullptr)
@@ -87,7 +95,9 @@ struct SortCursorImpl
         for (size_t j = 0, size = desc.size(); j < size; ++j)
         {
             auto & column_desc = desc[j];
-            size_t column_number = block.getPositionByName(column_desc.column_name);
+            size_t column_number = !column_desc.column_name.empty()
+                                   ? block.getPositionByName(column_desc.column_name)
+                                   : column_desc.column_number;
             sort_columns.push_back(columns[column_number].get());
 
             need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();
@@ -357,12 +367,12 @@ private:
 };
 
 template <typename TLeftColumns, typename TRightColumns>
-bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescriptionWithPositions & descr)
+bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescription & descr)
 {
     for (const auto & elem : descr)
     {
         size_t ind = elem.column_number;
-        int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
+        int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
         if (res < 0)
             return true;
         else if (res > 0)

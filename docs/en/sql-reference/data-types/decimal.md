@@ -1,6 +1,6 @@
 ---
-sidebar_position: 42
-sidebar_label: Decimal
+toc_priority: 42
+toc_title: Decimal
 ---
 
 # Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S) {#decimal}

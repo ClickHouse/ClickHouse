@@ -1,13 +1,13 @@
 ---
-sidebar_position: 17
-sidebar_label: Command-Line Client
+toc_priority: 17
+toc_title: Command-Line Client
 ---
 
 # Command-line Client {#command-line-client}
 
 ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
 
-[Install](../getting-started/install.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
+[Install](../getting-started/index.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -124,7 +124,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
--   `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+-   `--secure` – If specified, will connect to server over secure connection.
 -   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 -   `--hardware-utilization` — Print hardware utilization information in progress bar.
@@ -148,12 +148,7 @@ Example of a config file:
 <config>
     <user>username</user>
     <password>password</password>
-    <secure>true</secure>
-    <openSSL>
-      <client>
-        <caConfig>/etc/ssl/cert.pem</caConfig>
-      </client>
-    </openSSL>
+    <secure>False</secure>
 </config>
 ```
 

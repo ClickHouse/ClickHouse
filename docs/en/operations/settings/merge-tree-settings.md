@@ -381,36 +381,3 @@ Possible values:
 
 Default value: `1` second.
 
-## max_concurrent_queries {#max-concurrent-queries}
-
-Max number of concurrently executed queries related to the MergeTree table. Queries will still be limited by other `max_concurrent_queries` settings.
-
-Possible values:
-
--   Positive integer.
--   0 — No limit.
-
-Default value: `0` (no limit).
-
-**Example**
-
-``` xml
-<max_concurrent_queries>50</max_concurrent_queries>
-```
-
-## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
-
-The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting. Note that queries will still be limited by other `max_concurrent_queries` settings.
-
-Possible values:
-
--   Positive integer.
--   0 — Disabled (`max_concurrent_queries` limit applied to no queries).
-
-Default value: `0` (limit never applied).
-
-**Example**
-
-``` xml
-<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
-```

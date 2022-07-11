@@ -55,7 +55,7 @@ def golang_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]
@@ -82,7 +82,7 @@ def php_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]
@@ -109,7 +109,7 @@ def nodejs_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]
@@ -136,7 +136,7 @@ def java_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--no-build",
         ]

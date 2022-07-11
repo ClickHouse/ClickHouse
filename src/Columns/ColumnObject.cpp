@@ -58,7 +58,9 @@ public:
 
     Field operator()(const Null &) const
     {
-        return num_dimensions ? Array() : replacement;
+        return num_dimensions
+            ? createEmptyArrayField(num_dimensions)
+            : replacement;
     }
 
     Field operator()(const Array & x) const
@@ -77,6 +79,38 @@ public:
 private:
     const Field & replacement;
     size_t num_dimensions;
+};
+
+/// Calculates number of dimensions in array field.
+/// Returns 0 for scalar fields.
+class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
+{
+public:
+    size_t operator()(const Array & x) const
+    {
+        const size_t size = x.size();
+        std::optional<size_t> dimensions;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// Do not count Nulls, because they will be replaced by default
+            /// values with proper number of dimensions.
+            if (x[i].isNull())
+                continue;
+
+            size_t current_dimensions = applyVisitor(*this, x[i]);
+            if (!dimensions)
+                dimensions = current_dimensions;
+            else if (current_dimensions != *dimensions)
+                throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
+                    "Number of dimensions mismatched among array elements");
+        }
+
+        return 1 + dimensions.value_or(0);
+    }
+
+    template <typename T>
+    size_t operator()(const T &) const { return 0; }
 };
 
 /// Visitor that allows to get type of scalar field
@@ -118,12 +152,6 @@ public:
             type_indexes.insert(TypeIndex::Int32);
         else
             type_indexes.insert(TypeIndex::Int64);
-    }
-
-    void operator()(const bool &)
-    {
-        field_types.insert(FieldType::UInt64);
-        type_indexes.insert(TypeIndex::UInt8);
     }
 
     void operator()(const Null &)
@@ -264,7 +292,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (isNothing(least_common_type.get()))
         column_dim = value_dim;
 
-    if (isNothing(base_type))
+    if (field.isNull())
         value_dim = column_dim;
 
     if (value_dim != column_dim)
@@ -493,7 +521,7 @@ ColumnObject::ColumnObject(bool is_nullable_)
 {
 }
 
-ColumnObject::ColumnObject(Subcolumns && subcolumns_, bool is_nullable_)
+ColumnObject::ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_)
     : is_nullable(is_nullable_)
     , subcolumns(std::move(subcolumns_))
     , num_rows(subcolumns.empty() ? 0 : (*subcolumns.begin())->data.size())
@@ -668,7 +696,7 @@ const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & ke
 ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key)
 {
     if (const auto * node = subcolumns.findLeaf(key))
-        return const_cast<Subcolumns::Node *>(node)->data;
+        return const_cast<SubcolumnsTree::Node *>(node)->data;
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
@@ -766,7 +794,7 @@ bool ColumnObject::isFinalized() const
 void ColumnObject::finalize()
 {
     size_t old_size = size();
-    Subcolumns new_subcolumns;
+    SubcolumnsTree new_subcolumns;
     for (auto && entry : subcolumns)
     {
         const auto & least_common_type = entry->data.getLeastCommonType();

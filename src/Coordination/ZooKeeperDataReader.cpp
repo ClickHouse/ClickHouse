@@ -98,9 +98,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
     while (path != "/")
     {
         KeeperStorage::Node node{};
-        String data;
-        Coordination::read(data, in);
-        node.setData(std::move(data));
+        Coordination::read(node.data, in);
         Coordination::read(node.acl_id, in);
 
         /// Deserialize stat
@@ -119,7 +117,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         Coordination::read(node.stat.pzxid, in);
         if (!path.empty())
         {
-            node.stat.dataLength = node.getData().length();
+            node.stat.dataLength = node.data.length();
             node.seq_num = node.stat.cversion;
             storage.container.insertOrReplace(path, node);
 
@@ -139,7 +137,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseName(path)); value.stat.numChildren++; });
+            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); value.stat.numChildren++; });
         }
     }
 

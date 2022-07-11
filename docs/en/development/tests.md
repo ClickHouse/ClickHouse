@@ -1,12 +1,11 @@
 ---
-sidebar_position: 70
-sidebar_label: Testing
-description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
+toc_priority: 70
+toc_title: Testing
 ---
 
-# ClickHouse Testing 
+# ClickHouse Testing {#clickhouse-testing}
 
-## Functional Tests
+## Functional Tests {#functional-tests}
 
 Functional tests are the most simple and convenient to use. Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 
@@ -83,7 +82,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 
 Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/tests/performance-comparison` tool . See the readme file for invocation.
 
-Each test run one or multiple queries (possibly with combinations of parameters) in a loop.
+Each test run one or multiple queries (possibly with combinations of parameters) in a loop. Some tests can contain preconditions on preloaded test dataset.
 
 If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
 

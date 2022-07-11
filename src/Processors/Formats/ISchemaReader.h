@@ -18,35 +18,22 @@ public:
 
     virtual NamesAndTypesList readSchema() = 0;
 
-    /// True if order of columns is important in format.
-    /// Exceptions: JSON, TSKV.
-    virtual bool hasStrictOrderOfColumns() const { return true; }
-
     virtual ~ISchemaReader() = default;
 
 protected:
     ReadBuffer & in;
 };
 
-using CommonDataTypeChecker = std::function<DataTypePtr(const DataTypePtr &, const DataTypePtr &)>;
-
 /// Base class for schema inference for formats that read data row by row.
 /// It reads data row by row (up to max_rows_to_read), determines types of columns
 /// for each row and compare them with types from the previous rows. If some column
-/// contains values with different types in different rows, the default type
-/// (from argument default_type_) will be used for this column or the exception
-/// will be thrown (if default type is not set). If different columns have different
-/// default types, you can provide them by default_types_ argument.
+/// contains values with different types in different rows, the default type will be
+/// used for this column or the exception will be thrown (if default type is not set).
 class IRowSchemaReader : public ISchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_);
-
+    IRowSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
-
-    void setCommonTypeChecker(CommonDataTypeChecker checker) { common_type_checker = checker; }
 
 protected:
     /// Read one row and determine types of columns in it.
@@ -58,12 +45,8 @@ protected:
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
 
 private:
-
-    DataTypePtr getDefaultType(size_t column) const;
     size_t max_rows_to_read;
     DataTypePtr default_type;
-    DataTypes default_types;
-    CommonDataTypeChecker common_type_checker;
     std::vector<String> column_names;
 };
 
@@ -77,21 +60,17 @@ class IRowWithNamesSchemaReader : public ISchemaReader
 public:
     IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
-    bool hasStrictOrderOfColumns() const override { return false; }
-
-    void setCommonTypeChecker(CommonDataTypeChecker checker) { common_type_checker = checker; }
 
 protected:
     /// Read one row and determine types of columns in it.
-    /// Return list with names and types.
+    /// Return map {column_name : type}.
     /// If it's impossible to determine the type for some column, return nullptr for it.
-    /// Set eof = true if can't read more data.
-    virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
+    /// Return empty map is can't read more data.
+    virtual std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() = 0;
 
 private:
     size_t max_rows_to_read;
     DataTypePtr default_type;
-    CommonDataTypeChecker common_type_checker;
 };
 
 /// Base class for schema inference for formats that don't need any data to

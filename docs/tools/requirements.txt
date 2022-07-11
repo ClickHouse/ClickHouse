@@ -10,13 +10,13 @@ cssmin==0.2.0
 future==0.18.2
 htmlmin==0.1.12
 idna==2.10
-Jinja2==3.0.3
+Jinja2>=3.0.3
 jinja2-highlight==0.6.1
 jsmin==3.0.0
 livereload==2.6.3
 Markdown==3.3.2
 MarkupSafe==2.1.0
-mkdocs==1.3.0
+mkdocs==1.1.2
 mkdocs-htmlproofer-plugin==0.0.3
 mkdocs-macros-plugin==0.4.20
 nltk==3.7

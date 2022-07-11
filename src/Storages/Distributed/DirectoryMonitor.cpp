@@ -340,7 +340,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= static_cast<double>(std::numeric_limits<uint64_t>::max()))
+        if (d >= double(std::numeric_limits<uint64_t>::max()))
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }
@@ -1021,7 +1021,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         UInt64 file_idx = file.first;
         const String & file_path = file.second;
 
-        if (file_indices_to_skip.contains(file_idx))
+        if (file_indices_to_skip.count(file_idx))
             continue;
 
         size_t total_rows = 0;

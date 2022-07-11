@@ -21,7 +21,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -77,7 +76,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
     /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
     /// might be in positional GROUP BY.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(Int64(-1)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -112,7 +111,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
         if (const auto * function = group_exprs[i]->as<ASTFunction>())
         {
             /// assert function is injective
-            if (possibly_injective_function_names.contains(function->name))
+            if (possibly_injective_function_names.count(function->name))
             {
                 /// do not handle semantic errors here
                 if (function->arguments->children.size() < 2)
@@ -139,18 +138,10 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            else
+            else if (!function_factory.get(function->name, context)->isInjective({}))
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
-
-                if (!function_builder)
-                    function_builder = function_factory.get(function->name, context);
-
-                if (!function_builder->isInjective({}))
-                {
-                    ++i;
-                    continue;
-                }
+                ++i;
+                continue;
             }
 
             /// copy shared pointer to args in order to ensure lifetime
@@ -242,7 +233,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 
     /// filling the result
     for (const auto & group_key : group_by_keys)
-        if (group_by_keys_data.key_names.contains(group_key->getColumnName()))
+        if (group_by_keys_data.key_names.count(group_key->getColumnName()))
             modified.push_back(group_key);
 
     /// modifying the input
@@ -358,7 +349,7 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
         {
             const String & name = identifier->shortName();
 
-            if (select.distinct || implicit_distinct.contains(name))
+            if (select.distinct || implicit_distinct.count(name))
             {
                 if (alias.empty())
                     names.insert(name);
@@ -401,7 +392,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
             return;
 
         String name = identifier->shortName();
-        if (!distinct_names.contains(name))
+        if (!distinct_names.count(name))
             return; /// Not a distinct column, keep DISTINCT for it.
 
         selected_names.insert(name);
@@ -760,7 +751,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.convert_query_to_cnf)
         converted_to_cnf = convertQueryToCNF(select_query);
 
-    if (converted_to_cnf && settings.optimize_using_constraints && result.storage_snapshot)
+    if (converted_to_cnf && settings.optimize_using_constraints)
     {
         optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
             tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);

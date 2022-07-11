@@ -117,8 +117,6 @@ public:
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
-    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
-
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
@@ -128,8 +126,7 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        WriteMode mode) override;
 
     void removeFile(const String & path) override
     {
@@ -161,23 +158,10 @@ public:
         delegate->removeSharedFile(wrapped_path, flag);
     }
 
-    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
+    void removeSharedRecursive(const String & path, bool flag) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate->removeSharedRecursive(wrapped_path, keep_all_batch_data, file_names_remove_metadata_only);
-    }
-
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
-    {
-        for (const auto & file : files)
-        {
-            auto wrapped_path = wrappedPath(file.path);
-            bool keep = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
-            if (file.if_exists)
-                delegate->removeSharedFileIfExists(wrapped_path, keep);
-            else
-                delegate->removeSharedFile(wrapped_path, keep);
-        }
+        delegate->removeSharedRecursive(wrapped_path, flag);
     }
 
     void removeSharedFileIfExists(const String & path, bool flag) override

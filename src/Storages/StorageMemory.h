@@ -22,7 +22,6 @@ namespace DB
 class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
 {
 friend class MemorySink;
-friend class MemoryRestoreTask;
 friend struct shared_ptr_helper<StorageMemory>;
 
 public:
@@ -37,7 +36,7 @@ public:
         std::shared_ptr<const Blocks> blocks;
     };
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
 
     Pipe read(
         const Names & column_names,
@@ -65,10 +64,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
-
-    bool hasDataToBackup() const override { return true; }
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;

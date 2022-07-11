@@ -276,8 +276,3 @@ def test_HDFS(start_cluster):
     assert "not allowed" in node7.query_and_get_error(
         "SELECT * FROM hdfs('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'word String')"
     )
-
-
-def test_schema_inference(start_cluster):
-    error = node7.query_and_get_error("desc url('http://test.com`, 'TSVRaw'')")
-    assert error.find("ReadWriteBufferFromHTTPBase") == -1

@@ -126,6 +126,8 @@ def test_incorrect_data_type(started_cluster):
         "CREATE TABLE strange_mongo_table2(key UInt64, data String, bbbb String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')"
     )
 
+    with pytest.raises(QueryRuntimeException):
+        node.query("SELECT bbbb FROM strange_mongo_table2")
     node.query("DROP TABLE strange_mongo_table")
     node.query("DROP TABLE strange_mongo_table2")
     strange_mongo_table.drop()
@@ -228,27 +230,4 @@ def test_auth_source(started_cluster):
         "create table simple_mongo_table_ok(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', 'authSource=admin')"
     )
     assert node.query("SELECT count() FROM simple_mongo_table_ok") == "100\n"
-    simple_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_missing_columns(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 10):
-        data.append({"key": i, "data": hex(i * i)})
-    for i in range(0, 10):
-        data.append({"key": i})
-    simple_mongo_table.insert_many(data)
-
-    node = started_cluster.instances["node"]
-    node.query("drop table if exists simple_mongo_table")
-    node.query(
-        "create table simple_mongo_table(key UInt64, data Nullable(String)) engine = MongoDB(mongo1)"
-    )
-    result = node.query("SELECT count() FROM simple_mongo_table WHERE isNull(data)")
-    assert result == "10\n"
     simple_mongo_table.drop()

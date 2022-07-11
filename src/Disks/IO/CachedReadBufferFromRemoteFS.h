@@ -4,8 +4,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/FilesystemCacheLog.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -51,8 +50,6 @@ private:
 
     bool nextImplStep();
 
-    void assertCorrectness() const;
-
     enum class ReadType
     {
         CACHED,
@@ -64,8 +61,6 @@ private:
 
     size_t getTotalSizeToRead();
     bool completeFileSegmentAndGetNext();
-
-    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
 
     Poco::Logger * log;
     IFileCache::Key cache_key;
@@ -101,15 +96,8 @@ private:
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
-        __builtin_unreachable();
     }
-
     size_t first_offset = 0;
-    String nextimpl_step_log_info;
-    String last_caller_id;
-
-    String query_id;
-    bool enable_logging = false;
 };
 
 }

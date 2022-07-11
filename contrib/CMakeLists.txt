@@ -119,13 +119,9 @@ add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-
-if (ENABLE_CURL_BUILD)
-    add_contrib (curl-cmake curl)
-    add_contrib (azure-cmake azure)
-    add_contrib (sentry-native-cmake sentry-native) # requires: curl
-endif()
-
+add_contrib (curl-cmake curl)
+add_contrib (azure-cmake azure)
+add_contrib (sentry-native-cmake sentry-native) # requires: curl
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5

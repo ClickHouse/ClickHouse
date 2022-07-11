@@ -6,7 +6,7 @@
 #include <Common/ProgressIndication.h>
 #include <Common/StatusFile.h>
 #include <Common/InterruptListener.h>
-#include <Loggers/Loggers.h>
+#include <loggers/Loggers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -45,8 +45,6 @@ protected:
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
 
     void processConfig() override;
-
-    void updateLoggerLevel(const String & logs_level) override;
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)

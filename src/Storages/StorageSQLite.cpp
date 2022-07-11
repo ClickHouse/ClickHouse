@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 #include <base/range.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>

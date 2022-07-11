@@ -45,7 +45,7 @@ struct ZooKeeperResponse : virtual Response
 
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
 
-/// Exposed in header file for some external code.
+/// Exposed in header file for Yandex.Metrica code.
 struct ZooKeeperRequest : virtual Request
 {
     XID xid = 0;
@@ -57,8 +57,6 @@ struct ZooKeeperRequest : virtual Request
     bool restored_from_zookeeper_log = false;
 
     UInt64 request_created_time_ns = 0;
-    UInt64 thread_id = 0;
-    String query_id;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;

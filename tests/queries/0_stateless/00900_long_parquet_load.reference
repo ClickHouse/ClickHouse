@@ -88,9 +88,6 @@ idx10	['This','is','a','test']
 22
 23
 24
-=== Try load data from case_insensitive_column_matching.parquet
-123	1
-456	2
 === Try load data from datapage_v2.snappy.parquet
 Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Unknown encoding type.: While executing ParquetBlockInputFormat: data for INSERT was parsed from stdin: (in query: INSERT INTO parquet_load FORMAT Parquet). (CANNOT_READ_ALL_DATA)
 

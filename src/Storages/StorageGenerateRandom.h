@@ -24,7 +24,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    bool supportsTransactions() const override { return true; }
 private:
     UInt64 max_array_length = 10;
     UInt64 max_string_length = 10;

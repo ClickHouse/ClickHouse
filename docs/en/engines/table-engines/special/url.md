@@ -1,6 +1,6 @@
 ---
-sidebar_position: 80
-sidebar_label:  URL
+toc_priority: 41
+toc_title: URL
 ---
 
 # URL Table Engine {#table_engines-url}
@@ -89,4 +89,4 @@ SELECT * FROM url_engine_table
     -   Indexes.
     -   Replication.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/url/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

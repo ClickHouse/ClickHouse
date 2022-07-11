@@ -72,10 +72,7 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
-class IRestoreTask;
-using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
-struct StorageRestoreSettings;
-class IRestoreCoordination;
+using RestoreDataTasks = std::vector<std::function<void()>>;
 
 struct ColumnSize
 {
@@ -136,9 +133,6 @@ public:
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
 
-    /// Returns true if the storage supports queries with the TTL section.
-    virtual bool supportsTTL() const { return false; }
-
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
@@ -164,11 +158,6 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
-
-    /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
-    /// Storage may throw an exception later if some query kind is not fully supported.
-    /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
-    virtual bool supportsTransactions() const { return false; }
 
     /// Returns true if the storage supports storing of dynamic subcolumns.
     /// For now it makes sense only for data type Object.
@@ -227,14 +216,11 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
-    /// Returns true if the backup is hollow, which means it doesn't contain any data.
-    virtual bool hasDataToBackup() const { return false; }
-
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions);
+    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context);
 
     /// Extract data from the backup and put it to the storage.
-    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);
+    virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -420,7 +406,7 @@ public:
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
+    virtual void checkTableCanBeRenamed() const {}
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
@@ -488,16 +474,6 @@ public:
 
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/)
-    {
-        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual void waitForMutation(const String & /*mutation_id*/)
-    {
-        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual void setMutationCSN(const String & /*mutation_id*/, UInt64 /*csn*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -572,6 +548,11 @@ public:
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
+    /// Checks that Partition could be dropped right now
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
+
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
@@ -624,15 +605,15 @@ public:
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.
-    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
+    virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
     }
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
-    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/) const
     {
-        return getStorageSnapshot(metadata_snapshot, query_context);
+        return getStorageSnapshot(metadata_snapshot);
     }
 
 private:

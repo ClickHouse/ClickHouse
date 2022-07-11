@@ -25,9 +25,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
-#include <Backups/IBackupEntry.h>
-#include <Backups/IRestoreTask.h>
-
 namespace DB
 {
 
@@ -143,7 +140,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     /// converting and use it just like a normal view.
     query_info.ignore_projections = true;
     const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr();
-    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
+    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata), query_info);
 }
 
 Pipe StorageMaterializedView::read(
@@ -175,7 +172,7 @@ void StorageMaterializedView::read(
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
+    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot);
 
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, local_context);
@@ -431,20 +428,6 @@ Strings StorageMaterializedView::getDataPaths() const
     if (auto table = tryGetTargetTable())
         return table->getDataPaths();
     return {};
-}
-
-BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const ASTs & partitions_)
-{
-    if (!hasInnerTable())
-        return {};
-    return getTargetTable()->backupData(context_, partitions_);
-}
-
-RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
-{
-    if (!hasInnerTable())
-        return {};
-    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_, restore_coordination_);
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)

@@ -515,11 +515,6 @@ public:
         radixSortLSDInternal<false>(arr, size, false, nullptr);
     }
 
-    static void executeLSD(Element * arr, size_t size, bool reverse)
-    {
-        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
-    }
-
     /** This function will start to sort inplace (modify 'arr')
       *  but on the last step it will write result directly to the destination
       *  instead of finishing sorting 'arr'.

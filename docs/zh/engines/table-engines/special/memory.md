@@ -1,6 +1,6 @@
 ---
-sidebar_position: 44
-sidebar_label: Memory
+toc_priority: 44
+toc_title: Memory
 ---
 
 # 内存表 {#memory}

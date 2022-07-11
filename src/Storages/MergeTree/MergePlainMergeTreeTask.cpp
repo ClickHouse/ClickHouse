@@ -107,15 +107,14 @@ void MergePlainMergeTreeTask::prepare()
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
-            storage.merging_params,
-            txn);
+            storage.merging_params);
 }
 
 
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, nullptr);
+    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
     write_part_log({});
 }
 

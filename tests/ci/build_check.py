@@ -6,15 +6,13 @@ import json
 import os
 import sys
 import time
-from shutil import rmtree
 from typing import List, Optional, Tuple
 
-from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
+from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH, GITHUB_JOB
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from version_helper import (
     ClickHouseVersion,
-    Git,
     get_version_from_repo,
     update_version_local,
 )
@@ -66,22 +64,22 @@ def get_packager_cmd(
     )
 
     if build_config["build_type"]:
-        cmd += f" --build-type={build_config['build_type']}"
+        cmd += " --build-type={}".format(build_config["build_type"])
     if build_config["sanitizer"]:
-        cmd += f" --sanitizer={build_config['sanitizer']}"
+        cmd += " --sanitizer={}".format(build_config["sanitizer"])
     if build_config["splitted"] == "splitted":
         cmd += " --split-binary"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
     cmd += " --cache=ccache"
-    cmd += f" --ccache_dir={ccache_path}"
+    cmd += " --ccache_dir={}".format(ccache_path)
 
     if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
         cmd += " --additional-pkgs"
 
-    cmd += f" --docker-image-version={image_version}"
-    cmd += f" --version={build_version}"
+    cmd += " --docker-image-version={}".format(image_version)
+    cmd += " --version={}".format(build_version)
 
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
@@ -147,13 +145,21 @@ def create_json_artifact(
         "build_config": build_config,
         "elapsed_seconds": elapsed,
         "status": success,
+        "job_name": GITHUB_JOB,
     }
 
     json_name = "build_urls_" + build_name + ".json"
 
-    print(f"Dump json report {result} to {json_name} with env build_urls_{build_name}")
+    print(
+        "Dump json report",
+        result,
+        "to",
+        json_name,
+        "with env",
+        "build_urls_{build_name}",
+    )
 
-    with open(os.path.join(temp_path, json_name), "w", encoding="utf-8") as build_links:
+    with open(os.path.join(temp_path, json_name), "w") as build_links:
         json.dump(result, build_links)
 
 
@@ -210,7 +216,7 @@ def main():
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    version = get_version_from_repo(git=Git(True))
+    version = get_version_from_repo()
     release_or_pr = get_release_or_pr(pr_info, build_config, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
@@ -272,12 +278,7 @@ def main():
     ccache_path = os.path.join(CACHES_PATH, build_name + "_ccache")
 
     logging.info("Will try to fetch cache for our build")
-    try:
-        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
-    except Exception as e:
-        # In case there are issues with ccache, remove the path and do not fail a build
-        logging.info("Failed to get ccache, building without it. Error: %s", e)
-        rmtree(ccache_path, ignore_errors=True)
+    get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
 
     if not os.path.exists(ccache_path):
         logging.info("cache was not fetched, will create empty dir")
@@ -285,12 +286,9 @@ def main():
 
     if build_config["package_type"] == "performance" and pr_info.number != 0:
         # because perf tests store some information about git commits
-        cmd = (
-            f"cd {REPO_COPY} && git fetch --depth=60 --no-recurse-submodules "
-            "--no-tags origin master:master"
+        subprocess.check_call(
+            f"cd {REPO_COPY} && git fetch origin master:master", shell=True
         )
-        logging.info("Fetch master branch with a command: %s", cmd)
-        subprocess.check_call(cmd, shell=True)
 
     packager_cmd = get_packager_cmd(
         build_config,
@@ -299,7 +297,7 @@ def main():
         version.string,
         image_version,
         ccache_path,
-        official_flag,
+        official=official_flag,
     )
 
     logging.info("Going to run packager with %s", packager_cmd)
@@ -340,7 +338,7 @@ def main():
 
     print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
 
-    print(f"::notice ::Log URL: {log_url}")
+    print("::notice ::Log URL: {}".format(log_url))
 
     create_json_artifact(
         TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success

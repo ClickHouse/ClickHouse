@@ -541,30 +541,6 @@ def test_schema_inference_with_globs(started_cluster):
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
-    node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
-    )
-
-    filename = "data{1,3}.jsoncompacteachrow"
-
-    result = node1.query_and_get_error(f"desc hdfs('hdfs://hdfs1:9000/{filename}')")
-
-    assert "All attempts to extract table structure from files failed" in result
-
-    node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
-    )
-
-    url_filename = "data{0,1,2,3}.jsoncompacteachrow"
-
-    result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
-    )
-
-    assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
-    )
-
 
 def test_insert_select_schema_inference(started_cluster):
     node1.query(
@@ -576,37 +552,6 @@ def test_insert_select_schema_inference(started_cluster):
 
     result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert int(result) == 1
-
-
-def test_cluster_join(started_cluster):
-    result = node1.query(
-        """
-        SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as l
-        JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as r
-        ON l.id = r.id
-    """
-    )
-    assert "AMBIGUOUS_COLUMN_NAME" not in result
-
-
-def test_virtual_columns_2(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-
-    table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
-    )
-    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
-
-    result = node1.query(f"SELECT _path FROM {table_function}")
-    assert result.strip() == "hdfs://hdfs1:9000/parquet_2"
-
-    table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
-    )
-    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
-
-    result = node1.query(f"SELECT _path FROM {table_function}")
-    assert result.strip() == "kek"
 
 
 if __name__ == "__main__":

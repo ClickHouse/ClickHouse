@@ -1,13 +1,13 @@
 ---
-sidebar_position: 50
-sidebar_label: Enum
+toc_priority: 50
+toc_title: Enum
 ---
 
 # Enum {#enum}
 
 Enumerated type consisting of named values.
 
-Named values can be declared as `'string' = integer` pairs or `'string'` names . ClickHouse stores only numbers, but supports operations with the values through their names.
+Named values must be declared as `'string' = integer` pairs. ClickHouse stores only numbers, but supports operations with the values through their names.
 
 ClickHouse supports:
 
@@ -26,39 +26,6 @@ CREATE TABLE t_enum
     x Enum('hello' = 1, 'world' = 2)
 )
 ENGINE = TinyLog
-```
-
-Similarly, you could omit numbers. ClickHouse will assign consecutive numbers automatically. Numbers are assigned starting from 1 by default.
-
-``` sql
-CREATE TABLE t_enum
-(
-    x Enum('hello', 'world')
-)
-ENGINE = TinyLog
-```
-
-You can also specify legal starting number for the first name.
-
-``` sql
-CREATE TABLE t_enum
-(
-    x Enum('hello' = 1, 'world')
-)
-ENGINE = TinyLog
-```
-
-``` sql
-CREATE TABLE t_enum
-(
-    x Enum8('hello' = -129, 'world')
-)
-ENGINE = TinyLog
-```
-
-``` text
-Exception on server:
-Code: 69. DB::Exception: Value -129 for element 'hello' exceeds range of Enum8.
 ```
 
 Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will raise an exception. 8-bit size for this `Enum` is chosen automatically.

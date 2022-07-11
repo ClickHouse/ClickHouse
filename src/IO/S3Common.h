@@ -66,7 +66,6 @@ struct URI
     String endpoint;
     String bucket;
     String key;
-    String version_id;
     String storage_name;
 
     bool is_virtual_hosted_style;
@@ -75,8 +74,6 @@ struct URI
 
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
-
-size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
 
 }
 

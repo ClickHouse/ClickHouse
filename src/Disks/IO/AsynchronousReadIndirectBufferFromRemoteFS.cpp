@@ -4,7 +4,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <IO/ReadSettings.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -69,10 +69,6 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
     return impl->getInfoForLog();
 }
 
-std::optional<size_t> AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
-{
-    return impl->getFileSize();
-}
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 {
@@ -138,10 +134,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
 {
     if (prefetch_future.valid())
-    {
-        prefetch_future.wait();
-        prefetch_future = {};
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
 
     if (position > read_until_position)
     {
@@ -154,10 +147,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilEnd()
 {
     if (prefetch_future.valid())
-    {
-        prefetch_future.wait();
-        prefetch_future = {};
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilEnd");
 
     read_until_position = impl->getFileSize();
     impl->setReadUntilPosition(*read_until_position);

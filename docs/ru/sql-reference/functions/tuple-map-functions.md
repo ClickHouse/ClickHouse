@@ -1,6 +1,6 @@
 ---
-sidebar_position: 46
-sidebar_label: Работа с контейнерами map
+toc_priority: 46
+toc_title: Работа с контейнерами map
 ---
 
 # Функции для работы с контейнерами map {#functions-for-working-with-tuple-maps}

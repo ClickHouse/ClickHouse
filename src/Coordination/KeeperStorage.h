@@ -32,38 +32,28 @@ public:
 
     struct Node
     {
+        String data;
         uint64_t acl_id = 0; /// 0 -- no ACL by default
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
+        ChildrenSet children{};
         uint64_t size_bytes; // save size to avoid calculate every time
 
-        Node() : size_bytes(sizeof(Node)) { }
-
+        Node()
+        {
+            size_bytes = sizeof(size_bytes);
+            size_bytes += data.size();
+            size_bytes += sizeof(acl_id);
+            size_bytes += sizeof(is_sequental);
+            size_bytes += sizeof(stat);
+            size_bytes += sizeof(seq_num);
+        }
         /// Object memory size
         uint64_t sizeInBytes() const
         {
             return size_bytes;
         }
-
-        void setData(String new_data);
-
-        const auto & getData() const noexcept
-        {
-            return data;
-        }
-
-        void addChild(StringRef child_path);
-
-        void removeChild(StringRef child_path);
-
-        const auto & getChildren() const noexcept
-        {
-            return children;
-        }
-    private:
-        String data;
-        ChildrenSet children{};
     };
 
     struct ResponseForSession
@@ -114,7 +104,7 @@ public:
 
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;
-    /// Mapping session_id -> set of watched nodes paths
+    /// Mapping sessuib_id -> set of watched nodes paths
     SessionAndWatcher sessions_and_watchers;
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
