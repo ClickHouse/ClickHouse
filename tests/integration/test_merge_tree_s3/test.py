@@ -69,7 +69,7 @@ def run_s3_mocks(cluster):
     logging.info("Starting s3 mocks")
     mocks = (
         ("unstable_proxy.py", "resolver", "8081"),
-        ("no_delete_objects.py", "resolver", "8082")
+        ("no_delete_objects.py", "resolver", "8082"),
     )
     for mock_filename, container, port in mocks:
         container_id = cluster.get_container_id(container)
@@ -643,10 +643,10 @@ def test_s3_disk_restart_during_load(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_no_delete_objects(cluster, node_name):
     node = cluster.instances[node_name]
-    create_table(node, "s3_test_no_delete_objects", storage_policy="no_delete_objects_s3")
-    node.query(
-        "DROP TABLE s3_test_no_delete_objects SYNC"
+    create_table(
+        node, "s3_test_no_delete_objects", storage_policy="no_delete_objects_s3"
     )
+    node.query("DROP TABLE s3_test_no_delete_objects SYNC")
 
 
 @pytest.mark.parametrize("node_name", ["node"])
