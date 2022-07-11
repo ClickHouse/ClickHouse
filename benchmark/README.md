@@ -253,6 +253,8 @@ We also introduced the [Hardware Benchmark](https://clickhouse.com/benchmark/har
 - [ ] LocustDB
 - [ ] EventQL
 - [ ] Apache Drill
+- [ ] Apache Kudu
+- [ ] Apache Kylin
 
 By default, all tests are run on c6a.4xlarge VM in AWS with 500 GB gp2.
 
