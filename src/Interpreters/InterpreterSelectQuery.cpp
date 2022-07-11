@@ -786,7 +786,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (analysis_result.use_grouping_set_key)
             res.insert({ nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set" });
 
-        if (context->getSettingsRef().group_by_use_nulls)
+        if (context->getSettingsRef().group_by_use_nulls && analysis_result.use_grouping_set_key)
         {
             for (const auto & key : query_analyzer->aggregationKeys())
                 res.insert({nullptr, makeNullableSafe(header.getByName(key.name).type), key.name});
