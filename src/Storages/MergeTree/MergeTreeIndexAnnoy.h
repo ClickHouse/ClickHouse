@@ -23,10 +23,10 @@ namespace ApproximateNearestNeighbour
         using Base = ::Annoy::AnnoyIndex<Int32, Float32, Dist, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>;
     public:
         AnnoyIndexSerialize() = delete;
-        explicit AnnoyIndexSerialize(const int dim) : Base::AnnoyIndex(dim) {}
+        explicit AnnoyIndexSerialize(const uint64_t dim) : Base::AnnoyIndex(dim) {}
         void serialize(WriteBuffer& ostr) const;
         void deserialize(ReadBuffer& istr);
-        float getNumOfDimensions() const;
+        uint64_t getNumOfDimensions() const;
     };
 }
 
@@ -59,7 +59,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
     using AnnoyIndex = ANN::AnnoyIndexSerialize<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
-    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, int index_param);
+    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t index_param);
     ~MergeTreeIndexAggregatorAnnoy() override = default;
 
     bool empty() const override;
@@ -68,7 +68,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
-    int index_param;
+    const uint64_t index_param;
     AnnoyIndexPtr index_base;
 };
 
@@ -97,7 +97,7 @@ private:
 class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexAnnoy(const IndexDescription & index_, int index_param_)
+    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t index_param_)
         : IMergeTreeIndex(index_)
         , index_param(index_param_)
     {}
@@ -110,13 +110,10 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return true; }
-
-    const char* getSerializedFileExtension() const override { return ".idx2"; }
-    MergeTreeIndexFormat getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & path_prefix) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
 
 private:
-    const int index_param;
+    const uint64_t index_param;
 };
 
 

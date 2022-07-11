@@ -164,7 +164,6 @@ if (ENABLE_ANNOY)
     add_contrib(annoy-cmake annoy)
     target_compile_definitions(_annoy PUBLIC ENABLE_ANNOY)
 endif()
-
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
