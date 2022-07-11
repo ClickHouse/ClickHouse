@@ -2,9 +2,9 @@
 
 ## Overview
 
-The benchmark represents typical workload in the following areas: click stream and traffic analysis, web analytics, machine-generated data, structured logs, and events data. It covers the typical queries in ad-hoc analytics and real-time dashboards.
+This benchmark represents typical workload in the following areas: click stream and traffic analysis, web analytics, machine-generated data, structured logs, and events data. It covers the typical queries in ad-hoc analytics and real-time dashboards.
 
-The dataset from this benchmark is obtained from the real traffic recording of one of the world's largest web analytics platforms. It has been anonymized while keeping all the important distributions of the data. The set of queries was improvised to reflect the realistic workloads, while the queries are not directly from production.
+The dataset from this benchmark was obtained from the actual traffic recording of one of the world's largest web analytics platforms. It is anonymized while keeping all the essential distributions of the data. The set of queries was improvised to reflect the realistic workloads, while the queries are not directly from production.
 
 ## Goals
 
@@ -12,11 +12,11 @@ The main goals of this benchmark are:
 
 ### Reproducibility
 
-Every test can be easily reproduced in nearly 20 minutes in a semi-automated way. The test setup is documented and uses inexpensive cloud VMs. The test process is documented in a form of a shell script, covering the installation of every system, loading of the data, running the workload, and collecting the result numbers. The dataset is published and made available for download in multiple formats. 
+You can quickly reproduce every test in as little as 20 minutes (those some systems may take several hours) in a semi-automated way. The test setup is documented and uses inexpensive cloud VMs. The test process is documented in the form of a shell script, covering the installation of every system, loading of the data, running the workload, and collecting the result numbers. The dataset is published and made available for download in multiple formats.
 
 ### Compatibility
 
-The tables and queries are using mostly standard SQL and require minimum or no adaptation for most SQL DBMS. The dataset has been filtered to avoid difficulties with parsing and loading.
+The tables and queries use mostly standard SQL and require minimum or no adaptation for most SQL DBMS. The dataset has been filtered to avoid difficulties with parsing and loading.
 
 ### Diversity
 
@@ -24,7 +24,7 @@ The benchmark process is easy enough to cover a wide range of systems. It includ
 
 ### Realism
 
-The dataset is derived from real production data. The realistic data distributions allow to correctly account for compression, indices, codecs, custom data structures, etc. which is not possible with most of the random dataset generators. The workload consists of 43 queries and can test the efficiency of full scan and filtered scan, as well as index lookups, and main relational operations. It can test various aspects of hardware as well: some queries require high storage throughput; some queries benefit from a large number of CPU cores and some benefit from single-core speed; some queries benefit from high main memory bandwidth.   
+The dataset is derived from accurate production data. The realistic data distributions allow to correctly account for compression, indices, codecs, custom data structures, etc. which is not possible with most of the random dataset generators. The workload consists of 43 queries and can test the efficiency of full scan and filtered scan, as well as index lookups, and main relational operations. It can test various aspects of hardware as well: some queries require high storage throughput; some queries benefit from a large number of CPU cores and some benefit from single-core speed; some queries benefit from high main memory bandwidth.
 
 ## Limitations
 
@@ -36,20 +36,20 @@ The following limitations should be acknowledged:
 
 2. The table consists of exactly 99 997 497 records. This is rather small by modern standards but allows to perform tests in a reasonable time.
 
-3. While this benchmark allows testing distributed systems, and it includes multi-node and serverless cloud-native setups, most of the results so far have been obtained on a single node setup. 
+3. While this benchmark allows testing distributed systems, and it includes multi-node and serverless cloud-native setups, most of the results so far have been obtained on a single node setup.
 
-4. The benchmark runs queries one after another and does not test a workload with concurrent requests; neither does it test for system capacity. Every query is run only a few times and this allows some variability in the results. 
+4. The benchmark runs queries one after another and does not test a workload with concurrent requests; neither does it test for system capacity. Every query is run only a few times and this allows some variability in the results.
 
 6. Many setups and systems are different enough to make direct comparison tricky. It is not possible to test the efficiency of storage used for in-memory databases, or the time of data loading for stateless query engines. The goal of the benchmark is to give the numbers for comparison and let you derive the conclusions on your own.
 
-TLDR: *All Benchmarks Are Bastards*.
+TLDR: *All Benchmarks Are ~~Bastards~~ Liars*.
 
 ## Rules and Contribution
 
 ### How To Add a New Result
 
 To introduce a new system, simply copy-paste one of the directories and edit the files accordingly:
-- `benchmark.sh`: this is the main script to run the benchmark on a fresh VM; Ubuntu 22.04 or newer should be used by default, or any other system if this is specified in the comments. The script is not necessarily can be run in a fully automated manner - it is recommended to always copy-paste the commands one by one and observe the results. For managed databases, if the setup requires clicking in the UI, write a `README.md` instead.
+- `benchmark.sh`: this is the main script to run the benchmark on a fresh VM; Ubuntu 22.04 or newer should be used by default, or any other system if specified in the comments. The script is not necessarily can be run in a fully automated manner - it is recommended always to copy-paste the commands one by one and observe the results. For managed databases, if the setup requires clicking in the UI, write a `README.md` instead.
 - `README.md`: contains comments and observations if needed. For managed databases, it can describe the setup procedure instead of a shell script.
 - `create.sql`: a CREATE TABLE statement. If it's a NoSQL system, another file like `wtf.json` can be presented.
 - `queries.sql`: contains 43 queries to run;
@@ -105,9 +105,9 @@ If a system is of a "multidimensional OLAP" kind, so always or implicitly doing 
 
 If the system contains a cache for query results, it should be disabled.
 
-If the system performs caching for source data (buffer pools and similar), it is ok. If the cache or buffer pools can be flushed, it should be flushed before the first run of every query.
+It is okay if the system performs caching for source data (buffer pools and similar). If the cache or buffer pools can be flushed, it should be flushed before the first run of every query.
 
-If the system contains a cache for intermediate data, it should be disabled if this cache is located near the end of the query execution pipeline, thus similar to a query result cache. 
+If the system contains a cache for intermediate data, it should be disabled if this cache is located near the end of the query execution pipeline, thus similar to a query result cache.
 
 ### Incomplete Results
 
@@ -137,7 +137,7 @@ You can select the summary metric from one of the following: "Cold Run", "Hot Ru
 
 If you select "Cold Run" or "Hot Run", the aggregation across the queries is performed in the following way:
 
-1. For Cold Run, the first run for every query is selected. For Hot Run, the minimum from 2nd and 3rd run time is selected, if both runs are successful, or null if some were unsuccessful.
+1. The first run for every query is selected for Cold Run. For Hot Run, the minimum from 2nd and 3rd run time is selected, if both runs are successful, or null if some were unsuccessful.
 
 By default, the "Hot Run" metric is selected, because it's not always possible to obtain a cold runtime for managed services, while for on-premise a quite slow EBS volume is used by default which makes the comparison slightly less interesting.
 
@@ -153,7 +153,7 @@ The constant shift is needed to make the formula well-defined when query time ap
 
 4. For every query, if the result is not present, substitute it with a "penalty" calculated as follows: take the maximum query runtime for this benchmark entry across other queries that have a result, but if it is less than 300 seconds, put it 300 seconds. Then multiply the value by 2. Then calculate the ratio as explained above.
 
-For example, one system is immature and crashed while trying to run a query. Or does not run a query due to limitations. If this system shows run times like 1..1000 sec. on other queries, we will substitute 2000 sec. instead of this missing result.
+For example, one system crashed while trying to run a query which can highlight the maturity, or lack of maturity, of a system. Or does not run a query due to limitations. If this system shows run times like 1..1000 sec. on other queries, we will substitute 2000 sec. instead of this missing result.
 
 5. Take the geometric mean of the ratios across the queries. It will be the summary rating.
 
@@ -248,7 +248,7 @@ We also introduced the [Hardware Benchmark](https://clickhouse.com/benchmark/har
 - [ ] Azure Synapse
 - [ ] Starburst Galaxy
 - [ ] MS SQL Server with Column Store Index (without publishing)
-- [ ] Dremio (without publishing) 
+- [ ] Dremio (without publishing)
 - [ ] Exasol
 - [ ] LocustDB
 - [ ] EventQL
@@ -258,11 +258,11 @@ We also introduced the [Hardware Benchmark](https://clickhouse.com/benchmark/har
 
 By default, all tests are run on c6a.4xlarge VM in AWS with 500 GB gp2.
 
-Please help us add more systems and run the benchmarks on more types of VMs. 
+Please help us add more systems and run the benchmarks on more types of VMs.
 
 ## Similar Projects
 
-There are many alternative benchmarks applicable to OLAP DBMS with their own advantages and disadvantages.
+Many alternative benchmarks are applicable to OLAP DBMS with their own advantages and disadvantages.
 
 ### Brown University Mgbench
 
@@ -285,7 +285,7 @@ Disadvantages:
 
 https://amplab.cs.berkeley.edu/benchmark/
 
-Poor coverage of queries that are too simple. The benchmark is abandoned. 
+Poor coverage of queries that are too simple. The benchmark is abandoned.
 
 ### Mark Litwinschik's NYC Taxi
 
@@ -347,7 +347,7 @@ Disadvantages:
 
 ### TPC-DS
 
-More advanced than TPC-H, focused on complex ad-hoc queries. Requires official certification as well.
+More advanced than TPC-H, focused on complex ad-hoc queries. This also requires official certification.
 
 Advantages:
 - an extensive collection of complex queries.
@@ -394,17 +394,17 @@ Used mostly to compare search engines: Elasticsearch and Manticore.
 https://www.stacresearch.com/
 
 Disadvantages:
-- requires a paid membership. 
+- requires a paid membership.
 
 ### More...
 
-If you know more well-defined, realistic, and reproducible benchmarks for analytical workloads, please let me know.
+Please let me know if you know more well-defined, realistic, and reproducible benchmarks for analytical workloads.
 
-I collect every benchmark that includes ClickHouse [here](https://github.com/ClickHouse/ClickHouse/issues/22398).
+In addition, I collect every benchmark that includes ClickHouse [here](https://github.com/ClickHouse/ClickHouse/issues/22398).
 
 ## Additional Outcomes
 
-This benchmark can be used to collect the snippets for installation and data loading across a wide variety of DBMS. The usability and quality of the documentation can be compared. It has been used to improve the quality of the participants as demonstrated in [duckdb#3969](https://github.com/duckdb/duckdb/issues/3969), [timescaledb#4473](https://github.com/timescale/timescaledb/issues/4473), [mariadb-corporation#16](https://github.com/mariadb-corporation/mariadb-community-columnstore-docker/issues/16), [MonetDB#7309](https://github.com/duckdb/duckdb/issues/3969), [questdb#2272](https://github.com/questdb/questdb/issues/2272), [crate#12654](https://github.com/crate/crate/issues/12654), [LocustDB#152](https://github.com/cswinter/LocustDB/issues/152), etc; 
+This benchmark can be used to collect the snippets for installation and data loading across a wide variety of DBMS. The usability and quality of the documentation can be compared. It has been used to improve the quality of the participants as demonstrated in [duckdb#3969](https://github.com/duckdb/duckdb/issues/3969), [timescaledb#4473](https://github.com/timescale/timescaledb/issues/4473), [mariadb-corporation#16](https://github.com/mariadb-corporation/mariadb-community-columnstore-docker/issues/16), [MonetDB#7309](https://github.com/duckdb/duckdb/issues/3969), [questdb#2272](https://github.com/questdb/questdb/issues/2272), [crate#12654](https://github.com/crate/crate/issues/12654), [LocustDB#152](https://github.com/cswinter/LocustDB/issues/152), etc;
 
 ### References and Citation
 
