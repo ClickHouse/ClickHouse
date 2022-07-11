@@ -688,7 +688,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto * raw_interpreter_ptr = interpreter.get();
                     std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
-                    span->ready();
+                    span->setReady();
                 }
                 res = interpreter->execute();
             }

@@ -113,7 +113,7 @@ namespace ErrorCodes
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     OpenTelemetrySpanHolder span("InterpreterFactory::get()");
-    span.ready();
+    span.setReady();
 
     ProfileEvents::increment(ProfileEvents::Query);
 

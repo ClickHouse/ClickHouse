@@ -103,7 +103,7 @@ bool ExecutionThreadContext::executeTask()
 #endif
 
     span.addAttribute("thread_number", thread_number);
-
+    span.setReady();
     return node->exception == nullptr;
 }
 

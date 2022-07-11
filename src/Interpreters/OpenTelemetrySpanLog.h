@@ -49,7 +49,7 @@ struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
     void addAttribute(const std::string& name, const std::string& value);
     void addAttribute(const Exception & e);
     void addAttribute(std::exception_ptr e);
-    void ready() { this->is_ready = true; }
+    void setReady() { this->is_ready = true; }
 
     ~OpenTelemetrySpanHolder();
 };

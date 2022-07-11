@@ -339,7 +339,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
         span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
         span.addAttribute("clickhouse.written_rows", rows);
-        span.ready();
+        span.setReady();
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -503,10 +503,10 @@ void DistributedSink::writeSync(const Block & block)
     {
         exception.addMessage(getCurrentStateDescription());
         span.addAttribute(exception);
-        span.ready();
+        span.setReady();
         throw;
     }
-    span.ready();
+    span.setReady();
 
     inserted_blocks += 1;
     inserted_rows += block.rows();
@@ -621,7 +621,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
     span.addAttribute("clickhouse.written_rows", block.rows());
-    span.ready();
+    span.setReady();
 
     if (shard_info.hasInternalReplication())
     {
@@ -658,7 +658,7 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
     OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("db.statement", this->query_string);
-    span.ready();
+    span.setReady();
 
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
@@ -674,7 +674,7 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
     OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
-    span.ready();
+    span.setReady();
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
