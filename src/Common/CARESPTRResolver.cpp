@@ -1,9 +1,16 @@
-#include <arpa/inet.h>
 #include "CARESPTRResolver.h"
+#include <Common/Exception.h>
+#include <arpa/inet.h>
 #include "netdb.h"
 #include "ares.h"
 
 namespace DB {
+
+    namespace ErrorCodes
+    {
+        extern const int DNS_ERROR;
+    }
+
     static void callback(void * arg, int status, int, struct hostent * host) {
         auto * ptr_records = reinterpret_cast<std::vector<std::string>*>(arg);
         if (status == ARES_SUCCESS) {
@@ -33,8 +40,8 @@ namespace DB {
     }
 
     void CARESPTRResolver::init() {
-        if (ares_init(channel.get()) != ARES_SUCCESS){
-            throw std::exception {};
+        if (ares_init(channel.get()) != ARES_SUCCESS) {
+            throw DB::Exception("Failed to initialize c-ares", DB::ErrorCodes::DNS_ERROR);
         }
     }
 
