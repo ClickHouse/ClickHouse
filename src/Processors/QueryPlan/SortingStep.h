@@ -27,15 +27,15 @@ public:
     /// FinishSorting
     SortingStep(
         const DataStream & input_stream_,
-        SortDescription prefix_description_,
-        SortDescription result_description_,
+        const SortDescription & prefix_description_,
+        const SortDescription & result_description_,
         size_t max_block_size_,
         UInt64 limit_);
 
     /// MergingSorted
     SortingStep(
         const DataStream & input_stream,
-        SortDescription sort_description_,
+        const SortDescription & sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0);
 

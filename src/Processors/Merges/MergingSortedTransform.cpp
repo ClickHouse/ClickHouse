@@ -26,7 +26,7 @@ MergingSortedTransform::MergingSortedTransform(
         limit_,
         header,
         num_inputs,
-        std::move(description_),
+        description_,
         max_block_size,
         sorting_queue_strategy,
         limit_,

@@ -998,7 +998,7 @@ void ReadFromMergeTree::setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOp
     }
 }
 
-void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
+void ReadFromMergeTree::setQueryInfoInputOrderInfo(const InputOrderInfoPtr & order_info)
 {
     if (query_info.projection)
     {
