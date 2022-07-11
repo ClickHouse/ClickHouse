@@ -1,6 +1,8 @@
 # Approximate Nearest Neighbor Search Indexes [experimental] {#table_engines-ANNIndex}
 
-# TODO Embedings
+The main task that indexes help to solve is to find the nearest neighbors for multidimensional data. An example of such a problem could be similar pictures or texts, for which the problem is reduced to finding the nearest [embeddings](https://cloud.google.com/architecture/overview-extracting-and-serving-feature-embeddings-for-machine-learning). They can be created from data using [UDF](../../../sql-reference/functions/index.md#executable-user-defined-functions).
+
+## Indexes Structure
 
 Approximate Nearest Neighbor Search Indexes (`ANNIndexes`) are simmilar to skip indexes. They are constructed by some granules and determine which of them should be skipped. Compared to skip indices, ANN indices use their results not only to skip some group of granules, but also to select particular granules from a set of granules.
 
@@ -39,9 +41,6 @@ CREATE TABLE t
 ENGINE = MergeTree
 ORDER BY id;
 ```
-
-!!! note "Note"
-    ANNIndexes work only when setting `index_granularity=8192`.
     
 Number of granules in granularity should be large. With greater `GRANULARITY` indexes remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
 
@@ -49,8 +48,8 @@ As the indexes are built only during insertions into table, `INSERT` and `OPTIMI
     
 You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
 
-##### Index list
-- Annoy
+# Index list
+- [Annoy](../../../engines/table-engines/mergetree-family/annindexes.md#annoy-annoy)
 
 # Annoy {#annoy}
 Implementation of the algorithm was taken from [this repository](https://github.com/spotify/annoy).

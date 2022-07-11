@@ -90,13 +90,13 @@ bool MergeTreeIndexGranuleAnnoy::empty() const
 
 void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(index_base->getNumOfDimensions(), ostr); // write dimension
+    writeIntBinary(index_base->get_f(), ostr); // write dimension
     index_base->serialize(ostr);
 }
 
 void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    int dimension;
+    uint64_t dimension;
     readIntBinary(dimension, istr);
     index_base = std::make_shared<AnnoyIndex>(dimension);
     index_base->deserialize(istr);
