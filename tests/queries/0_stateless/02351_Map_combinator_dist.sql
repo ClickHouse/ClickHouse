@@ -1,5 +1,3 @@
--- Tags: no-backward-compatibility-check:22.6
-
 -- https://github.com/ClickHouse/ClickHouse/issues/35359
 
 -- sumMap
