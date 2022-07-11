@@ -71,17 +71,24 @@ void checkRemoveAccess(IDisk & disk)
     disk.removeFile("test_acl");
 }
 
-bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key)
+bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_with_trailing_slash)
 {
-    String path = key + "/test_acl";
-    auto file = storage.writeObject(path, WriteMode::Rewrite);
+    const String path = key_with_trailing_slash + "_test_remove_objects_capability";
     try
     {
+        auto file = storage.writeObject(path, WriteMode::Rewrite);
         file->write("test", 4);
+        file->finalize();
     }
     catch (...)
     {
-        file->finalize();
+        try
+        {
+            storage.removeObject(path);
+        }
+        catch (...)
+        {
+        }
         return false; /// We don't have write access, therefore no information about batch remove.
     }
     try
@@ -92,6 +99,13 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key)
     }
     catch (const Exception &)
     {
+        try
+        {
+            storage.removeObject(path);
+        }
+        catch (...)
+        {
+        }
         return true;
     }
 }
@@ -125,7 +139,9 @@ void registerDiskS3(DiskFactory & factory)
             getSettings(config, config_prefix, context),
             uri.version_id, s3_capabilities, uri.bucket);
 
-        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
+
+        if (!skip_access_check)
         {
             /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
             if (s3_capabilities.support_batch_delete && checkBatchRemoveIsMissing(*s3_storage, uri.key))
@@ -155,7 +171,7 @@ void registerDiskS3(DiskFactory & factory)
             copy_thread_pool_size);
 
         /// This code is used only to check access to the corresponding disk.
-        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        if (!skip_access_check)
         {
             checkWriteAccess(*s3disk);
             checkReadAccess(name, *s3disk);
