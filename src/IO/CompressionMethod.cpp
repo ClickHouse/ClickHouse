@@ -98,6 +98,19 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         ErrorCodes::NOT_IMPLEMENTED);
 }
 
+std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method)
+{
+    switch (method)
+    {
+        case CompressionMethod::Zstd:
+            return {1, 22};
+        case CompressionMethod::Lz4:
+            return {1, 12};
+        default:
+            return {1, 9};
+    }
+}
+
 static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
     std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
 {

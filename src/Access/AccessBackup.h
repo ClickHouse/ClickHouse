@@ -17,7 +17,6 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 struct RestoreSettings;
-struct QualifiedTableName;
 
 
 /// Makes a backup of access entities of a specified type.
@@ -36,7 +35,7 @@ public:
     ~AccessRestorerFromBackup();
 
     /// Adds a data path to loads access entities from.
-    void addDataPath(const String & data_path, const QualifiedTableName & table_name_for_logs);
+    void addDataPath(const String & data_path);
 
     /// Checks that the current user can do restoring.
     AccessRightsElements getRequiredAccess() const;
