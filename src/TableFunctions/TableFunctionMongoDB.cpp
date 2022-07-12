@@ -30,14 +30,14 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context);
     auto storage = std::make_shared<StorageMongoDB>(
-    StorageID(configuration_->database, table_name),
-    configuration_->host,
-    configuration_->port,
-    configuration_->database,
-    configuration_->table,
-    configuration_->username,
-    configuration_->password,
-    configuration_->options,
+    StorageID(configuration->database, table_name),
+    configuration->host,
+    configuration->port,
+    configuration->database,
+    configuration->table,
+    configuration->username,
+    configuration->password,
+    configuration->options,
     columns,
     ConstraintsDescription(),
     String{});
@@ -47,7 +47,7 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context) const
 {
-    return parseColumnsListFromString(structure_, context);
+    return parseColumnsListFromString(structure, context);
 }
 
 void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -78,13 +78,13 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
             auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
 
             if (arg_name == "structure")
-                structure_ = checkAndGetLiteralArgument<String>(function_args[1], "structure");
+                structure = checkAndGetLiteralArgument<String>(function_args[1], "structure");
             else if (arg_name == "options")
                 main_arguments.push_back(function_args[1]);
         }
         else if (i == 5)
         {
-            structure_ = checkAndGetLiteralArgument<String>(args[i], "structure");
+            structure = checkAndGetLiteralArgument<String>(args[i], "structure");
         }
         else if (i == 6)
         {
@@ -92,7 +92,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
         }
     }
 
-    configuration_ = StorageMongoDB::getConfiguration(main_arguments, context);
+    configuration = StorageMongoDB::getConfiguration(main_arguments, context);
 }
 
 

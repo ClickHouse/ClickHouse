@@ -46,15 +46,15 @@ def test_simple_select(started_cluster):
     db = mongo_connection["test"]
     db.add_user("root", "clickhouse")
     simple_mongo_table = db["simple_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
     node.query(
         "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
     )
-    for i in range(0, 100):
-        node.query(
-            "INSERT INTO simple_mongo_table(key, data) VALUES ({}, '{}')".format(i, hex(i * i))
-        )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
@@ -138,15 +138,14 @@ def test_secure_connection(started_cluster):
     db.add_user("root", "clickhouse")
     simple_mongo_table = db["simple_table"]
     data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
     node.query(
         "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'ssl=true')"
     )
-    for i in range(0, 100):
-        node.query(
-            "INSERT INTO simple_mongo_table(key, data) VALUES ({}, '{}')".format(i, hex(i * i))
-        )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (

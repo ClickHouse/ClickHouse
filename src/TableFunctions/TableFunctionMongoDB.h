@@ -1,4 +1,4 @@
-#include "config_core.h"
+#pragma once
 
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
@@ -11,6 +11,7 @@ class TableFunctionMongoDB : public ITableFunction
 {
 public:
     static constexpr auto name = "mongodb";
+
     std::string getName() const override { return name; }
 
 private:
@@ -20,10 +21,11 @@ private:
 
     const char * getStorageTypeName() const override { return "MongoDB"; }
 
-ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-    std::optional<StorageMongoDBConfiguration> configuration_;
-    String structure_;
+
+    std::optional<StorageMongoDBConfiguration> configuration;
+    String structure;
 };
 
 }
