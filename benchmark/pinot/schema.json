@@ -1,0 +1,437 @@
+{
+  "metricFieldSpecs": [
+{
+    "name": "AdvEngineID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ClientIP",
+    "dataType": "LONG"
+  },
+  {
+    "name": "RegionID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsRefresh",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ResolutionWidth",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ResolutionHeight",
+    "dataType": "LONG"
+  },
+  {
+    "name": "WindowClientWidth",
+    "dataType": "LONG"
+  },
+  {
+    "name": "WindowClientHeight",
+    "dataType": "LONG"
+  },
+  {
+    "name": "URLHash",
+    "dataType": "LONG"
+  },
+  {
+    "name": "JavaEnable",
+    "dataType": "LONG"
+  },
+  {
+    "name": "GoodEvent",
+    "dataType": "LONG"
+  },
+  {
+    "name": "CounterClass",
+    "dataType": "LONG"
+  },
+  {
+    "name": "OS",
+    "dataType": "LONG"
+  },
+  {
+    "name": "UserAgent",
+    "dataType": "LONG"
+  },
+  {
+    "name": "RefererCategoryID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "RefererRegionID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "URLCategoryID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "URLRegionID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ResolutionDepth",
+    "dataType": "LONG"
+  },
+  {
+    "name": "FlashMajor",
+    "dataType": "LONG"
+  },
+  {
+    "name": "FlashMinor",
+    "dataType": "LONG"
+  },
+  {
+    "name": "NetMajor",
+    "dataType": "LONG"
+  },
+  {
+    "name": "NetMinor",
+    "dataType": "LONG"
+  },
+  {
+    "name": "UserAgentMajor",
+    "dataType": "LONG"
+  },
+  {
+    "name": "CookieEnable",
+    "dataType": "LONG"
+  },
+  {
+    "name": "JavascriptEnable",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsMobile",
+    "dataType": "LONG"
+  },
+  {
+    "name": "MobilePhone",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IPNetworkID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "TraficSourceID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "SearchEngineID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsArtifical",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ClientTimeZone",
+    "dataType": "LONG"
+  },
+  {
+    "name": "SilverlightVersion1",
+    "dataType": "LONG"
+  },
+  {
+    "name": "SilverlightVersion2",
+    "dataType": "LONG"
+  },
+  {
+    "name": "SilverlightVersion3",
+    "dataType": "LONG"
+  },
+  {
+    "name": "SilverlightVersion4",
+    "dataType": "LONG"
+  },
+  {
+    "name": "CodeVersion",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsLink",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsDownload",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsNotBounce",
+    "dataType": "LONG"
+  },
+  {
+    "name": "FUniqID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "HID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsOldCounter",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsEvent",
+    "dataType": "LONG"
+  },
+  {
+    "name": "IsParameter",
+    "dataType": "LONG"
+  },
+  {
+    "name": "DontCountHits",
+    "dataType": "LONG"
+  },
+  {
+    "name": "WithHash",
+    "dataType": "LONG"
+  },
+  {
+    "name": "Age",
+    "dataType": "LONG"
+  },
+  {
+    "name": "Sex",
+    "dataType": "LONG"
+  },
+  {
+    "name": "Income",
+    "dataType": "LONG"
+  },
+  {
+    "name": "Interests",
+    "dataType": "LONG"
+  },
+  {
+    "name": "Robotness",
+    "dataType": "LONG"
+  },
+  {
+    "name": "RemoteIP",
+    "dataType": "LONG"
+  },
+  {
+    "name": "WindowName",
+    "dataType": "LONG"
+  },
+  {
+    "name": "OpenerName",
+    "dataType": "LONG"
+  },
+  {
+    "name": "HistoryLength",
+    "dataType": "LONG"
+  },
+  {
+    "name": "HTTPError",
+    "dataType": "LONG"
+  },
+  {
+    "name": "SendTiming",
+    "dataType": "LONG"
+  },
+  {
+    "name": "DNSTiming",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ConnectTiming",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ResponseStartTiming",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ResponseEndTiming",
+    "dataType": "LONG"
+  },
+  {
+    "name": "FetchTiming",
+    "dataType": "LONG"
+  },
+  {
+    "name": "SocialSourceNetworkID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ParamPrice",
+    "dataType": "LONG"
+  },
+  {
+    "name": "ParamCurrencyID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "HasGCLID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "RefererHash",
+    "dataType": "LONG"
+  },
+  {
+    "name": "CLID",
+    "dataType": "LONG"
+  }
+
+  ],
+  "dimensionFieldSpecs": [
+  {
+    "name": "CounterID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "UserID",
+    "dataType": "LONG"
+  },
+  {
+    "name": "URL",
+    "dataType": "STRING"
+  },
+  {
+    "name": "OpenstatServiceName",
+    "dataType": "STRING"
+  },
+  {
+    "name": "OpenstatCampaignID",
+    "dataType": "STRING"
+  },
+  {
+    "name": "OpenstatAdID",
+    "dataType": "STRING"
+  },
+  {
+    "name": "UserAgentMinor",
+    "dataType": "STRING"
+  },
+  {
+    "name": "OpenstatSourceID",
+    "dataType": "STRING"
+  },
+  {
+    "name": "MobilePhoneModel",
+    "dataType": "STRING"
+  },
+  {
+    "name": "Params",
+    "dataType": "STRING"
+  },
+  {
+    "name": "UTMSource",
+    "dataType": "STRING"
+  },
+  {
+    "name": "PageCharset",
+    "dataType": "STRING"
+  },
+  {
+    "name": "SearchPhrase",
+    "dataType": "STRING"
+  },
+  {
+    "name": "UTMMedium",
+    "dataType": "STRING"
+  },
+  {
+    "name": "OriginalURL",
+    "dataType": "STRING"
+  },
+  {
+    "name": "UTMCampaign",
+    "dataType": "STRING"
+  },
+  {
+    "name": "ClientEventTime",
+    "dataType": "STRING"
+  },
+  {
+    "name": "ParamOrderID",
+    "dataType": "STRING"
+  },
+  {
+    "name": "ParamCurrency",
+    "dataType": "STRING"
+  },
+  {
+    "name": "UTMContent",
+    "dataType": "STRING"
+  },
+  {
+    "name": "UTMTerm",
+    "dataType": "STRING"
+  },
+  {
+    "name": "FlashMinor2",
+    "dataType": "STRING"
+  },
+  {
+    "name": "FromTag",
+    "dataType": "STRING"
+  },
+
+  {
+    "name": "Referer",
+    "dataType": "STRING"
+  },
+  {
+    "name": "Title",
+    "dataType": "STRING"
+  },
+  {
+    "name": "HitColor",
+    "dataType": "STRING"
+  },
+  {
+    "name": "LocalEventTime",
+    "dataType": "STRING"
+  },
+  {
+    "name": "BrowserLanguage",
+    "dataType": "STRING"
+  },
+  {
+    "name": "SocialSourcePage",
+    "dataType": "STRING"
+  },
+  {
+    "name": "BrowserCountry",
+    "dataType": "STRING"
+  },
+  {
+    "name": "SocialNetwork",
+    "dataType": "STRING"
+  },
+  {
+    "name": "SocialAction",
+    "dataType": "STRING"
+  },
+
+ {
+    "name": "WatchID",
+    "dataType": "LONG"
+  }
+
+  ],
+  "dateTimeFieldSpecs": [
+  {
+    "name": "EventTime",
+    "dataType": "STRING",
+    "format": "1:SECONDS:SIMPLE_DATE_FORMAT:yyyy-MM-dd HH:mm:ss",
+    "granularity": "1:SECONDS"
+  },
+  {
+    "name": "EventDate",
+    "dataType": "STRING",
+    "format": "1:DAYS:SIMPLE_DATE_FORMAT:yyyy-MM-dd",
+    "granularity": "1:DAYS"
+  }
+  ],
+  "schemaName": "hitsSchema"
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/expect
+
+set timeout 3600
+set query [lindex $argv 0]
+
+spawn mclient -u monetdb -d test;
+expect "password:"; send "monetdb\r";
+expect "sql>"; send "\\t clock\r";
+expect "sql>"; send "$query;\r";
+expect "sql>"; send "\4"
