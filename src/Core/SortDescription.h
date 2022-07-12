@@ -64,10 +64,18 @@ struct SortColumnDescription
     {
     }
 
-    bool operator == (const SortColumnDescription & other) const
+    static bool compareCollators(const std::shared_ptr<Collator> & a, const std::shared_ptr<Collator> & b)
+    {
+        if (unlikely(a && b))
+            return a->getLocale() == b->getLocale();
+
+        return a == b;
+    }
+
+    bool operator==(const SortColumnDescription & other) const
     {
         return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction
-            && (collator && other.collator && collator->getLocale() == other.collator->getLocale());
+            && compareCollators(collator, other.collator);
     }
 
     bool operator != (const SortColumnDescription & other) const
