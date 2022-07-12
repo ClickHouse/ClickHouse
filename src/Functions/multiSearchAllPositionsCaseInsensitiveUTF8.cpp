@@ -14,9 +14,8 @@ struct NameMultiSearchAllPositionsCaseInsensitiveUTF8
     static constexpr auto name = "multiSearchAllPositionsCaseInsensitiveUTF8";
 };
 
-using FunctionMultiSearchAllPositionsCaseInsensitiveUTF8 = FunctionsMultiStringPosition<
-    MultiSearchAllPositionsImpl<PositionCaseInsensitiveUTF8>,
-    NameMultiSearchAllPositionsCaseInsensitiveUTF8>;
+using FunctionMultiSearchAllPositionsCaseInsensitiveUTF8
+    = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<NameMultiSearchAllPositionsCaseInsensitiveUTF8, PositionCaseInsensitiveUTF8>>;
 
 }
 

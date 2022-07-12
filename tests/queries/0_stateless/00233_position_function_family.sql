@@ -699,6 +699,14 @@ select [1] = multiSearchAllPositions(materialize('abab'), ['ab']);
 select [1] = multiSearchAllPositions(materialize('abababababababababababab'), ['abab']);
 select [1] = multiSearchAllPositions(materialize('abababababababababababab'), ['abababababababababa']);
 
+select [1] = multiSearchAllPositions(materialize('abc'), materialize(['']));
+select [1] = multiSearchAllPositions(materialize('abc'), materialize([''])) from system.numbers limit 10;
+select [1] = multiSearchAllPositions(materialize('abab'), materialize(['ab']));
+select [2] = multiSearchAllPositions(materialize('abab'), materialize(['ba']));
+select [1] = multiSearchAllPositionsCaseInsensitive(materialize('aBaB'), materialize(['abab']));
+select [3] = multiSearchAllPositionsUTF8(materialize('ab€ab'), materialize(['€']));
+select [3] = multiSearchAllPositionsCaseInsensitiveUTF8(materialize('ab€AB'), materialize(['€ab']));
+
 select 1 = multiSearchAny(materialize('abcdefgh'), ['b']);
 select 1 = multiSearchAny(materialize('abcdefgh'), ['bc']);
 select 1 = multiSearchAny(materialize('abcdefgh'), ['bcd']);
