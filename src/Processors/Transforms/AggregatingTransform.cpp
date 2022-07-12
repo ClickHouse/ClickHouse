@@ -251,7 +251,7 @@ private:
         output.push(std::move(single_level_chunks.back()));
         single_level_chunks.pop_back();
 
-        if (finished)
+        if (finished && single_level_chunks.empty())
         {
             output.finish();
             return Status::Finished;
