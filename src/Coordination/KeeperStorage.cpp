@@ -1819,9 +1819,6 @@ void KeeperStorage::preprocessRequest(
 {
     int64_t last_zxid = getNextZXID() - 1;
 
-    if (new_last_zxid == 108367)
-        std::abort();
-
     if (uncommitted_transactions.empty())
     {
         // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
