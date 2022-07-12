@@ -1,9 +1,9 @@
 #include <chrono>
 #include <stdexcept>
 
+#include <Interpreters/Cuda/CudaStringsAggregator.h>
 #include <Common/Cuda/CudaSafeCall.h>
 #include <Common/Cuda/cudaCalcMurmurHash64.h>
-#include <Interpreters/Cuda/CudaStringsAggregator.h>
 
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
