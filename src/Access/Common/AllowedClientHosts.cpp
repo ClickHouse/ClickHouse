@@ -110,18 +110,18 @@ namespace
     }
 
     /// Returns the host name by its address.
-    std::vector<String> getHostsByAddress(const IPAddress & address)
+    Strings getHostsByAddress(const IPAddress & address)
     {
-        std::vector<String> hosts = DNSResolver::instance().reverseResolve(address);
+        auto hosts = DNSResolver::instance().reverseResolve(address);
 
         if (hosts.empty())
-            throw Exception(address.toString() + " could not be resolved", ErrorCodes::DNS_ERROR);
+            throw Exception(ErrorCodes::DNS_ERROR, "{} could not be resolved", address.toString());
 
 
-        for (auto & host : hosts) {
+        for (const auto & host : hosts) {
             /// Check that PTR record is resolved back to client address
             if (!isAddressOfHost(address, host))
-                throw Exception("Host " + String(host) + " isn't resolved back to " + address.toString(), ErrorCodes::DNS_ERROR);
+                throw Exception(ErrorCodes::DNS_ERROR, "Host {} isn't resolved back to {}", host, address.toString());
         }
 
         return hosts;
@@ -532,7 +532,8 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
         {
             if (boost::iequals(name_regexp_, "localhost"))
                 return is_client_local();
-            if (!resolved_hosts) {
+            if (!resolved_hosts)
+            {
                 resolved_hosts = getHostsByAddress(client_address);
             }
 

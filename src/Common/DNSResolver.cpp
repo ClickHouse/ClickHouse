@@ -12,7 +12,6 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
-#include <boost/asio.hpp>
 #include "DNSPTRResolverProvider.h"
 
 namespace ProfileEvents
@@ -143,7 +142,12 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 static std::vector<String> reverseResolveImpl(const Poco::Net::IPAddress & address)
 {
     auto ptr_resolver = DB::DNSPTRResolverProvider::get();
-    return ptr_resolver->resolve(address.toString());
+
+    if (address.family() == Poco::Net::IPAddress::Family::IPv4) {
+        return ptr_resolver->resolve(address.toString());
+    } else {
+        return ptr_resolver->resolve_v6(address.toString());
+    }
 }
 
 struct DNSResolver::Impl
