@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <functional>
 #include <future>
 #include <numeric>
 #include <Poco/Util/Application.h>
@@ -1789,76 +1790,76 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
 
 
 template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
-Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
-Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t rows) const
+Aggregator::ConvertToBlockRes<return_single_block>
+    NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t) const
 {
-    auto && out_cols = prepareOutputBlockColumns(aggregates_pools, /* final */ true, rows);
-    auto && [key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
-
-    if (key_columns.size() != params.keys_size)
-        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
-
-    std::vector<IColumn *> raw_key_columns;
-    raw_key_columns.reserve(key_columns.size());
-    for (auto & column : key_columns)
-        raw_key_columns.push_back(column.get());
-
-    if constexpr (Method::low_cardinality_optimization)
+    auto insert_results_into_cols = [this, arena](PaddedPODArray<AggregateDataPtr> & places, auto & out_cols)
     {
-        if (data.hasNullKeyData())
+        std::exception_ptr exception;
+        size_t aggregate_functions_destroy_index = 0;
+
+        try
         {
-            key_columns[0]->insertDefault();
-            insertAggregatesIntoColumns(data.getNullKeyData(), final_aggregate_columns, arena);
-        }
-    }
-
-    auto shuffled_key_sizes = method.shuffleKeyColumns(raw_key_columns, key_sizes);
-    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes :  key_sizes;
-
-    PaddedPODArray<AggregateDataPtr> places;
-    places.reserve(data.size());
-
-    data.forEachValue(
-        [&](const auto & key, auto & mapped)
-        {
-            method.insertKeyIntoColumns(key, raw_key_columns, key_sizes_ref);
-            places.emplace_back(mapped);
-
-            /// Mark the cell as destroyed so it will not be destroyed in destructor.
-            mapped = nullptr;
-        });
-
-    std::exception_ptr exception;
-    size_t aggregate_functions_destroy_index = 0;
-
-    try
-    {
 #if USE_EMBEDDED_COMPILER
-        if constexpr (use_compiled_functions)
-        {
-            /** For JIT compiled functions we need to resize columns before pass them into compiled code.
+            if constexpr (use_compiled_functions)
+            {
+                /** For JIT compiled functions we need to resize columns before pass them into compiled code.
               * insert_aggregates_into_columns_function function does not throw exception.
               */
-            std::vector<ColumnData> columns_data;
+                std::vector<ColumnData> columns_data;
 
-            auto compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                auto compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
 
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-            {
-                if (!is_aggregate_function_compiled[i])
-                    continue;
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                {
+                    if (!is_aggregate_function_compiled[i])
+                        continue;
 
-                auto & final_aggregate_column = final_aggregate_columns[i];
-                final_aggregate_column = final_aggregate_column->cloneResized(places.size());
-                columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
+                    auto & final_aggregate_column = out_cols.final_aggregate_columns[i];
+                    final_aggregate_column = final_aggregate_column->cloneResized(places.size());
+                    columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
+                }
+
+                auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
+                insert_aggregates_into_columns_function(0, places.size(), columns_data.data(), places.data());
             }
-
-            auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
-            insert_aggregates_into_columns_function(0, places.size(), columns_data.data(), places.data());
-        }
 #endif
 
-        for (; aggregate_functions_destroy_index < params.aggregates_size;)
+            for (; aggregate_functions_destroy_index < params.aggregates_size;)
+            {
+                if constexpr (use_compiled_functions)
+                {
+                    if (is_aggregate_function_compiled[aggregate_functions_destroy_index])
+                    {
+                        ++aggregate_functions_destroy_index;
+                        continue;
+                    }
+                }
+
+                auto & final_aggregate_column = out_cols.final_aggregate_columns[aggregate_functions_destroy_index];
+                size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+
+                /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoBatch
+              * throws exception, it also must destroy all necessary states.
+              * Then code need to continue to destroy other aggregate function states with next function index.
+              */
+                size_t destroy_index = aggregate_functions_destroy_index;
+                ++aggregate_functions_destroy_index;
+
+                /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
+                bool is_state = aggregate_functions[destroy_index]->isState();
+                bool destroy_place_after_insert = !is_state;
+
+                aggregate_functions[destroy_index]->insertResultIntoBatch(
+                    0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            }
+        }
+        catch (...)
+        {
+            exception = std::current_exception();
+        }
+
+        for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
         {
             if constexpr (use_compiled_functions)
             {
@@ -1869,47 +1870,76 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
                 }
             }
 
-            auto & final_aggregate_column = final_aggregate_columns[aggregate_functions_destroy_index];
             size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-
-            /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoBatch
-              * throws exception, it also must destroy all necessary states.
-              * Then code need to continue to destroy other aggregate function states with next function index.
-              */
-            size_t destroy_index = aggregate_functions_destroy_index;
-            ++aggregate_functions_destroy_index;
-
-            /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
-            bool is_state = aggregate_functions[destroy_index]->isState();
-            bool destroy_place_after_insert = !is_state;
-
-            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(0, places.size(), places.data(), offset);
         }
-    }
-    catch (...)
-    {
-        exception = std::current_exception();
-    }
 
-    for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
+        if (exception)
+            std::rethrow_exception(exception);
+
+        return finalizeBlock(std::move(out_cols), /* final */ true, places.size());
+    };
+
+    const size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    ConvertToBlockRes<return_single_block> res;
+
+    std::optional<OutputBlockColumns> out_cols;
+    std::optional<Sizes> shuffled_key_sizes;
+    const Sizes * key_sizes_ptr = nullptr;
+    PaddedPODArray<AggregateDataPtr> places;
+
+    auto init_out_cols = [&]()
     {
-        if constexpr (use_compiled_functions)
+        out_cols = prepareOutputBlockColumns(aggregates_pools, /* final */ true, max_block_size);
+
+        if constexpr (Method::low_cardinality_optimization)
         {
-            if (is_aggregate_function_compiled[aggregate_functions_destroy_index])
+            if (data.hasNullKeyData())
             {
-                ++aggregate_functions_destroy_index;
-                continue;
+                out_cols->key_columns[0]->insertDefault();
+                insertAggregatesIntoColumns(data.getNullKeyData(), out_cols->final_aggregate_columns, arena);
             }
         }
 
-        size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-        aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(0, places.size(), places.data(), offset);
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+        key_sizes_ptr = shuffled_key_sizes ? &*shuffled_key_sizes : &key_sizes;
+
+        places.reserve(max_block_size);
+    };
+
+    data.forEachValue(
+        [&](const auto & key, auto & mapped)
+        {
+            if (!out_cols.has_value())
+                init_out_cols();
+
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, *key_sizes_ptr);
+            places.emplace_back(mapped);
+
+            /// Mark the cell as destroyed so it will not be destroyed in destructor.
+            mapped = nullptr;
+
+            if constexpr (!return_single_block)
+            {
+                if (places.size() >= max_block_size)
+                {
+                    res.emplace_back(insert_results_into_cols(places, out_cols.value()));
+                    places.clear();
+                    out_cols.reset();
+                }
+            }
+        });
+
+    if constexpr (return_single_block)
+    {
+        return insert_results_into_cols(places, out_cols.value());
     }
-
-    if (exception)
-        std::rethrow_exception(exception);
-
-    return {finalizeBlock(std::move(out_cols), /* final */ true, rows)};
+    else
+    {
+        if (!places.empty())
+            res.emplace_back(insert_results_into_cols(places, out_cols.value()));
+        return res;
+    }
 }
 
 template <bool return_single_block, typename Method, typename Table>
@@ -1917,15 +1947,7 @@ Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
 Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const
 {
     auto && out_cols = prepareOutputBlockColumns(aggregates_pools, /* final */ false, rows);
-    auto && [key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
-
-    if (key_columns.size() != params.keys_size)
-        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
-
-    std::vector<IColumn *> raw_key_columns;
-    raw_key_columns.reserve(key_columns.size());
-    for (auto & column : key_columns)
-        raw_key_columns.push_back(column.get());
+    auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
 
     if constexpr (Method::low_cardinality_optimization)
     {
@@ -1946,7 +1968,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            method.insertKeyIntoColumns(key, raw_key_columns, key_sizes_ref);
+            method.insertKeyIntoColumns(key, out_cols.raw_key_columns, key_sizes_ref);
 
             /// reserved, so push_back does not throw exceptions
             for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2013,8 +2035,17 @@ Aggregator::OutputBlockColumns Aggregator::prepareOutputBlockColumns(Arenas & ag
         }
     }
 
+    if (key_columns.size() != params.keys_size)
+        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+
+    std::vector<IColumn *> raw_key_columns;
+    raw_key_columns.reserve(key_columns.size());
+    for (auto & column : key_columns)
+        raw_key_columns.push_back(column.get());
+
     return {
         .key_columns = std::move(key_columns),
+        .raw_key_columns = std::move(raw_key_columns),
         .aggregate_columns = std::move(aggregate_columns),
         .final_aggregate_columns = std::move(final_aggregate_columns),
         .aggregate_columns_data = std::move(aggregate_columns_data),
@@ -2029,7 +2060,7 @@ Block Aggregator::prepareBlockAndFill(
     Filler && filler) const
 {
     auto && out_cols = prepareOutputBlockColumns(data_variants.aggregates_pools, final, rows);
-    auto && [key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
+    auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
 
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
@@ -2038,7 +2069,7 @@ Block Aggregator::prepareBlockAndFill(
 
 Block Aggregator::finalizeBlock(OutputBlockColumns && out_cols, bool final, size_t rows) const
 {
-    auto && [key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
+    auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
 
     Block res_header = getHeader(final);
     Block res = res_header.cloneEmpty();
@@ -2171,12 +2202,11 @@ template <bool return_single_block>
 Aggregator::ConvertToBlockRes<return_single_block>
 Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
-    // clang-format off
     const size_t rows = data_variants.sizeWithoutOverflowRow();
-#define M(NAME)                                                                                                                         \
-    else if (data_variants.type == AggregatedDataVariants::Type::NAME)                                                                  \
-    {                                                                                                                                   \
-        return convertToBlockImpl<return_single_block>(                                                                                 \
+#define M(NAME) \
+    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+    { \
+        return convertToBlockImpl<return_single_block>( \
             *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows); \
     }
 
@@ -2185,8 +2215,7 @@ Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variant
     } // NOLINT
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
-    else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+    else throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 }
 
 
@@ -3278,4 +3307,6 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
 }
 
 
+template Aggregator::ConvertToBlockRes<false>
+Aggregator::prepareBlockAndFillSingleLevel<false>(AggregatedDataVariants & data_variants, bool final) const;
 }
