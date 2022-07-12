@@ -8,12 +8,9 @@ class ParserKQLBase : public IParserBase
 {
 public:
     virtual bool parsePrepare(Pos & pos);
-    std::vector<Pos> op_pos;
-
-protected:
-
-    std::vector<String> expressions;
     virtual String getExprFromToken(Pos &pos);
+
+    std::vector<Pos> op_pos;
 };
 
 class ParserKQLQuery : public IParserBase

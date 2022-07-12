@@ -197,4 +197,13 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparin
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
+
+enum class Dialect
+{
+    clickhouse,
+    kusto,
+    kusto_auto,
+};
+
+DECLARE_SETTING_ENUM(Dialect)
 }

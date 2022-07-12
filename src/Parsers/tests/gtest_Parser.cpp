@@ -473,5 +473,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "Customers | where FirstName !startswith 'pet'",
             "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE 'pet%')"
+        },
+        {
+            "Customers | where Age in ((Customers|project Age|where Age < 30))",
+            "SELECT *\nFROM Customers\nWHERE Age IN (\n    SELECT Age\n    FROM Customers\n    WHERE Age < 30\n)"
         }
+
 })));

@@ -3,6 +3,8 @@
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/CommonParsers.h>
 
 namespace DB
 {
@@ -10,6 +12,44 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+}
+
+String KQLOperators::genInOpExpr(IParser::Pos &token_pos,String kql_op, String ch_op)
+{
+    ParserKQLTaleFunction kqlfun_p;
+    String new_expr;
+
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+
+    ASTPtr select;
+    Expected expected;
+
+    ++token_pos;
+    if (!s_lparen.ignore(token_pos, expected))
+        throw Exception("Syntax error near " + kql_op, ErrorCodes::SYNTAX_ERROR);
+
+    auto pos = token_pos;
+    if (kqlfun_p.parse(pos,select,expected))
+    {
+        new_expr = ch_op + " kql";
+        auto tmp_pos = token_pos;
+        while (tmp_pos != pos) 
+        {
+            new_expr = new_expr + " " + String(tmp_pos->begin,tmp_pos->end);
+            ++tmp_pos;
+        }
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+            throw Exception("Syntax error near " + kql_op, ErrorCodes::SYNTAX_ERROR);
+
+        token_pos = pos;
+        return new_expr;
+    }
+
+    --token_pos;
+    --token_pos;
+    return ch_op;
+
 }
 
 String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos &token_pos,String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos)
@@ -130,7 +170,6 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
         op_value = KQLOperator[op];
 
         String new_expr;
-
 
         if (op_value == KQLOperatorValue::none)
             tokens.push_back(op);
@@ -266,11 +305,11 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
                 break;
 
             case KQLOperatorValue::in_cs:
-                new_expr = "in";
+                new_expr = genInOpExpr(pos,op,"in");
                 break;
 
             case KQLOperatorValue::not_in_cs:
-                new_expr = "not in";
+                new_expr = genInOpExpr(pos,op,"not in");
                 break;
 
             case KQLOperatorValue::in:
