@@ -1682,7 +1682,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     size_t size = 0;
 
-    while (cur < end && size < MAX_LENGTH_OF_NUMBER) {
+    while (cur < end && size < MAX_LENGTH_OF_NUMBER)
+    {
         if (*cur != '_')
             buf[size++] = *cur;
         ++cur;
