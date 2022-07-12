@@ -2,6 +2,15 @@
 
 The main task that indexes help to solve is to find the nearest neighbors for multidimensional data. An example of such a problem could be similar pictures or texts, for which the problem is reduced to finding the nearest [embeddings](https://cloud.google.com/architecture/overview-extracting-and-serving-feature-embeddings-for-machine-learning). They can be created from data using [UDF](../../../sql-reference/functions/index.md#executable-user-defined-functions).
 
+Next query can find closest neighbor in L2 space:
+``` sql 
+SELECT * 
+FROM table_name 
+WHERE L2Distance(Column, TargetEmbedding) < Value 
+LIMIT N
+```
+But it will take some time for execution because of the long calculation of the distance between `TargetEmbedding` and all other vectors. This is where indexes can help. As they  store the overall data structure using some methods (clustering, building search trees, etc.), they can give only approximate results for finding the nearest neighbors.
+
 ## Indexes Structure
 
 Approximate Nearest Neighbor Search Indexes (`ANNIndexes`) are simmilar to skip indexes. They are constructed by some granules and determine which of them should be skipped. Compared to skip indices, ANN indices use their results not only to skip some group of granules, but also to select particular granules from a set of granules.
@@ -12,26 +21,27 @@ Approximate Nearest Neighbor Search Indexes (`ANNIndexes`) are simmilar to skip 
    ``` sql 
    SELECT * 
    FROM table_name 
-   WHERE DistanceFunction(Column, TargetVector) < Value 
+   WHERE DistanceFunction(Column, TargetEmbedding) < Value 
    LIMIT N
    ```
 - ###### Type 2: Order by
   ``` sql
   SELECT * 
   FROM table_name [WHERE ...] 
-  ORDER BY DistanceFunction(Column, TargetVector) 
+  ORDER BY DistanceFunction(Column, TargetEmbedding) 
   LIMIT N
   ```
 
-In these queries, `DistanceFunction` is selected from tuples of distance functions. `TargetVector` is a known embedding (something like `(0.1, 0.1, ... )`). `Value` - a float value that will bound the neighbourhood.
+In these queries, `DistanceFunction` is selected from [tuples of distance functions](../../../sql-reference/functions/tuple-functions/#l1norm). `TargetEmbedding` is a known embedding (something like `(0.1, 0.1, ... )`). `Value` - a float value that will bound the neighbourhood.
 
 !!! note "Note"
-    ANNIndex can't speed up query that satisfies both types and they work only for Tuples. All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
+    ANNIndex can't speed up query that satisfies both types(`where + order by`, only one of them). All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
 
-Both types of queries are handled the same way. The indexes get `n` neighbors (where `n` is taken from the `LIMIT` section) and work with them. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
+Both types of queries are handled the same way. The indexes get `n` neighbors (where `n` is taken from the `LIMIT` clause) and work with them. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
 
-###### Create table with ANNIndex
-```
+## Create table with ANNIndex
+
+```sql
 CREATE TABLE t
 (
   `id` Int64,
@@ -41,8 +51,19 @@ CREATE TABLE t
 ENGINE = MergeTree
 ORDER BY id;
 ```
-    
-Number of granules in granularity should be large. With greater `GRANULARITY` indexes remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
+
+```sql
+CREATE TABLE t
+(
+  `id` Int64,
+  `number` Array(Float32),
+  INDEX x number TYPE annoy GRANULARITY N
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Number of granules in granularity should be large. With greater `GRANULARITY` indexes remember the data structure better. The `GRANULARITY` indicates how many granules will be used to construct the index. The more data is provided for the index, the more of it can be handled by one index and the more chances that with the right hyperparameters the index will remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
 
 As the indexes are built only during insertions into table, `INSERT` and `OPTIMIZE` queries are slower than for ordinary table. At this stage indexes remember all the information about the given data. ANNIndexes should be used if you have immutable or rarely changed data and many read requests.
     
@@ -64,6 +85,17 @@ CREATE TABLE t
 (
   id Int64,
   number Tuple(Float32, Float32, Float32),
+  INDEX x number TYPE annoy(T) GRANULARITY N
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+```sql
+CREATE TABLE t
+(
+  id Int64,
+  number Array(Float32),
   INDEX x number TYPE annoy(T) GRANULARITY N
 )
 ENGINE = MergeTree
