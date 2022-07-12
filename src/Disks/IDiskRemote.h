@@ -165,9 +165,10 @@ protected:
     DiskPtr metadata_disk;
     FileCachePtr cache;
 
-private:
+public:
     void removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
 
+private:
     void removeMetadataRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
 
     bool tryReserve(UInt64 bytes);
