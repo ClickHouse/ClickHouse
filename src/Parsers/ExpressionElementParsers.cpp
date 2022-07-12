@@ -1675,17 +1675,27 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
       */
     static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
 
-    if (pos->size() > MAX_LENGTH_OF_NUMBER)
+    char buf[MAX_LENGTH_OF_NUMBER + 1];
+
+    const char * cur = pos->begin;
+    const char * end = pos->end;
+
+    size_t size = 0;
+
+    while (cur < end && size < MAX_LENGTH_OF_NUMBER) {
+        if (*cur != '_')
+            buf[size++] = *cur;
+        ++cur;
+    }
+
+    buf[size] = 0;
+
+    if (size == MAX_LENGTH_OF_NUMBER && cur < end)
     {
         expected.add(pos, "number");
         return false;
     }
 
-    char buf[MAX_LENGTH_OF_NUMBER + 1];
-
-    size_t size = pos->size();
-    memcpy(buf, pos->begin, size);
-    buf[size] = 0;
     char * start_pos = buf;
 
     if (*start_pos == '0')
@@ -1758,7 +1768,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     char * pos_double = buf;
     errno = 0;    /// Functions strto* don't clear errno.
     Float64 float_value = std::strtod(buf, &pos_double);
-    if (pos_double == buf + pos->size() && errno != ERANGE)
+    if (pos_double == buf + size && errno != ERANGE)
     {
         if (float_value < 0)
             throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);

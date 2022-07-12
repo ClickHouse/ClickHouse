@@ -120,14 +120,14 @@ Token Lexer::nextTokenImpl()
                 else
                     ++pos;
 
-                while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+                while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || *pos == '_'))
                     ++pos;
 
                 /// decimal point
                 if (pos < end && *pos == '.')
                 {
                     ++pos;
-                    while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+                    while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || *pos == '_'))
                         ++pos;
                 }
 
@@ -140,7 +140,7 @@ Token Lexer::nextTokenImpl()
                     if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                         ++pos;
 
-                    while (pos < end && isNumericASCII(*pos))
+                    while (pos < end && (isNumericASCII(*pos) || *pos == '_'))
                         ++pos;
                 }
             }
