@@ -93,18 +93,40 @@ StorageRabbitMQ::StorageRabbitMQ(
         , milliseconds_to_wait(RESCHEDULE_MS)
         , is_attach(is_attach_)
 {
-    auto parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
-    context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+    const auto & config = getContext()->getConfigRef();
 
-    auto rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
-    auto rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
+    std::pair<String, UInt16> parsed_address;
+    auto setting_rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
+    auto setting_rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
+    String username, password;
+
+    if (rabbitmq_settings->rabbitmq_host_port.changed)
+    {
+        username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
+        password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
+        if (username.empty() || password.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "No username or password. They can be specified either in config or in storage settings");
+
+        parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
+        if (parsed_address.first.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Host or port is incorrect (host: {}, port: {})", parsed_address.first, parsed_address.second);
+
+        context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+    }
+    else if (!rabbitmq_settings->rabbitmq_address.changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ requires either `rabbitmq_host_port` or `rabbitmq_address` setting");
+
     configuration =
     {
         .host = parsed_address.first,
         .port = parsed_address.second,
-        .username = rabbitmq_username.empty() ? getContext()->getConfigRef().getString("rabbitmq.username") : rabbitmq_username,
-        .password = rabbitmq_password.empty() ? getContext()->getConfigRef().getString("rabbitmq.password") : rabbitmq_password,
-        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost)),
+        .username = username,
+        .password = password,
+        .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost)),
         .secure = rabbitmq_settings->rabbitmq_secure.value,
         .connection_string = getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_address)
     };
@@ -1063,9 +1085,6 @@ bool StorageRabbitMQ::streamToViews()
             *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
-
-        // Limit read batch to maximum block size to allow DDL
-        StreamLocalLimits limits;
 
         Poco::Timespan max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
                                           ? rabbitmq_settings->rabbitmq_flush_interval_ms
