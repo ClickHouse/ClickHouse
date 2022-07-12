@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, long
+-- Tags: no-parallel, no-fasttest, long, no-random-settings
 
 SET max_memory_usage='20G';
 SET enable_filesystem_cache_on_write_operations = 0;
