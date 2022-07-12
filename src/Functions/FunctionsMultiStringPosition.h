@@ -61,32 +61,32 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & haystack_ptr = arguments[0].column;
+        const ColumnPtr & needles_ptr = arguments[1].column;
 
-        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
+        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
 
-        const ColumnPtr & arr_ptr = arguments[1].column;
-        const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
+        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
 
-        if (!col_const_arr)
+        if (!col_needles_const)
             throw Exception(
                 "Illegal column " + arguments[1].column->getName() + ". The array is not const",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        Array src_arr = col_const_arr->getValue<Array>();
+        Array needles_arr = col_needles_const->getValue<Array>();
 
-        if (src_arr.size() > std::numeric_limits<UInt8>::max())
+        if (needles_arr.size() > std::numeric_limits<UInt8>::max())
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(src_arr.size())
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(needles_arr.size())
                     + ", should be at most 255",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        std::vector<std::string_view> refs;
-        refs.reserve(src_arr.size());
-        for (const auto & el : src_arr)
-            refs.emplace_back(el.get<String>());
+        std::vector<std::string_view> needles;
+        needles.reserve(needles_arr.size());
+        for (const auto & el : needles_arr)
+            needles.emplace_back(el.get<String>());
 
-        const size_t column_haystack_size = column_haystack->size();
+        const size_t column_haystack_size = haystack_ptr->size();
 
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
@@ -95,17 +95,17 @@ public:
         auto & vec_res = col_res->getData();
         auto & offsets_res = col_offsets->getData();
 
-        vec_res.resize(column_haystack_size * refs.size());
+        vec_res.resize(column_haystack_size * needles.size());
 
         if (col_haystack_vector)
-            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
+            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needles, vec_res);
         else
             throw Exception("Illegal column " + arguments[0].column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        size_t refs_size = refs.size();
-        size_t accum = refs_size;
+        size_t needles_size = needles.size();
+        size_t accum = needles_size;
 
-        for (size_t i = 0; i < column_haystack_size; ++i, accum += refs_size)
+        for (size_t i = 0; i < column_haystack_size; ++i, accum += needles_size)
             offsets_res[i] = accum;
 
         return ColumnArray::create(std::move(col_res), std::move(col_offsets));
