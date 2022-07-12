@@ -77,7 +77,6 @@ public:
     HardwareCodecDeflateQpl();
     ~HardwareCodecDeflateQpl();
     int32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
-    int32_t doDecompressDataSynchronous(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
     int32_t doDecompressDataAsynchronous(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
     /// Flush result for previous asynchronous decompression requests.Must be used following with several calls of doDecompressDataReq.
     void flushAsynchronousDecompressRequests();
