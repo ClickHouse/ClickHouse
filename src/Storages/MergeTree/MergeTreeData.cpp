@@ -3143,6 +3143,23 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
             error_parts += (*it)->getNameWithState() + " ";
         };
 
+        auto activate_part = [this, &restored_active_part](auto it)
+        {
+            /// It's not clear what to do if we try to activate part that was removed in transaction.
+            /// It may happen only in ReplicatedMergeTree, so let's simply throw LOGICAL_ERROR for now.
+            chassert((*it)->version.isRemovalTIDLocked());
+            if ((*it)->version.removal_tid_lock == Tx::PrehistoricTID.getHash())
+                (*it)->version.unlockRemovalTID(Tx::PrehistoricTID, TransactionInfoContext{getStorageID(), (*it)->name});
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot activate part {} that was removed by transaction ({})",
+                                (*it)->name, (*it)->version.removal_tid_lock);
+
+            addPartContributionToColumnAndSecondaryIndexSizes(*it);
+            addPartContributionToDataVolume(*it);
+            modifyPartState(it, DataPartState::Active); /// iterator is not invalidated here
+            restored_active_part = true;
+        };
+
         auto it_middle = data_parts_by_info.lower_bound(part->info);
 
         /// Restore the leftmost part covered by the part
@@ -3157,12 +3174,7 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
                     update_error(it);
 
                 if ((*it)->getState() != DataPartState::Active)
-                {
-                    addPartContributionToColumnAndSecondaryIndexSizes(*it);
-                    addPartContributionToDataVolume(*it);
-                    modifyPartState(it, DataPartState::Active); // iterator is not invalidated here
-                    restored_active_part = true;
-                }
+                    activate_part(it);
 
                 pos = (*it)->info.max_block + 1;
                 restored.push_back((*it)->name);
@@ -3189,12 +3201,7 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
                 update_error(it);
 
             if ((*it)->getState() != DataPartState::Active)
-            {
-                addPartContributionToColumnAndSecondaryIndexSizes(*it);
-                addPartContributionToDataVolume(*it);
-                modifyPartState(it, DataPartState::Active);
-                restored_active_part = true;
-            }
+                    activate_part(it);
 
             pos = (*it)->info.max_block + 1;
             restored.push_back((*it)->name);

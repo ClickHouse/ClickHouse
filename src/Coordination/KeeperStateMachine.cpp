@@ -8,7 +8,20 @@
 #include <sys/mman.h>
 #include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/ProfileEvents.h>
 #include "Coordination/KeeperStorage.h"
+
+namespace ProfileEvents
+{
+    extern const Event KeeperCommits;
+    extern const Event KeeperCommitsFailed;
+    extern const Event KeeperSnapshotCreations;
+    extern const Event KeeperSnapshotCreationsFailed;
+    extern const Event KeeperSnapshotApplys;
+    extern const Event KeeperSnapshotApplysFailed;
+    extern const Event KeeperReadSnapshot;
+    extern const Event KeeperSaveSnapshot;
+}
 
 namespace DB
 {
@@ -219,7 +232,10 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
             if (!responses_queue.push(response_for_session))
+            {
+                ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
+            }
         }
     }
     else
@@ -229,10 +245,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             request_for_session.request, request_for_session.session_id, request_for_session.zxid);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
+            {
+                ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
                 throw Exception(
                     ErrorCodes::SYSTEM_ERROR,
                     "Could not push response with session id {} into responses queue",
                     response_for_session.session_id);
+            }
 
         if (digest_enabled && request_for_session.digest)
         {
@@ -240,6 +259,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         }
     }
 
+    ProfileEvents::increment(ProfileEvents::KeeperCommits);
     last_committed_idx = log_idx;
     return nullptr;
 }
@@ -251,11 +271,14 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     { /// save snapshot into memory
         std::lock_guard lock(snapshots_lock);
         if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
+        {
+            ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Required to apply snapshot with last log index {}, but our last log index is {}",
                 s.get_last_log_idx(),
                 latest_snapshot_meta->get_last_log_idx());
+        }
         latest_snapshot_ptr = latest_snapshot_buf;
     }
 
@@ -268,6 +291,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
         cluster_config = snapshot_deserialization_result.cluster_config;
     }
 
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
     last_committed_idx = s.get_last_log_idx();
     return true;
 }
@@ -335,6 +359,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                 }
                 latest_snapshot_path = path;
                 latest_snapshot_meta = snapshot->snapshot_meta;
+                ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
                 LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), path);
             }
 
@@ -350,6 +375,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         }
         catch (...)
         {
+            ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
             LOG_TRACE(log, "Exception happened during snapshot");
             tryLogCurrentException(log);
             ret = false;
@@ -383,6 +409,7 @@ void KeeperStateMachine::save_logical_snp_obj(
         latest_snapshot_meta = cloned_meta;
         LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), result_path);
         obj_id++;
+        ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
     }
     catch (...)
     {
@@ -444,6 +471,7 @@ int KeeperStateMachine::read_logical_snp_obj(
         return -1;
     }
     is_last_obj = true;
+    ProfileEvents::increment(ProfileEvents::KeeperReadSnapshot);
 
     return 1;
 }

@@ -134,6 +134,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
 
     OpNum getOpNum() const override
     {
+        chassert(false);
         throw Exception("OpNum for watch response doesn't exist", Error::ZRUNTIMEINCONSISTENCY);
     }
 
