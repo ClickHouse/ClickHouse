@@ -21,6 +21,34 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
+namespace
+{
+
+template <typename Literal>
+void extractTargetVectorFromLiteral(ANN::ANNQueryInformation::Embedding & target, Literal literal)
+{
+    Float64 float_element_of_target_vector;
+    Int64 int_element_of_target_vector;
+    
+    for (const auto & value : literal.value())
+    {
+        if (value.tryGet(float_element_of_target_vector))
+        {
+            target.emplace_back(float_element_of_target_vector);
+        }
+        else if (value.tryGet(int_element_of_target_vector))
+        {
+            target.emplace_back(static_cast<float>(int_element_of_target_vector));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in target vector. Only float or int are supported.");
+        }
+    }
+}
+
+}
+
 namespace ApproximateNearestNeighbour
 {
 
@@ -91,7 +119,7 @@ String ANNCondition::getMetricName() const
 {
     if (index_is_useful && query_information.has_value())
     {
-        return query_information->metric_name; 
+        return query_information->metric_name;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
 }
@@ -100,7 +128,7 @@ float ANNCondition::getPValueForLpDistance() const
 {
     if (index_is_useful && query_information.has_value())
     {
-        return query_information->p_for_lp_dist; 
+        return query_information->p_for_lp_dist;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
 }
@@ -351,7 +379,6 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
     }
 
     auto iter = rpn.begin();
-    bool identifier_found = false;
 
     // Query starts from operator less
     if (iter->function != RPNElement::FUNCTION_COMPARISON)
@@ -381,13 +408,7 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
     }
 
     auto end = rpn.end();
-    if (!matchMainParts(iter, end, expr, identifier_found))
-    {
-        return false;
-    }
-
-    // Final checks of correctness
-    if (!identifier_found || expr.target.empty())
+    if (!matchMainParts(iter, end, expr))
     {
         return false;
     }
@@ -417,9 +438,8 @@ bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNQueryInformation & expr)
 
     auto iter = rpn.begin();
     auto end = rpn.end();
-    bool identifier_found = false;
 
-    return ANNCondition::matchMainParts(iter, end, expr, identifier_found);
+    return ANNCondition::matchMainParts(iter, end, expr);
 }
 
 // Returns true and stores Length if we have valid LIMIT clause in query
@@ -435,8 +455,10 @@ bool ANNCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
 }
 
 /* Matches dist function, target vector, column name */
-bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr, bool & identifier_found)
+bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr)
 {
+    bool identifier_found = false;
+
     // Matches DistanceFunc->[Column]->[Tuple(array)Func]->TargetVector(floats)->[Column]
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
     {
@@ -457,7 +479,6 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANN
         ++iter;
     }
 
-
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
     {
         identifier_found = true;
@@ -470,50 +491,15 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANN
         ++iter;
     }
 
-    ///TODO: optimize
     if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
     {
-        Float64 float_element_of_target_vector;
-        Int64 int_element_of_target_vector;
-        
-        for (const auto & value : iter->tuple_literal.value())
-        {
-            if (value.tryGet(float_element_of_target_vector))
-            {
-                expr.target.emplace_back(float_element_of_target_vector);
-            }
-            else if (value.tryGet(int_element_of_target_vector))
-            {
-                expr.target.emplace_back(static_cast<float>(int_element_of_target_vector));
-            }
-            else
-            {
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in target vector. Only float or int are supported.");
-            }
-        }
+        extractTargetVectorFromLiteral(expr.target, iter->tuple_literal);
         ++iter;
     }
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
-        Float64 float_element_of_target_vector;
-        Int64 int_element_of_target_vector;
-        
-        for (const auto & value : iter->array_literal.value())
-        {
-            if (value.tryGet(float_element_of_target_vector))
-            {
-                expr.target.emplace_back(float_element_of_target_vector);
-            }
-            else if (value.tryGet(int_element_of_target_vector))
-            {
-                expr.target.emplace_back(static_cast<float>(int_element_of_target_vector));
-            }
-            else
-            {
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in target vector. Only float or int are supported.");
-            }
-        }
+        extractTargetVectorFromLiteral(expr.target, iter->array_literal);
         ++iter;
     }
 
@@ -539,6 +525,12 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANN
         }
 
         ++iter;
+    }
+
+    // Final checks of correctness
+    if (!identifier_found || expr.target.empty())
+    {
+        return false;
     }
 
     return true;

@@ -130,7 +130,7 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
     if (*pos >= block.rows())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.", 
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
             toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
@@ -173,7 +173,7 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 
         if (!column_tuple)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type was given to index.");
-    
+
         const auto & columns = column_tuple->getColumns();
 
         std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
@@ -192,7 +192,7 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
         }
         for (const auto& item : data)
         {
-            index_base->add_item(index_base->get_n_items(), &item[0]);
+            index_base->add_item(index_base->get_n_items(), item.data());
         }
     }
 
@@ -226,8 +226,8 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
         = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
 
     if (comp_dist && comp_dist.value() < 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to optimize query with where without distance");
-    
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
+
     std::vector<float> target_vec = condition.getTargetVector();
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
@@ -261,7 +261,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
             throw Exception("Setting of the annoy index should be int", ErrorCodes::INCORRECT_QUERY);
         }
     }
-    annoy->get_nns_by_vector(&target_vec[0], 1, k_search, &items, &dist);
+    annoy->get_nns_by_vector(target_vec.data(), 1, k_search, &items, &dist);
     std::unordered_set<size_t> result;
     for (size_t i = 0; i < items.size(); ++i)
     {

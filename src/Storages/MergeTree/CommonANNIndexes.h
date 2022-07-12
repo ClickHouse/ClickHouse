@@ -20,11 +20,11 @@ namespace ApproximateNearestNeighbour
  *    3) name of column with embeddings
  *    4) type of query
  *    5) Number of elements, that should be taken (limit)
- * 
+ *
  * And two optional parameters:
  *    1) p for LpDistance function
  *    2) distance to compare with (only for where queries)
- */ 
+ */
 struct ANNQueryInformation
 {
     using Embedding = std::vector<float>;
@@ -190,7 +190,7 @@ private:
 
     // Checks that at least one rpn is matching for index
     // New RPNs for other query types can be added here
-    bool matchAllRPNS(); 
+    bool matchAllRPNS();
 
     // Returns true and stores ANNExpr if the query has valid WHERE section
     static bool matchRPNWhere(RPN & rpn, ANNQueryInformation & expr);
@@ -202,8 +202,7 @@ private:
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
     /* Matches dist function, target vector, column name */
-    ///TODO: identifier_found
-    static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr, bool & identifier_found);
+    static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr);
 
     // Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(RPN::iterator& iter);
@@ -226,8 +225,8 @@ public:
     virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const = 0;
 };
 
-} // namespace ApproximateNearestNeighbour
+}
 
 namespace ANN = ApproximateNearestNeighbour;
 
-} // namespace DB
+}
