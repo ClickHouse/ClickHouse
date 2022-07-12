@@ -57,6 +57,8 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
     void finalize() override
     {
     }
+
+    std::string getInfoForLog() const override { return fmt::format("PureMetadataObjectStorageOperation"); }
 };
 
 struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
@@ -78,6 +80,11 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         , delete_metadata_only(delete_metadata_only_)
         , if_exists(if_exists_)
     {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("RemoveObjectStorageOperation (path: {}, if exists: {})", path, if_exists);
+    }
 
     void execute(MetadataTransactionPtr tx) override
     {
@@ -157,6 +164,11 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         , keep_all_batch_data(keep_all_batch_data_)
         , file_names_remove_metadata_only(file_names_remove_metadata_only_)
     {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("RemoveRecursiveObjectStorageOperation (path: {})", path);
+    }
 
     void removeMetadataRecursive(MetadataTransactionPtr tx, const std::string & path_to_remove)
     {
@@ -248,6 +260,11 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
         , path_to(path_to_)
     {}
 
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("ReplaceFileObjectStorageOperation (path_from: {}, path_to: {})", path_from, path_to);
+    }
+
     void execute(MetadataTransactionPtr tx) override
     {
         if (metadata_storage.exists(path_to))
@@ -283,6 +300,11 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , object(object_)
     {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("WriteFileObjectStorageOperation");
+    }
 
     void setOnExecute(std::function<void(MetadataTransactionPtr)> && on_execute_)
     {
@@ -324,6 +346,11 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         , from_path(from_path_)
         , to_path(to_path_)
     {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("CopyFileObjectStorageOperation (path_from: {}, path_to: {})", from_path, to_path);
+    }
 
     void execute(MetadataTransactionPtr tx) override
     {
@@ -368,7 +395,6 @@ void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 
 void DiskObjectStorageTransaction::createDirectories(const std::string & path)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CREATE DIRECTORIES TRANSACTION FOR PATH {}", path);
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
@@ -495,6 +521,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     String blob_name;
     std::optional<ObjectAttributes> object_attributes;
 
+    blob_name = object_storage.generateBlobNameForPath(path);
     if (metadata_helper)
     {
         auto revision = metadata_helper->revision_counter + 1;
@@ -503,10 +530,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             {"path", path}
         };
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
-    }
-    else
-    {
-        blob_name = object_storage.generateBlobNameForPath(path);
     }
 
     auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
@@ -615,7 +638,7 @@ void DiskObjectStorageTransaction::commit()
         }
         catch (Exception & ex)
         {
-            ex.addMessage(fmt::format("While executing operation #{}", i));
+            ex.addMessage(fmt::format("While executing operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
             {
