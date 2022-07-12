@@ -311,8 +311,8 @@ INSTANTIATE_TEST_SUITE_P(ParserNumber, ParserTest,
             "1.234567"
         },
         {
-            "-1_234e-1",
-            "-123.4"
+            "123.000_1e3",
+            "123000.1"
         },
         {
             "0b0100_1001_0110",
@@ -321,9 +321,5 @@ INSTANTIATE_TEST_SUITE_P(ParserNumber, ParserTest,
         {
             "0x1a2b_3c4d_5f00",
             "28772997619456"
-        },
-        {
-            "123.000_1e3",
-            "123000.1"
         }
 })));
