@@ -289,7 +289,7 @@ void DataPartStorageOnDisk::remove(
         {
 
             /// If we have a directory with suffix '.proj' it is likely a projection.
-            /// Try to load checksums for it (to avoid recusrive removing fallback).
+            /// Try to load checksums for it (to avoid recursive removing fallback).
             std::string checksum_path = fs::path(to) / name / "checksums.txt";
             if (disk->exists(checksum_path))
             {
