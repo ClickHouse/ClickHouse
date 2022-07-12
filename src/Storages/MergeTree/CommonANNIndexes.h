@@ -202,10 +202,10 @@ private:
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
     /* Matches dist function, target vector, column name */
-    static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr);
+    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ANNQueryInformation & expr);
 
     // Gets float or int from AST node
-    static float getFloatOrIntLiteralOrPanic(RPN::iterator& iter);
+    static float getFloatOrIntLiteralOrPanic(const RPN::iterator& iter);
 
     Block block_with_constants;
 
