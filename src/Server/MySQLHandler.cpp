@@ -94,7 +94,7 @@ void MySQLHandler::run()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
+    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     try
     {
@@ -403,7 +403,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
     sequence_id = 2;
-    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
+    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
     packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 }
 

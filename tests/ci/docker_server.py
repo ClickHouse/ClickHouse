@@ -5,6 +5,8 @@ import argparse
 import json
 import logging
 import subprocess
+import sys
+import time
 from os import path as p, makedirs
 from typing import List, Tuple
 
@@ -114,6 +116,34 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def retry_popen(cmd: str) -> int:
+    max_retries = 5
+    for retry in range(max_retries):
+        # From time to time docker build may failed. Curl issues, or even push
+        # It will sleep progressively 5, 15, 30 and 50 seconds between retries
+        progressive_sleep = 5 * sum(i + 1 for i in range(retry))
+        if progressive_sleep:
+            logging.warning(
+                "The following command failed, sleep %s before retry: %s",
+                progressive_sleep,
+                cmd,
+            )
+            time.sleep(progressive_sleep)
+        with subprocess.Popen(
+            cmd,
+            shell=True,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            universal_newlines=True,
+        ) as process:
+            for line in process.stdout:  # type: ignore
+                print(line, end="")
+            retcode = process.wait()
+            if retcode == 0:
+                return 0
+    return retcode
+
+
 def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
     if release_type != "auto":
         return release_type
@@ -186,7 +216,11 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
 
 
 def buildx_args(bucket_prefix: str, arch: str) -> List[str]:
-    args = [f"--platform=linux/{arch}", f"--label=build-url={GITHUB_RUN_URL}"]
+    args = [
+        f"--platform=linux/{arch}",
+        f"--label=build-url={GITHUB_RUN_URL}",
+        f"--label=com.clickhouse.build.githash={git.sha}",
+    ]
     if bucket_prefix:
         url = p.join(bucket_prefix, BUCKETS[arch])  # to prevent a double //
         args.append(f"--build-arg=REPOSITORY='{url}'")
@@ -235,41 +269,22 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        with subprocess.Popen(
-            cmd,
-            shell=True,
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ) as process:
-            for line in process.stdout:  # type: ignore
-                print(line, end="")
-            retcode = process.wait()
-            if retcode != 0:
-                result.append((f"{image.repo}:{tag}-{arch}", "FAIL"))
-                return result
-            result.append((f"{image.repo}:{tag}-{arch}", "OK"))
-            with open(metadata_path, "rb") as m:
-                metadata = json.load(m)
-                digests.append(metadata["containerimage.digest"])
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}-{arch}", "FAIL"))
+            return result
+        result.append((f"{image.repo}:{tag}-{arch}", "OK"))
+        with open(metadata_path, "rb") as m:
+            metadata = json.load(m)
+            digests.append(metadata["containerimage.digest"])
     if push:
         cmd = (
             "docker buildx imagetools create "
             f"--tag {image.repo}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
-        with subprocess.Popen(
-            cmd,
-            shell=True,
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ) as process:
-            for line in process.stdout:  # type: ignore
-                print(line, end="")
-            retcode = process.wait()
-            if retcode != 0:
-                result.append((f"{image.repo}:{tag}", "FAIL"))
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}", "FAIL"))
+            return result
     else:
         logging.info(
             "Merging is available only on push, separate %s images are created",
@@ -292,7 +307,7 @@ def main():
     pr_info = None
     if CI:
         pr_info = PRInfo()
-        release_or_pr = get_release_or_pr(pr_info, {"package_type": ""}, args.version)
+        release_or_pr, _ = get_release_or_pr(pr_info, args.version)
         args.bucket_prefix = (
             f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/"
             f"{release_or_pr}/{pr_info.sha}"
@@ -350,6 +365,8 @@ def main():
     )
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    if status != "success":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

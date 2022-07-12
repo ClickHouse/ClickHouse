@@ -14,7 +14,8 @@ ProtobufListOutputFormat::ProtobufListOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
     const RowOutputFormatParams & params_,
-    const FormatSchemaInfo & schema_info_)
+    const FormatSchemaInfo & schema_info_,
+    bool defaults_for_nullable_google_wrappers_)
     : IRowOutputFormat(header_, out_, params_)
     , writer(std::make_unique<ProtobufWriter>(out))
     , serializer(ProtobufSerializer::create(
@@ -23,6 +24,7 @@ ProtobufListOutputFormat::ProtobufListOutputFormat(
           *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::Yes),
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
+          defaults_for_nullable_google_wrappers_,
           *writer))
 {
 }
@@ -51,7 +53,8 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
         {
             return std::make_shared<ProtobufListOutputFormat>(
                 buf, header, params,
-                FormatSchemaInfo(settings, "Protobuf", true));
+                FormatSchemaInfo(settings, "Protobuf", true),
+                settings.protobuf.output_nullables_with_google_wrappers);
         });
 }
 

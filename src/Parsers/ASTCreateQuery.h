@@ -70,12 +70,14 @@ public:
     bool is_live_view{false};
     bool is_window_view{false};
     bool is_populate{false};
+    bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
 
     ASTColumns * columns_list = nullptr;
 
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
+    ASTStorage * inner_storage = nullptr;      /// For window view with inner table
     ASTStorage * storage = nullptr;
     ASTPtr watermark_function;
     ASTPtr lateness_function;
@@ -118,7 +120,7 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

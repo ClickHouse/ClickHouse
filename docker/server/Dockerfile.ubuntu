@@ -3,8 +3,6 @@ FROM ubuntu:20.04
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
 
-COPY su-exec.c /su-exec.c
-
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
@@ -19,17 +17,11 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
         locales \
         wget \
         tzdata \
-    && apt-get install -y --no-install-recommends tcc libc-dev && \
-        tcc /su-exec.c -o /bin/su-exec && \
-        chown root:root /bin/su-exec && \
-        chmod 0755 /bin/su-exec && \
-        rm /su-exec.c && \
-        apt-get purge -y --auto-remove tcc libc-dev libc-dev-bin libc6-dev linux-libc-dev \
     && apt-get clean
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION=22.1.1.*
+ARG VERSION=22.6.1.*
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
@@ -50,21 +42,6 @@ ARG single_binary_location_url=""
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
-
-# To drop privileges, we need 'su' command, that simply changes uid and gid.
-# In fact, the 'su' command from Linux is not so simple, due to inherent vulnerability in Linux:
-# https://ruderich.org/simon/notes/su-sudo-from-root-tty-hijacking
-# It has to mitigate this drawback of Linux, and to do this, 'su' command is creating it's own pseudo-terminal
-# and forwarding commands. Due to some ridiculous curcumstances, it does not work in Docker (or it does)
-# and for these reasons people are using alternatives to the 'su' command in Docker,
-# that don't mess with the terminal, don't care about closing the opened files, etc...
-# but can only be safe to drop privileges inside Docker.
-# The question - what implementation of 'su' command to use.
-# It should be a simple script doing about just two syscalls.
-# Some people tend to use 'gosu' tool that is written in Go.
-# It is not used for several reasons:
-# 1. Dependency on some foreign code in yet another programming language - does not sound alright.
-# 2. Anselmo D. Adams suggested not to use it due to false positive alarms in some undisclosed security scanners.
 
 ARG TARGETARCH
 

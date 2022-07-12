@@ -126,7 +126,7 @@ public:
             SparseOffsets,
 
             ObjectStructure,
-            ObjectElement,
+            ObjectData,
 
             Regular,
         };
@@ -135,9 +135,6 @@ public:
 
         /// Index of tuple element, starting at 1 or name.
         String tuple_element_name;
-
-        /// Name of subcolumn of object column.
-        String object_key_name;
 
         /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;

@@ -4,6 +4,7 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Core/Settings.h>
+#include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
@@ -61,7 +62,7 @@ void fillColumnArray(const Strings & data, IColumn & column)
     }
     auto & offsets = array.getOffsets();
     offsets.push_back(offsets.back() + size);
-};
+}
 
 }
 
@@ -94,7 +95,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS)
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
     static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
@@ -132,8 +133,8 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
 
-        {"user", std::make_shared<DataTypeString>()},
-        {"auth_type", std::move(identified_with_column)},
+        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column))},
 
         {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype)},
         {"roles", std::make_shared<DataTypeArray>(lc_string_datatype)},
@@ -168,8 +169,9 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    columns[i++]->insert(user);
-    columns[i++]->insert(user_identified_with);
+    assert((user && user_identified_with) || client_info.interface == ClientInfo::Interface::TCP_INTERSERVER);
+    columns[i++]->insert(user ? Field(*user) : Field());
+    columns[i++]->insert(user_identified_with ? Field(*user_identified_with) : Field());
 
     fillColumnArray(profiles, *columns[i++]);
     fillColumnArray(roles, *columns[i++]);
@@ -207,7 +209,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 }
 
-void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context)
+void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const UserPtr & login_user)
 {
     const auto access = login_context.getAccess();
     const auto & settings = login_context.getSettingsRef();
@@ -216,12 +218,12 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
+    if (login_user)
     {
-        const auto user = access->getUser();
-        log_entry.user = user->getName();
-        log_entry.user_identified_with = user->auth_data.getType();
-        log_entry.external_auth_server = user->auth_data.getLDAPServerName();
+        log_entry.user = login_user->getName();
+        log_entry.user_identified_with = login_user->auth_data.getType();
     }
+    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
 
     if (session_id)
         log_entry.session_id = *session_id;
@@ -230,7 +232,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
         log_entry.roles = roles_info->getCurrentRolesNames();
 
     if (const auto profile_info = access->getDefaultProfileInfo())
-    log_entry.profiles = profile_info->getProfileNames();
+        log_entry.profiles = profile_info->getProfileNames();
 
     for (const auto & s : settings.allChanged())
         log_entry.settings.emplace_back(s.getName(), s.getValueString());
@@ -241,7 +243,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
 void SessionLog::addLoginFailure(
         const UUID & auth_id,
         const ClientInfo & info,
-        const String & user,
+        const std::optional<String> & user,
         const Exception & reason)
 {
     SessionLogElement log_entry(auth_id, SESSION_LOGIN_FAILURE);
@@ -254,10 +256,15 @@ void SessionLog::addLoginFailure(
     add(log_entry);
 }
 
-void SessionLog::addLogOut(const UUID & auth_id, const String & user, const ClientInfo & client_info)
+void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
-    log_entry.user = user;
+    if (login_user)
+    {
+        log_entry.user = login_user->getName();
+        log_entry.user_identified_with = login_user->auth_data.getType();
+    }
+    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
     log_entry.client_info = client_info;
 
     add(log_entry);

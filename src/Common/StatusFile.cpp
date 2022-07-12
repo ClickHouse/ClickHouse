@@ -2,7 +2,7 @@
 
 #include <sys/file.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <cerrno>
 
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>

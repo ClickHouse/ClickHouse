@@ -42,9 +42,11 @@ enum class JoinAlgorithm
     HASH,
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
+    PARALLEL_HASH,
+    DIRECT,
 };
 
-DECLARE_SETTING_ENUM(JoinAlgorithm)
+DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 
 
 /// Which rows should be included in TOTALS.
@@ -181,6 +183,15 @@ enum class ShortCircuitFunctionEvaluation
 };
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
+
+enum class TransactionsWaitCSNMode
+{
+    ASYNC,
+    WAIT,
+    WAIT_UNKNOWN,
+};
+
+DECLARE_SETTING_ENUM(TransactionsWaitCSNMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
 

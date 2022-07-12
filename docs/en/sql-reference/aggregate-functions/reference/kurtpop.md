@@ -2,7 +2,7 @@
 sidebar_position: 153
 ---
 
-# kurtPop {#kurtpop}
+# kurtPop
 
 Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 

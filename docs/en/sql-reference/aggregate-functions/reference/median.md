@@ -2,7 +2,7 @@
 sidebar_position: 212
 ---
 
-# median {#median}
+# median
 
 The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
 

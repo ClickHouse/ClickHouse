@@ -247,6 +247,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::SYNC_DATABASE_REPLICA:
         {
+            parseQueryWithOnCluster(res, pos, expected);
             if (!parseDatabaseAsAST(pos, expected, res->database))
                 return false;
             break;
@@ -359,8 +360,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
-            if (ParserKeyword{"FORCE"}.ignore(pos, expected))
-                res->force_removal = true;
+            parseQueryWithOnCluster(res, pos, expected);
+            break;
+        }
+
+        case Type::UNFREEZE:
+        {
+            ASTPtr ast;
+            if (ParserKeyword{"WITH NAME"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->backup_name = ast->as<ASTLiteral &>().value.get<const String &>();
+            }
+            else
+            {
+                return false;
+            }
             break;
         }
 

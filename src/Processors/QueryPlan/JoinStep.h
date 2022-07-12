@@ -16,7 +16,9 @@ public:
         const DataStream & left_stream_,
         const DataStream & right_stream_,
         JoinPtr join_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t max_streams_,
+        bool keep_left_read_in_order_);
 
     String getName() const override { return "Join"; }
 
@@ -26,9 +28,13 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
 
+    void updateLeftStream(const DataStream & left_stream_);
+
 private:
     JoinPtr join;
     size_t max_block_size;
+    size_t max_streams;
+    bool keep_left_read_in_order;
     Processors processors;
 };
 
@@ -43,6 +49,8 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
+    void updateOutputStream() override;
+
     JoinPtr join;
     size_t max_block_size;
 };

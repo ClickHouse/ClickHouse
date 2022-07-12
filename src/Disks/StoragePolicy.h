@@ -5,7 +5,6 @@
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
 #include <Disks/VolumeJBOD.h>
-#include <Disks/VolumeRAID1.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>

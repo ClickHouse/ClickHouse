@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -145,12 +146,14 @@ namespace
 struct QueryASTSettings
 {
     bool graph = false;
+    bool rewrite = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
+        {"rewrite", rewrite}
     };
 };
 
@@ -277,6 +280,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
+            if (settings.rewrite)
+            {
+                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+                ExplainAnalyzedSyntaxVisitor(data).visit(query);
+            }
+
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
@@ -346,7 +355,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.graph)
                 {
                     /// Pipe holds QueryPlan, should not go out-of-scope
-                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
+                    QueryPlanResourceHolder resources;
+                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
                     const auto & processors = pipe.getProcessors();
 
                     if (settings.compact)

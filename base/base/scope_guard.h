@@ -21,10 +21,12 @@ public:
         return *this;
     }
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    template <typename G>
+    requires std::is_convertible_v<G, F>
     constexpr basic_scope_guard(basic_scope_guard<G> && src) : function{src.release()} {}
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    template <typename G>
+    requires std::is_convertible_v<G, F>
     constexpr basic_scope_guard & operator=(basic_scope_guard<G> && src)
     {
         if (this != &src)
@@ -35,10 +37,12 @@ public:
         return *this;
     }
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    template <typename G>
+    requires std::is_convertible_v<G, F>
     constexpr basic_scope_guard(const G & function_) : function{function_} {}
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    template <typename G>
+    requires std::is_convertible_v<G, F>
     constexpr basic_scope_guard(G && function_) : function{std::move(function_)} {}
 
     ~basic_scope_guard() { invoke(); }
@@ -64,7 +68,8 @@ public:
         return std::exchange(function, {});
     }
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    template <typename G>
+    requires std::is_convertible_v<G, F>
     basic_scope_guard<F> & join(basic_scope_guard<G> && other)
     {
         if (other.function)

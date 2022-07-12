@@ -79,7 +79,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
 
-            if (merge_type != MergeType::REGULAR)
+            if (merge_type != MergeType::Regular)
                 out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
 
             if (new_part_uuid != UUIDHelpers::Nil)
@@ -165,7 +165,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     out << '\n';
 
-    if (new_part_type != MergeTreeDataPartType::WIDE && new_part_type != MergeTreeDataPartType::UNKNOWN)
+    if (new_part_type != MergeTreeDataPartType::Wide && new_part_type != MergeTreeDataPartType::Unknown)
         out << "part_type: " << new_part_type.toString() << "\n";
 
     if (quorum)
@@ -319,12 +319,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         size_t columns_size;
         in >> columns_size >> "\n";
         columns_str.resize(columns_size);
-        in.readStrict(&columns_str[0], columns_size);
+        in.readStrict(columns_str.data(), columns_size);
         in >> "\nmetadata_str_size:\n";
         size_t metadata_size;
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
-        in.readStrict(&metadata_str[0], metadata_size);
+        in.readStrict(metadata_str.data(), metadata_size);
     }
     else if (type_str == "sync_pinned_part_uuids")
     {
@@ -348,7 +348,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> "\n";
     }
     else
-        new_part_type = MergeTreeDataPartType::WIDE;
+        new_part_type = MergeTreeDataPartType::Wide;
 
     /// Optional field.
     if (!in.eof())

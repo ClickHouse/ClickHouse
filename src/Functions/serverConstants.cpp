@@ -6,6 +6,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
+#include <Common/ClickHouseRevision.h>
 
 #if defined(OS_LINUX)
 #    include <Poco/Environment.h>
@@ -19,7 +20,7 @@ namespace DB
 namespace
 {
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     /// buildId() - returns the compiler build id of the running binary.
     class FunctionBuildId : public FunctionConstantBase<FunctionBuildId, String, DataTypeString>
     {
@@ -88,6 +89,15 @@ namespace
         explicit FunctionVersion(ContextPtr context) : FunctionConstantBase(VERSION_STRING, context->isDistributed()) {}
     };
 
+    /// revision() - returns the current revision.
+    class FunctionRevision : public FunctionConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
+    {
+    public:
+        static constexpr auto name = "revision";
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionRevision>(context); }
+        explicit FunctionRevision(ContextPtr context) : FunctionConstantBase(ClickHouseRevision::getVersionRevision(), context->isDistributed()) {}
+    };
+
     class FunctionZooKeeperSessionUptime : public FunctionConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
     {
     public:
@@ -114,7 +124,7 @@ namespace
 
 void registerFunctionBuildId([[maybe_unused]] FunctionFactory & factory)
 {
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     factory.registerFunction<FunctionBuildId>();
 #endif
 }
@@ -149,6 +159,11 @@ void registerFunctionUptime(FunctionFactory & factory)
 void registerFunctionVersion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
+}
+
+void registerFunctionRevision(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionRevision>(FunctionFactory::CaseInsensitive);
 }
 
 void registerFunctionZooKeeperSessionUptime(FunctionFactory & factory)

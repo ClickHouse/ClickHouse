@@ -3,7 +3,7 @@ sidebar_position: 57
 sidebar_label: Server Settings
 ---
 
-# Server Settings {#server-settings}
+# Server Settings
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -193,6 +193,35 @@ Sets the delay before remove table data in seconds. If the query has `SYNC` modi
 
 Default value: `480` (8 minute).
 
+## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and this directory was not modified for last
+`database_catalog_unused_dir_hide_timeout_sec` seconds, the task will "hide" this directory by 
+removing all access rights. It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "immediately".
+
+Default value: `3600` (1 hour).
+
+## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and it was previousely "hidden" 
+(see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec)) 
+and this directory was not modified for last
+`database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory. 
+It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "never".
+
+Default value: `2592000` (30 days).
+
+## database_catalog_unused_dir_cleanup_period_sec {#database_catalog_unused_dir_cleanup_period_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+Sets scheduling period of the task. Zero means "never".
+
+Default value: `86400` (1 day).
+
 ## default_database {#default-database}
 
 The default database.
@@ -267,7 +296,7 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 **Example**
 
 ``` xml
-<user_defined_executable_functions_config>*_dictionary.xml</user_defined_executable_functions_config>
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}

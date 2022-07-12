@@ -12,6 +12,7 @@
 #include <Parsers/ParserAttachAccessEntity.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <string_view>
 #include <regex>
 #include <gtest/gtest.h>
@@ -262,8 +263,16 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
         },
         {
+            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
+            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'"
+        },
+        {
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
+        },
+        {
+            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
+            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'"
         },
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123' SALT 'EFFD7F6B03B3EA68B8F86C1E91614DD50E42EB31EF7160524916444D58B5E264'",
@@ -282,5 +291,187 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        }
+})));
+
+INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserKQLQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "Customers",
+            "SELECT *\nFROM Customers"
+        },
+        {
+            "Customers | project FirstName,LastName,Occupation",
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers"
+        },
+        {
+            "Customers | project FirstName,LastName,Occupation | take 3",
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 3"
+        },
+        {
+            "Customers | project FirstName,LastName,Occupation | limit 3",
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 3"
+        },
+        {
+            "Customers | project FirstName,LastName,Occupation | take 1 | take 3",
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
+        },
+        {
+            "Customers | project FirstName,LastName,Occupation | take 3 | take 1",
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
+        },
+        {
+            "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName",
+            "SELECT\n    FirstName,\n    LastName\nFROM Customers\nLIMIT 3"
+        },
+        {
+            "Customers | sort by FirstName desc",
+            "SELECT *\nFROM Customers\nORDER BY FirstName DESC"
+        },
+        {
+            "Customers | take 3 | order by FirstName desc",
+            "SELECT *\nFROM Customers\nORDER BY FirstName DESC\nLIMIT 3"
+        },
+        {
+            "Customers | sort by FirstName asc",
+            "SELECT *\nFROM Customers\nORDER BY FirstName ASC"
+        },
+        {
+            "Customers | sort by FirstName",
+            "SELECT *\nFROM Customers\nORDER BY FirstName DESC"
+        },
+        {
+            "Customers | order by LastName",
+            "SELECT *\nFROM Customers\nORDER BY LastName DESC"
+        },
+        {
+            "Customers | order by Age desc , FirstName asc  ",
+            "SELECT *\nFROM Customers\nORDER BY\n    Age DESC,\n    FirstName ASC"
+        },
+        {
+            "Customers | order by Age asc , FirstName desc",
+            "SELECT *\nFROM Customers\nORDER BY\n    Age ASC,\n    FirstName DESC"
+        },
+        {
+            "Customers | sort by FirstName | order by Age ",
+            "SELECT *\nFROM Customers\nORDER BY Age DESC"
+        },
+        {
+            "Customers | sort by FirstName nulls first",
+            "SELECT *\nFROM Customers\nORDER BY FirstName DESC NULLS FIRST"
+        },
+        {
+            "Customers | sort by FirstName nulls last",
+            "SELECT *\nFROM Customers\nORDER BY FirstName DESC NULLS LAST"
+        },
+        {
+            "Customers | where Occupation == 'Skilled Manual'",
+            "SELECT *\nFROM Customers\nWHERE Occupation = 'Skilled Manual'"
+        },
+        {
+            "Customers | where Occupation != 'Skilled Manual'",
+            "SELECT *\nFROM Customers\nWHERE Occupation != 'Skilled Manual'"
+        },
+        {
+            "Customers |where Education in  ('Bachelors','High School')",
+            "SELECT *\nFROM Customers\nWHERE Education IN ('Bachelors', 'High School')"
+        },
+        {
+            "Customers |  where Education !in  ('Bachelors','High School')",
+            "SELECT *\nFROM Customers\nWHERE Education NOT IN ('Bachelors', 'High School')"
+        },
+        {
+            "Customers |where Education contains_cs  'Degree'",
+            "SELECT *\nFROM Customers\nWHERE Education LIKE '%Degree%'"
+        },
+        {
+            "Customers | where Occupation startswith_cs  'Skil'",
+            "SELECT *\nFROM Customers\nWHERE startsWith(Occupation, 'Skil')"
+        },
+        {
+            "Customers | where FirstName endswith_cs  'le'",
+            "SELECT *\nFROM Customers\nWHERE endsWith(FirstName, 'le')"
+        },
+        {
+            "Customers | where Age == 26",
+            "SELECT *\nFROM Customers\nWHERE Age = 26"
+        },
+        {
+            "Customers | where Age > 20 and Age < 30",
+            "SELECT *\nFROM Customers\nWHERE (Age > 20) AND (Age < 30)"
+        },
+        {
+            "Customers | where Age > 30 | where Education == 'Bachelors'",
+            "SELECT *\nFROM Customers\nWHERE (Age > 30) AND (Education = 'Bachelors')"
+        },
+        {
+            "Customers |summarize count() by Occupation",
+            "SELECT\n    Occupation,\n    count()\nFROM Customers\nGROUP BY Occupation"
+        },
+        {
+            "Customers|summarize sum(Age) by Occupation",
+            "SELECT\n    Occupation,\n    sum(Age)\nFROM Customers\nGROUP BY Occupation"
+        },
+        {
+            "Customers|summarize  avg(Age) by Occupation",
+            "SELECT\n    Occupation,\n    avg(Age)\nFROM Customers\nGROUP BY Occupation"
+        },
+        {
+            "Customers|summarize  min(Age) by Occupation",
+            "SELECT\n    Occupation,\n    min(Age)\nFROM Customers\nGROUP BY Occupation"
+        },
+        {
+            "Customers |summarize  max(Age) by Occupation",
+            "SELECT\n    Occupation,\n    max(Age)\nFROM Customers\nGROUP BY Occupation"
+        },
+        {
+            "Customers |summarize count() by bin(Age, 10)",
+            "SELECT\n    toInt32(Age / 10) * 10 AS bin_int,\n    count()\nFROM Customers\nGROUP BY bin_int"
+        },
+        {
+            "Customers | where FirstName contains 'pet'",
+            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE '%pet%'"
+        },
+        {
+            "Customers | where FirstName !contains 'pet'",
+            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE '%pet%')"
+        },
+        {
+            "Customers | where FirstName endswith 'er'",
+            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE '%er'"
+        },
+        {
+            "Customers | where FirstName !endswith 'er'",
+            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE '%er')"
+        },
+        {
+            "Customers | where Education has 'School'",
+            "SELECT *\nFROM Customers\nWHERE hasTokenCaseInsensitive(Education, 'School')"
+        },
+        {
+            "Customers | where Education !has 'School'",
+            "SELECT *\nFROM Customers\nWHERE NOT hasTokenCaseInsensitive(Education, 'School')"
+        },
+        {
+            "Customers | where Education has_cs 'School'",
+            "SELECT *\nFROM Customers\nWHERE hasToken(Education, 'School')"
+        },
+        {
+            "Customers | where Education !has_cs 'School'",
+            "SELECT *\nFROM Customers\nWHERE NOT hasToken(Education, 'School')"
+        },
+        {
+            "Customers | where FirstName matches regex 'P.*r'",
+            "SELECT *\nFROM Customers\nWHERE match(FirstName, 'P.*r')"
+        },
+        {
+            "Customers | where FirstName startswith 'pet'",
+            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE 'pet%'"
+        },
+        {
+            "Customers | where FirstName !startswith 'pet'",
+            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE 'pet%')"
         }
 })));

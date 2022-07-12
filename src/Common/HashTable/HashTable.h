@@ -226,6 +226,7 @@ void insertSetMapped(MappedType & dest, const ValueType & src) { dest = src.seco
 
 
 /** Determines the size of the hash table, and when and how much it should be resized.
+  * Has very small state (one UInt8) and useful for Set-s allocated in automatic memory (see uniqExact as an example).
   */
 template <size_t initial_size_degree = 8>
 struct HashTableGrower
@@ -275,6 +276,68 @@ struct HashTableGrower
     }
 };
 
+/** Determines the size of the hash table, and when and how much it should be resized.
+  * This structure is aligned to cache line boundary and also occupies it all.
+  * Precalculates some values to speed up lookups and insertion into the HashTable (and thus has bigger memory footprint than HashTableGrower).
+  */
+template <size_t initial_size_degree = 8>
+class alignas(64) HashTableGrowerWithPrecalculation
+{
+    /// The state of this structure is enough to get the buffer size of the hash table.
+
+    UInt8 size_degree = initial_size_degree;
+    size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
+    size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
+
+public:
+    UInt8 sizeDegree() const { return size_degree; }
+
+    void increaseSizeDegree(UInt8 delta)
+    {
+        size_degree += delta;
+        precalculated_mask = (1ULL << size_degree) - 1;
+        precalculated_max_fill = 1ULL << (size_degree - 1);
+    }
+
+    static constexpr auto initial_count = 1ULL << initial_size_degree;
+
+    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
+    static constexpr auto performs_linear_probing_with_single_step = true;
+
+    /// The size of the hash table in the cells.
+    size_t bufSize() const { return 1ULL << size_degree; }
+
+    /// From the hash value, get the cell number in the hash table.
+    size_t place(size_t x) const { return x & precalculated_mask; }
+
+    /// The next cell in the collision resolution chain.
+    size_t next(size_t pos) const { return (pos + 1) & precalculated_mask; }
+
+    /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
+    bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+
+    /// Increase the size of the hash table.
+    void increaseSize() { increaseSizeDegree(size_degree >= 23 ? 1 : 2); }
+
+    /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
+    void set(size_t num_elems)
+    {
+        size_degree = num_elems <= 1
+             ? initial_size_degree
+             : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
+                 ? initial_size_degree
+                 : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        increaseSizeDegree(0);
+    }
+
+    void setBufSize(size_t buf_size_)
+    {
+        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        increaseSizeDegree(0);
+    }
+};
+
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
@@ -1036,14 +1099,14 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
-    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
-    ALWAYS_INLINE erase(const Key & x)
+    ALWAYS_INLINE bool erase(const Key & x)
+    requires Grower::performs_linear_probing_with_single_step
     {
         return erase(x, hash(x));
     }
 
-    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
-    ALWAYS_INLINE erase(const Key & x, size_t hash_value)
+    ALWAYS_INLINE bool erase(const Key & x, size_t hash_value)
+    requires Grower::performs_linear_probing_with_single_step
     {
         /** Deletion from open addressing hash table without tombstones
           *

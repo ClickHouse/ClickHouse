@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 
-#include <base/shared_ptr_helper.h>
 #include <Common/Exception.h>
 #include <base/demangle.h>
 
@@ -60,9 +59,26 @@ To typeid_cast(From * from)
     }
 }
 
+namespace detail
+{
+
+template <typename T>
+struct is_shared_ptr : std::false_type
+{
+};
+
+template <typename T>
+struct is_shared_ptr<std::shared_ptr<T>> : std::true_type
+{
+};
+
+template <typename T>
+inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
+
+}
 
 template <typename To, typename From>
-requires is_shared_ptr_v<To>
+requires detail::is_shared_ptr_v<To>
 To typeid_cast(const std::shared_ptr<From> & from)
 {
     try
