@@ -2092,7 +2092,11 @@ TEST_P(CoordinationTest, TestDurableState)
         write_buf.sync();
         write_buf.close();
         reload_state_manager();
+#ifdef NDEBUG
         ASSERT_EQ(state_manager->read_state(), nullptr);
+#else
+        ASSERT_THROW(state_manager->read_state(), DB::Exception);
+#endif
     }
 
     {

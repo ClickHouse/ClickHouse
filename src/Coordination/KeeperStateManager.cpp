@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -330,7 +331,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             if (content_size == 0)
                 return nullptr;
 
-            uint64_t read_checksum;
+            uint64_t read_checksum{0};
             readIntBinary(read_checksum, read_buf);
 
             uint8_t version;
@@ -347,22 +348,32 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
             if (read_checksum != hash.get64())
             {
-                LOG_ERROR(
-                    logger,
+                const auto error_string = fmt::format(
                     "Invalid checksum while reading state from {}. Got {}, expected {}",
                     path.generic_string(),
                     hash.get64(),
                     read_checksum);
+#ifdef NDEBUG
+                LOG_ERROR(logger, fmt::runtime(error_string));
                 return nullptr;
+#else
+                throw Exception(ErrorCodes::CORRUPTED_DATA, error_string);
+#endif
             }
 
             auto state = nuraft::srv_state::deserialize(*state_buf);
             LOG_INFO(logger, "Read state from {}", path.generic_string());
             return state;
         }
-        catch (...)
+        catch (const std::exception & e)
         {
-            LOG_WARNING(logger, "Failed to deserialize state from {}", path.generic_string());
+            if (const auto * exception = dynamic_cast<const Exception *>(&e);
+                exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
+            {
+                throw;
+            }
+
+            LOG_ERROR(logger, "Failed to deserialize state from {}", path.generic_string());
             return nullptr;
         }
     };
