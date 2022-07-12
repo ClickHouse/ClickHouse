@@ -466,8 +466,8 @@ public:
     bool hasLightweightDelete() const { return data_part_storage->exists(DELETED_ROWS_MARK_FILE_NAME); }
 
     /// Read lightweight deleted mask when needed.
-    const MergeTreeDataPartDeletedMask::DeletedRows getDeletedMask() const;
-    void writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask);
+    MergeTreeDataPartDeletedMask::DeletedRows getDeletedMask() const;
+    void writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask) const;
 
 protected:
 

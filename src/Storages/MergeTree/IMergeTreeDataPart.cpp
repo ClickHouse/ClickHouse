@@ -1217,7 +1217,7 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
     return part_type == MergeTreeDataPartType::Wide && parent_part == nullptr && projection_parts.empty();
 }
 
-const MergeTreeDataPartDeletedMask::DeletedRows IMergeTreeDataPart::getDeletedMask() const
+MergeTreeDataPartDeletedMask::DeletedRows IMergeTreeDataPart::getDeletedMask() const
 {
     MergeTreeDataPartDeletedMask deleted_mask {};
 
@@ -1237,7 +1237,7 @@ const MergeTreeDataPartDeletedMask::DeletedRows IMergeTreeDataPart::getDeletedMa
     return std::move(deleted_mask.getDeletedRowsPtr());
 }
 
-void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask)
+void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask) const
 {
     MergeTreeDataPartDeletedMask deleted_mask {};
     deleted_mask.setDeletedRows(new_mask);
