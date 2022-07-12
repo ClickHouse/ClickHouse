@@ -14,7 +14,7 @@ You can run benchmark with a single script.
 
 1. Download the script.
 ```
-wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware.sh
+wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
 ```
 
 2. Run the script.
