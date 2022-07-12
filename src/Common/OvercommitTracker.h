@@ -74,8 +74,6 @@ protected:
     MemoryTracker * picked_tracker;
     QueryCancelationState cancelation_state;
 
-    virtual Poco::Logger * getLogger() = 0;
-
 private:
 
     void pickQueryToExclude()
@@ -105,10 +103,8 @@ struct UserOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override final;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessListForUser * user_process_list;
-    Poco::Logger * logger = &Poco::Logger::get("UserOvercommitTracker");
 };
 
 struct GlobalOvercommitTracker : OvercommitTracker
@@ -120,8 +116,6 @@ struct GlobalOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override final;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessList * process_list;
-    Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };
