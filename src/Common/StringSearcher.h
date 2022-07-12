@@ -7,8 +7,8 @@
 #include <Core/Defines.h>
 #include <base/range.h>
 #include <Poco/Unicode.h>
-#include <stdint.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -826,66 +826,44 @@ using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
 using ASCIICaseSensitiveTokenSearcher = TokenSearcher<ASCIICaseSensitiveStringSearcher>;
 using ASCIICaseInsensitiveTokenSearcher = TokenSearcher<ASCIICaseInsensitiveStringSearcher>;
 
-
-/** Uses functions from libc.
-  * It makes sense to use only with short haystacks when cheap initialization is required.
-  * There is no option for case-insensitive search for UTF-8 strings.
-  * It is required that strings are zero-terminated.
-  */
-
-struct LibCASCIICaseSensitiveStringSearcher : public StringSearcherBase
+/// Use only with short haystacks where cheap initialization is required.
+template <bool CaseInsensitive>
+struct StdLibASCIIStringSearcher : public StringSearcherBase
 {
-    const char * const needle;
+    const char * const needle_start;
+    const char * const needle_end;
 
     template <typename CharT>
     requires (sizeof(CharT) == 1)
-    LibCASCIICaseSensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
-        : needle(reinterpret_cast<const char *>(needle_)) {}
+    StdLibASCIIStringSearcher(const CharT * const needle_start_, const size_t needle_size_)
+        : needle_start{reinterpret_cast<const char *>(needle_start_)}
+        , needle_end{reinterpret_cast<const char *>(needle_start) + needle_size_}
+    {}
 
     template <typename CharT>
     requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
+    const CharT * search(const CharT * haystack_start, const CharT * const haystack_end) const
     {
-        const auto * res = strstr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const CharT *>(res);
+        if constexpr (CaseInsensitive)
+        {
+            return std::search(
+                haystack_start, haystack_end, needle_start, needle_end,
+                [](char c1, char c2) {return std::toupper(c1) == std::toupper(c2);});
+        }
+        else
+        {
+            return std::search(
+                haystack_start, haystack_end, needle_start, needle_end,
+                [](char c1, char c2) {return c1 == c2;});
+        }
     }
 
     template <typename CharT>
     requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const size_t haystack_size) const
+    const CharT * search(const CharT * haystack_start, const size_t haystack_length) const
     {
-        return search(haystack, haystack + haystack_size);
+        return search(haystack_start, haystack_start + haystack_length);
     }
 };
-
-struct LibCASCIICaseInsensitiveStringSearcher : public StringSearcherBase
-{
-    const char * const needle;
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    LibCASCIICaseInsensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
-        : needle(reinterpret_cast<const char *>(needle_)) {}
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
-    {
-        const auto * res = strcasestr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const CharT *>(res);
-    }
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const size_t haystack_size) const
-    {
-        return search(haystack, haystack + haystack_size);
-    }
-};
-
 
 }

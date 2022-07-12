@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FILE_DOESNT_EXIST;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
@@ -197,6 +196,11 @@ void DataPartStorageOnDisk::loadVersionMetadata(VersionMetadata & version, Poco:
 void DataPartStorageOnDisk::checkConsistency(const MergeTreeDataPartChecksums & checksums) const
 {
     checksums.checkSizes(volume->getDisk(), getRelativePath());
+}
+
+DataPartStorageBuilderPtr DataPartStorageOnDisk::getBuilder() const
+{
+    return std::make_shared<DataPartStorageBuilderOnDisk>(volume, root_path, part_dir);
 }
 
 void DataPartStorageOnDisk::remove(
@@ -615,36 +619,50 @@ void DataPartStorageOnDisk::backup(
     TemporaryFilesOnDisks & temp_dirs,
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
+    const String & path_in_backup,
     BackupEntries & backup_entries) const
 {
-    auto disk = volume->getDisk();
+    fs::path part_path_on_disk = fs::path{root_path} / part_dir;
+    fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
 
+    auto disk = volume->getDisk();
     auto temp_dir_it = temp_dirs.find(disk);
     if (temp_dir_it == temp_dirs.end())
-        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_")).first;
+        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
     auto temp_dir_owner = temp_dir_it->second;
     fs::path temp_dir = temp_dir_owner->getPath();
-
-    fs::path temp_part_dir = temp_dir / part_dir;
+    fs::path temp_part_dir = temp_dir / part_path_in_backup.relative_path();
     disk->createDirectories(temp_part_dir);
+
+    /// For example,
+    /// part_path_in_backup = /data/test/table/0_1_1_0
+    /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0
+    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0
+    /// Or, for projections:
+    /// part_path_in_backup = /data/test/table/0_1_1_0/prjmax.proj
+    /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0/prjmax.proj
+    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0/prjmax.proj
 
     for (const auto & [filepath, checksum] : checksums.files)
     {
-        String relative_filepath = fs::path(part_dir) / filepath;
-        String full_filepath = fs::path(root_path) / part_dir / filepath;
+        if (filepath.ends_with(".proj"))
+            continue; /// Skip *.proj files - they're actually directories and will be handled.
+        String filepath_on_disk = part_path_on_disk / filepath;
+        String filepath_in_backup = part_path_in_backup / filepath;
         String hardlink_filepath = temp_part_dir / filepath;
-        disk->createHardLink(full_filepath, hardlink_filepath);
+
+        disk->createHardLink(filepath_on_disk, hardlink_filepath);
         UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
         backup_entries.emplace_back(
-            relative_filepath,
+            filepath_in_backup,
             std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
     }
 
     for (const auto & filepath : files_without_checksums)
     {
-        String relative_filepath = fs::path(part_dir) / filepath;
-        String full_filepath = fs::path(root_path) / part_dir / filepath;
-        backup_entries.emplace_back(relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, full_filepath));
+        String filepath_on_disk = part_path_on_disk / filepath;
+        String filepath_in_backup = part_path_in_backup / filepath;
+        backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk));
     }
 }
 
@@ -691,15 +709,19 @@ DataPartStoragePtr DataPartStorageOnDisk::clone(
     return std::make_shared<DataPartStorageOnDisk>(single_disk_volume, to, dir_path);
 }
 
-void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir)
+void DataPartStorageOnDisk::onRename(const std::string & new_root_path, const std::string & new_part_dir)
 {
-    if (!exists())
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "Part directory {} doesn't exist. Most likely it is a logical error.",
-            std::string(fs::path(volume->getDisk()->getPath()) / root_path / part_dir));
+    part_dir = new_part_dir;
+    root_path = new_root_path;
+}
 
-    /// Why "" ?
+void DataPartStorageBuilderOnDisk::rename(
+    const std::string & new_root_path,
+    const std::string & new_part_dir,
+    Poco::Logger * log,
+    bool remove_new_dir_if_exists,
+    bool fsync_part_dir)
+{
     String to = fs::path(new_root_path) / new_part_dir / "";
 
     if (volume->getDisk()->exists(to))
@@ -714,7 +736,7 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
                     "Part directory {} already exists and contains {} files. Removing it.",
                     fullPath(volume->getDisk(), to), files.size());
 
-            volume->getDisk()->removeRecursive(to);
+            transaction->removeRecursive(to);
         }
         else
         {
@@ -725,17 +747,13 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
         }
     }
 
-    // metadata_manager->deleteAll(true);
-    // metadata_manager->assertAllDeleted(true);
-
     String from = getRelativePath();
 
     /// Why?
-    volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
-    volume->getDisk()->moveDirectory(from, to);
+    transaction->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
+    transaction->moveDirectory(from, to);
     part_dir = new_part_dir;
     root_path = new_root_path;
-    // metadata_manager->updateAll(true);
 
     SyncGuardPtr sync_guard;
     if (fsync_part_dir)
@@ -768,18 +786,15 @@ void DataPartStorageOnDisk::changeRootPath(const std::string & from_root, const 
     root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
 }
 
-DataPartStorageBuilderOnDisk::DataPartStorageBuilderOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_)
-    : volume(std::move(volume_)), root_path(std::move(root_path_)), part_dir(std::move(part_dir_))
+DataPartStorageBuilderOnDisk::DataPartStorageBuilderOnDisk(
+    VolumePtr volume_,
+    std::string root_path_,
+    std::string part_dir_)
+    : volume(std::move(volume_))
+    , root_path(std::move(root_path_))
+    , part_dir(std::move(part_dir_))
+    , transaction(volume->getDisk()->createTransaction())
 {
-}
-
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageBuilderOnDisk::readFile(
-    const std::string & name,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
-    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageBuilderOnDisk::writeFile(
@@ -787,22 +802,27 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageBuilderOnDisk::writeFile
     size_t buf_size,
     const WriteSettings & settings)
 {
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings);
+    return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings, /* autocommit = */ false);
 }
 
 void DataPartStorageBuilderOnDisk::removeFile(const String & name)
 {
-    return volume->getDisk()->removeFile(fs::path(root_path) / part_dir / name);
+    transaction->removeFile(fs::path(root_path) / part_dir / name);
+}
+
+void DataPartStorageBuilderOnDisk::removeFileIfExists(const String & name)
+{
+    transaction->removeFileIfExists(fs::path(root_path) / part_dir / name);
 }
 
 void DataPartStorageBuilderOnDisk::removeRecursive()
 {
-    volume->getDisk()->removeRecursive(fs::path(root_path) / part_dir);
+    transaction->removeRecursive(fs::path(root_path) / part_dir);
 }
 
 void DataPartStorageBuilderOnDisk::removeSharedRecursive(bool keep_in_remote_fs)
 {
-    volume->getDisk()->removeSharedRecursive(fs::path(root_path) / part_dir, keep_in_remote_fs, {});
+    transaction->removeSharedRecursive(fs::path(root_path) / part_dir, keep_in_remote_fs, {});
 }
 
 SyncGuardPtr DataPartStorageBuilderOnDisk::getDirectorySyncGuard() const
@@ -819,7 +839,7 @@ void DataPartStorageBuilderOnDisk::createHardLinkFrom(const IDataPartStorage & s
             "Cannot create hardlink from different storage. Expected DataPartStorageOnDisk, got {}",
             typeid(source).name());
 
-    volume->getDisk()->createHardLink(
+    transaction->createHardLink(
         fs::path(source_on_disk->getRelativePath()) / from,
         fs::path(root_path) / part_dir / to);
 }
@@ -827,12 +847,6 @@ void DataPartStorageBuilderOnDisk::createHardLinkFrom(const IDataPartStorage & s
 bool DataPartStorageBuilderOnDisk::exists() const
 {
     return volume->getDisk()->exists(fs::path(root_path) / part_dir);
-}
-
-
-bool DataPartStorageBuilderOnDisk::exists(const std::string & name) const
-{
-    return volume->getDisk()->exists(fs::path(root_path) / part_dir / name);
 }
 
 std::string DataPartStorageBuilderOnDisk::getFullPath() const
@@ -847,12 +861,12 @@ std::string DataPartStorageBuilderOnDisk::getRelativePath() const
 
 void DataPartStorageBuilderOnDisk::createDirectories()
 {
-    return volume->getDisk()->createDirectories(fs::path(root_path) / part_dir);
+    transaction->createDirectories(fs::path(root_path) / part_dir);
 }
 
 void DataPartStorageBuilderOnDisk::createProjection(const std::string & name)
 {
-    return volume->getDisk()->createDirectory(fs::path(root_path) / part_dir / name);
+    transaction->createDirectory(fs::path(root_path) / part_dir / name);
 }
 
 ReservationPtr DataPartStorageBuilderOnDisk::reserve(UInt64 bytes)
@@ -872,6 +886,11 @@ DataPartStorageBuilderPtr DataPartStorageBuilderOnDisk::getProjection(const std:
 DataPartStoragePtr DataPartStorageBuilderOnDisk::getStorage() const
 {
     return std::make_shared<DataPartStorageOnDisk>(volume, root_path, part_dir);
+}
+
+void DataPartStorageBuilderOnDisk::commit()
+{
+    transaction->commit();
 }
 
 }
