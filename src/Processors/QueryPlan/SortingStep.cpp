@@ -161,16 +161,19 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     }
 }
 
-void SortingStep::fullSort(QueryPipelineBuilder & pipeline)
+void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const bool skip_partial_sort)
 {
-    pipeline.addSimpleTransform(
-        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
+    if (!skip_partial_sort)
+    {
+        pipeline.addSimpleTransform(
+            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
 
-            return std::make_shared<PartialSortingTransform>(header, result_description, limit);
-        });
+                return std::make_shared<PartialSortingTransform>(header, result_description, limit);
+            });
+    }
 
     StreamLocalLimits limits;
     limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
@@ -234,9 +237,16 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
 
     /// merge sorted
-    if (input_sort_mode == DataStream::SortMode::Chunk && input_sort_desc.hasPrefix(result_description))
+    if (input_sort_mode == DataStream::SortMode::Port && input_sort_desc.hasPrefix(result_description))
     {
         mergingSorted(pipeline, result_description, limit);
+        return;
+    }
+
+    /// almost full sort but chunks are already sorted, so skipping partial sort
+    if (input_sort_mode == DataStream::SortMode::Chunk && input_sort_desc.hasPrefix(result_description))
+    {
+        fullSort(pipeline, true);
         return;
     }
 

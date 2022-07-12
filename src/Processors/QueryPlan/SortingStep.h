@@ -56,7 +56,7 @@ private:
 
     void finishSorting(QueryPipelineBuilder & pipeline);
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & sort_desc, UInt64 limit_);
-    void fullSort(QueryPipelineBuilder & pipeline);
+    void fullSort(QueryPipelineBuilder & pipeline, bool skip_partial_sort = false);
 
     enum class Type
     {
