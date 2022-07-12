@@ -49,12 +49,14 @@ public:
     {
         if (!isString(arguments[0]))
             throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
         if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
             throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -70,16 +72,15 @@ public:
 
         if (!col_needles_const)
             throw Exception(
-                "Illegal column " + arguments[1].column->getName() + ". The array is not const",
-                ErrorCodes::ILLEGAL_COLUMN);
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {}. The array is not const", arguments[1].column->getName());
 
         Array needles_arr = col_needles_const->getValue<Array>();
 
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(needles_arr.size())
-                    + ", should be at most 255",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at most 255", getName(), needles_arr.size());
 
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
@@ -100,7 +101,9 @@ public:
         if (col_haystack_vector)
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needles, vec_res);
         else
-            throw Exception("Illegal column " + arguments[0].column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {}", arguments[0].column->getName());
 
         size_t needles_size = needles.size();
         size_t accum = needles_size;
