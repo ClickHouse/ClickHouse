@@ -2943,7 +2943,7 @@ class ClickHouseInstance:
         ignore_error=False,
         query_id=None,
     ):
-        sql_for_log = ''
+        sql_for_log = ""
         if len(sql) > 1000:
             sql_for_log = sql[:1000]
         else:
