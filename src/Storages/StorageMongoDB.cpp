@@ -104,7 +104,7 @@ public:
     {
     }
 
-    String getName() const override { return "StorageMySQLSink"; }
+    String getName() const override { return "StorageMongoDBSink"; }
 
     void consume(Chunk chunk) override
     {
