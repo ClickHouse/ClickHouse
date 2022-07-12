@@ -99,7 +99,7 @@ if (BUILD_STANDALONE_KEEPER)
 
     )
 
-    add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
+    clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
 
     # Remove some redundant dependencies
     target_compile_definitions (clickhouse-keeper PRIVATE -DKEEPER_STANDALONE_BUILD)
