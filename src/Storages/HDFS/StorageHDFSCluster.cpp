@@ -41,7 +41,7 @@ StorageHDFSCluster::StorageHDFSCluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & compression_method_)
-    : IStorage(table_id_)
+    : IStorageCluster(table_id_)
     , cluster_name(cluster_name_)
     , uri(uri_)
     , format_name(format_name_)
@@ -74,13 +74,7 @@ Pipe StorageHDFSCluster::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-
-    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
-    auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iterator]() mutable -> String
-    {
-        return iterator->next();
-    });
+    createIteratorAndCallback(context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -137,6 +131,29 @@ QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
 
     /// Follower just reads the data.
     return QueryProcessingStage::Enum::FetchColumns;
+}
+
+
+void StorageHDFSCluster::createIteratorAndCallback(ContextPtr context)
+{
+    cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+
+    iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
+    callback = std::make_shared<HDFSSource::IteratorWrapper>([iter = this->iterator]() mutable -> String { return iter->next(); });
+}
+
+
+RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ContextPtr context)
+{
+    createIteratorAndCallback(context);
+    return RemoteQueryExecutor::Extension{.task_iterator = callback};
+}
+
+
+ClusterPtr StorageHDFSCluster::getCluster(ContextPtr context)
+{
+    createIteratorAndCallback(context);
+    return cluster;
 }
 
 
