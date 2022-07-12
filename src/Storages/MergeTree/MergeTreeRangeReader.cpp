@@ -657,21 +657,28 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
-    , non_const_virtual_column_names(non_const_virtual_column_names_)
+//    , non_const_virtual_column_names()
 {
+
+
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
 
     for (const auto & name_and_type : merge_tree_reader->getColumns())
         sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
-
-    for (const auto & column_name : non_const_virtual_column_names)
+    
+    for (const auto & column_name : non_const_virtual_column_names_)
     {
         if (sample_block.has(column_name))
             continue;
 
+        non_const_virtual_column_names.push_back(column_name);
+
         if (column_name == "_part_offset")
             sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
+
+//        if (column_name == "__row_exists")
+//            sample_block.insert(ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), column_name));
     }
 
     if (merge_tree_reader->needReadDeletedMask())
@@ -861,7 +868,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         if (read_result.num_rows)
         {
             /// Physical columns go first and then some virtual columns follow
-            const size_t physical_columns_count = read_result.columns.size() - non_const_virtual_column_names.size();
+            size_t physical_columns_count = read_result.columns.size() - read_result.extra_columns_filled.size();
+///////////
+// TODO: properly account for "virtual columns" that are overridden with real data in the part 
+            
+/////////////
             Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
 
             bool should_evaluate_missing_defaults;
@@ -989,6 +1000,7 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     }
 
     result.columns.emplace_back(std::move(column));
+    result.extra_columns_filled.push_back("_part_offset");
 }
 /// Fill deleted_row_mask column, referenced from fillPartOffsetColumn().
 void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
@@ -1184,7 +1196,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     size_t num_columns = header.size();
 
     /// Check that we have columns from previous steps and newly read required columns
-    if (result.columns.size() < num_columns + non_const_virtual_column_names.size())
+    if (result.columns.size() < num_columns + result.extra_columns_filled.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Invalid number of columns passed to MergeTreeRangeReader. Expected {}, got {}",
                         num_columns, result.columns.size());
@@ -1226,6 +1238,11 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                                     num_columns, result.columns.size());
 
                 block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
+            }
+            else if (column_name == "__row_exists")
+            {
+                /// do nothing, it will be added later
+                /// TODO: properly implement reading non-const virtual columns or filling them with default values 
             }
             else
                 throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);

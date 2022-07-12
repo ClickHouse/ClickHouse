@@ -116,6 +116,16 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
             IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
         pre_reader_for_step.clear();
+
+
+        if (!reader_settings.skip_deleted_mask && task->data_part->getColumns().contains("__row_exists"))
+        {
+            pre_reader_for_step.push_back(task->data_part->getReader({{"__row_exists", std::make_shared<DataTypeUInt8>()}}, metadata_snapshot, task->mark_ranges,
+                    owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                    IMergeTreeReader::ValueSizeMap{}, profile_callback));
+        }
+
+
         if (prewhere_info)
         {
             for (const auto & pre_columns_per_step : task->task_columns.pre_columns)
@@ -137,6 +147,16 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
                 reader->getAvgValueSizeHints(), profile_callback);
 
             pre_reader_for_step.clear();
+
+            if (!reader_settings.skip_deleted_mask && task->data_part->getColumns().contains("__row_exists"))
+            {
+                pre_reader_for_step.push_back(task->data_part->getReader({{"__row_exists", std::make_shared<DataTypeUInt8>()}}, metadata_snapshot, task->mark_ranges,
+                        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                        reader->getAvgValueSizeHints(), profile_callback));
+            }
+
+
+
             if (prewhere_info)
             {
                 for (const auto & pre_columns_per_step : task->task_columns.pre_columns)

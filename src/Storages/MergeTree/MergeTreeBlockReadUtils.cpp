@@ -108,7 +108,9 @@ NameSet injectRequiredColumns(
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch only physical columns
-        if (!storage_snapshot->tryGetColumn(options, columns[i]))
+        const bool is_real_column = storage_snapshot->tryGetColumn(options, columns[i]).has_value();
+        const bool is_virtual_column = storage.isVirtualColumn(columns[i], storage_snapshot->getMetadataForQuery());
+        if (!is_real_column && !is_virtual_column)
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no physical column or subcolumn {} in table", columns[i]);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
@@ -272,18 +274,26 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
+    const Names & non_const_virtual_columns,
     const PrewhereInfoPtr & prewhere_info,
     bool with_subcolumns)
 {
     Names column_names = required_columns;
     Names pre_column_names;
 
+    /// read non-const virtual column from data if it exists
+    for (const auto & name : non_const_virtual_columns)
+    {
+        if (data_part->getColumns().contains(name))
+            column_names.push_back(name);
+    }
+
     /// inject columns required for defaults evaluation
     injectRequiredColumns(
         storage, storage_snapshot, data_part, with_subcolumns, column_names);
 
     MergeTreeReadTaskColumns result;
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
     if (with_subcolumns)
         options.withSubcolumns();
 

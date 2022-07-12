@@ -297,7 +297,9 @@ MutationsInterpreter::MutationsInterpreter(
     , is_lightweight(is_lightweight_)
 {
     if (is_lightweight)
+    {
         mutation_ast = prepareLightweightDelete(!can_execute);
+    }
     else
         mutation_ast = prepare(!can_execute);
 }
@@ -354,7 +356,7 @@ static void validateUpdateColumns(
             }
         }
 
-        if (!found)
+        if (!found && column_name != "__row_exists") /// TODO: properly handle updating __row_exists column for LWD
         {
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
             {
@@ -507,7 +509,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 ///
                 /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
 
-                const auto & type = columns_desc.getPhysical(column).type;
+                const auto type = (column == "__row_exists" ?  std::make_shared<DataTypeUInt8>() : columns_desc.getPhysical(column).type);
                 auto type_literal = std::make_shared<ASTLiteral>(type->getName());
 
                 const auto & update_expr = kv.second;

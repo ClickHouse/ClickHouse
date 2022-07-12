@@ -61,6 +61,10 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         {
             non_const_virtual_column_names.emplace_back(*it);
         }
+        else if (*it == "__row_exists")
+        {
+            non_const_virtual_column_names.emplace_back(*it);
+        }
         else
         {
             /// Remove virtual columns that are going to be filled with const values
@@ -219,10 +223,20 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
 {
     MergeTreeRangeReader* prev_reader = nullptr;
     bool last_reader = false;
+    size_t pre_readers_shift = 0;
+
+    if (!reader_settings.skip_deleted_mask && current_task.data_part->getColumns().contains("__row_exists"))
+    {
+//        last_reader = !prewhere_actions || prewhere_actions->steps.empty();
+        current_task.pre_range_readers.push_back(
+            MergeTreeRangeReader(pre_reader_for_step[0].get(), prev_reader, &lwd_filter_step, last_reader, non_const_virtual_column_names));
+        prev_reader = &current_task.pre_range_readers.back();
+        pre_readers_shift++;
+    }
 
     if (prewhere_info)
     {
-        if (prewhere_actions->steps.size() != pre_reader_for_step.size())
+        if (prewhere_actions->steps.size() + pre_readers_shift != pre_reader_for_step.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "PREWHERE steps count mismatch, actions: {}, readers: {}",
                             prewhere_actions->steps.size(), pre_reader_for_step.size());
@@ -232,7 +246,7 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
         {
             last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
             current_task.pre_range_readers.push_back(
-                MergeTreeRangeReader(pre_reader_for_step[i].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names));
+                MergeTreeRangeReader(pre_reader_for_step[i + pre_readers_shift].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names));
 
             prev_reader = &current_task.pre_range_readers.back();
         }
@@ -339,7 +353,10 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     /// Reorder columns. TODO: maybe skip for default case.
     for (size_t ps = 0; ps < header_without_virtual_columns.columns(); ++ps)
     {
-        auto pos_in_sample_block = sample_block.getPositionByName(header_without_virtual_columns.getByPosition(ps).name);
+        const auto & name = header_without_virtual_columns.getByPosition(ps).name;
+        if (name == "__row_exists" && !sample_block.has(name))
+            continue; /// TODO: properly deal with cases when __row_exists is not read and is filled later 
+        auto pos_in_sample_block = sample_block.getPositionByName(name);
         ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
     }
 
@@ -365,6 +382,7 @@ namespace
 
         virtual void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
+        virtual void insertUInt8Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
 
@@ -390,6 +408,8 @@ static void injectNonConstVirtualColumns(
     {
         if (virtual_column_name == "_part_offset")
             inserter.insertUInt64Column(DataTypeUInt64().createColumn(), virtual_column_name);
+        if (virtual_column_name == "__row_exists")
+            inserter.insertUInt8Column(DataTypeUInt8().createColumn(), virtual_column_name);
     }
 }
 
@@ -485,6 +505,11 @@ namespace
             block.insert({column, std::make_shared<DataTypeString>(), name});
         }
 
+        void insertUInt8Column(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeUInt8>(), name});
+        }
+
         void insertUInt64Column(const ColumnPtr & column, const String & name) final
         {
             block.insert({column, std::make_shared<DataTypeUInt64>(), name});
@@ -521,6 +546,11 @@ namespace
         }
 
         void insertStringColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
+
+        void insertUInt8Column(const ColumnPtr & column, const String &) final
         {
             columns.push_back(column);
         }
@@ -569,6 +599,34 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(
     auto columns = chunk.detachColumns();
 
     VirtualColumnsInserterIntoColumns inserter{columns};
+
+/////////////////////////
+// TODO: implement properly
+    for (const auto & virtual_column_name : virtual_columns)
+    {
+
+            if (virtual_column_name == "__row_exists")
+            {
+                if (task->data_part->getColumns().contains(virtual_column_name))
+                {
+                    /// If this column is present in the part it must be read from the data
+                    assert(task->task_columns.columns.contains(virtual_column_name));
+                }
+                else
+                {
+                    /// If __row_exists column isn't present in the part then  
+                    ColumnPtr column;
+                    if (num_rows)
+                        column = DataTypeUInt8().createColumnConst(num_rows, 1)->convertToFullColumnIfConst();
+                    else
+                        column = DataTypeUInt8().createColumn();
+
+                    inserter.insertUInt8Column(column, virtual_column_name);
+                }
+            }
+    }
+///////////////////////////    
+
     /// Only add const virtual columns because non-const ones have already been added
     injectPartConstVirtualColumns(num_rows, inserter, task, partition_value_type, virtual_columns);
 

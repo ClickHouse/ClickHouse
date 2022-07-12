@@ -89,6 +89,7 @@ protected:
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
 
+    PrewhereExprStep lwd_filter_step { nullptr, "__row_exists", true, true };
     PrewhereInfoPtr prewhere_info;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
