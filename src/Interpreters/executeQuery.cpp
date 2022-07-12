@@ -701,15 +701,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// Parse the query from string.
     try
     {
-        const String & sql_dialect = settings.sql_dialect;
-        assert(sql_dialect == "clickhouse" || sql_dialect == "kusto" || sql_dialect == "kusto_auto");
+        const Dialect & dialect = settings.dialect;
 
-        if (sql_dialect == "kusto" && !internal)
+        if (dialect == Dialect::kusto && !internal)
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
-        else if (sql_dialect == "kusto_auto" && !internal)
+        else if (dialect == Dialect::kusto_auto && !internal)
         {
             try {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);

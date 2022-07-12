@@ -350,15 +350,18 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (is_interactive || ignore_error)
     {
         String message;
-        if (sql_dialect == "kusto")
+        if (dialect == Dialect::kusto)
              res = tryParseQuery(kql_parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else if (sql_dialect == "kusto_auto")
+        else if (dialect == Dialect::kusto_auto)
         {
             
             res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
             if (!res)
-                res = tryParseQuery(kql_parser, begin, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            {
+                pos = begin;
+                res = tryParseQuery(kql_parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            }
         }
         else
             res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
@@ -371,14 +374,17 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     }
     else
     {
-        if (sql_dialect == "kusto")
+        if (dialect == Dialect::kusto)
             res = parseQueryAndMovePosition(kql_parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else if (sql_dialect == "kusto_auto")
+        else if (dialect == Dialect::kusto_auto)
         {
             res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
              if (!res)
-                res = parseQueryAndMovePosition(kql_parser, begin, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+             {
+                 pos = begin;
+                 res = parseQueryAndMovePosition(kql_parser, begin, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+             }
         }
         else
             res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
