@@ -71,18 +71,6 @@ static const PrewhereInfoPtr & getPrewhereInfo(const SelectQueryInfo & query_inf
                                  : query_info.prewhere_info;
 }
 
-static int getSortDirection(const SelectQueryInfo & query_info)
-{
-    const InputOrderInfoPtr & order_info = query_info.input_order_info
-        ? query_info.input_order_info
-        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
-
-    if (!order_info)
-        return 1;
-
-    return order_info->direction;
-}
-
 ReadFromMergeTree::ReadFromMergeTree(
     MergeTreeData::DataPartsVector parts_,
     Names real_column_names_,
@@ -141,7 +129,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         SortDescription sort_description;
         const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
         const Block & header = output_stream->header;
-        const int sort_direction = getSortDirection(query_info);
+        const int sort_direction = getSortDirection();
         for (const auto & column_name : sorting_key_columns)
         {
             if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
@@ -152,6 +140,10 @@ ReadFromMergeTree::ReadFromMergeTree(
         }
         output_stream->sort_description = std::move(sort_description);
         output_stream->sort_mode = DataStream::SortMode::Chunk;
+
+        auto const& settings = context->getSettingsRef();
+        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && getInputOrderInfo())
+            output_stream->sort_mode = DataStream::SortMode::Port;
     }
 }
 
@@ -1000,6 +992,8 @@ void ReadFromMergeTree::setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOp
 
 void ReadFromMergeTree::setQueryInfoInputOrderInfo(const InputOrderInfoPtr & order_info)
 {
+    // todo? update sort mode
+
     if (query_info.projection)
     {
         query_info.projection->input_order_info = order_info;
@@ -1066,13 +1060,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                                    column_names_to_read.end());
     }
 
-    const auto & input_order_info = query_info.input_order_info
-        ? query_info.input_order_info
-        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
-
     Pipe pipe;
 
     const auto & settings = context->getSettingsRef();
+    const auto & input_order_info = getInputOrderInfo();
 
     if (select.final())
     {
