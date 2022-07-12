@@ -10,4 +10,3 @@ namespace DB {
         static std::shared_ptr<DNSPTRResolver> get();
     };
 }
-
