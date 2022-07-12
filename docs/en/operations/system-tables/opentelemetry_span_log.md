@@ -50,4 +50,3 @@ attribute.values: []
 
 -   [OpenTelemetry](../../operations/opentelemetry.md)
 
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/opentelemetry_span_log) <!--hide-->
