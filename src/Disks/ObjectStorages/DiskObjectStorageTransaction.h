@@ -30,6 +30,8 @@ public:
     /// like removal of blobs. Such implementation can lead to garbage.
     virtual void finalize() = 0;
     virtual ~IDiskObjectStorageOperation() = default;
+
+    virtual std::string getInfoForLog() const = 0;
 };
 
 using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;
