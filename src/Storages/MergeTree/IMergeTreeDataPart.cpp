@@ -1234,7 +1234,7 @@ MergeTreeDataPartDeletedMask::DeletedRows IMergeTreeDataPart::getDeletedMask() c
                     data_part_storage->getDiskPath(), deleted_mask.name, name, deleted_mask.getDeletedRows().size(), rows_count);
     }
 
-    return std::move(deleted_mask.getDeletedRowsPtr());
+    return deleted_mask.getDeletedRowsPtr();
 }
 
 void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask) const
