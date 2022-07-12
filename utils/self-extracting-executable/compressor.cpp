@@ -448,7 +448,16 @@ int main(int argc, char* argv[])
     if (p != nullptr)
     {
         if (p[0] != 0)
-            level = atoi(p);
+        {
+            char * end = nullptr;
+            level = strtol(p, &end, 10);
+            if (*end != 0)
+            {
+                std::cerr << "Error: level [" << p << "] is not valid" << std::endl;
+                usage(stderr, argv[0]);
+                return 1;
+            }
+        }
         ++start_of_files;
     }
 
@@ -482,7 +491,7 @@ int main(int argc, char* argv[])
     }
     ++start_of_files;
 
-    if (decompressor != nullptr && decompressor[0] != 0)
+    if (decompressor != nullptr)
     {
         if (copy_decompressor_file(decompressor, output_fd))
             return 1;
