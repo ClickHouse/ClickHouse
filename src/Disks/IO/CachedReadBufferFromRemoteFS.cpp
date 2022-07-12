@@ -302,6 +302,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
 
                         assert(file_offset_of_buffer_end > file_segment->getDownloadOffset());
                         bytes_to_predownload = file_offset_of_buffer_end - file_segment->getDownloadOffset();
+                        assert(bytes_to_predownload < range.size());
                     }
 
                     download_offset = file_segment->getDownloadOffset();
@@ -509,6 +510,7 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
 
         assert(implementation_buffer->getFileOffsetOfBufferEnd() == file_segment->getDownloadOffset());
         size_t current_offset = file_segment->getDownloadOffset();
+        const auto & current_range = file_segment->range();
 
         while (true)
         {
@@ -532,7 +534,7 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                         "Failed to predownload remaining {} bytes. Current file segment: {}, current download offset: {}, expected: {}, "
                         "eof: {}",
                         bytes_to_predownload,
-                        file_segment->range().toString(),
+                        current_range.toString(),
                         file_segment->getDownloadOffset(),
                         file_offset_of_buffer_end,
                         implementation_buffer->eof());
@@ -609,13 +611,13 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
                 swap(*implementation_buffer);
-                working_buffer.resize(0);
-                position() = working_buffer.end();
+                resetWorkingBuffer();
 
                 implementation_buffer = getRemoteFSReadBuffer(file_segment, read_type);
 
                 swap(*implementation_buffer);
 
+                implementation_buffer->setReadUntilPosition(current_range.right + 1); /// [..., range.right]
                 implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
 
                 LOG_TEST(

@@ -541,7 +541,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     MergeTreeData::MutableDataPartPtr & new_data_part,
     const MergeTreeData::DataPartsVector & parts,
     const MergeTreeTransactionPtr & txn,
-    MergeTreeData::Transaction * out_transaction)
+    MergeTreeData::Transaction & out_transaction,
+    DataPartStorageBuilderPtr builder)
 {
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
@@ -549,7 +550,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                                              "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, txn.get(), nullptr, out_transaction);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, builder);
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())
