@@ -43,6 +43,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cuda/CudaStringsAggregator.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -50,6 +52,24 @@ struct CudaAggregatedDataVariants : private boost::noncopyable
 {
     bool empty_ = true;
     std::unique_ptr<CudaStringsAggregator> strings_agg;
+    std::mutex m;
+    std::atomic<int> num;
+    std::atomic<bool> finished{false};
+
+    CudaAggregatedDataVariants(int num_) : num(num_)
+    {
+        // LOG_FATAL(&Poco::Logger::root(), "# CudaAggregatedDataVariants - num: {}", num_);
+    }
+
+    void start(ContextPtr context, CudaAggregateFunctionPtr cuda_agg_function)
+    {
+        std::unique_lock lock(m);
+        if (empty())
+        {
+            init(context, cuda_agg_function);
+            startProcessing();
+        }
+    }
 
     bool empty() const { return empty_; }
 
@@ -72,11 +92,28 @@ struct CudaAggregatedDataVariants : private boost::noncopyable
         assert(!empty());
         strings_agg->startProcessing();
     }
-    void waitProcessed()
+    bool waitProcessed()
     {
         assert(!empty());
+        int val = num.load();
+        while (val)
+        {
+            num.wait(val);
+            val = num.load();
+        }
+
+        if (finished.exchange(true))
+            return false;
+
         strings_agg->waitProcessed();
+        return true;
     }
+    void stop()
+    {
+        num--;
+        num.notify_one();
+    }
+
 };
 
 using CudaAggregatedDataVariantsPtr = std::shared_ptr<CudaAggregatedDataVariants>;

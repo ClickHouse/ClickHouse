@@ -167,11 +167,12 @@ bool CudaAggregator::executeOnBlock(
         }
     }
 
-    if (result.empty())
-    {
-        result.init(context, cuda_agg_function);
-        result.startProcessing();
-    }
+    result.start(context, cuda_agg_function);
+    // if (result.empty())
+    // {
+    //     result.init(context, cuda_agg_function);
+    //     result.startProcessing();
+    // }
 
     /// TODO get rid of this const_cast (problems is getChars and getOffsets been nonconst methods)
     ColumnString *keys_column = const_cast<ColumnString *>(static_cast<const ColumnString *>(key_columns[0])),
@@ -249,7 +250,6 @@ Block CudaAggregator::prepareBlockAndFill(CudaAggregatedDataVariants & /*data_va
 
 Block CudaAggregator::prepareBlockAndFillSingleLevel(CudaAggregatedDataVariants & data_variants, bool final) const
 {
-    data_variants.waitProcessed();
     size_t rows = data_variants.strings_agg->getResult().size();
 
     auto filler = [&data_variants, this](MutableColumns & key_columns, MutableColumns & final_aggregate_columns)

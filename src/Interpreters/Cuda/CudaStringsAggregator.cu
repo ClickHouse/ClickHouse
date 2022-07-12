@@ -82,6 +82,7 @@ void CudaStringsAggregator::queueData(
     const char * vals_str_buf,
     const OffsetType * vals_offsets)
 {
+    std::unique_lock lock(m);
     while (1)
     {
         if (tryQueueData(str_num, str_buf_sz, str_buf, offsets, vals_str_buf_sz, vals_str_buf, vals_offsets))

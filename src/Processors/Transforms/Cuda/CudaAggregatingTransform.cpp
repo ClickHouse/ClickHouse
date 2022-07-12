@@ -36,7 +36,9 @@ class CudaConvertingAggregatedToChunksTransform : public IProcessor
 public:
     CudaConvertingAggregatedToChunksTransform(CudaAggregatingTransformParamsPtr params_, CudaAggregatedDataVariantsPtr variants_, size_t /*num_threads_*/)
         : IProcessor({}, {params_->getHeader()})
-        , params(std::move(params_)), variants(std::move(variants_)) {}
+        , params(std::move(params_)), variants(std::move(variants_)) {
+            // LOG_FATAL(&Poco::Logger::root(), "# CudaConvertingAggregatedToChunksTransform::constructor()");
+        }
 
     String getName() const override { return "CudaConvertingAggregatedToChunksTransform"; }
 
@@ -158,6 +160,12 @@ private:
 
     void mergeSingleLevel()
     {
+        if (!variants->waitProcessed())
+        {
+            finished = true;
+            return;
+        }
+
         auto block = params->aggregator.prepareBlockAndFillSingleLevel(*variants, params->final);
 
         setCurrentChunk(convertToChunk(block));
@@ -168,7 +176,7 @@ private:
 
 CudaAggregatingTransform::CudaAggregatingTransform(Block header, CudaAggregatingTransformParamsPtr params_, ContextPtr context_)
     : CudaAggregatingTransform(std::move(header), std::move(params_)
-    , std::make_unique<CudaAggregatedDataVariants>(), 0, 1, context_)
+    , std::make_unique<CudaAggregatedDataVariants>(1), 0, 1, context_)
 {
 }
 
@@ -187,6 +195,7 @@ CudaAggregatingTransform::CudaAggregatingTransform(
     , aggregate_columns(params->params.aggregates_size)
     , variants(std::move(variants_))
 {
+    // LOG_FATAL(&Poco::Logger::root(), "# CudaAggregatingTransform::constructor()");
 }
 
 CudaAggregatingTransform::~CudaAggregatingTransform() = default;
@@ -234,11 +243,14 @@ IProcessor::Status CudaAggregatingTransform::prepare()
     {
         if (is_consume_finished)
         {
+            // LOG_FATAL(&Poco::Logger::root(), "# CudaAggregatingTransform - input.isFinished() && is_consume_finished");
             output.finish();
             return Status::Finished;
         }
         else
         {
+            // LOG_FATAL(&Poco::Logger::root(), "# CudaAggregatingTransform - input.isFinished()");
+            variants->stop();
             /// Finish data processing and create another pipe.
             is_consume_finished = true;
             return Status::Ready;

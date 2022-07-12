@@ -69,9 +69,12 @@ void CudaAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
-        pipeline.resize(1, true, true);
+        // pipeline.resize(1, true, true);
 
-        auto many_data = std::make_shared<CudaAggregatedDataVariants>();
+        // if (!storage_has_evenly_distributed_read)
+        //     pipeline.resize(pipeline.getNumStreams(), true, true);
+
+        auto many_data = std::make_shared<CudaAggregatedDataVariants>(pipeline.getNumStreams());
 
         size_t counter = 0;
 

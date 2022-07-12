@@ -66,6 +66,7 @@ protected:
     bool is_vals_needed;
     int curr_filling_chunk;
     cudaStream_t copy_stream;
+    std::mutex m;
 
     /// TODO turn it into full incapsulated object
     struct WorkChunkInfo
