@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-s3-storage
 -- no-parallel -- for flaky check and to avoid "Removing leftovers from table" (for other tables)
+-- no-s3-storage -- hangs now, need investigation
 
 -- Temporarily skip warning 'table was created by another server at the same moment, will retry'
 set send_logs_level='error';
