@@ -34,7 +34,7 @@ RollupStep::RollupStep(const DataStream & input_stream_, Aggregator::Params para
         output_stream->distinct_columns.insert(key);
 }
 
-ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
+ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
 
 void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
@@ -43,7 +43,7 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
-            return addGroupingSetForTotals(header, params.keys, settings, keys_size);
+            return addGroupingSetForTotals(header, params.keys, use_nulls, settings, keys_size);
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), true);
         return std::make_shared<RollupTransform>(header, std::move(transform_params), use_nulls);
