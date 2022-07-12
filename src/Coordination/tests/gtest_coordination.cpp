@@ -1064,6 +1064,13 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
     node.setData(data);
     node.stat.ephemeralOwner = ephemeral_owner;
     storage.container.insertOrReplace(path, node);
+    auto child_it = storage.container.find(path);
+    auto child_path = DB::getBaseName(child_it->key);
+    storage.container.updateValue(DB::parentPath(StringRef{path}), [&](auto & parent)
+    {
+        parent.addChild(child_path);
+        parent.stat.numChildren++;
+    });
 }
 
 TEST_P(CoordinationTest, TestStorageSnapshotSimple)
@@ -1221,7 +1228,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
                 storage.container.erase("/hello_" + std::to_string(i));
         }
         EXPECT_EQ(storage.container.size(), 26);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 101);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 102);
         EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
@@ -1776,6 +1783,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
         DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
         DB::KeeperStorage storage(500, "", true);
+        addNode(storage, "/hello", "");
         for (size_t j = 0; j < 5000; ++j)
         {
             addNode(storage, "/hello_" + std::to_string(j), "world", 1);
