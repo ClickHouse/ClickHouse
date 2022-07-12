@@ -8,6 +8,7 @@
 #include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/IDataType.h>
+#include <Columns/Collator.h>
 
 class Collator;
 
@@ -65,7 +66,8 @@ struct SortColumnDescription
 
     bool operator == (const SortColumnDescription & other) const
     {
-        return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction;
+        return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction
+            && (collator && other.collator && collator->getLocale() == other.collator->getLocale());
     }
 
     bool operator != (const SortColumnDescription & other) const

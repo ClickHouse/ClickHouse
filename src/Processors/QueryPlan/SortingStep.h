@@ -69,7 +69,7 @@ private:
 
     const SortDescription prefix_description;
     const SortDescription result_description;
-    size_t max_block_size;
+    const size_t max_block_size;
     UInt64 limit;
     SizeLimits size_limits;
 
