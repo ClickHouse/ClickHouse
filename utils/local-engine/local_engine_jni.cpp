@@ -99,7 +99,7 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
 }
 //static SharedContextHolder shared_context;
 
-void Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject)
+void Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv *, jobject, jbyteArray)
 {
     try
     {

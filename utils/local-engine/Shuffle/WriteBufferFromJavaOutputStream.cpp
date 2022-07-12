@@ -14,7 +14,6 @@ void WriteBufferFromJavaOutputStream::nextImpl()
         throw std::runtime_error("get env error");
     }
 
-    Position current_pos = this->working_buffer.begin();
     size_t bytes_write = 0;
     while (offset() - bytes_write > 0)
     {
@@ -32,8 +31,8 @@ WriteBufferFromJavaOutputStream::WriteBufferFromJavaOutputStream(JavaVM * vm_, j
     {
         throw std::runtime_error("get env error");
     }
-    buffer = static_cast<jbyteArray>(env->NewGlobalRef(buffer_));
-    output_stream = env->NewGlobalRef(output_stream_);
+    buffer = static_cast<jbyteArray>(env->NewWeakGlobalRef(buffer_));
+    output_stream = env->NewWeakGlobalRef(output_stream_);
     buffer_size = env->GetArrayLength(buffer);
 }
 void WriteBufferFromJavaOutputStream::finalizeImpl()
@@ -50,7 +49,7 @@ WriteBufferFromJavaOutputStream::~WriteBufferFromJavaOutputStream()
 {
     JNIEnv * env;
     vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8);
-    env->DeleteGlobalRef(output_stream);
-    env->DeleteGlobalRef(buffer);
+    env->DeleteWeakGlobalRef(output_stream);
+    env->DeleteWeakGlobalRef(buffer);
 }
 }
