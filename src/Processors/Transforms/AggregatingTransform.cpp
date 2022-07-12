@@ -356,7 +356,7 @@ private:
         else
             throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
-        auto blocks = params->aggregator.prepareBlockAndFillSingleLevel(*first, params->final);
+        auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
             single_level_chunks.emplace_back(convertToChunk(block));
 

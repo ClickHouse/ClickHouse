@@ -1578,9 +1578,8 @@ Block Aggregator::convertOneBucketToBlock(
     bool final,
     size_t bucket) const
 {
-    Block block = convertToBlockImpl(
-                      method, method.data.impls[bucket], arena, data_variants.aggregates_pools, final, method.data.impls[bucket].size())
-                      .front();
+    Block block = convertToBlockImpl</* return_single_block */ true>(
+        method, method.data.impls[bucket], arena, data_variants.aggregates_pools, final, method.data.impls[bucket].size());
 
     block.info.bucket_num = bucket;
     return block;
@@ -1686,8 +1685,8 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 }
 
 
-template <typename Method, typename Table>
-BlocksList
+template <bool return_single_block, typename Method, typename Table>
+Aggregator::ConvertToBlockRes<return_single_block>
 Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows) const
 {
     if (data.empty())
@@ -1696,7 +1695,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         return {finalizeBlock(std::move(out_cols), final, rows)};
     }
 
-    BlocksList res;
+    ConvertToBlockRes<return_single_block> res;
 
     if (final)
     {
@@ -1704,17 +1703,17 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         if (compiled_aggregate_functions_holder)
         {
             static constexpr bool use_compiled_functions = !Method::low_cardinality_optimization;
-            res = convertToBlockImplFinal<Method, use_compiled_functions>(method, data, arena, aggregates_pools, rows);
+            res = convertToBlockImplFinal<Method, use_compiled_functions, return_single_block>(method, data, arena, aggregates_pools, rows);
         }
         else
 #endif
         {
-            res = convertToBlockImplFinal<Method, false>(method, data, arena, aggregates_pools, rows);
+            res = convertToBlockImplFinal<Method, false, return_single_block>(method, data, arena, aggregates_pools, rows);
         }
     }
     else
     {
-        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows);
+        res = convertToBlockImplNotFinal<return_single_block>(method, data, aggregates_pools, rows);
     }
 
     /// In order to release memory early.
@@ -1789,8 +1788,8 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
 }
 
 
-template <typename Method, bool use_compiled_functions, typename Table>
-BlocksList NO_INLINE
+template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
+Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
 Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t rows) const
 {
     auto && out_cols = prepareOutputBlockColumns(aggregates_pools, /* final */ true, rows);
@@ -1913,8 +1912,9 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
     return {finalizeBlock(std::move(out_cols), /* final */ true, rows)};
 }
 
-template <typename Method, typename Table>
-BlocksList NO_INLINE Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const
+template <bool return_single_block, typename Method, typename Table>
+Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
+Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const
 {
     auto && out_cols = prepareOutputBlockColumns(aggregates_pools, /* final */ false, rows);
     auto && [key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
@@ -2167,14 +2167,16 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     return block;
 }
 
-BlocksList Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
+template <bool return_single_block>
+Aggregator::ConvertToBlockRes<return_single_block>
+Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
     // clang-format off
     const size_t rows = data_variants.sizeWithoutOverflowRow();
 #define M(NAME)                                                                                                                         \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME)                                                                  \
     {                                                                                                                                   \
-        return convertToBlockImpl(                                                                                                      \
+        return convertToBlockImpl<return_single_block>(                                                                                 \
             *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows); \
     }
 
@@ -2306,7 +2308,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     if (data_variants.type != AggregatedDataVariants::Type::without_key)
     {
         if (!data_variants.isTwoLevel())
-            blocks.emplace_back(prepareBlockAndFillSingleLevel(data_variants, final).front());
+            blocks.splice(blocks.end(), prepareBlockAndFillSingleLevel</* return_single_block */ false>(data_variants, final));
         else
             blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
     }
@@ -3075,7 +3077,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
         block = prepareBlockAndFillWithoutKey(result, final, is_overflows);
     else
-        block = prepareBlockAndFillSingleLevel(result, final).front();
+        block = prepareBlockAndFillSingleLevel</* return_single_block */ true>(result, final);
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
     if (!final)
