@@ -1,8 +1,9 @@
 #pragma once
 
-#include <mutex>
-#include <memory>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <type_traits>
 
 #include <Common/logger_useful.h>
 
@@ -1275,8 +1276,12 @@ private:
     void mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data) const;
 
-    template <typename Method, typename Table>
-    BlocksList convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows) const;
+    template <bool return_single_block>
+    using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
+
+    template <bool return_single_block, typename Method, typename Table>
+    ConvertToBlockRes<return_single_block>
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1284,11 +1289,13 @@ private:
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
-    template <typename Method, bool use_compiled_functions, typename Table>
-    BlocksList convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t rows) const;
+    template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
+    ConvertToBlockRes<return_single_block>
+    convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t rows) const;
 
-    template <typename Method, typename Table>
-    BlocksList convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const;
+    template <bool return_single_block, typename Method, typename Table>
+    ConvertToBlockRes<return_single_block>
+    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const;
 
     struct OutputBlockColumns
     {
@@ -1332,8 +1339,10 @@ private:
         std::atomic<bool> * is_cancelled = nullptr) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
-    BlocksList prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
+
+    template <bool return_single_block>
+    ConvertToBlockRes<return_single_block> prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <typename Method>
     BlocksList prepareBlocksAndFillTwoLevelImpl(
