@@ -14,7 +14,7 @@ sidebar_label: "\u6D4B\u8BD5\u786C\u4EF6"
 
 1. 下载脚本
 ```
-wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware.sh
+wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
 ```
 
 2. 运行脚本
