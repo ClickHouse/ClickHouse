@@ -29,7 +29,7 @@ void extractTargetVectorFromLiteral(ANN::ANNQueryInformation::Embedding & target
 {
     Float64 float_element_of_target_vector;
     Int64 int_element_of_target_vector;
-    
+
     for (const auto & value : literal.value())
     {
         if (value.tryGet(float_element_of_target_vector))
@@ -455,7 +455,7 @@ bool ANNCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
 }
 
 /* Matches dist function, target vector, column name */
-bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNQueryInformation & expr)
+bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ANNQueryInformation & expr)
 {
     bool identifier_found = false;
 
@@ -537,7 +537,7 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANN
 }
 
 // Gets float or int from AST node
-float ANNCondition::getFloatOrIntLiteralOrPanic(RPN::iterator& iter)
+float ANNCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
 {
     if (iter->float_literal.has_value())
     {
