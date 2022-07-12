@@ -86,9 +86,6 @@
 [submodule "contrib/h3"]
 	path = contrib/h3
 	url = https://github.com/ClickHouse/h3
-[submodule "contrib/hyperscan"]
-	path = contrib/hyperscan
-	url = https://github.com/ClickHouse/hyperscan.git
 [submodule "contrib/libunwind"]
 	path = contrib/libunwind
 	url = https://github.com/ClickHouse/libunwind.git
@@ -268,3 +265,15 @@
 [submodule "contrib/hashidsxx"]
 	path = contrib/hashidsxx
 	url = https://github.com/schoentoon/hashidsxx.git
+[submodule "contrib/nats-io"]
+	path = contrib/nats-io
+	url = https://github.com/ClickHouse/nats.c.git
+[submodule "contrib/vectorscan"]
+	path = contrib/vectorscan
+	url = https://github.com/VectorCamp/vectorscan.git
+[submodule "contrib/liburing"]
+	path = contrib/liburing
+	url = https://github.com/axboe/liburing.git
+[submodule "contrib/base-x"]
+	path = contrib/base-x
+	url = https://github.com/ClickHouse/base-x.git

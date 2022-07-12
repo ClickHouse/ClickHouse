@@ -92,6 +92,9 @@ public:
 
     CancellationCode killMutation(const String & mutation_id) override;
 
+    /// Makes backup entries to backup the data of the storage.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -251,7 +254,11 @@ private:
     /// return any ids.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr) const;
 
+    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
+
     void startBackgroundMovesIfNeeded() override;
+
+    BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
     void attachRestoredParts(MutableDataPartsVector && parts) override;

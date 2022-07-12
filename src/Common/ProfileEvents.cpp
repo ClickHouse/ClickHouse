@@ -92,6 +92,7 @@
     M(ZooKeeperSet, "") \
     M(ZooKeeperMulti, "") \
     M(ZooKeeperCheck, "") \
+    M(ZooKeeperSync, "") \
     M(ZooKeeperClose, "") \
     M(ZooKeeperWatchResponse, "") \
     M(ZooKeeperUserExceptions, "") \
@@ -343,7 +344,20 @@
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely") \
+    M(KeeperPacketsSent, "Packets sent by keeper server") \
+    M(KeeperPacketsReceived, "Packets received by keeper server") \
+    M(KeeperRequestTotal, "Total requests number on keeper server") \
+    M(KeeperLatency, "Keeper latency") \
+    M(KeeperCommits, "Number of successful commits") \
+    M(KeeperCommitsFailed, "Number of failed commits") \
+    M(KeeperSnapshotCreations, "Number of snapshots creations")\
+    M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations")\
+    M(KeeperSnapshotApplys, "Number of snapshot applying")\
+    M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
+    M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
+    M(KeeperSaveSnapshot, "Number of snapshot save")\
+
 
 namespace ProfileEvents
 {
