@@ -1,24 +1,26 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-QUERIES_FILE="queries.sql"
-TABLE=$1
-TRIES=3
+sudo apt-get update
+sudo apt-get install -y docker.io
 
-cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
-    sync
-    echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+sudo docker run -p 5433:5433 -p 5444:5444 --volume $(pwd):/workdir --mount type=volume,source=vertica-data,target=/data --name vertica_ce vertica/vertica-ce
 
-    echo -n "["
-    for i in $(seq 1 $TRIES); do
+sudo docker exec vertica_ce /opt/vertica/bin/vsql -U dbadmin -c "$(cat create.sql)"
 
-        RES=$((echo '\timing'; echo "$query") |
-            /opt/vertica/bin/vsql -U dbadmin |
-            grep -oP 'All rows formatted: [^ ]+ ms' |
-            ssed -R -e 's/^All rows formatted: ([\d,]+) ms$/\1/' |
-            tr ',' '.')
+wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+gzip -d hits.tsv.gz
 
-        [[ "$?" == "0" ]] && echo -n "$(perl -e "print ${RES} / 1000")" || echo -n "null"
-        [[ "$i" != $TRIES ]] && echo -n ", "
-    done
-    echo "],"
-done
+time sudo docker exec vertica_ce /opt/vertica/bin/vsql -U dbadmin -c "COPY hits FROM LOCAL '/workdir/hits.tsv' DELIMITER E'\\t' NULL E'\\001' DIRECT"
+
+sudo docker exec vertica_ce du -bcs /data/vertica/VMart
+
+./run.sh 2>&1 | tee log.txt
+
+# If you run the script on your own, you may get numbers like this:
+# 200m00.000s
+# 25000000000
+
+# Note: the real numbers cannot be published.
+
+grep -F 'All rows formatted' logs.txt | sed -r -e 's/^.* ([0-9.]+) ms$/\1/' |
+    awk '{ if (i % 3 == 0) { printf "[" }; printf $1 / 1000; if (i % 3 != 2) { printf "," } else { print "]," }; ++i; }'
