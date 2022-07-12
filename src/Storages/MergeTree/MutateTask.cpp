@@ -174,6 +174,15 @@ getColumnsForNewDataPart(
     /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
     {
+        if (command.type == MutationCommand::UPDATE)
+        {
+            for (const auto & [column_name, _] : command.column_to_update_expression)
+            {
+                if (column_name == "__row_exists" && !storage_columns.contains(column_name))
+                    storage_columns.emplace_back("__row_exists", std::make_shared<DataTypeUInt8>());
+            }
+        }
+
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
             continue;
@@ -1682,6 +1691,11 @@ bool MutateTask::prepare()
         need_mutate_all_columns = need_mutate_all_columns || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter->isAffectingAllColumns());
         if (!need_mutate_all_columns && ctx->source_part->hasLightweightDelete() && !ctx->is_lightweight_mutation)
             ctx->interpreter->setSkipDeletedMask(true);
+
+/////
+        ctx->interpreter->setSkipDeletedMask(true);
+/////
+
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);

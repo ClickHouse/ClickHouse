@@ -185,6 +185,7 @@ Pipe ReadFromMergeTree::readFromPool(
         storage_snapshot,
         prewhere_info,
         required_columns,
+        virt_column_names,
         backoff_settings,
         settings.preferred_block_size_bytes,
         false);

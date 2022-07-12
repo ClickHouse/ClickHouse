@@ -244,6 +244,8 @@ public:
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         std::map<const IColumn::Filter *, size_t> filter_bytes_map;
+
+        Names extra_columns_filled;
     };
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);

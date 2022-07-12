@@ -52,7 +52,7 @@ void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
         storage, storage_snapshot, data_part,
-        required_columns, prewhere_info, /*with_subcolumns=*/ true);
+        required_columns, non_const_virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -67,6 +67,12 @@ void MergeTreeSelectProcessor::initializeReaders()
         all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
 
     pre_reader_for_step.clear();
+
+    if (!reader_settings.skip_deleted_mask && data_part->getColumns().contains("__row_exists"))
+    {
+        pre_reader_for_step.push_back(data_part->getReader({{"__row_exists", std::make_shared<DataTypeUInt8>()}}, storage_snapshot->getMetadataForQuery(),
+            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {}));
+    }
 
     if (prewhere_info)
     {

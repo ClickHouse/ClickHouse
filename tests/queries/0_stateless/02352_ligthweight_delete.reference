@@ -1,0 +1,11 @@
+Rows in parts	10000000
+Count	10000000
+First row	0	10
+Delete 3M rows using light weight delete
+Rows in parts	10000000
+Count	7000000
+First row	3000000	10
+Force merge to cleanup deleted rows
+Rows in parts	7000000
+Count	7000000
+First row	3000000	10
