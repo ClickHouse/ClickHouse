@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -36,16 +37,26 @@ CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_,
         output_stream->distinct_columns.insert(key);
 }
 
-ProcessorPtr addGroupingSetForTotals(const Block & header, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
+ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
     auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
+    auto & index = dag->getIndex();
+
+    auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
+    for (const auto & key : keys)
+    {
+        const auto * node = dag->getIndex()[header.getPositionByName(key)];
+        if (node->result_type->canBeInsideNullable())
+        {
+            dag->addOrReplaceInIndex(dag->addFunction(to_nullable, { node }, node->result_name));
+        }
+    }
 
     auto grouping_col = ColumnUInt64::create(1, grouping_set_number);
     const auto * grouping_node = &dag->addColumn(
         {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 
     grouping_node = &dag->materializeNode(*grouping_node);
-    auto & index = dag->getIndex();
     index.insert(index.begin(), grouping_node);
 
     auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
@@ -59,7 +70,7 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
-            return addGroupingSetForTotals(header, settings, (UInt64(1) << keys_size) - 1);
+            return addGroupingSetForTotals(header, params.keys, settings, (UInt64(1) << keys_size) - 1);
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final);
         return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls);
