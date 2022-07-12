@@ -8,7 +8,7 @@ namespace DB {
 
     /*
      * Implements reverse DNS resolution using c-ares lib. System reverse DNS resolution via
-     * gethostbyaddr or getnameinfo does not work reliably as in some systems
+     * gethostbyaddr or getnameinfo does not work reliably because in some systems
      * it returns all PTR records for a given IP and in others it returns only one.
      * */
     class CaresPTRResolver : public DNSPTRResolver {
