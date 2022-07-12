@@ -39,7 +39,8 @@ static bool filterColumnIsNotAmongAggregatesArguments(const AggregateDescription
 }
 
 static size_t
-tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs, bool can_remove_filter = true)
+tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
+                    bool can_remove_filter = true, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
 
@@ -53,7 +54,10 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
 
     // std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
 
-    const auto & all_inputs = child->getInputStreams().front().header.getColumnsWithTypeAndName();
+    if (child_idx >= child->getInputStreams().size() || child_idx >= child_node->children.size())
+        return 0;
+
+    const auto & all_inputs = child->getInputStreams()[child_idx].header.getColumnsWithTypeAndName();
 
     auto split_filter = expression->cloneActionsForFilterPushDown(filter_column_name, removes_filter, allowed_inputs, all_inputs);
     if (!split_filter)
@@ -75,7 +79,8 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
     /// Expression/Filter -> Aggregating -> Something
     auto & node = nodes.emplace_back();
     node.children.emplace_back(&node);
-    std::swap(node.children[0], child_node->children[0]);
+
+    std::swap(node.children[0], child_node->children[child_idx]);
     /// Expression/Filter -> Aggregating -> Filter -> Something
 
     /// New filter column is the first one.
@@ -90,7 +95,9 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
     else
     {
         if (auto * join = typeid_cast<JoinStep *>(child.get()))
-            join->updateLeftStream(node.step->getOutputStream());
+        {
+            join->updateInputStream(node.step->getOutputStream(), child_idx);
+        }
         else
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "We are trying to push down a filter through a step for which we cannot update input stream");
@@ -208,34 +215,43 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * join = typeid_cast<JoinStep *>(child.get()))
     {
-        const auto & table_join  = join->getJoin()->getTableJoin();
-        /// Push down is for left table only. We need to update JoinStep for push down into right.
-        /// Only inner and left join are supported. Other types may generate default values for left table keys.
+        const auto & table_join = join->getJoin()->getTableJoin();
+        std::vector<ASTTableJoin::Kind> kinds = {ASTTableJoin::Kind::Left};
+
+        /// For not full sorting merge join push down is for left table only, because left and right streams are not independent.
+        /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
         /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-        if (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left)
+        if (join->allowPushDownToRight())
+            kinds.emplace_back(ASTTableJoin::Kind::Right);
+
+        for (const auto kind : kinds)
         {
-            const auto & left_header = join->getInputStreams().front().header;
-            const auto & res_header = join->getOutputStream().header;
-            Names allowed_keys;
-            const auto & source_columns = left_header.getNames();
-            for (const auto & name : source_columns)
+            if (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == kind)
             {
-                /// Skip key if it is renamed.
-                /// I don't know if it is possible. Just in case.
-                if (!left_header.has(name) || !res_header.has(name))
-                    continue;
+                const auto & streams = join->getInputStreams();
+                const auto & input_header = kind == ASTTableJoin::Kind::Left ? streams.front().header : streams.back().header;
+                const auto & res_header = join->getOutputStream().header;
+                Names allowed_keys;
+                const auto & source_columns = input_header.getNames();
+                for (const auto & name : source_columns)
+                {
+                    /// Skip key if it is renamed.
+                    /// I don't know if it is possible. Just in case.
+                    if (!input_header.has(name) || !res_header.has(name))
+                        continue;
 
-                /// Skip if type is changed. Push down expression expect equal types.
-                if (!left_header.getByName(name).type->equals(*res_header.getByName(name).type))
-                    continue;
+                    /// Skip if type is changed. Push down expression expect equal types.
+                    if (!input_header.getByName(name).type->equals(*res_header.getByName(name).type))
+                        continue;
 
-                allowed_keys.push_back(name);
+                    allowed_keys.push_back(name);
+                }
+
+                const bool can_remove_filter
+                    = std::find(source_columns.begin(), source_columns.end(), filter->getFilterColumnName()) == source_columns.end();
+                if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys, can_remove_filter, kind == ASTTableJoin::Kind::Left ? 0 : 1))
+                    return updated_steps;
             }
-
-            const bool can_remove_filter
-                = std::find(source_columns.begin(), source_columns.end(), filter->getFilterColumnName()) == source_columns.end();
-            if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys, can_remove_filter))
-                return updated_steps;
         }
     }
 
