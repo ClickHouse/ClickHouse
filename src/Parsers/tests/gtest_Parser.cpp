@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -290,5 +291,39 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        }
+})));
+
+INSTANTIATE_TEST_SUITE_P(ParserNumber, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserNumber>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "1_234_567",
+            "1234567"
+        },
+        {
+            "-0__1234__5678_",
+            "-12345678"
+        },
+        {
+            "1.234_567",
+            "1.234567"
+        },
+        {
+            "-1_234e-1",
+            "-123.4"
+        },
+        {
+            "0b0100_1001_0110",
+            "1174"
+        },
+        {
+            "0x1a2b_3c4d_5f00",
+            "28772997619456"
+        },
+        {
+            "123.000_1e3",
+            "123000.1"
         }
 })));
