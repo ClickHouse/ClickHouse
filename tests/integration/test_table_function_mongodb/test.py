@@ -49,20 +49,33 @@ def test_simple_select(started_cluster):
     node = started_cluster.instances["node"]
     for i in range(0, 100):
         node.query(
-            "INSERT INTO FUNCTION mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') (key, data) VALUES ({}, '{}')".format(i, hex(i * i))
+            "INSERT INTO FUNCTION mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') (key, data) VALUES ({}, '{}')".format(
+                i, hex(i * i)
+            )
         )
-    assert node.query("SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')") == "100\n"
     assert (
-        node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')")
+        node.query(
+            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
+        == "100\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
     assert (
-        node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String')")
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-        node.query("SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') where key = 42")
+        node.query(
+            "SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') where key = 42"
+        )
         == hex(42 * 42) + "\n"
     )
     simple_mongo_table.drop()
@@ -81,14 +94,23 @@ def test_complex_data_type(started_cluster):
 
     node = started_cluster.instances["node"]
 
-    assert node.query("SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')") == "100\n"
     assert (
-        node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')")
+        node.query(
+            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')"
+        )
+        == "100\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-        node.query("SELECT data from mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)') where key = 42")
+        node.query(
+            "SELECT data from mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)') where key = 42"
+        )
         == hex(42 * 42) + "\n"
     )
     incomplete_mongo_table.drop()
@@ -108,7 +130,9 @@ def test_incorrect_data_type(started_cluster):
     node = started_cluster.instances["node"]
 
     with pytest.raises(QueryRuntimeException):
-        node.query("SELECT aaaa FROM mongodb('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse', structure='key UInt64, data String')")
+        node.query(
+            "SELECT aaaa FROM mongodb('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
 
     strange_mongo_table.drop()
 
@@ -126,18 +150,29 @@ def test_secure_connection(started_cluster):
 
     node = started_cluster.instances["node"]
 
-    assert node.query("SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')") == "100\n"
     assert (
-        node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')")
+        node.query(
+            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')"
+        )
+        == "100\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
     assert (
-        node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String', 'ssl=true')")
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String', 'ssl=true')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-        node.query("SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true') where key = 42")
+        node.query(
+            "SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true') where key = 42"
+        )
         == hex(42 * 42) + "\n"
     )
     simple_mongo_table.drop()
@@ -155,7 +190,12 @@ def test_predefined_connection_configuration(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    assert node.query("SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')") == "100\n"
+    assert (
+        node.query(
+            "SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
+        == "100\n"
+    )
     simple_mongo_table.drop()
 
 
@@ -170,7 +210,12 @@ def test_no_credentials(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    assert node.query("SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', '', '', structure='key UInt64, data String')") == "100\n"
+    assert (
+        node.query(
+            "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', '', '', structure='key UInt64, data String')"
+        )
+        == "100\n"
+    )
     simple_mongo_table.drop()
 
 
@@ -197,9 +242,16 @@ def test_auth_source(started_cluster):
 
     node = started_cluster.instances["node"]
 
-    node.query_and_get_error("SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')")
+    node.query_and_get_error(
+        "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+    )
 
-    assert node.query("SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='authSource=admin')") == "100\n"
+    assert (
+        node.query(
+            "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='authSource=admin')"
+        )
+        == "100\n"
+    )
     simple_mongo_table.drop()
 
 
@@ -217,6 +269,8 @@ def test_missing_columns(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    result = node.query("SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data Nullable(String)') WHERE isNull(data)")
+    result = node.query(
+        "SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data Nullable(String)') WHERE isNull(data)"
+    )
     assert result == "10\n"
     simple_mongo_table.drop()
