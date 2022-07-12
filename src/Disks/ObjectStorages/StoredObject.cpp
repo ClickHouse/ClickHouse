@@ -49,13 +49,6 @@ StoredObject StoredObject::create(
         }
     };
 
-    /// if (metadata_storage->exists(object_path))
-    /// {
-    ///     object_size = metadata_storage->getFileSize(object_path);
-    ///     path_key_for_cache_creator =
-    ///         [path_key = path_key_for_cache_creator(object_path)](const String &) { return path_key; };
-    /// }
-
     return StoredObject(object_path, object_size, std::move(path_key_for_cache_creator));
 }
 
