@@ -92,7 +92,7 @@ RUN python3 -m pip install \
     requests-kerberos \
     pyhdfs \
     azure-storage-blob \
-    meilisearch 
+    meilisearch==0.18.3 
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

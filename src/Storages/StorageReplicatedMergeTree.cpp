@@ -146,7 +146,6 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
-    extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
     extern const int CANNOT_ASSIGN_ALTER;
@@ -1435,23 +1434,28 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 
         try
         {
-            zookeeper->multi(ops);
-            return transaction.commit();
-        }
-        catch (const zkutil::KeeperMultiException & e)
-        {
-            size_t num_check_ops = 2 * absent_part_paths_on_replicas.size();
-            size_t failed_op_index = e.failed_op_index;
+            Coordination::Responses responses;
+            Coordination::Error e = zookeeper->tryMulti(ops, responses);
+            if (e == Coordination::Error::ZOK)
+                return transaction.commit();
 
-            if (failed_op_index < num_check_ops && e.code == Coordination::Error::ZNODEEXISTS)
+            if (e == Coordination::Error::ZNODEEXISTS)
             {
-                LOG_INFO(log, "The part {} on a replica suddenly appeared, will recheck checksums", e.getPathForFirstFailedOp());
+                size_t num_check_ops = 2 * absent_part_paths_on_replicas.size();
+                size_t failed_op_index = zkutil::getFailedOpIndex(e, responses);
+                if (failed_op_index < num_check_ops)
+                {
+                    LOG_INFO(log, "The part {} on a replica suddenly appeared, will recheck checksums", ops[failed_op_index]->getPath());
+                    continue;
+                }
             }
-            else
-            {
-                unlockSharedData(*part);
-                throw;
-            }
+
+            throw zkutil::KeeperException(e);
+        }
+        catch (const std::exception &)
+        {
+            unlockSharedData(*part);
+            throw;
         }
     }
 }
@@ -5199,14 +5203,6 @@ StorageReplicatedMergeTree::allocateBlockNumber(
     else
         zookeeper_table_path = zookeeper_path_prefix;
 
-    /// Lets check for duplicates in advance, to avoid superfluous block numbers allocation
-    Coordination::Requests deduplication_check_ops;
-    if (!zookeeper_block_id_path.empty())
-    {
-        deduplication_check_ops.emplace_back(zkutil::makeCreateRequest(zookeeper_block_id_path, "", zkutil::CreateMode::Persistent));
-        deduplication_check_ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_block_id_path, -1));
-    }
-
     String block_numbers_path = fs::path(zookeeper_table_path) / "block_numbers";
     String partition_path = fs::path(block_numbers_path) / partition_id;
 
@@ -5225,26 +5221,8 @@ StorageReplicatedMergeTree::allocateBlockNumber(
             zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
-    EphemeralLockInZooKeeper lock;
-    /// 2 RTT
-    try
-    {
-        lock = EphemeralLockInZooKeeper(
-            fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *zookeeper, &deduplication_check_ops);
-    }
-    catch (const zkutil::KeeperMultiException & e)
-    {
-        if (e.code == Coordination::Error::ZNODEEXISTS && e.getPathForFirstFailedOp() == zookeeper_block_id_path)
-            return {};
-
-        throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
-    }
-    catch (const Coordination::Exception & e)
-    {
-        throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
-    }
-
-    return {std::move(lock)};
+    return createEphemeralLockInZooKeeper(
+        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *zookeeper, zookeeper_block_id_path);
 }
 
 
