@@ -935,7 +935,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
-    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
     fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
 
@@ -1023,10 +1023,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         {
             String file_path_in_backup = data_path_in_backup_fs / fileName(data_file.path);
             if (!backup->fileExists(file_path_in_backup))
-            {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
-                                getStorageID().getFullTableName(), file_path_in_backup);
-            }
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
+
             auto backup_entry = backup->readFile(file_path_in_backup);
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
@@ -1039,10 +1037,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             size_t num_extra_marks = 0;
             String file_path_in_backup = data_path_in_backup_fs / fileName(marks_file_path);
             if (!backup->fileExists(file_path_in_backup))
-            {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
-                                getStorageID().getFullTableName(), file_path_in_backup);
-            }
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
+
             size_t file_size = backup->getFileSize(file_path_in_backup);
             if (file_size % (num_data_files * sizeof(Mark)) != 0)
                 throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
