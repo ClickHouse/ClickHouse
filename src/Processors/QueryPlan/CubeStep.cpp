@@ -37,18 +37,21 @@ CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_,
         output_stream->distinct_columns.insert(key);
 }
 
-ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
+ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
     auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
     auto & index = dag->getIndex();
 
-    auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
-    for (const auto & key : keys)
+    if (use_nulls)
     {
-        const auto * node = dag->getIndex()[header.getPositionByName(key)];
-        if (node->result_type->canBeInsideNullable())
+        auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
+        for (const auto & key : keys)
         {
-            dag->addOrReplaceInIndex(dag->addFunction(to_nullable, { node }, node->result_name));
+            const auto * node = dag->getIndex()[header.getPositionByName(key)];
+            if (node->result_type->canBeInsideNullable())
+            {
+                dag->addOrReplaceInIndex(dag->addFunction(to_nullable, { node }, node->result_name));
+            }
         }
     }
 
@@ -70,7 +73,7 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
-            return addGroupingSetForTotals(header, params.keys, settings, (UInt64(1) << keys_size) - 1);
+            return addGroupingSetForTotals(header, params.keys, use_nulls, settings, (UInt64(1) << keys_size) - 1);
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final);
         return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls);
