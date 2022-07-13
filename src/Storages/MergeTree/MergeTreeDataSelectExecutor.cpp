@@ -1470,6 +1470,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         // Do exclusion search, where we drop ranges that do not match
 
+        if (settings.merge_tree_coarse_index_granularity <= 1)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Setting merge_tree_coarse_index_granularity should be greater than 1");
+
         size_t min_marks_for_seek = roundRowsOrBytesToMarks(
             settings.merge_tree_min_rows_for_seek,
             settings.merge_tree_min_bytes_for_seek,
