@@ -11,6 +11,9 @@ import time
 def get_options(i, backward_compatibility_check):
     options = []
     client_options = []
+
+    options.append("--randomize-merge-tree-settings")
+
     if 0 < i:
         options.append("--order=random")
 
