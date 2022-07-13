@@ -90,7 +90,7 @@ public:
 
     void finalize(const String & reason) override;
 
-    Coordination::KeeperApiVersion getApiVersion() override 
+    Coordination::KeeperApiVersion getApiVersion() override
     {
         return KeeperApiVersion::V0;
     }
