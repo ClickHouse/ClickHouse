@@ -535,7 +535,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
-    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
     fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
 
@@ -617,10 +617,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         {
             String file_path_in_backup = data_path_in_backup_fs / fileName(data_file_path);
             if (!backup->fileExists(file_path_in_backup))
-            {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
-                                getStorageID().getFullTableName(), file_path_in_backup);
-            }
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
+
             auto backup_entry = backup->readFile(file_path_in_backup);
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
@@ -632,10 +630,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             String index_path_in_backup = data_path_in_backup_fs / fileName(index_file_path);
             IndexForNativeFormat extra_indices;
             if (!backup->fileExists(index_path_in_backup))
-            {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: File {} in backup is required",
-                                getStorageID().getFullTableName(), index_path_in_backup);
-            }
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_path_in_backup);
+
             auto backup_entry = backup->readFile(index_path_in_backup);
             auto index_in = backup_entry->getReadBuffer();
             CompressedReadBuffer index_compressed_in{*index_in};
