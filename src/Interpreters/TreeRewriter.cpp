@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <memory>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
@@ -26,7 +27,9 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/RewriteOrderByVisitor.hpp>
 
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -634,9 +637,8 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
     }
     else
     {
-        if (table_join.strictness == ASTTableJoin::Strictness::Any)
-            if (table_join.kind == ASTTableJoin::Kind::Full)
-                throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+        if (table_join.strictness == ASTTableJoin::Strictness::Any && table_join.kind == ASTTableJoin::Kind::Full)
+            throw Exception("ANY FULL JOINs are not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     out_table_join = table_join;
@@ -1325,6 +1327,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             !select_query->groupBy() && !select_query->having() &&
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
+
+    // remove outer braces in order by
+    RewriteOrderByVisitor::Data data;
+    RewriteOrderByVisitor(data).visit(query);
 
     return std::make_shared<const TreeRewriterResult>(result);
 }

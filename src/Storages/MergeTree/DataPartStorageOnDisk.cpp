@@ -268,14 +268,49 @@ void DataPartStorageOnDisk::remove(
 
     // Record existing projection directories so we don't remove them twice
     std::unordered_set<String> projection_directories;
+    std::string proj_suffix = ".proj";
     for (const auto & projection : projections)
     {
-        std::string proj_dir_name = projection.name + ".proj";
+        std::string proj_dir_name = projection.name + proj_suffix;
         projection_directories.emplace(proj_dir_name);
 
         clearDirectory(
             fs::path(to) / proj_dir_name,
             can_remove_shared_data, names_not_to_remove, projection.checksums, {}, log, true);
+    }
+
+    /// It is possible that we are removing the part which have a written but not loaded projection.
+    /// Such a part can appear server was restarted after DROP PROJECTION but before old part was removed.
+    /// In this case, the old part will load only projections from metadata.
+    /// See test 01701_clear_projection_and_part.
+    for (const auto & [name, _] : checksums.files)
+    {
+        if (endsWith(name, proj_suffix) && !projection_directories.contains(name) && disk->isDirectory(fs::path(to) / name))
+        {
+
+            /// If we have a directory with suffix '.proj' it is likely a projection.
+            /// Try to load checksums for it (to avoid recursive removing fallback).
+            std::string checksum_path = fs::path(to) / name / "checksums.txt";
+            if (disk->exists(checksum_path))
+            {
+                try
+                {
+                    MergeTreeDataPartChecksums tmp_checksums;
+                    auto in = disk->readFile(checksum_path, {});
+                    tmp_checksums.read(*in);
+
+                    projection_directories.emplace(name);
+
+                    clearDirectory(
+                        fs::path(to) / name,
+                        can_remove_shared_data, names_not_to_remove, tmp_checksums, {}, log, true);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Cannot load checksums from {}", checksum_path);
+                }
+            }
+        }
     }
 
     clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, log, false);
@@ -343,7 +378,6 @@ void DataPartStorageOnDisk::clearDirectory(
         /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
-
         disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
     }
 }
@@ -628,7 +662,7 @@ void DataPartStorageOnDisk::backup(
     auto disk = volume->getDisk();
     auto temp_dir_it = temp_dirs.find(disk);
     if (temp_dir_it == temp_dirs.end())
-        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup/")).first;
+        temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
     auto temp_dir_owner = temp_dir_it->second;
     fs::path temp_dir = temp_dir_owner->getPath();
     fs::path temp_part_dir = temp_dir / part_path_in_backup.relative_path();
@@ -637,11 +671,11 @@ void DataPartStorageOnDisk::backup(
     /// For example,
     /// part_path_in_backup = /data/test/table/0_1_1_0
     /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0
-    /// tmp_part_dir = tmp/backup/1aaaaaa/data/test/table/0_1_1_0
+    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0
     /// Or, for projections:
     /// part_path_in_backup = /data/test/table/0_1_1_0/prjmax.proj
     /// part_path_on_disk = store/f57/f5728353-44bb-4575-85e8-28deb893657a/0_1_1_0/prjmax.proj
-    /// tmp_part_dir = tmp/backup/1aaaaaa/data/test/table/0_1_1_0/prjmax.proj
+    /// tmp_part_dir = tmp/1aaaaaa/data/test/table/0_1_1_0/prjmax.proj
 
     for (const auto & [filepath, checksum] : checksums.files)
     {
@@ -861,7 +895,6 @@ std::string DataPartStorageBuilderOnDisk::getRelativePath() const
 
 void DataPartStorageBuilderOnDisk::createDirectories()
 {
-    LOG_INFO(&Poco::Logger::get("DEBUG"), "CREATING DIRECTORY {}", (fs::path(root_path) / part_dir).string());
     transaction->createDirectories(fs::path(root_path) / part_dir);
 }
 
