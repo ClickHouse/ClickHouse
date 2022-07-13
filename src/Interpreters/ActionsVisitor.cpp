@@ -963,40 +963,24 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // Don't need to do anything more for window functions here -- the
         // resulting column is added in ExpressionAnalyzer, similar to the
         // aggregate functions.
-        if (data.window_dependancy_state == WindowDependancyState::MAY_DEPEND)
-            data.window_function_in_subtree = true;
         return;
     }
     else if (node.compute_after_window_functions)
     {
-        // In this case we have window function call in subtree
-        // Add this function to actions index only if Data::build_expression_with_window_functions is set.
-        data.window_dependancy_state = WindowDependancyState::MAY_DEPEND;
-        for (const auto & arg : node.arguments->children)
-        {
-            data.window_function_in_subtree = false;
-            visit(arg, data);
-            // There is no point to check value of window_function_in_subtree here,
-            // because after window functions are computed, this variable is always false.
-        }
-        data.window_dependancy_state = WindowDependancyState::NONE;
         if (!data.build_expression_with_window_functions)
-            return;
-    }
-    else if (data.window_dependancy_state == WindowDependancyState::MAY_DEPEND)
-    {
-        // This function may depend on evaluation of window function.
-        // We need to check it and add it to the index only if Data::build_expression_with_window_functions is set.
-        bool subtree_contains_window_call = false;
-        for (const auto & arg : node.arguments->children)
         {
-            data.window_function_in_subtree = false;
-            visit(arg, data);
-            subtree_contains_window_call = subtree_contains_window_call || data.window_function_in_subtree;
-        }
-        data.window_function_in_subtree = subtree_contains_window_call;
-        if (subtree_contains_window_call && !data.build_expression_with_window_functions)
+            for (const auto & arg : node.arguments->children)
+            {
+                if (auto const * function = arg->as<ASTFunction>();
+                    function && function->name == "lambda")
+                {
+                    // Lambda function is a special case. It shouldn't be visited here.
+                    continue;
+                }
+                visit(arg, data);
+            }
             return;
+        }
     }
 
     // An aggregate function can also be calculated as a window function, but we
