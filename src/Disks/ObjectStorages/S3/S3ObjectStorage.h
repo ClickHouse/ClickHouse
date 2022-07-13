@@ -81,12 +81,18 @@ public:
     void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     /// Remove file. Throws exception if file doesn't exist or it's a directory.
+    /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
 
+    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
+    /// `DeleteObjectsRequest` is not supported on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjects(const StoredObjects & objects) override;
 
+    /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
+    /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
+    /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
@@ -116,6 +122,8 @@ public:
     std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return true; }
+
+    void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
@@ -153,7 +161,7 @@ private:
 
     MultiVersion<Aws::S3::S3Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
-    const S3Capabilities s3_capabilities;
+    S3Capabilities s3_capabilities;
 
     const String version_id;
 };

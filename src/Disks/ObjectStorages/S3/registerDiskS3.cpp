@@ -10,9 +10,9 @@
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
+
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
-
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
@@ -22,9 +22,8 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromRemoteDisk.h>
 
-#include <IO/S3Common.h>
-
 #include <Storages/StorageS3Settings.h>
+
 
 namespace DB
 {
@@ -47,6 +46,8 @@ void checkWriteAccess(IDisk & disk)
     }
     catch (...)
     {
+        /// Log current exception, because finalize() can throw a different exception.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         file->finalize();
         throw;
     }
@@ -61,7 +62,49 @@ void checkReadAccess(const String & disk_name, IDisk & disk)
         throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
 }
 
-void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
+void checkRemoveAccess(IDisk & disk)
+{
+    disk.removeFile("test_acl");
+}
+
+bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_with_trailing_slash)
+{
+    const String path = key_with_trailing_slash + "_test_remove_objects_capability";
+    try
+    {
+        auto file = storage.writeObject(path, WriteMode::Rewrite);
+        file->write("test", 4);
+        file->finalize();
+    }
+    catch (...)
+    {
+        try
+        {
+            storage.removeObject(path);
+        }
+        catch (...)
+        {
+        }
+        return false; /// We don't have write access, therefore no information about batch remove.
+    }
+    try
+    {
+        /// Uses `DeleteObjects` request (batch delete).
+        storage.removeObjects({{ path, 0 }});
+        return false;
+    }
+    catch (const Exception &)
+    {
+        try
+        {
+            storage.removeObject(path);
+        }
+        catch (...)
+        {
+        }
+        return true;
+    }
+}
 
 }
 
@@ -85,10 +128,28 @@ void registerDiskS3(DiskFactory & factory)
         auto metadata_storage = std::make_shared<MetadataStorageFromRemoteDisk>(metadata_disk, uri.key);
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
 
-        ObjectStoragePtr s3_storage = std::make_unique<S3ObjectStorage>(
+        auto s3_storage = std::make_unique<S3ObjectStorage>(
             getClient(config, config_prefix, context),
             getSettings(config, config_prefix, context),
             uri.version_id, s3_capabilities, uri.bucket);
+
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
+
+        if (!skip_access_check)
+        {
+            /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
+            if (s3_capabilities.support_batch_delete && checkBatchRemoveIsMissing(*s3_storage, uri.key))
+            {
+                LOG_WARNING(
+                    &Poco::Logger::get("registerDiskS3"),
+                    "Storage for disk {} does not support batch delete operations, "
+                    "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
+                    "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
+                    name
+                );
+                s3_storage->setCapabilitiesSupportBatchDelete(false);
+            }
+        }
 
         bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
@@ -104,7 +165,7 @@ void registerDiskS3(DiskFactory & factory)
             copy_thread_pool_size);
 
         /// This code is used only to check access to the corresponding disk.
-        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        if (!skip_access_check)
         {
             checkWriteAccess(*s3disk);
             checkReadAccess(name, *s3disk);

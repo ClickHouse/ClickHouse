@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <base/sort.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -504,12 +505,18 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
 void StorageMergeTree::waitForMutation(Int64 version)
 {
-    waitForMutation(MergeTreeMutationEntry::versionToFileName(version));
+    String mutation_id = MergeTreeMutationEntry::versionToFileName(version);
+    waitForMutation(version, mutation_id);
 }
 
 void StorageMergeTree::waitForMutation(const String & mutation_id)
 {
-    UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
+    Int64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
+    waitForMutation(version, mutation_id);
+}
+
+void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id)
+{
     LOG_INFO(log, "Waiting mutation: {}", mutation_id);
     {
         auto check = [version, this]()
@@ -1798,6 +1805,35 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         }
     }
     return results;
+}
+
+
+void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    auto local_context = backup_entries_collector.getContext();
+
+    DataPartsVector data_parts;
+    if (partitions)
+        data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
+    else
+        data_parts = getVisibleDataPartsVector(local_context);
+
+    Int64 min_data_version = std::numeric_limits<Int64>::max();
+    for (const auto & data_part : data_parts)
+        min_data_version = std::min(min_data_version, data_part->info.getDataVersion());
+
+    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup));
+    backup_entries_collector.addBackupEntries(backupMutations(min_data_version + 1, data_path_in_backup));
+}
+
+
+BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & data_path_in_backup) const
+{
+    fs::path mutations_path_in_backup = fs::path{data_path_in_backup} / "mutations";
+    BackupEntries backup_entries;
+    for (auto it = current_mutations_by_version.lower_bound(version); it != current_mutations_by_version.end(); ++it)
+        backup_entries.emplace_back(mutations_path_in_backup / fmt::format("{:010}.txt", it->first), it->second.backup());
+    return backup_entries;
 }
 
 
