@@ -13,26 +13,28 @@ CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from
 
 mkdir -p ${CLICKHOUSE_USER_FILES_PATH}/
 
-rm -rf ${CLICKHOUSE_USER_FILES_PATH}/file_{0..10}.json
+rm -rf ${CLICKHOUSE_USER_FILES_PATH}/file_{0..10}.csv
 
-echo '{"obj": "aaa", "id": 1, "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_0.json
-echo '{"id": 2, "obj": "bbb", "s": "bar"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_1.json
-echo '{"id": 3, "obj": "ccc", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_2.json
-echo '{"id": 4, "obj": "ddd", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_3.json
-echo '{"id": 5, "obj": "eee", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_4.json
-echo '{"id": 6, "obj": "fff", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_5.json
-echo '{"id": 7, "obj": "ggg", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_6.json
-echo '{"id": 8, "obj": "hhh", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_7.json
-echo '{"id": 9, "obj": "iii", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_8.json
-echo '{"id": 10, "obj":"jjj", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_9.json
-echo '{"id": 11, "obj": "kkk", "s": "foo"}' > ${CLICKHOUSE_USER_FILES_PATH}/file_10.json
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_0.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_1.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_2.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_3.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_4.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_5.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_6.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_7.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_8.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_9.csv
+echo '0' > ${CLICKHOUSE_USER_FILES_PATH}/file_10.csv
+
+# echo '' > ${CLICKHOUSE_USER_FILES_PATH}/file_10.csv
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_regex;"
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_regex (id UInt64, obj String, s String) ENGINE = MergeTree() order by id;"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_regex (id UInt64) ENGINE = MergeTree() order by id;"
 
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_regex SELECT * FROM file('file_{0..10}.json','JSONEachRow');"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_regex SELECT * FROM file('file_{0..10}.csv','CSV');"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() from t_regex;"
 
-rm -rf ${CLICKHOUSE_USER_FILES_PATH}/file_{0..10}.json;
+rm -rf ${CLICKHOUSE_USER_FILES_PATH}/file_{0..10}.csv;
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_regex;"
