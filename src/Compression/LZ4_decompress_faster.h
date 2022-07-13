@@ -106,17 +106,17 @@ struct PerformanceStatistics
 
     /// To select from different algorithms we use a kind of "bandits" algorithm.
     /// Sample random values from estimated normal distributions and choose the minimal.
-    size_t select()
+    size_t select(size_t max_method = NUM_ELEMENTS)
     {
         if (choose_method < 0)
         {
-            double samples[NUM_ELEMENTS];
-            for (size_t i = 0; i < NUM_ELEMENTS; ++i)
+            double samples[max_method];
+            for (size_t i = 0; i < max_method; ++i)
                 samples[i] = choose_method == -1
                     ? data[i].sample(rng)
                     : data[i].adjustedCount();
 
-            return std::min_element(samples, samples + NUM_ELEMENTS) - samples;
+            return std::min_element(samples, samples + max_method) - samples;
         }
         else
             return choose_method;
