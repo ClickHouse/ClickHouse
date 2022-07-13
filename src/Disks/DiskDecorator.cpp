@@ -163,7 +163,7 @@ void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
 
 void DiskDecorator::removeSharedFileIfExists(const String & path, bool keep_s3)
 {
-    delegate->removeSharedFile(path, keep_s3);
+    delegate->removeSharedFileIfExists(path, keep_s3);
 }
 
 void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
@@ -236,9 +236,9 @@ void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & c
     delegate->applyNewSettings(config, context, config_prefix, map);
 }
 
-DiskObjectStoragePtr DiskDecorator::getObjectStorage(const String & name)
+DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage(const String & name)
 {
-    return delegate->getObjectStorage(name);
+    return delegate->createDiskObjectStorage(name);
 }
 
 }

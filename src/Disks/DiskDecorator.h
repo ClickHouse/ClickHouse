@@ -81,12 +81,15 @@ public:
     void shutdown() override;
     void startup(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
-    bool isCached() const override { return delegate->isCached(); }
-    DiskObjectStoragePtr getObjectStorage(const String &) override;
-    const std::unordered_set<String> & getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
+
+    bool supportsCache() const override { return delegate->supportsCache(); }
     const String & getCacheBasePath() const override { return delegate->getCacheBasePath(); }
+
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
-    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
+
+    DiskObjectStoragePtr createDiskObjectStorage(const String &) override;
+    const std::unordered_set<String> & getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
 

@@ -53,7 +53,10 @@ public:
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
-    {}
+    {
+    }
+
+    std::string getName() const override { return "S3ObjectStorage"; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -80,7 +83,6 @@ public:
 
     void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
-    /// Remove file. Throws exception if file doesn't exist or it's a directory.
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
 

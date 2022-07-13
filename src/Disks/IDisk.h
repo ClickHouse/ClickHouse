@@ -220,7 +220,7 @@ public:
 
     virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
-    virtual bool isCached() const { return false; }
+    virtual bool supportsCache() const { return false; }
 
     virtual const std::unordered_set<String> & getCacheLayersNames() const
     {
@@ -232,17 +232,18 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getWrappedDisk()` is not implemented for disk: {}", getType());
     }
 
-    /// Returns a list of paths because for Log family engines there might be
-    /// multiple files in remote fs for single clickhouse file.
+    /// Returns a list of storage objects (contains path, size, ...).
+    /// (A list is returned because for Log family engines there might
+    /// be multiple files in remote fs for single clickhouse file.
     virtual StoredObjects getStorageObjects(const String &) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getType());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    using LocalPathWithRemotePaths = std::pair<String, StoredObjects>;
+    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
 
-    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &)
+    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
     }
@@ -350,9 +351,12 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual DiskObjectStoragePtr getObjectStorage(const String &)
+    virtual DiskObjectStoragePtr createDiskObjectStorage(const String &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getObjectStorage() is not implemented for disk type: {}", getType());
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method createDiskObjectStorage() is not implemented for disk type: {}",
+            getType());
     }
 
 protected:

@@ -63,7 +63,7 @@ void CachedObjectStorage::startup()
 
 bool CachedObjectStorage::exists(const StoredObject & object) const
 {
-    fs::path cache_path = getCachePath(object.getCacheHint());
+    fs::path cache_path = getCachePath(object.getPathKeyForCache());
 
     if (fs::exists(cache_path) && !cache_path.empty())
         return true;
@@ -77,6 +77,8 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    assert(!objects[0].getPathKeyForCache().empty());
+
     auto modified_read_settings = getReadSettingsForCache(read_settings);
     auto impl = object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
 
@@ -101,8 +103,8 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
         if (objects.size() != 1)
             throw Exception(ErrorCodes::CANNOT_USE_CACHE, "Unable to read multiple objects, support not added");
 
-        std::string path = objects[0].path;
-        IFileCache::Key key = getCacheKey(objects[0].getCacheHint());
+        std::string path = objects[0].absolute_path;
+        IFileCache::Key key = getCacheKey(objects[0].getPathKeyForCache());
 
         return std::make_unique<CachedReadBufferFromFile>(
             path,
@@ -144,10 +146,10 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             return std::make_unique<BoundedReadBuffer>(std::move(implementation_buffer));
         };
 
-        IFileCache::Key key = getCacheKey(object.getCacheHint());
-        LOG_TEST(log, "Reading from file `{}` with cache key `{}`", object.path, key.toString());
+        IFileCache::Key key = getCacheKey(object.getPathKeyForCache());
+        LOG_TEST(log, "Reading from file `{}` with cache key `{}`", object.absolute_path, key.toString());
         return std::make_unique<CachedReadBufferFromFile>(
-            object.path,
+            object.absolute_path,
             key,
             cache,
             implementation_buffer_creator,
@@ -170,17 +172,17 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
 {
     auto impl = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, write_settings);
 
-    bool cache_on_write = fs::path(object.path).extension() != ".tmp"
+    bool cache_on_write = fs::path(object.absolute_path).extension() != ".tmp"
         && write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations;
 
-    auto cache_hint = object.getCacheHint();
+    auto cache_hint = object.getPathKeyForCache();
     removeCacheIfExists(cache_hint);
 
     if (cache_on_write)
     {
         auto key = getCacheKey(cache_hint);
-        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.path, getCachePath(cache_hint), key.toString());
+        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(cache_hint), key.toString());
 
         return std::make_unique<CachedWriteBufferFromFile>(
             std::move(impl),
@@ -197,6 +199,10 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
 
 void CachedObjectStorage::removeCacheIfExists(const std::string & cache_hint)
 {
+    LOG_TRACE(log, "KSSENII {} : {}", getName(), cache_hint);
+    if (cache_hint.empty())
+        return;
+
     IFileCache::Key key;
     try
     {
@@ -213,28 +219,28 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & cache_hint)
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
 {
-    removeCacheIfExists(object.getCacheHint());
+    removeCacheIfExists(object.getPathKeyForCache());
     object_storage->removeObject(object);
 }
 
 void CachedObjectStorage::removeObjects(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.getCacheHint());
+        removeCacheIfExists(object.getPathKeyForCache());
 
     object_storage->removeObjects(objects);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeCacheIfExists(object.getCacheHint());
+    removeCacheIfExists(object.getPathKeyForCache());
     object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.getCacheHint());
+        removeCacheIfExists(object.getPathKeyForCache());
 
     object_storage->removeObjectsIfExist(objects);
 }

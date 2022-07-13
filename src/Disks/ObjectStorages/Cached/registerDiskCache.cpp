@@ -42,7 +42,7 @@ void registerDiskCache(DiskFactory & factory)
             fs::create_directories(cache_base_path);
 
         auto disk = disk_it->second;
-        auto object_storage = disk->getObjectStorage(disk_name);
+        auto object_storage = disk->createDiskObjectStorage(disk_name);
 
         auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
         object_storage->wrapWithCache(cache, name);

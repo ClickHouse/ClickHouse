@@ -36,7 +36,7 @@ public:
         ObjectStoragePtr object_storage_,
         DiskType disk_type_,
         bool send_metadata_,
-        uint64_t thread_pool_size);
+        uint64_t thread_pool_size_);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -53,7 +53,7 @@ public:
 
     StoredObjects getStorageObjects(const String & local_path) const override;
 
-    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
     const std::string & getCacheBasePath() const override
     {
@@ -105,7 +105,6 @@ public:
 
     String getUniqueId(const String & path) const override;
 
-    bool checkObjectExists(const String & path) const;
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
@@ -165,9 +164,9 @@ public:
 
     UInt64 getRevision() const override;
 
-    DiskObjectStoragePtr getObjectStorage(const String & name_) override;
+    DiskObjectStoragePtr createDiskObjectStorage(const String & name_) override;
 
-    bool isCached() const override;
+    bool supportsCache() const override;
 
     void wrapWithCache(FileCachePtr cache, const String & layer_name);
 

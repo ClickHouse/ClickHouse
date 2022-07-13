@@ -17,6 +17,8 @@ class LocalObjectStorage : public IObjectStorage
 public:
     LocalObjectStorage();
 
+    std::string getName() const override { return "LocalObjectStorage"; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -77,6 +79,8 @@ public:
     bool supportsAppend() const override { return true; }
 
     std::string generateBlobNameForPath(const std::string & path) override { return path; }
+
+    std::string getUniqueId(const std::string & path) const override;
 
     bool isRemote() const override { return false; }
 

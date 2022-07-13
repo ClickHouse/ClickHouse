@@ -176,7 +176,7 @@ public:
 
     StoredObjects getStorageObjects(const String &) const override { return {}; }
 
-    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &) override {}
 
     /// Create part
 

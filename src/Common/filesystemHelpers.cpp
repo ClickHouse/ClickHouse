@@ -242,7 +242,7 @@ int getINodeNumberFromPath(const String & path)
     return file_stat.st_ino;
 }
 
-std::optional<size_t> getFileSizeIfPossible(const String & path)
+std::optional<size_t> tryGetSizeFromFilePath(const String & path)
 {
     std::error_code ec;
 

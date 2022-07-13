@@ -1,18 +1,26 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransaction.h>
-#include <Disks/ObjectStorages/MetadataStorageFromLocalDisk.h>
+#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 
 
 namespace DB
 {
 
-class MetadataStorageFromLocalDisk : public IMetadataStorage
+class FakeMetadataStorageFromDisk final : public IMetadataStorage
 {
+private:
+    friend class FakeMetadataStorageFromDiskTransaction;
+
+    mutable std::shared_mutex metadata_mutex;
+
+    DiskPtr disk;
+    ObjectStoragePtr object_storage;
+    std::string object_storage_root_path;
 
 public:
-    explicit MetadataStorageFromLocalDisk(
+    FakeMetadataStorageFromDisk(
         DiskPtr disk_,
         ObjectStoragePtr object_storage_,
         const std::string & object_storage_root_path_);
@@ -43,28 +51,38 @@ public:
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 
-    DiskPtr getDisk() const override { return disk; }
+    DiskPtr getDisk() const { return disk; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
 
-    StoredObject createStorageObject(const std::string & blob_name) const override;
-
-private:
-    DiskPtr disk;
-    ObjectStoragePtr object_storage;
-    std::string object_storage_root_path;
+    std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
 };
 
-class MetadataStorageFromLocalDiskTransaction final : public MetadataStorageFromDiskTransaction
+class FakeMetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
     DiskPtr disk;
+    const FakeMetadataStorageFromDisk & metadata_storage;
+
+    std::vector<MetadataOperationPtr> operations;
+    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
+
+    void addOperation(MetadataOperationPtr && operation);
+
+    void rollback(size_t until_pos);
 
 public:
-    explicit MetadataStorageFromLocalDiskTransaction(const MetadataStorageFromLocalDisk & metadata_storage_, DiskPtr disk_)
-        : MetadataStorageFromDiskTransaction(metadata_storage_)
-        , disk(disk_)
+    FakeMetadataStorageFromDiskTransaction(
+        const FakeMetadataStorageFromDisk & metadata_storage_, DiskPtr disk_)
+        : disk(disk_)
+        , metadata_storage(metadata_storage_)
     {}
+
+    ~FakeMetadataStorageFromDiskTransaction() override = default;
+
+    const IMetadataStorage & getStorageForNonTransactionalReads() const final;
+
+    void commit() final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
@@ -82,7 +100,7 @@ public:
 
     void createDirectory(const std::string & path) override;
 
-    void createDicrectoryRecursive(const std::string & path) override;
+    void createDirectoryRecursive(const std::string & path) override;
 
     void removeDirectory(const std::string & path) override;
 

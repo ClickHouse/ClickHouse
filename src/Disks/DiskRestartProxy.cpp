@@ -324,7 +324,8 @@ StoredObjects DiskRestartProxy::getStorageObjects(const String & path) const
     return DiskDecorator::getStorageObjects(path);
 }
 
-void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+void DiskRestartProxy::getRemotePathsRecursive(
+    const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
     ReadLock lock (mutex);
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
