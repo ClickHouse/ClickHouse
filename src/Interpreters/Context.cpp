@@ -3476,6 +3476,8 @@ WriteSettings Context::getWriteSettings() const
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
 
+    res.throttler = getRemoteWriteThrottler();
+
     return res;
 }
 

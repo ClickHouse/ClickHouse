@@ -588,7 +588,7 @@ public:
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 threadPoolCallbackRunner(IOThreadPool::get()),
-                WriteSettings{.throttler = context->getRemoteWriteThrottler()}),
+                context->getWriteSettings()),
             compression_method,
             3);
         writer

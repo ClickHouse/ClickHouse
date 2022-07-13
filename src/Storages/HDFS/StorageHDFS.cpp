@@ -418,7 +418,7 @@ public:
                 uri,
                 context->getGlobalContext()->getConfigRef(),
                 context->getSettingsRef().hdfs_replication,
-                WriteSettings{.throttler = context->getRemoteWriteThrottler()}),
+                context->getWriteSettings()),
             compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
