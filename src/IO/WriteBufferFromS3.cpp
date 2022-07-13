@@ -124,8 +124,9 @@ void WriteBufferFromS3::nextImpl()
     }
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
-
     last_part_size += offset();
+    if (write_settings.throttler)
+        write_settings.throttler->add(offset());
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
     if (multipart_upload_id.empty() && last_part_size > s3_settings.max_single_part_upload_size)
@@ -334,8 +335,6 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 {
     auto outcome = client_ptr->UploadPart(task.req);
-    if (write_settings.throttler)
-        write_settings.throttler->add(bytes);
 
     if (outcome.IsSuccess())
     {
@@ -465,11 +464,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
-    size_t bytes = task.req.GetContentLength();
     auto outcome = client_ptr->PutObject(task.req);
-    if (write_settings.throttler)
-        write_settings.throttler->add(bytes);
-
     bool with_pool = static_cast<bool>(schedule);
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
