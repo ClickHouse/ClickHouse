@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_INDEX;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
+    extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
@@ -104,7 +104,7 @@ public:
 
             if (count_arrays != default_argument_count_arrays)
             {
-                throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED, "Dimension of types mismatched between first argument and third argument. Dimension of 1st argument: {}. Dimension of 3rd argument: {}.",count_arrays, default_argument_count_arrays);
+                throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATCHED, "Dimension of types mismatched between first argument and third argument. Dimension of 1st argument: {}. Dimension of 3rd argument: {}.",count_arrays, default_argument_count_arrays);
             }
             return arguments[2].type;
         }
