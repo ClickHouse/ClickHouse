@@ -119,7 +119,7 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    static void forceWaitAndProcessResult(RaftAppendResult & result);
+    static void forceWaitAndProcessResult(RaftResult & result);
 
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`

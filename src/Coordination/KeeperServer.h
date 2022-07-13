@@ -13,7 +13,7 @@
 namespace DB
 {
 
-using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
+using RaftResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
 class KeeperServer
 {
@@ -80,7 +80,7 @@ public:
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
-    RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
+    RaftResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
@@ -123,7 +123,7 @@ public:
         bool operator==(const NodeInfo &) const = default;
     };
 
-    RaftAppendResult getLeaderInfo();
+    RaftResult getLeaderInfo();
     NodeInfo getNodeInfo();
 
     /// Get configuration diff between current configuration in RAFT and in XML file
@@ -141,15 +141,15 @@ public:
 }
 namespace std
 {
-  template <>
-  struct hash<DB::KeeperServer::NodeInfo>
-  {
-    size_t operator()(const DB::KeeperServer::NodeInfo & info) const
+    template <>
+    struct hash<DB::KeeperServer::NodeInfo>
     {
-        SipHash hash_state;
-        hash_state.update(info.term);
-        hash_state.update(info.last_committed_index);
-        return hash_state.get64();
-    }
-  };
+        size_t operator()(const DB::KeeperServer::NodeInfo & info) const
+        {
+            SipHash hash_state;
+            hash_state.update(info.term);
+            hash_state.update(info.last_committed_index);
+            return hash_state.get64();
+        }
+    };
 }
