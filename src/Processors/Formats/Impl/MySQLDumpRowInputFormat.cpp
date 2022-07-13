@@ -402,7 +402,7 @@ void MySQLDumpRowInputFormat::skipField()
 }
 
 MySQLDumpSchemaReader::MySQLDumpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(in_, format_settings_), format_settings(format_settings_), table_name(format_settings_.mysql_dump.table_name)
+    : IRowSchemaReader(in_, format_settings_), table_name(format_settings_.mysql_dump.table_name)
 {
 }
 

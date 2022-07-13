@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -187,11 +188,6 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(
     : FormatWithNamesAndTypesSchemaReader(in_, format_settings_, with_names_, with_types_, &reader)
     , reader(in_, yield_strings_, format_settings_)
 {
-    bool allow_bools_as_numbers = format_settings_.json.read_bools_as_numbers;
-    setCommonTypeChecker([allow_bools_as_numbers](const DataTypePtr & first, const DataTypePtr & second)
-    {
-        return JSONUtils::getCommonTypeForJSONFormats(first, second, allow_bools_as_numbers);
-    });
 }
 
 DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
@@ -210,7 +206,12 @@ DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
     if (in.eof())
         return {};
 
-    return JSONUtils::readRowAndGetDataTypesForJSONCompactEachRow(in, reader.yieldStrings());
+    return JSONUtils::readRowAndGetDataTypesForJSONCompactEachRow(in, format_settings, reader.yieldStrings());
+}
+
+void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+{
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)

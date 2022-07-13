@@ -83,7 +83,7 @@ private:
     DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read);
 
     /// Choose result type for column from two inferred types from different rows.
-    void chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const;
+    void chooseResulType(DataTypePtr & type, DataTypePtr & new_type, const String & column_name, size_t row) const;
 
     const FormatSettings format_settings;
     std::unique_ptr<JSONColumnsReaderBase> reader;

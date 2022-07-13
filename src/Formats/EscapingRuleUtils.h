@@ -60,4 +60,21 @@ DataTypes determineDataTypesByEscapingRule(const std::vector<String> & fields, c
 DataTypePtr getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule escaping_rule);
 DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::EscapingRule> & escaping_rules);
 
+/// Try to infer Date or Datetime from string if corresponding settings are enabled.
+DataTypePtr tryInferDateOrDateTime(const std::string_view & field, const FormatSettings & settings);
+
+/// Check if we need to transform types inferred from data and transform it if necessary.
+/// It's used when we try to infer some not ordinary types from another types.
+/// For example dates from strings, we should check if dates were inferred from all strings
+/// in the same way and if not, transform inferred dates back to strings.
+/// For example, if we have array of strings and we tried to infer dates from them,
+/// to make the result type Array(Date) we should ensure that all strings were
+/// successfully parsed as dated and if not, convert all dates back to strings and make result type Array(String).
+void transformInferredTypesIfNeeded(DataTypes & types, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule = FormatSettings::EscapingRule::Escaped);
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule = FormatSettings::EscapingRule::Escaped);
+
+/// Same as transformInferredTypesIfNeeded but takes into account settings that are special for JSON formats.
+void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, const std::unordered_set<const IDataType *> * numbers_parsed_from_json_strings = nullptr);
+void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
+
 }

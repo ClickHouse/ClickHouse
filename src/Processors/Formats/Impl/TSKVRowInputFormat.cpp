@@ -214,8 +214,7 @@ void TSKVRowInputFormat::resetParser()
 }
 
 TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowWithNamesSchemaReader(in_, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
-    , format_settings(format_settings_)
+    : IRowWithNamesSchemaReader(in_, format_settings_, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
 {
 }
 

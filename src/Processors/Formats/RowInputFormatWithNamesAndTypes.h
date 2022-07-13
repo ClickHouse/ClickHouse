@@ -123,7 +123,7 @@ class FormatWithNamesAndTypesSchemaReader : public IRowSchemaReader
 public:
     FormatWithNamesAndTypesSchemaReader(
         ReadBuffer & in,
-        const FormatSettings & format_settings,
+        const FormatSettings & format_settings_,
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,
@@ -140,6 +140,10 @@ protected:
 private:
     FormatWithNamesAndTypesReader * format_reader;
 };
+
+/// [2, 2, 4, 0] -> [2, 4, 4, 0] -> [4, 4, 0] -> [4, 4, 0, 0]
+/// [2, 4, 4, 2] -> [2, 8, 2, 0]
+/// [2, 2, 4, 4] -> [2, 4, 4, 4] -> [4, 4, 4, 0], -> [4, 4, 8, 0] -> [4, 8, 0, 0]
 
 }
 
