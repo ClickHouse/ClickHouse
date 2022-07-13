@@ -4,7 +4,8 @@
 #include "ares.h"
 #include "netdb.h"
 
-namespace DB {
+namespace DB
+{
 
     namespace ErrorCodes
     {
@@ -14,9 +15,11 @@ namespace DB {
     static void callback(void * arg, int status, int, struct hostent * host)
     {
         auto * ptr_records = reinterpret_cast<std::vector<std::string>*>(arg);
-        if (status == ARES_SUCCESS && host->h_aliases) {
+        if (status == ARES_SUCCESS && host->h_aliases)
+        {
             int i = 0;
-            while (auto * ptr_record = host->h_aliases[i]) {
+            while (auto * ptr_record = host->h_aliases[i])
+            {
                 ptr_records->emplace_back(ptr_record);
                 i++;
             }
@@ -32,7 +35,8 @@ namespace DB {
          * That means it's safe to init it here, but we should be cautious when introducing new code that depends on c-ares and even updates
          * to grpc. As discussed in https://github.com/ClickHouse/ClickHouse/pull/37827#discussion_r919189085, c-ares should be adapted to be atomic
          * */
-        if (ares_library_init(ARES_LIB_INIT_ALL) != ARES_SUCCESS || ares_init(&channel) != ARES_SUCCESS) {
+        if (ares_library_init(ARES_LIB_INIT_ALL) != ARES_SUCCESS || ares_init(&channel) != ARES_SUCCESS)
+        {
             throw DB::Exception("Failed to initialize c-ares", DB::ErrorCodes::DNS_ERROR);
         }
     }
@@ -92,7 +96,8 @@ namespace DB {
             FD_ZERO(&read_fds);
             FD_ZERO(&write_fds);
             nfds = ares_fds(channel, &read_fds,&write_fds);
-            if(nfds == 0) {
+            if(nfds == 0)
+            {
                 break;
             }
             tvp = ares_timeout(channel, nullptr, &tv);
