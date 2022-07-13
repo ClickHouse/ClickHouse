@@ -47,6 +47,7 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/network/TcpSocket.cpp"
     "${HDFS3_SOURCE_DIR}/network/DomainSocket.cpp"
     "${HDFS3_SOURCE_DIR}/network/BufferedSocketReader.cpp"
+    "${HDFS3_SOURCE_DIR}/client/DataReader.cpp"
     "${HDFS3_SOURCE_DIR}/client/ReadShortCircuitInfo.cpp"
     "${HDFS3_SOURCE_DIR}/client/Pipeline.cpp"
     "${HDFS3_SOURCE_DIR}/client/Hdfs.cpp"
