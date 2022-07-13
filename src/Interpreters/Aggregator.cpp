@@ -2053,21 +2053,6 @@ Aggregator::OutputBlockColumns Aggregator::prepareOutputBlockColumns(Arenas & ag
     };
 }
 
-template <typename Filler>
-Block Aggregator::prepareBlockAndFill(
-    AggregatedDataVariants & data_variants,
-    bool final,
-    size_t rows,
-    Filler && filler) const
-{
-    auto && out_cols = prepareOutputBlockColumns(data_variants.aggregates_pools, final, rows);
-    auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
-
-    filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
-
-    return finalizeBlock(std::move(out_cols), final, rows);
-}
-
 Block Aggregator::finalizeBlock(OutputBlockColumns && out_cols, bool final, size_t rows) const
 {
     auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
@@ -2156,39 +2141,34 @@ void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
 Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
 {
     size_t rows = 1;
+    auto && out_cols = prepareOutputBlockColumns(data_variants.aggregates_pools, final, rows);
+    auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
 
-    auto filler = [&data_variants, this](
-        MutableColumns & key_columns,
-        AggregateColumnsData & aggregate_columns,
-        MutableColumns & final_aggregate_columns,
-        bool final_)
+    if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
     {
-        if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
+        AggregatedDataWithoutKey & data = data_variants.without_key;
+
+        if (!data)
+            throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
+
+        if (!final)
         {
-            AggregatedDataWithoutKey & data = data_variants.without_key;
-
-            if (!data)
-                throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
-
-            if (!final_)
-            {
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
-                data = nullptr;
-            }
-            else
-            {
-                /// Always single-thread. It's safe to pass current arena from 'aggregates_pool'.
-                insertAggregatesIntoColumns(data, final_aggregate_columns, data_variants.aggregates_pool);
-            }
-
-            if (params.overflow_row)
-                for (size_t i = 0; i < params.keys_size; ++i)
-                    key_columns[i]->insertDefault();
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_columns_data[i]->push_back(data + offsets_of_aggregate_states[i]);
+            data = nullptr;
         }
-    };
+        else
+        {
+            /// Always single-thread. It's safe to pass current arena from 'aggregates_pool'.
+            insertAggregatesIntoColumns(data, final_aggregate_columns, data_variants.aggregates_pool);
+        }
 
-    Block block = prepareBlockAndFill(data_variants, final, rows, filler);
+        if (params.overflow_row)
+            for (size_t i = 0; i < params.keys_size; ++i)
+                key_columns[i]->insertDefault();
+    }
+
+    Block block = finalizeBlock(std::move(out_cols), final, rows);
 
     if (is_overflows)
         block.info.is_overflows = true;
@@ -3105,9 +3085,15 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
     Block block;
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
+    {
         block = prepareBlockAndFillWithoutKey(result, final, is_overflows);
+    }
     else
-        block = prepareBlockAndFillSingleLevel</* return_single_block */ true>(result, final);
+    {
+        // Used during memory efficient merging in SortingAggregatedTransform (expects single chunk for each bucket_id).
+        constexpr bool return_single_block = true;
+        block = prepareBlockAndFillSingleLevel<return_single_block>(result, final);
+    }
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
     if (!final)
