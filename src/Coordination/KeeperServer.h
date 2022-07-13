@@ -139,7 +139,7 @@ public:
 };
 
 }
-namespace std 
+namespace std
 {
   template <>
   struct hash<DB::KeeperServer::NodeInfo>
