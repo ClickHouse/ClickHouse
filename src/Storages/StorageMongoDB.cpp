@@ -94,8 +94,7 @@ public:
         const std::string & collection_name_,
         const std::string & db_name_,
         const StorageMetadataPtr & metadata_snapshot_,
-        std::shared_ptr<Poco::MongoDB::Connection> connection_
-        )
+        std::shared_ptr<Poco::MongoDB::Connection> connection_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , collection_name(collection_name_)
         , db_name(db_name_)
@@ -108,14 +107,18 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         Poco::MongoDB::Database db(db_name);
         Poco::MongoDB::Document::Ptr index = new Poco::MongoDB::Document();
 
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+
+        size_t num_rows = block.rows();
+        size_t num_cols = block.columns();
+
         const auto columns = block.getColumns();
-        const size_t num_rows = block.rows(), num_cols = block.columns();
         const auto data_types = block.getDataTypes();
         const auto data_names = block.getNames();
+
         std::vector<std::string> row(num_cols);
         for (const auto i : collections::range(0, num_rows))
         {
