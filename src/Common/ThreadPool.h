@@ -165,7 +165,9 @@ public:
         : state(std::make_shared<Poco::Event>())
         , thread_id(std::make_shared<std::thread::id>())
     {
-        /// NOTE: If this will throw an exception, the destructor won't be called.
+        /// NOTE:
+        /// - If this will throw an exception, the destructor won't be called
+        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
         GlobalThreadPool::instance().scheduleOrThrow([
             thread_id = thread_id,
             state = state,
