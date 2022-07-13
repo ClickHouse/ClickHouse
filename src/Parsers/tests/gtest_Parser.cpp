@@ -303,7 +303,7 @@ INSTANTIATE_TEST_SUITE_P(ParserNumber, ParserTest,
             "1234567"
         },
         {
-            "-0__1234__5678_",
+            "-0_1234_5678",
             "-12345678"
         },
         {
@@ -323,7 +323,7 @@ INSTANTIATE_TEST_SUITE_P(ParserNumber, ParserTest,
             "28772997619456"
         },
         {
-            "0x01_02.1p1",
+            "0x01_02.1p0_1",
             "516.125"
         }
 })));

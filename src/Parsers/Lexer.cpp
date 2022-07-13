@@ -43,6 +43,24 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
     }
 }
 
+/// Consume underscore-grouped numeric chars.
+/// Leading or consecutive or trailing underscores are not allowed.
+void consumeNumericPart(const char *& pos, const char * end, bool hex) {
+    if (pos >= end || *pos == '_')
+        return;
+
+    for (;;)
+    {
+        while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+            ++pos;
+
+        if (pos + 1 < end && *pos == '_' && (hex ? isHexDigit(pos[1]) : isNumericASCII(pos[1])))
+            ++pos;
+        else
+            break;
+    }
+}
+
 }
 
 
@@ -117,18 +135,14 @@ Token Lexer::nextTokenImpl()
                         hex = true;
                     pos += 2;
                 }
-                else
-                    ++pos;
 
-                while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || *pos == '_'))
-                    ++pos;
+                consumeNumericPart(pos, end, hex);
 
                 /// decimal point
                 if (pos < end && *pos == '.')
                 {
                     ++pos;
-                    while (pos < end && ((hex ? isHexDigit(*pos) : isNumericASCII(*pos)) || *pos == '_'))
-                        ++pos;
+                    consumeNumericPart(pos, end, hex);
                 }
 
                 /// exponentiation (base 10 or base 2)
@@ -140,25 +154,18 @@ Token Lexer::nextTokenImpl()
                     if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                         ++pos;
 
-                    while (pos < end && (isNumericASCII(*pos) || *pos == '_'))
-                        ++pos;
+                    consumeNumericPart(pos, end, false);
                 }
             }
 
-            /// Try to parse it to a identifier(1identifier_name), otherwise it return ErrorWrongNumber
+            /// XXX: No longer try to treat numeric literals as prefixes of identifiers since #39129.
             if (pos < end && isWordCharASCII(*pos))
             {
                 ++pos;
                 while (pos < end && isWordCharASCII(*pos))
                     ++pos;
 
-                for (const char * iterator = token_begin; iterator < pos; ++iterator)
-                {
-                    if (!isWordCharASCII(*iterator) && *iterator != '$')
-                        return Token(TokenType::ErrorWrongNumber, token_begin, pos);
-                }
-
-                return Token(TokenType::BareWord, token_begin, pos);
+                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
             }
 
             return Token(TokenType::Number, token_begin, pos);
@@ -201,8 +208,7 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::Dot, token_begin, ++pos);
 
             ++pos;
-            while (pos < end && isNumericASCII(*pos))
-                ++pos;
+            consumeNumericPart(pos, end, false);
 
             /// exponentiation
             if (pos + 1 < end && (*pos == 'e' || *pos == 'E'))
@@ -213,8 +219,7 @@ Token Lexer::nextTokenImpl()
                 if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                     ++pos;
 
-                while (pos < end && isNumericASCII(*pos))
-                    ++pos;
+                consumeNumericPart(pos, end, false);
             }
 
             return Token(TokenType::Number, token_begin, pos);
