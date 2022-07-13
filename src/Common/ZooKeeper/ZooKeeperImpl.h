@@ -164,6 +164,7 @@ public:
 
     void list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) override;
 

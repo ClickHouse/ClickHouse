@@ -1358,20 +1358,7 @@ bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & stora
     return data_part_storage->shallParticipateInMerges(*storage_policy);
 }
 
-// UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DataPartStoragePtr & data_part_storage_, const String & from)
-// {
-//     if (data_part_storage_->isFile(from))
-//         return data_part_storage_->getFileSize(from);
-//     std::vector<std::string> files;
-//     disk_->listFiles(from, files);
-//     UInt64 res = 0;
-//     for (const auto & file : files)
-//         res += calculateTotalSizeOnDisk(data_part_storage_, fs::path(from) / file);
-//     return res;
-// }
-
-
-void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
+void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const
 try
 {
     assertOnDisk();
@@ -1390,7 +1377,8 @@ try
 
     metadata_manager->deleteAll(true);
     metadata_manager->assertAllDeleted(true);
-    data_part_storage->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
+    builder->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
+    data_part_storage->onRename(to.parent_path(), to.filename());
     metadata_manager->updateAll(true);
 
     for (const auto & [p_name, part] : projection_parts)
@@ -1486,9 +1474,9 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
     return "detached/" + getRelativePathForPrefix(prefix, /* detached */ true);
 }
 
-void IMergeTreeDataPart::renameToDetached(const String & prefix) const
+void IMergeTreeDataPart::renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const
 {
-    renameTo(getRelativePathForDetachedPart(prefix), true);
+    renameTo(getRelativePathForDetachedPart(prefix), true, builder);
     part_is_probably_removed_from_disk = true;
 }
 

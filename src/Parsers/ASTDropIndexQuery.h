@@ -17,9 +17,10 @@ namespace DB
 class ASTDropIndexQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool if_exists{false};
 
     ASTPtr index_name;
+
+    bool if_exists{false};
 
     String getID(char delim) const override;
 
@@ -30,9 +31,9 @@ public:
         return removeOnCluster<ASTDropIndexQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Drop; }
+    QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
-    /// Convert ASTDropIndexQuery to ASTAlterCommand.
+    /// Convert ASTDropIndexQuery to ASTAlterCommand
     ASTPtr convertToASTAlterCommand() const;
 
 protected:

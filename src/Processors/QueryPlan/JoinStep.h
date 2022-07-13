@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 

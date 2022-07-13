@@ -130,8 +130,8 @@ public:
     static constexpr const char * INFORMATION_SCHEMA = "information_schema";
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
 
-    /// Returns true if a passed string is one of the predefined databases' names
-    static bool isPredefinedDatabaseName(const std::string_view & database_name);
+    /// Returns true if a passed name is one of the predefined databases' names.
+    static bool isPredefinedDatabase(const std::string_view & database_name);
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -180,6 +180,11 @@ public:
     DatabaseAndTable getTableImpl(const StorageID & table_id,
                                   ContextPtr context,
                                   std::optional<Exception> * exception = nullptr) const;
+
+    /// Returns true if a passed table_id refers to one of the predefined tables' names.
+    /// All tables in the "system" database with System* table engine are predefined.
+    /// Four views (tables, views, columns, schemata) in the "information_schema" database are predefined too.
+    bool isPredefinedTable(const StorageID & table_id) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);

@@ -4,7 +4,7 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupCoordinationLocal.h>
-#include <Backups/BackupCoordinationDistributed.h>
+#include <Backups/BackupCoordinationRemote.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
 #include <Common/quoteString.h>
@@ -167,7 +167,14 @@ BackupImpl::BackupImpl(
 
 BackupImpl::~BackupImpl()
 {
-    close();
+    try
+    {
+        close();
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -231,10 +238,11 @@ void BackupImpl::close()
         archive_writer = {"", nullptr};
 
     if (!is_internal_backup && writer && !writing_finalized)
-    {
-        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
         removeAllFilesAfterFailure();
-    }
+
+    writer.reset();
+    reader.reset();
+    coordination.reset();
 }
 
 time_t BackupImpl::getTimestamp() const
@@ -733,24 +741,33 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
 
 void BackupImpl::removeAllFilesAfterFailure()
 {
-    Strings files_to_remove;
-    if (use_archives)
+    try
     {
-        files_to_remove.push_back(archive_params.archive_name);
-        for (const auto & suffix : coordination->getAllArchiveSuffixes())
-        {
-            String archive_name_with_suffix = getArchiveNameWithSuffix(suffix);
-            files_to_remove.push_back(std::move(archive_name_with_suffix));
-        }
-    }
-    else
-    {
-        files_to_remove.push_back(".backup");
-        for (const auto & file_info : coordination->getAllFileInfos())
-            files_to_remove.push_back(file_info.data_file_name);
-    }
+        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
 
-    writer->removeFilesAfterFailure(files_to_remove);
+        Strings files_to_remove;
+        if (use_archives)
+        {
+            files_to_remove.push_back(archive_params.archive_name);
+            for (const auto & suffix : coordination->getAllArchiveSuffixes())
+            {
+                String archive_name_with_suffix = getArchiveNameWithSuffix(suffix);
+                files_to_remove.push_back(std::move(archive_name_with_suffix));
+            }
+        }
+        else
+        {
+            files_to_remove.push_back(".backup");
+            for (const auto & file_info : coordination->getAllFileInfos())
+                files_to_remove.push_back(file_info.data_file_name);
+        }
+
+        writer->removeFilesAfterFailure(files_to_remove);
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }
