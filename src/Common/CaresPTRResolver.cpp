@@ -1,5 +1,6 @@
 #include "CaresPTRResolver.h"
 #include <arpa/inet.h>
+#include <sys/select.h>
 #include <Common/Exception.h>
 #include "ares.h"
 #include "netdb.h"
