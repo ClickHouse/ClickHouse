@@ -245,7 +245,9 @@ qpl_job * SoftwareCodecDeflateQpl::getJobCodecPtr()
         uint32_t size = 0;
         qpl_get_job_size(qpl_path_software, &size);
 
-        sw_job = reinterpret_cast<qpl_job *>((std::make_unique<uint8_t[]>(size)).get());
+        sw_buffer = std::make_unique<uint8_t[]>(size);
+        sw_job = reinterpret_cast<qpl_job *>(sw_buffer.get());
+
         // Job initialization
         if (auto status = qpl_init_job(qpl_path_software, sw_job); status != QPL_STS_OK)
             throw Exception(ErrorCodes::CANNOT_COMPRESS,

@@ -65,6 +65,7 @@ public:
 
 private:
     qpl_job * sw_job = nullptr;
+    std::unique_ptr<uint8_t[]> sw_buffer;
     qpl_job * getJobCodecPtr();
 };
 
