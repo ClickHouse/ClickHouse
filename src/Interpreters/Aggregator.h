@@ -1309,13 +1309,6 @@ private:
     OutputBlockColumns prepareOutputBlockColumns(Arenas & aggregates_pools, bool final, size_t rows) const;
     Block finalizeBlock(OutputBlockColumns && out_cols, bool final, size_t rows) const;
 
-    template <typename Filler>
-    Block prepareBlockAndFill(
-        AggregatedDataVariants & data_variants,
-        bool final,
-        size_t rows,
-        Filler && filler) const;
-
     template <typename Method>
     Block convertOneBucketToBlock(
         AggregatedDataVariants & data_variants,
