@@ -140,7 +140,7 @@ public:
 
     void setFinal();
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
+    QueryKind getQueryKind() const override { return QueryKind::Select; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
