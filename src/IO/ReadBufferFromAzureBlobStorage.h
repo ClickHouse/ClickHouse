@@ -23,7 +23,6 @@ public:
         const ReadSettings & read_settings_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
-        const ReadSettings & read_settings_,
         bool use_external_buffer_ = false,
         size_t read_until_position_ = 0);
 

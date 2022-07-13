@@ -193,14 +193,8 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     bool cache_on_write = cache
-<<<<<<< HEAD
-        && fs::path(path).extension() != ".tmp"
-        && disk_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
-=======
          && write_settings.enable_filesystem_cache_on_write_operations
          && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
->>>>>>> master
 
     auto settings_ptr = s3_settings.get();
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
@@ -211,10 +205,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         attributes,
         buf_size,
         threadPoolCallbackRunner(getThreadPoolWriter()),
-<<<<<<< HEAD
         disk_write_settings,
-=======
->>>>>>> master
         cache_on_write ? cache : nullptr);
 
 

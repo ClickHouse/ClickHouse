@@ -27,7 +27,6 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     const ReadSettings & read_settings_,
     size_t max_single_read_retries_,
     size_t max_single_download_retries_,
-    const ReadSettings & read_settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
     : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
