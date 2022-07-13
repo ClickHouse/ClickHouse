@@ -1851,7 +1851,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     {
         ExpressionActionsChain chain(context);
-        Names additional_required_columns_after_prewhere;
+        Names additional_required_columns_after_prewhere = metadata_snapshot->getColumnsRequiredForSortingKey();
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
