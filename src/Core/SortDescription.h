@@ -10,8 +10,6 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/Collator.h>
 
-class Collator;
-
 namespace DB
 {
 
