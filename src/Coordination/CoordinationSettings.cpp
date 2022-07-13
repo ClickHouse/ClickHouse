@@ -225,6 +225,15 @@ String KeeperConfigurationAndSettings::getSnapshotsPathFromConfig(const Poco::Ut
 
 String KeeperConfigurationAndSettings::getStateFilePathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_)
 {
+    if (config.has("keeper_server.storage_path"))
+        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "state";
+
+    if (config.has("keeper_server.snapshot_storage_path"))
+        return std::filesystem::path(config.getString("keeper_server.snapshot_storage_path")).parent_path() / "state";
+
+    if (config.has("keeper_server.log_storage_path"))
+        return std::filesystem::path(config.getString("keeper_server.log_storage_path")).parent_path() / "state";
+
     if (standalone_keeper_)
         return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "state";
     else
