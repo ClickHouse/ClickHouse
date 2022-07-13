@@ -1850,8 +1850,25 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     };
 
     {
+        bool join_allow_read_in_order = true;
+        if (hasJoin())
+        {
+            /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
+            join_has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join_has_delayed_stream;
+        }
+
+        optimize_read_in_order =
+            settings.optimize_read_in_order
+            && storage
+            && query.orderBy()
+            && !query_analyzer.hasAggregation()
+            && !query_analyzer.hasWindow()
+            && !query.final()
+            && join_allow_read_in_order;
+
         ExpressionActionsChain chain(context);
-        Names additional_required_columns_after_prewhere = metadata_snapshot ? metadata_snapshot->getColumnsRequiredForSortingKey() : Names{};
+        Names additional_required_columns_after_prewhere;
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
@@ -1865,6 +1882,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             Names columns_for_final = metadata_snapshot->getColumnsRequiredForFinal();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_final.begin(), columns_for_final.end());
+        }
+
+        if (storage && optimize_read_in_order)
+        {
+            std::cerr << "!!!!!!!!!!!!!!\n";
+            Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sorting_key.begin(), columns_for_sorting_key.end());
         }
 
         if (storage && filter_info_)
@@ -1950,23 +1975,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 chain.addStep();
             }
         }
-
-        bool join_allow_read_in_order = true;
-        if (hasJoin())
-        {
-            /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
-            join_has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
-            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join_has_delayed_stream;
-        }
-
-        optimize_read_in_order =
-            settings.optimize_read_in_order
-            && storage
-            && query.orderBy()
-            && !query_analyzer.hasAggregation()
-            && !query_analyzer.hasWindow()
-            && !query.final()
-            && join_allow_read_in_order;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
