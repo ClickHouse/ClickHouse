@@ -694,6 +694,6 @@ def test_cache_with_full_disk_space(cluster, node_name):
         "SELECT * FROM s3_test WHERE value LIKE '%abc%' ORDER BY value FORMAT Null"
     )
     assert node.contains_in_log(
-        "Not enough disk space to write cache, will skip cache download"
+        "Insert into cache is skipped due to insufficient disk space"
     )
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
