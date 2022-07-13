@@ -163,7 +163,7 @@ public:
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
         : state(std::make_shared<Poco::Event>())
-        , thread_id(std::make_shared<std::thread::id>())
+        , thread_id(std::make_shared<ThreadIdHolder>())
     {
         /// NOTE:
         /// - If this will throw an exception, the destructor won't be called
@@ -177,7 +177,7 @@ public:
             auto event = std::move(state);
             SCOPE_EXIT(event->set());
 
-            thread_id = std::make_shared<std::thread::id>(std::this_thread::get_id());
+            thread_id->id = std::this_thread::get_id();
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
@@ -232,7 +232,7 @@ public:
         if (!state)
             return false;
         /// Thread cannot join itself.
-        if (*thread_id == std::this_thread::get_id())
+        if (thread_id->id == std::this_thread::get_id())
             return false;
         return true;
     }
@@ -240,7 +240,14 @@ public:
 private:
     /// The state used in this object and inside the thread job.
     std::shared_ptr<Poco::Event> state;
-    std::shared_ptr<std::thread::id> thread_id;
+
+    struct ThreadIdHolder
+    {
+        /// Should be atomic() because of possible concurrent access between
+        /// assignment and joinable() check.
+        std::atomic<std::thread::id> id;
+    };
+    std::shared_ptr<ThreadIdHolder> thread_id;
 
     /// Internally initialized() should be used over joinable(),
     /// since it is enough to know that the thread is initialized,
