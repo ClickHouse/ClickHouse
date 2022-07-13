@@ -110,14 +110,11 @@ struct ZooKeeperSyncRequest final : ZooKeeperRequest
     size_t bytesSize() const override { return ZooKeeperRequest::bytesSize() + path.size(); }
 };
 
-struct ZooKeeperSyncResponse final : ZooKeeperResponse
+struct ZooKeeperSyncResponse final : SyncResponse, ZooKeeperResponse
 {
-    String path;
     void readImpl(ReadBuffer & in) override;
     void writeImpl(WriteBuffer & out) const override;
     OpNum getOpNum() const override { return OpNum::Sync; }
-
-    size_t bytesSize() const override { return path.size(); }
 };
 
 struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse
@@ -137,6 +134,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
 
     OpNum getOpNum() const override
     {
+        chassert(false);
         throw Exception("OpNum for watch response doesn't exist", Error::ZRUNTIMEINCONSISTENCY);
     }
 
@@ -348,6 +346,18 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
 struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
 {
     OpNum getOpNum() const override { return OpNum::SimpleList; }
+};
+
+struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
+{
+    ListRequestType list_request_type{ListRequestType::ALL};
+
+    OpNum getOpNum() const override { return OpNum::FilteredList; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl() const override;
+
+    size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
 };
 
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
