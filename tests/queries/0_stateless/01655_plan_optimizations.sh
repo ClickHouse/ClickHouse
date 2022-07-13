@@ -172,7 +172,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" | sort
 
 echo "> one condition of filter is pushed down before INNER JOIN"
 $CLICKHOUSE_CLIENT -q "

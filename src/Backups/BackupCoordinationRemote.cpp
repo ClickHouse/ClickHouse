@@ -201,14 +201,19 @@ void BackupCoordinationRemote::setStatus(const String & current_host, const Stri
     status_sync.set(current_host, new_status, message);
 }
 
-Strings BackupCoordinationRemote::setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
+void BackupCoordinationRemote::setErrorStatus(const String & current_host, const Exception & exception)
 {
-    return status_sync.setAndWait(current_host, new_status, message, all_hosts);
+    status_sync.setError(current_host, exception);
 }
 
-Strings BackupCoordinationRemote::setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
+Strings BackupCoordinationRemote::waitStatus(const Strings & all_hosts, const String & status_to_wait)
 {
-    return status_sync.setAndWaitFor(current_host, new_status, message, all_hosts, timeout_ms);
+    return status_sync.wait(all_hosts, status_to_wait);
+}
+
+Strings BackupCoordinationRemote::waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms)
+{
+    return status_sync.waitFor(all_hosts, status_to_wait, timeout_ms);
 }
 
 
