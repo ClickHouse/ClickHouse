@@ -1,3 +1,4 @@
+#include <boost/algorithm/string/join.hpp>
 #include <cstdlib>
 #include <fcntl.h>
 #include <map>
@@ -458,24 +459,28 @@ void Client::connect()
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
 void Client::printChangedSettings() const
 {
-    const auto & changes = global_context->getSettingsRef().changes();
-    if (!changes.empty())
+    auto print_changes = [](const auto & changes, std::string_view settings_name)
     {
-        fmt::print(stderr, "Changed settings: ");
-        for (size_t i = 0; i < changes.size(); ++i)
+        if (!changes.empty())
         {
-            if (i)
+            fmt::print(stderr, "Changed {}: ", settings_name);
+            for (size_t i = 0; i < changes.size(); ++i)
             {
-                fmt::print(stderr, ", ");
+                if (i)
+                    fmt::print(stderr, ", ");
+                fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
             }
-            fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
+
+            fmt::print(stderr, "\n");
         }
-        fmt::print(stderr, "\n");
-    }
-    else
-    {
-        fmt::print(stderr, "No changed settings.\n");
-    }
+        else
+        {
+            fmt::print(stderr, "No changed {}.\n", settings_name);
+        }
+    };
+
+    print_changes(global_context->getSettingsRef().changes(), "settings");
+    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
 }
 
 
