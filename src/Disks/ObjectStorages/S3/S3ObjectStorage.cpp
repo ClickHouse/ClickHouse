@@ -253,7 +253,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 
     Aws::S3::Model::DeleteObjectRequest request;
     request.SetBucket(bucket);
-    request.SetKey(path);
+    request.SetKey(object.absolute_path);
     auto outcome = client_ptr->DeleteObject(request);
 
     throwIfUnexpectedError(outcome, if_exists);
