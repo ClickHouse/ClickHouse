@@ -505,12 +505,18 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
 void StorageMergeTree::waitForMutation(Int64 version)
 {
-    waitForMutation(MergeTreeMutationEntry::versionToFileName(version));
+    String mutation_id = MergeTreeMutationEntry::versionToFileName(version);
+    waitForMutation(version, mutation_id);
 }
 
 void StorageMergeTree::waitForMutation(const String & mutation_id)
 {
-    UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
+    Int64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
+    waitForMutation(version, mutation_id);
+}
+
+void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id)
+{
     LOG_INFO(log, "Waiting mutation: {}", mutation_id);
     {
         auto check = [version, this]()

@@ -23,12 +23,13 @@ namespace ErrorCodes
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
+    const ReadSettings & read_settings_,
     size_t max_single_read_retries_,
     size_t max_single_download_retries_,
     size_t tmp_buffer_size_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : SeekableReadBuffer(nullptr, 0)
+    : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
     , blob_container_client(blob_container_client_)
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
