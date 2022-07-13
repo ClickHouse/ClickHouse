@@ -221,7 +221,7 @@ public:
                             hdfs_namenode_url,
                             current_path,
                             getContext()->getGlobalContext()->getConfigRef(),
-                            ReadSettings{.throttler = getContext()->getRemoteReadThrottler()});
+                            getContext()->getReadSettings());
 
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)

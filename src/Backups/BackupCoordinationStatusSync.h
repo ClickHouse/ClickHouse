@@ -14,19 +14,20 @@ public:
 
     /// Sets the status of the current host and signal other hosts if there were other hosts waiting for that.
     void set(const String & current_host, const String & new_status, const String & message);
+    void setError(const String & current_host, const Exception & exception);
 
     /// Sets the status of the current host and waits until all hosts come to the same status.
     /// The function returns the messages all hosts set when they come to the required status.
-    Strings setAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts);
+    Strings wait(const Strings & all_hosts, const String & status_to_wait);
 
     /// Almost the same as setAndWait() but this one stops waiting and throws an exception after a specific amount of time.
-    Strings setAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms);
+    Strings waitFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms);
 
     static constexpr const char * kErrorStatus = "error";
 
 private:
     void createRootNodes();
-    Strings setImpl(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, const std::optional<UInt64> & timeout_ms);
+    Strings waitImpl(const Strings & all_hosts, const String & status_to_wait, std::optional<UInt64> timeout_ms);
 
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;

@@ -2123,6 +2123,12 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 
     return shared->keeper_dispatcher;
 }
+
+std::shared_ptr<KeeperDispatcher> & Context::tryGetKeeperDispatcher() const
+{
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    return shared->keeper_dispatcher;
+}
 #endif
 
 void Context::shutdownKeeperDispatcher() const
@@ -3451,6 +3457,8 @@ ReadSettings Context::getReadSettings() const
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;
+
+    res.throttler = getRemoteReadThrottler();
 
     res.http_max_tries = settings.http_max_tries;
     res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;

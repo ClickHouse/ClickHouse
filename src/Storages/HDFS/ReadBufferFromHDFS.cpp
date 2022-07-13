@@ -25,7 +25,6 @@ ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
-
     String hdfs_uri;
     String hdfs_file_path;
 
@@ -134,8 +133,9 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const Poco::Util::AbstractConfiguration & config_,
         const ReadSettings & read_settings_,
         size_t read_until_position_)
-    : SeekableReadBuffer(nullptr, 0)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_))
+    : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(
+               hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_))
 {
 }
 
