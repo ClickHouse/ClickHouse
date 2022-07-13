@@ -21,9 +21,9 @@ DROP TABLE IF EXISTS vec1d;
 CREATE TABLE vec1 (id UInt64, v Array(UInt8)) ENGINE = Memory;
 CREATE TABLE vec1f (id UInt64, v Array(Float32)) ENGINE = Memory;
 CREATE TABLE vec1d (id UInt64, v Array(Float64)) ENGINE = Memory;
-INSERT INTO vec1 VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL);
-INSERT INTO vec1f VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL);
-INSERT INTO vec1d VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL);
+INSERT INTO vec1 VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL), (5, range(7, 27)), (6, range(3, 103));
+INSERT INTO vec1f VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL), (5, range(7, 27)), (6, range(3, 103));
+INSERT INTO vec1d VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL), (5, range(7, 27)), (6, range(3, 103));
 
 SELECT id, L1Norm(v), L2Norm(v), L2SquaredNorm(v), LpNorm(v, 2.7), LinfNorm(v) FROM vec1;
 SELECT id, L1Norm(materialize([5., 6.])) FROM vec1;

@@ -70,13 +70,29 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
 ```text
 aggregate_function (column_name)
-  OVER ([PARTITION BY groupping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bounds_of_frame])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
 - `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
+- `WINDOW` - allows to reuse a window definition with multiple exressions.
+
+### Functions
+
+These functions can be used only as a window function.
+
+`row_number()` -	Number the current row within its partition starting from 1.
+`first_value(x)` -	Return the first non-NULL value evaluated within its ordered frame.
+`last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
+`nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+`rank()` -	Rank the current row within its partition with gaps.
+`dense_rank()`	- Rank the current row within its partition without gaps.
+`lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+`leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 ```text
       PARTITION
@@ -101,7 +117,8 @@ aggregate_function (column_name)
 CREATE TABLE wf_partition
 (
     `part_key` UInt64,
-    `value` UInt64
+    `value` UInt64,
+    `order` UInt64    
 )
 ENGINE = Memory;
 
@@ -271,6 +288,89 @@ ORDER BY
 │        1 │     4 │     4 │ [3,4,5]      │
 │        1 │     5 │     5 │ [4,5]        │
 └──────────┴───────┴───────┴──────────────┘
+
+-- row_number does not respect the frame, so rn_1 = rn_2 = rn_3 != rn_4
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER w1 AS frame_values,
+    row_number() OVER w1 AS rn_1,
+    sum(1) OVER w1 AS rn_2,
+    row_number() OVER w2 AS rn_3,
+    sum(1) OVER w2 AS rn_4
+FROM wf_frame
+WINDOW
+    w1 AS (PARTITION BY part_key ORDER BY order DESC),
+    w2 AS (PARTITION BY part_key ORDER BY order DESC 
+                   Rows BETWEEN 1 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─part_key─┬─value─┬─order─┬─frame_values─┬─rn_1─┬─rn_2─┬─rn_3─┬─rn_4─┐
+│        1 │     1 │     1 │ [5,4,3,2,1]  │    5 │    5 │    5 │    2 │
+│        1 │     2 │     2 │ [5,4,3,2]    │    4 │    4 │    4 │    2 │
+│        1 │     3 │     3 │ [5,4,3]      │    3 │    3 │    3 │    2 │
+│        1 │     4 │     4 │ [5,4]        │    2 │    2 │    2 │    2 │
+│        1 │     5 │     5 │ [5]          │    1 │    1 │    1 │    1 │
+└──────────┴───────┴───────┴──────────────┴──────┴──────┴──────┴──────┘
+
+-- first_value and last_value respect the frame
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    first_value(value) OVER w1 AS first_value_1,
+    last_value(value) OVER w1 AS last_value_1,
+    groupArray(value) OVER w2 AS frame_values_2,
+    first_value(value) OVER w2 AS first_value_2,
+    last_value(value) OVER w2 AS last_value_2
+FROM wf_frame
+WINDOW
+    w1 AS (PARTITION BY part_key ORDER BY order ASC),
+    w2 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 1 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─frame_values_1─┬─first_value_1─┬─last_value_1─┬─frame_values_2─┬─first_value_2─┬─last_value_2─┐
+│ [1]            │             1 │            1 │ [1]            │             1 │            1 │
+│ [1,2]          │             1 │            2 │ [1,2]          │             1 │            2 │
+│ [1,2,3]        │             1 │            3 │ [2,3]          │             2 │            3 │
+│ [1,2,3,4]      │             1 │            4 │ [3,4]          │             3 │            4 │
+│ [1,2,3,4,5]    │             1 │            5 │ [4,5]          │             4 │            5 │
+└────────────────┴───────────────┴──────────────┴────────────────┴───────────────┴──────────────┘
+
+-- second value within the frame
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    nth_value(value, 2) OVER w1 AS second_value
+FROM wf_frame
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC
+┌─frame_values_1─┬─second_value─┐
+│ [1]            │            0 │
+│ [1,2]          │            2 │
+│ [1,2,3]        │            2 │
+│ [1,2,3,4]      │            2 │
+│ [2,3,4,5]      │            3 │
+└────────────────┴──────────────┘
+
+-- second value within the frame + Null for missing values
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    nth_value(toNullable(value), 2) OVER w1 AS second_value
+FROM wf_frame
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC
+┌─frame_values_1─┬─second_value─┐
+│ [1]            │         ᴺᵁᴸᴸ │
+│ [1,2]          │            2 │
+│ [1,2,3]        │            2 │
+│ [1,2,3,4]      │            2 │
+│ [2,3,4,5]      │            3 │
+└────────────────┴──────────────┘
 ```
 
 ## Real world examples
