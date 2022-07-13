@@ -211,32 +211,12 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 {
     auto client_ptr = client.get();
 
-    // If chunk size is 0, only use single delete request
-    // This allows us to work with GCS, which doesn't support DeleteObjects
-    if (!s3_capabilities.support_batch_delete)
-    {
-        Aws::S3::Model::DeleteObjectRequest request;
-        request.SetBucket(bucket);
-        request.SetKey(object.path);
-        auto outcome = client_ptr->DeleteObject(request);
+    Aws::S3::Model::DeleteObjectRequest request;
+    request.SetBucket(bucket);
+    request.SetKey(path);
+    auto outcome = client_ptr->DeleteObject(request);
 
-        throwIfUnexpectedError(outcome, if_exists);
-    }
-    else
-    {
-        /// TODO: For AWS we prefer to use multiobject operation even for single object
-        /// maybe we shouldn't?
-        Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(object.path);
-        Aws::S3::Model::Delete delkeys;
-        delkeys.SetObjects({obj});
-        Aws::S3::Model::DeleteObjectsRequest request;
-        request.SetBucket(bucket);
-        request.SetDelete(delkeys);
-        auto outcome = client_ptr->DeleteObjects(request);
-
-        throwIfUnexpectedError(outcome, if_exists);
-    }
+    throwIfUnexpectedError(outcome, if_exists);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
