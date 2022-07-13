@@ -292,31 +292,31 @@ def get_stacktraces_from_clickhouse(args):
         return None
 
 
-def print_stacktraces() -> None:
+def print_stacktraces(output = sys.stdout) -> None:
     server_pid = get_server_pid()
 
     bt = None
 
     if server_pid and not args.replicated_database:
-        print("")
+        print("", file=output)
         print(
-            f"Located ClickHouse server process {server_pid} listening at TCP port {args.tcp_port}"
+            f"Located ClickHouse server process {server_pid} listening at TCP port {args.tcp_port}", file=output
         )
-        print("Collecting stacktraces from all running threads with gdb:")
+        print("Collecting stacktraces from all running threads with gdb:", file=output)
 
         bt = get_stacktraces_from_gdb(server_pid)
 
         if len(bt) < 1000:
-            print("Got suspiciously small stacktraces: ", bt)
+            print("Got suspiciously small stacktraces: ", bt, file=output)
             bt = None
 
     if bt is None:
-        print("\nCollecting stacktraces from system.stacktraces table:")
+        print("\nCollecting stacktraces from system.stacktraces table:", file=output)
 
         bt = get_stacktraces_from_clickhouse(args)
 
     if bt is not None:
-        print(bt)
+        print(bt, file=output)
         return
 
     print(
@@ -326,8 +326,19 @@ def print_stacktraces() -> None:
             args,
             "red",
             attrs=["bold"],
-        )
+        ), file=output
     )
+
+
+def stacktraces_collector() -> None:
+    global stop_stacktraces_collection
+    with open("tsan_traces.txt", "w") as traces_file:
+        while True:
+            sleep(300)
+            if not stop_stacktraces_collection.is_set():
+                print_stacktraces(traces_file)
+            else:
+                break
 
 
 def get_server_pid():
@@ -1301,6 +1312,7 @@ class TestSuite:
 stop_time = None
 exit_code = None
 server_died = None
+stop_stacktraces_collection = None
 stop_tests_triggered_lock = None
 stop_tests_triggered = None
 queue = None
@@ -1679,6 +1691,7 @@ def main(args):
     global exit_code
     global server_logs_level
     global restarted_tests
+    global stop_stacktraces_collection
 
     if not check_server_started(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
@@ -1752,6 +1765,8 @@ def main(args):
 
     total_tests_run = 0
 
+    traces_collector_proc = multiprocessing.Process(target=stacktraces_collector)
+    traces_collector_proc.start()
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
             break
@@ -1761,6 +1776,7 @@ def main(args):
             continue
 
         total_tests_run += do_run_tests(args.jobs, test_suite, args.parallel)
+    stop_stacktraces_collection.set()
 
     if server_died.is_set():
         exit_code.value = 1
@@ -1800,6 +1816,7 @@ def main(args):
                 )
             print(test_result.description)
 
+    traces_collector_proc.join()
     if total_tests_run == 0:
         print("No tests were run.")
         sys.exit(1)
@@ -1841,6 +1858,7 @@ if __name__ == "__main__":
     stop_time = None
     exit_code = multiprocessing.Value("i", 0)
     server_died = multiprocessing.Event()
+    stop_stacktraces_collection = multiprocessing.Event()
     stop_tests_triggered_lock = multiprocessing.Lock()
     stop_tests_triggered = multiprocessing.Event()
     queue = multiprocessing.Queue(maxsize=1)
