@@ -812,25 +812,36 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 
 FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset, bool is_persistent)
 {
+    /**
+     * Allocate a new file segment starting `offset`.
+     * File segment capacity will equal `max_file_segment_size`, but actual size is 0.
+     */
+
     std::lock_guard cache_lock(cache->mutex);
+
     /// We set max_file_segment_size to be downloaded,
-    /// if we have less size to write, then file segment will be resized.
+    /// if we have less size to write, file segment will be resized in complete() method.
     auto file_segment = cache->setDownloading(key, offset, cache->max_file_segment_size, is_persistent, cache_lock);
     return file_segments_holder.add(std::move(file_segment));
 }
 
 void FileSegmentRangeWriter::completeFileSegment(const FileSegmentPtr & file_segment)
 {
+    /**
+     * Complete file segment based on downaloaded size.
+     */
+
+    /// File segment can be detached if space reservation failed.
     if (file_segment->isDetached())
-    {
-        /// File segment can be detached if space reservation failed.
         return;
-    }
 
     if (file_segment->getDownloadedSize() > 0)
     {
+        /// file_segment->complete(DOWNLOADED) is not enough, because file segment capacity
+        /// was initially set with a margin as `max_file_segment_size`. => We need to always
+        /// resize to actual size after download finished.
         file_segment->getOrSetDownloader();
-        file_segment->complete(FileSegment::State::DOWNLOADED, true);
+        file_segment->complete(FileSegment::State::DOWNLOADED, /* auto_resize */true);
         on_complete_file_segment_func(file_segment);
     }
     else
@@ -842,6 +853,11 @@ void FileSegmentRangeWriter::completeFileSegment(const FileSegmentPtr & file_seg
 
 bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool is_persistent)
 {
+    /**
+     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
+     * it until it is full and then allocate next file segment.
+     */
+
     if (finalized)
         return false;
 

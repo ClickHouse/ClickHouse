@@ -1219,22 +1219,21 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         std::unordered_set<String> disk_names_wrapped_in_cache;
 
         for (const auto & disk_ptr : disks)
-        {
             defined_disk_names.insert(disk_ptr->getName());
-            if (disk_ptr->supportsCache())
-            {
-                auto caches = disk_ptr->getCacheLayersNames();
-                disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
-            }
-        }
 
-        for (const auto & [name, disk_ptr] : getContext()->getDisksMap())
+        for (const auto & [_, disk_ptr] : getContext()->getDisksMap())
         {
+            /// In composable cache with the underlying source disk there might the following structure:
+            /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
+            /// In configuration file each of these layers has a different name, but data path
+            /// (getPath() result) is the same. We need to take it into account here.
             if (disk_ptr->supportsCache())
             {
-                auto caches = disk_ptr->getCacheLayersNames();
-                disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
-                disk_names_wrapped_in_cache.insert(name);
+                if (defined_disk_names.contains(disk_ptr->getName()))
+                {
+                    auto caches = disk_ptr->getCacheLayersNames();
+                    disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
+                }
             }
         }
 

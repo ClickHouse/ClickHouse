@@ -72,21 +72,18 @@ void CachedWriteBufferFromFile::cacheData(char * data, size_t size)
 
     Stopwatch watch(CLOCK_MONOTONIC);
 
-    bool cached;
     try
     {
-        cached = cache_writer->write(data, size, current_download_offset, is_persistent_cache_file);
+        if (!cache_writer->write(data, size, current_download_offset, is_persistent_cache_file))
+        {
+            /// No space left, disable caching.
+            stop_caching = true;
+            return;
+        }
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return;
-    }
-
-    if (!cached)
-    {
-        /// No space left, disable caching.
-        stop_caching = true;
         return;
     }
 
