@@ -454,7 +454,9 @@ inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
                 _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
                 _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
         match += masks[offset];
-    } else {
+    }
+    else
+    {
         copyOverlap32(op, match, offset);
     }
 #else
@@ -638,7 +640,13 @@ bool decompress(
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {
-        size_t best_variant = statistics.select();
+        size_t variant_size = 4;
+#if defined(__AVX512VBMI__) && !defined(MEMORY_SANITIZER)
+        /// best_variant == 4 only valid when AVX512VBMI available
+        if (DB::Cpu::CpuFlagsCache::have_AVX512VBMI)
+            variant_size = 5;
+#endif
+        size_t best_variant = statistics.select(variant_size);
 
         /// Run the selected method and measure time.
 
