@@ -528,12 +528,7 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & en
     }
 
     // Final checks of correctness
-    if (!identifier_found || expr.target.empty())
-    {
-        return false;
-    }
-
-    return true;
+    return identifier_found && !expr.target.empty();
 }
 
 // Gets float or int from AST node
