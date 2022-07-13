@@ -144,7 +144,7 @@ public:
         {
             if (!array_offsets.empty())
             {
-                CheckArrayOffsets(arguments[0].column, arguments[2].column);
+                checkArrayOffsets(arguments[0].column, arguments[2].column);
             }
             return arguments[2].column;
         }
@@ -164,14 +164,14 @@ public:
 
 private:
 
-    void CheckArrayOffsets(ColumnPtr col_x, ColumnPtr col_y) const
+    void checkArrayOffsets(ColumnPtr col_x, ColumnPtr col_y) const
     {
         if (isColumnConst(*col_x))
         {
-            CheckArrayOffsetsWithFirstArgConst(col_x, col_y);
+            checkArrayOffsetsWithFirstArgConst(col_x, col_y);
         } else if (isColumnConst(*col_y))
         {
-            CheckArrayOffsetsWithFirstArgConst(col_y, col_x);
+            checkArrayOffsetsWithFirstArgConst(col_y, col_x);
         } else
         {
             const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
@@ -183,7 +183,7 @@ private:
         }
     }
 
-    void CheckArrayOffsetsWithFirstArgConst(ColumnPtr col_x, ColumnPtr col_y) const
+    void checkArrayOffsetsWithFirstArgConst(ColumnPtr col_x, ColumnPtr col_y) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();
