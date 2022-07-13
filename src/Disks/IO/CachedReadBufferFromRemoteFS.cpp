@@ -707,7 +707,7 @@ bool CachedReadBufferFromRemoteFS::writeCache(char * data, size_t size, size_t o
         int code = e.getErrno();
         if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
         {
-            LOG_INFO(log, "Not enough disk space to write cache, will skip cache download. ({})", e.displayText());
+            LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
             return false;
         }
         throw;
