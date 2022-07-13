@@ -1894,7 +1894,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && optimize_read_in_order)
         {
-            std::cerr << "!!!!!!!!!!!!!!\n";
             Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_sorting_key.begin(), columns_for_sorting_key.end());
