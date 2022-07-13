@@ -143,42 +143,42 @@ jobs:
   #         # shellcheck disable=SC2046
   #         docker rm -f $(docker ps -a -q) ||:
   #         sudo rm -fr "$TEMP_PATH"
-  FastTest:
-    needs: DockerHubPush
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/fasttest
-          REPO_COPY=${{runner.temp}}/fasttest/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE"
-          mkdir "$GITHUB_WORKSPACE"
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ env.TEMP_PATH }}
-      - name: Fast Test
-        run: |
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 fast_test_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+  # FastTest:
+  #   needs: DockerHubPush
+  #   runs-on: [self-hosted, builder]
+  #   steps:
+  #     - name: Set envs
+  #       run: |
+  #         cat >> "$GITHUB_ENV" << 'EOF'
+  #         TEMP_PATH=${{runner.temp}}/fasttest
+  #         REPO_COPY=${{runner.temp}}/fasttest/ClickHouse
+  #         CACHES_PATH=${{runner.temp}}/../ccaches
+  #         EOF
+  #     - name: Clear repository
+  #       run: |
+  #         sudo rm -fr "$GITHUB_WORKSPACE"
+  #         mkdir "$GITHUB_WORKSPACE"
+  #         sudo rm -fr "$TEMP_PATH"
+  #         mkdir -p "$TEMP_PATH"
+  #     - name: Check out repository code
+  #       uses: actions/checkout@v2
+  #     - name: Download changed images
+  #       uses: actions/download-artifact@v2
+  #       with:
+  #         name: changed_images
+  #         path: ${{ env.TEMP_PATH }}
+  #     - name: Fast Test
+  #       run: |
+  #         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+  #         cd "$REPO_COPY/tests/ci" && python3 fast_test_check.py
+  #     - name: Cleanup
+  #       if: always()
+  #       run: |
+  #         # shellcheck disable=SC2046
+  #         docker kill $(docker ps -q) ||:
+  #         # shellcheck disable=SC2046
+  #         docker rm -f $(docker ps -a -q) ||:
+  #         sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   # CompatibilityCheck:
   #   needs: [BuilderDebRelease]
   #   runs-on: [self-hosted, style-checker]
@@ -525,7 +525,7 @@ jobs:
   #         docker rm -f $(docker ps -a -q) ||:
   #         sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebTsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
