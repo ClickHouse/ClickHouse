@@ -336,6 +336,7 @@ def stacktraces_collector() -> None:
         while True:
             sleep(300)
             if not stop_stacktraces_collection.is_set():
+                print("\nStarting to collect stacktraces at", datetime.now().strftime(), "\n", file=traces_file)
                 print_stacktraces(traces_file)
             else:
                 break
