@@ -1667,7 +1667,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Field res;
 
-    if (!pos.isValid())
+    if (pos->type != TokenType::Number)
         return false;
 
     /** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
