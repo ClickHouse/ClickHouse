@@ -1,7 +1,8 @@
 #include "DNSPTRResolverProvider.h"
 #include "CaresPTRResolver.h"
 
-namespace DB {
+namespace DB
+{
     std::shared_ptr<DNSPTRResolver> DNSPTRResolverProvider::get()
     {
         static auto cares_resolver = std::make_shared<CaresPTRResolver>(

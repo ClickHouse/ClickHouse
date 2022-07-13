@@ -3,7 +3,8 @@
 #include <string>
 #include <vector>
 
-namespace DB {
+namespace DB
+{
     struct DNSPTRResolver
     {
 
