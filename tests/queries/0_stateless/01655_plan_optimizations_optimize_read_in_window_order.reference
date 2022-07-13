@@ -2,9 +2,11 @@ Partial sorting plan
   optimize_read_in_window_order=0
     Sort description: n ASC, x ASC
   optimize_read_in_window_order=1
-    Sort description: n ASC, x ASC
+    Prefix sort description: n ASC
+    Result sort description: n ASC, x ASC
 No sorting plan
   optimize_read_in_window_order=0
     Sort description: n ASC, x ASC
   optimize_read_in_window_order=1
-    Sort description: n ASC, x ASC
+    Prefix sort description: n ASC, x ASC
+    Result sort description: n ASC, x ASC
