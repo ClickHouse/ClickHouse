@@ -321,5 +321,9 @@ INSTANTIATE_TEST_SUITE_P(ParserNumber, ParserTest,
         {
             "0x1a2b_3c4d_5f00",
             "28772997619456"
+        },
+        {
+            "0x01_02.1p1",
+            "516.125"
         }
 })));
