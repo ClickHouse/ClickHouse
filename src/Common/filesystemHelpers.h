@@ -66,8 +66,6 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
-int getINodeNumberFromPath(const String & path);
-
 std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 
 /// Get inode number for a file path.
