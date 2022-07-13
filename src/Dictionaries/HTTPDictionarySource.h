@@ -37,8 +37,7 @@ public:
         const Configuration & configuration,
         const Poco::Net::HTTPBasicCredentials & credentials_,
         Block & sample_block_,
-        ContextPtr context_,
-        bool created_from_ddl);
+        ContextPtr context_);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
