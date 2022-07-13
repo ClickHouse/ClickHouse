@@ -397,8 +397,6 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
                 else
                 {
                     are_maps_equal &= type->equals(*first_map_type);
-                    if (!type->equals(*first_map_type))
-                        LOG_DEBUG(&Poco::Logger::get("SchemaInference"), "Maps {} and {} are different", type->getName(), first_map_type->getName());
                 }
             }
             else if (isObject(type))
