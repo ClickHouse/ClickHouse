@@ -232,11 +232,6 @@ KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, 
     Node root_node;
     container.insert("/", root_node);
     nodes_digest += root_node.getDigest("/");
-
-    Node version_node;
-    version_node.setData(std::to_string(static_cast<uint8_t>(Coordination::current_keeper_api_version)));
-    container.insert(Coordination::keeper_api_version_path, version_node);
-    nodes_digest += version_node.getDigest(Coordination::keeper_api_version_path);
 }
 
 template <class... Ts>
@@ -848,6 +843,9 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     {
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
+        if (request.path == Coordination::keeper_api_version_path)
+            return {};
+
         if (!storage.uncommitted_state.getNode(request.path))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
 
@@ -868,6 +866,16 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
                 response.error = result;
                 return response_ptr;
             }
+        }
+
+        // We cannot store the node because the result should be connected to the binary itself
+        // this way we avoid incorrect results when we read a snapshot from older Keeper that can have
+        // lower API version
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            response.data = std::to_string(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
         }
 
         auto & container = storage.container;
