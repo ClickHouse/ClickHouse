@@ -332,7 +332,7 @@ def print_stacktraces(output = sys.stdout) -> None:
 
 def stacktraces_collector() -> None:
     global stop_stacktraces_collection
-    with open("tsan_traces.txt", "w") as traces_file:
+    with open("/test_output/tsan_traces.txt", "w") as traces_file:
         while True:
             sleep(300)
             if not stop_stacktraces_collection.is_set():
