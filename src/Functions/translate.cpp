@@ -20,16 +20,17 @@ namespace ErrorCodes
 
 struct TranslateImpl
 {
+    using Map = std::array<UInt8, 128>;
+
     static void fillMapWithValues(
-        std::array<UInt8, 256> & map,
+        Map & map,
         const std::string & map_from,
         const std::string & map_to)
     {
         if (map_from.size() != map_to.size())
-            throw Exception("Second and trird arguments must be the same size", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Second and trird arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
 
-        for (size_t i = 0; i < 256; ++i)
-            map[i] = i;
+        std::iota(map.begin(), map.end(), 0);
 
         for (size_t i = 0; i < map_from.size(); ++i)
         {
@@ -48,7 +49,7 @@ struct TranslateImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        std::array<UInt8, 256> map;
+        Map map;
         fillMapWithValues(map, map_from, map_to);
 
         res_data.resize(data.size());
@@ -63,7 +64,10 @@ struct TranslateImpl
 
             while (src < src_end)
             {
-                *dst = map[*src];
+                if (*src <= ascii_upper_bound)
+                    *dst = map[*src];
+                else
+                    *dst = *src;
 
                 ++src;
                 ++dst;
@@ -82,7 +86,7 @@ struct TranslateImpl
         const std::string & map_to,
         ColumnString::Chars & res_data)
     {
-        std::array<UInt8, 256> map;
+        std::array<UInt8, 128> map;
         fillMapWithValues(map, map_from, map_to);
 
         res_data.resize(data.size());
@@ -93,16 +97,73 @@ struct TranslateImpl
 
         while (src < src_end)
         {
-            *dst = map[*src];
+            if (*src <= ascii_upper_bound)
+                *dst = map[*src];
+            else
+                *dst = *src;
 
             ++src;
             ++dst;
         }
     }
+
+private:
+    static constexpr auto ascii_upper_bound = '\x7f';
 };
 
 struct TranslateUTF8Impl
 {
+    using MapASCII = std::array<UInt32, 128>;
+    using MapUTF8 = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
+
+    static void fillMapWithValues(
+        MapASCII & map_ascii,
+        MapUTF8 & map,
+        const std::string & map_from,
+        const std::string & map_to)
+    {
+        auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
+        auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
+
+        if (map_from_size != map_to_size)
+            throw Exception("Second and trird arguments must be the same length", ErrorCodes::BAD_ARGUMENTS);
+
+        std::iota(map_ascii.begin(), map_ascii.end(), 0);
+
+        const UInt8 * map_from_ptr = reinterpret_cast<const UInt8 *>(map_from.data());
+        const UInt8 * map_from_end = map_from_ptr + map_from.size();
+        const UInt8 * map_to_ptr = reinterpret_cast<const UInt8 *>(map_to.data());
+        const UInt8 * map_to_end = map_to_ptr + map_to.size();
+
+        while (map_from_ptr < map_from_end && map_to_ptr < map_to_end)
+        {
+            size_t len_from = UTF8::seqLength(*map_from_ptr);
+            size_t len_to = UTF8::seqLength(*map_to_ptr);
+
+            std::optional<UInt32> res_from, res_to;
+
+            if (map_from_ptr + len_from <= map_from_end)
+                res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
+
+            if (map_to_ptr + len_to <= map_to_end)
+                res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
+
+            if (!res_from)
+                throw Exception("Second argument must be a valid UTF-8 string", ErrorCodes::BAD_ARGUMENTS);
+
+            if (!res_to)
+                throw Exception("Third argument must be a valid UTF-8 string", ErrorCodes::BAD_ARGUMENTS);
+
+            if (*map_from_ptr <= ascii_upper_bound)
+                map_ascii[*map_from_ptr] = *res_to;
+            else
+                map[*res_from] = *res_to;
+
+            map_from_ptr += len_from;
+            map_to_ptr += len_to;
+        }
+    }
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -111,37 +172,9 @@ struct TranslateUTF8Impl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
-        auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
-
-        if (map_from_size != map_to_size)
-            throw Exception("Second and trird arguments must be the same size", ErrorCodes::BAD_ARGUMENTS);
-
-        HashMap<UInt32, UInt32, HashCRC32<UInt32>> map(map_from_size);
-
-        const UInt8 * map_from_ptr = reinterpret_cast<const UInt8 *>(map_from.data());
-        const UInt8 * map_from_end = map_from_ptr + map_from.size();
-        const UInt8 * map_to_ptr = reinterpret_cast<const UInt8 *>(map_to.data());
-
-        while (map_from_ptr < map_from_end)
-        {
-            size_t len_a = UTF8::seqLength(*map_from_ptr);
-            auto res_a = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_a);
-
-            size_t len_b = UTF8::seqLength(*map_to_ptr);
-            auto res_b = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_b);
-
-            if (!res_a)
-                throw Exception("Second argument must be a valid UTF-8 string", ErrorCodes::BAD_ARGUMENTS);
-
-            if (!res_b)
-                throw Exception("Third argument must be a valid UTF-8 string", ErrorCodes::BAD_ARGUMENTS);
-
-            map[*res_a] = *res_b;
-
-            map_from_ptr += len_a;
-            map_to_ptr += len_b;
-        }
+        MapASCII map_ascii;
+        MapUTF8 map;
+        fillMapWithValues(map_ascii, map, map_from, map_to);
 
         res_data.resize(data.size());
         res_offsets.resize(offsets.size());
@@ -156,11 +189,22 @@ struct TranslateUTF8Impl
 
             while (src < src_end)
             {
-                /// Maximum length of UTF-8 sequence is 4 byte + 1 zero byte
+                /// Maximum length of UTF-8 sequence is 4 bytes + 1 zero byte
                 if (data_size + 5 > res_data.size())
                 {
                     res_data.resize(data_size * 2 + 5);
                     dst = res_data.data() + data_size;
+                }
+
+                if (*src <= ascii_upper_bound)
+                {
+                    size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], dst, 4);
+                    assert(0 < dst_len && dst_len <= 4);
+
+                    src += 1;
+                    dst += dst_len;
+                    data_size += dst_len;
+                    continue;
                 }
 
                 size_t src_len = UTF8::seqLength(*src);
@@ -168,11 +212,11 @@ struct TranslateUTF8Impl
 
                 if (src + src_len <= src_end)
                 {
-                    auto res = UTF8::convertUTF8ToCodePoint(src, src_len);
+                    auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_len);
 
-                    if (res)
+                    if (src_code_point)
                     {
-                        auto * it = map.find(*res);
+                        auto * it = map.find(*src_code_point);
                         if (it != map.end())
                         {
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), dst, 4);
@@ -273,9 +317,6 @@ public:
         const ColumnConst * c2_const = typeid_cast<const ColumnConst *>(c2);
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
-
-        if (map_from.empty())
-            throw Exception("Length of the second argument of function " + getName() + " must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
