@@ -4,7 +4,7 @@
 #include <memory>
 #include <mutex>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <base/StringRef.h>
 #include <Common/Arena.h>
@@ -126,7 +126,7 @@ class CudaAggregator
 public:
     using Params = Aggregator::Params;
 
-    CudaAggregator(ContextPtr context_, const Params & params_);
+    CudaAggregator(ContextPtr context_, const Block & header_, const Params & params_);
 
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
@@ -148,6 +148,12 @@ protected:
     friend class CudaConvertingAggregatedToChunksTransform;
 
     ContextPtr context;
+
+    /// Data structure of source blocks.
+    Block header;
+    /// Positions of aggregation key columns in the header.
+    const ColumnNumbers keys_positions;
+
     Params params;
 
     CudaAggregateFunctionPtr cuda_agg_function;

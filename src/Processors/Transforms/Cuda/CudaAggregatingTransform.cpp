@@ -6,7 +6,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/StackTrace.h>
 
 

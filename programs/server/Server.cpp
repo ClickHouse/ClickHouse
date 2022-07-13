@@ -626,11 +626,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
 
-#if USE_CUDA
-    LOG_INFO(log, "Initializaing CUDA context");
-    cudaInitDevice(0, 17179869184);
-#endif
-
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
@@ -668,6 +663,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     sanityChecks(*this);
+
+#if USE_CUDA
+    LOG_INFO(log, "Initializaing CUDA context");
+    auto cuda_size = config().getUInt("cuda_host_pinned_mem_pool_size", 2147483648);
+    cudaInitDevice(0, cuda_size);
+#endif
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will

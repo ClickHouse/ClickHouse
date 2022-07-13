@@ -362,6 +362,9 @@
     <!-- Cache size in elements for compiled expressions.-->
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
+    <!-- Size of pinned memory pool for CPU <-> GPU transfers.-->
+    <cuda_host_pinned_mem_pool_size>2147483648</cuda_host_pinned_mem_pool_size>
+
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 

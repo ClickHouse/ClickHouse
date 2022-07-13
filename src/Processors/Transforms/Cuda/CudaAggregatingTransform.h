@@ -30,10 +30,10 @@ struct CudaAggregatingTransformParams
     bool final;
     bool only_merge = false;
 
-    CudaAggregatingTransformParams(const Aggregator::Params & params_, bool final_, ContextPtr context_)
+    CudaAggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_, ContextPtr context_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<CudaAggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), context_, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), context_, header, params))
         , final(final_)
     {
     }

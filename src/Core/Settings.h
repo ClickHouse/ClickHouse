@@ -771,17 +771,15 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, output_format_sql_insert_include_column_names, true, "Include column names in INSERT query", 0) \
     M(Bool, output_format_sql_insert_use_replace, false, "Use REPLACE statement instead of INSERT", 0) \
     M(Bool, output_format_sql_insert_quote_names, true, "Quote column names with '`' characters", 0) \
-    M(EnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::EnumComparingMode::BY_VALUES, "How to map ClickHouse Enum and CapnProto Enum", 0) \
     \
-    M(Bool, use_cuda_aggregation, false, "Whether to use CUDA aggregation", 0) \
+    M(Bool, use_cuda_aggregation, false, "Enable CUDA aggregation functions", 0) \
     M(UInt64, cuda_device_number, 0, "CUDA device number (temporal)", 0) \
-    M(UInt64, cuda_host_pinned_mem_pool_size, 2147483648, "Size of pinned memory pool for cpu/gpu transfers", 0) \
-    M(UInt64, cuda_chunks_number, 2, "number of CUDA working streams per device", 0) \
+    M(UInt64, cuda_chunks_number, 2, "Number of CUDA working streams per device", 0) \
     M(UInt64, cuda_hash_table_max_size, 16384, "CUDA maximum result size (temporal)", 0) \
     M(UInt64, cuda_hash_table_strings_buffer_max_size, 262144, "CUDA maximum total size of all strings keys in result (temporal)", 0) \
     M(UInt64, cuda_buffer_max_strings_number, 2097152, "CUDA maximum rows number in one time processed block", 0) \
     M(UInt64, cuda_buffer_max_size, 134217728, "CUDA maximum total size of all strings in one time processed block", 0) \
-    M(UInt64, cuda_memcpy_threads_num, 1, "CUDA maximum threads to copy block into pinned buffer", 0)
+    M(UInt64, cuda_memcpy_threads_num, 1, "CUDA maximum threads to copy block into pinned buffer", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.

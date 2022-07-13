@@ -37,6 +37,19 @@
 #include <Interpreters/Cuda/CudaAggregator.h>
 
 
+namespace
+{
+
+DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
+{
+    DB::ColumnNumbers keys_positions(params.keys_size);
+    for (size_t i = 0; i < params.keys_size; ++i)
+        keys_positions[i] = header.getPositionByName(params.keys[i]);
+    return keys_positions;
+}
+
+}
+
 namespace DB
 {
 
@@ -45,54 +58,14 @@ namespace ErrorCodes
     extern const int CUDA_UNSUPPORTED_CASE;
 }
 
-/// For now leave it that way
+
 Block CudaAggregator::getHeader(bool final) const
 {
-    Block res;
-
-    if (params.src_header)
-    {
-        for (size_t i = 0; i < params.keys_size; ++i)
-            res.insert(params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty());
-
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-        {
-            size_t arguments_size = params.aggregates[i].arguments.size();
-            DataTypes argument_types(arguments_size);
-            for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = params.src_header.safeGetByPosition(params.aggregates[i].arguments[j]).type;
-
-            DataTypePtr type;
-            if (final)
-                type = params.aggregates[i].function->getReturnType();
-            else
-                type = std::make_shared<DataTypeAggregateFunction>(
-                    params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
-
-            res.insert({type, params.aggregates[i].column_name});
-        }
-    }
-    else if (params.intermediate_header)
-    {
-        res = params.intermediate_header.cloneEmpty();
-
-        if (final)
-        {
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-            {
-                auto & elem = res.getByPosition(params.keys_size + i);
-
-                elem.type = params.aggregates[i].function->getReturnType();
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    return materializeBlock(res);
+    return params.getHeader(header, final);
 }
 
-
-CudaAggregator::CudaAggregator(ContextPtr context_, const Params & params_) : context(context_), params(params_)
+CudaAggregator::CudaAggregator(ContextPtr context_, const Block & header_, const Params & params_)
+    : context(context_), header(header_), keys_positions(calculateKeysPositions(header, params_)), params(params_)
 {
     /// Here we cut off unsupported cases
 
@@ -101,8 +74,8 @@ CudaAggregator::CudaAggregator(ContextPtr context_, const Params & params_) : co
     if (params.aggregates_size != 1)
         throw Exception("CudaAggregator: params.aggregates_size is not equal 1", ErrorCodes::CUDA_UNSUPPORTED_CASE);
 
-    const auto & key_pos = params.keys[0];
-    const auto & key_type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(key_pos).type;
+    const auto & key_name = params.keys[0];
+    const auto & key_type = header.getByName(key_name).type;
 
     if (WhichDataType(key_type).isNullable())
         throw Exception("CudaAggregator: have no idea what is nullable key", ErrorCodes::CUDA_UNSUPPORTED_CASE);
@@ -112,11 +85,11 @@ CudaAggregator::CudaAggregator(ContextPtr context_, const Params & params_) : co
     /// Throws an exception if function CUDA version is not implemented
     cuda_agg_function = params.aggregates[0].function->createCudaFunction();
 
-    if (params.aggregates[0].arguments.size() != 1)
+    if (params.aggregates[0].argument_names.size() != 1)
         throw Exception("CudaAggregator: arguments number of function is not equal 1", ErrorCodes::CUDA_UNSUPPORTED_CASE);
 
-    const auto & arg_pos = params.aggregates[0].arguments[0];
-    const auto & arg_type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(arg_pos).type;
+    const auto & arg_name = params.aggregates[0].argument_names[0];
+    const auto & arg_type = header.getByName(arg_name).type;
 
     if (WhichDataType(arg_type).isNullable())
         throw Exception("CudaAggregator: have no idea what is nullable argument", ErrorCodes::CUDA_UNSUPPORTED_CASE);
@@ -134,7 +107,7 @@ bool CudaAggregator::executeOnBlock(
     bool & /*no_more_keys*/) const
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
-        aggregate_columns[i].resize(params.aggregates[i].arguments.size());
+        aggregate_columns[i].resize(params.aggregates[i].argument_names.size());
 
     /** Constant columns are not supported directly during aggregation.
       * To make them work anyway, we materialize them.
@@ -144,7 +117,7 @@ bool CudaAggregator::executeOnBlock(
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = columns[params.keys[i]].get();
+        key_columns[i] = columns.at(keys_positions[i]).get();
 
         if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
@@ -157,7 +130,8 @@ bool CudaAggregator::executeOnBlock(
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            aggregate_columns[i][j] = columns[params.aggregates[i].arguments[j]].get();
+            const auto pos = header.getPositionByName(params.aggregates[i].argument_names[j]);
+            aggregate_columns[i][j] = columns.at(pos).get();
 
             if (ColumnPtr converted = aggregate_columns[i][j]->convertToFullColumnIfConst())
             {
@@ -212,11 +186,11 @@ Block CudaAggregator::prepareBlockAndFill(CudaAggregatedDataVariants & /*data_va
     MutableColumns key_columns(params.keys_size);
     MutableColumns final_aggregate_columns(params.aggregates_size);
 
-    Block header = getHeader(final);
+    Block res_header = getHeader(final);
 
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = header.safeGetByPosition(i).type->createColumn();
+        key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
         key_columns[i]->reserve(rows);
     }
 
@@ -228,7 +202,7 @@ Block CudaAggregator::prepareBlockAndFill(CudaAggregatedDataVariants & /*data_va
 
     filler(key_columns, final_aggregate_columns);
 
-    Block res = header.cloneEmpty();
+    Block res = res_header.cloneEmpty();
 
     for (size_t i = 0; i < params.keys_size; ++i)
         res.getByPosition(i).column = std::move(key_columns[i]);
@@ -239,7 +213,7 @@ Block CudaAggregator::prepareBlockAndFill(CudaAggregatedDataVariants & /*data_va
     }
 
     /// Change the size of the columns-constants in the block.
-    size_t columns = header.columns();
+    size_t columns = res_header.columns();
     for (size_t i = 0; i < columns; ++i)
         if (isColumnConst(*(res.getByPosition(i).column)))
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);

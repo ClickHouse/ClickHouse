@@ -10,7 +10,7 @@ typedef CudaStringsHashTable::HashType HashType;
 typedef CudaStringsHashTable::Pointer Pointer;
 
 CudaStringsHashTable::CudaStringsHashTable(SizeType buckets_num_, SizeType str_buf_max_sz_)
-    : buckets_num(bucketßs_num_), str_buf_max_sz(str_buf_max_sz_), str_buf_sz(0)
+    : buckets_num(buckets_num_), str_buf_max_sz(str_buf_max_sz_), str_buf_sz(0)
 {
     hashes = CudaArrayPtr<HashType>(new CudaArray<HashType>(buckets_num));
     lens = CudaArrayPtr<SizeType>(new CudaArray<SizeType>(buckets_num));
