@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <functional>
 #include <future>
 #include <numeric>
 #include <Poco/Util/Application.h>
@@ -1579,7 +1578,9 @@ Block Aggregator::convertOneBucketToBlock(
     bool final,
     size_t bucket) const
 {
-    Block block = convertToBlockImpl</* return_single_block */ true>(
+    // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
+    constexpr bool return_single_block = true;
+    Block block = convertToBlockImpl<return_single_block>(
         method, method.data.impls[bucket], arena, data_variants.aggregates_pools, final, method.data.impls[bucket].size());
 
     block.info.bucket_num = bucket;
