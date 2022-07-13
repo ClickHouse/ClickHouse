@@ -41,9 +41,6 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
-    if (created_from_ddl)
-        context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
-
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
 }
