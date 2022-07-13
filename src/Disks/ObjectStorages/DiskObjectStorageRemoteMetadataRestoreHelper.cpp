@@ -28,7 +28,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::createFileOperationObject(
     const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
 {
     const String relative_path = "operations/r" + revisionToString(revision) + operation_log_suffix + "-" + operation_name;
-    auto object = disk->metadata_storage->createStorageObject(relative_path);
+    StoredObject object(fs::path(disk->object_storage_root_path) / relative_path);
     auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite, metadata);
     buf->write('0');
     buf->finalize();
@@ -74,7 +74,7 @@ int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStora
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int & version) const
 {
-    StoredObject object(fs::path(disk->object_storage_root_path) / SCHEMA_VERSION_OBJECT);
+    StoredObject object{fs::path(disk->object_storage_root_path) / SCHEMA_VERSION_OBJECT};
 
     auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite);
     writeIntText(version, *buf);
@@ -84,7 +84,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int &
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const
 {
-    StoredObject object(key);
+    StoredObject object{key};
     disk->object_storage->copyObject(object, object, metadata);
 }
 
@@ -98,7 +98,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
         ObjectAttributes metadata {
             {"path", path}
         };
-        updateObjectMetadata(object.path, metadata);
+        updateObjectMetadata(object.absolute_path, metadata);
     }
 }
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
@@ -432,8 +432,8 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
         auto relative_key = shrinkKey(source_path, key);
         auto full_path = fs::path(disk->object_storage_root_path) / relative_key;
 
-        StoredObject object_to(full_path);
-        StoredObject object_from(key);
+        StoredObject object_from{key};
+        StoredObject object_to{fs::path(disk->object_storage_root_path) / relative_key};
 
         /// Copy object if we restore to different bucket / path.
         if (source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->object_storage_root_path != source_path)

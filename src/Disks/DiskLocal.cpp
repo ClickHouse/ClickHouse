@@ -10,7 +10,7 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromLocalDisk.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -596,10 +596,10 @@ catch (...)
     return false;
 }
 
-DiskObjectStoragePtr DiskLocal::getObjectStorage(const String & name_)
+DiskObjectStoragePtr DiskLocal::createDiskObjectStorage(const String & name_)
 {
     auto object_storage = std::make_shared<LocalObjectStorage>();
-    auto metadata_storage = std::make_shared<MetadataStorageFromLocalDisk>(
+    auto metadata_storage = std::make_shared<FakeMetadataStorageFromDisk>(
         /* metadata_storage */std::static_pointer_cast<DiskLocal>(shared_from_this()),
         object_storage,
         /* object_storage_root_path */getPath());

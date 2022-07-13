@@ -4,26 +4,24 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransaction.h>
-#include "MetadataStorageFromDiskTransactionOperations.h"
+#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 
 namespace DB
 {
 
-class MetadataStorageFromRemoteDisk final : public IMetadataStorage
+class MetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
-    friend class MetadataStorageFromRemoteDiskTransaction;
+    friend class MetadataStorageFromDiskTransaction;
+
+    mutable std::shared_mutex metadata_mutex;
 
     DiskPtr disk;
     std::string object_storage_root_path;
 
 public:
-    MetadataStorageFromRemoteDisk(DiskPtr disk_, const std::string & object_storage_root_path_)
-        : disk(disk_)
-        , object_storage_root_path(object_storage_root_path_)
-    {
-    }
+    MetadataStorageFromDisk(DiskPtr disk_, const std::string & object_storage_root_path_);
 
     MetadataTransactionPtr createTransaction() const override;
 
@@ -51,13 +49,11 @@ public:
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 
-    std::string getObjectStorageRootPath() const { return object_storage_root_path; }
-
-    DiskPtr getDisk() const override { return disk; }
+    DiskPtr getDisk() const { return disk; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
 
-    StoredObject createStorageObject(const std::string & blob_name) const override;
+    std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
 
 private:
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
@@ -65,16 +61,28 @@ private:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
 };
 
-class MetadataStorageFromRemoteDiskTransaction final : public MetadataStorageFromDiskTransaction
+class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
-    const MetadataStorageFromRemoteDisk & metadata_storage_for_remote;
+    const MetadataStorageFromDisk & metadata_storage;
+
+    std::vector<MetadataOperationPtr> operations;
+    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
+
+    void addOperation(MetadataOperationPtr && operation);
+
+    void rollback(size_t until_pos);
 
 public:
-    explicit MetadataStorageFromRemoteDiskTransaction(const MetadataStorageFromRemoteDisk & metadata_storage_)
-        : MetadataStorageFromDiskTransaction(metadata_storage_)
-        , metadata_storage_for_remote(metadata_storage_)
+    explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
+        : metadata_storage(metadata_storage_)
     {}
+
+    ~MetadataStorageFromDiskTransaction() override = default;
+
+    const IMetadataStorage & getStorageForNonTransactionalReads() const final;
+
+    void commit() final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
@@ -92,7 +100,7 @@ public:
 
     void createDirectory(const std::string & path) override;
 
-    void createDicrectoryRecursive(const std::string & path) override;
+    void createDirectoryRecursive(const std::string & path) override;
 
     void removeDirectory(const std::string & path) override;
 

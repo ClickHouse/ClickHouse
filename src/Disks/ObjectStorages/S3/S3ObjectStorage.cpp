@@ -24,8 +24,6 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
-#include <Common/IFileCache.h>
-#include <Common/FileCacheFactory.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
@@ -103,7 +101,7 @@ Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const s
 
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
-    auto object_head = requestObjectHeadData(bucket, object.path);
+    auto object_head = requestObjectHeadData(bucket, object.absolute_path);
     if (!object_head.IsSuccess())
     {
         if (object_head.GetError().GetErrorType() == Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
@@ -113,7 +111,6 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
     }
     return true;
 }
-
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
@@ -151,7 +148,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
 {
     auto settings_ptr = s3_settings.get();
     return std::make_unique<ReadBufferFromS3>(
-        client.get(), bucket, object.path, version_id, settings_ptr->s3_settings.max_single_read_retries, read_settings);
+        client.get(),
+        bucket,
+        object.absolute_path,
+        version_id,
+        settings_ptr->s3_settings.max_single_read_retries,
+        read_settings);
 }
 
 
@@ -170,12 +172,14 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
         bucket,
-        object.path,
+        object.absolute_path,
         settings_ptr->s3_settings,
         attributes,
-        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()));
+        buf_size,
+        threadPoolCallbackRunner(getThreadPoolWriter()));
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(finalize_callback), object.path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(
+        std::move(s3_buffer), std::move(finalize_callback), object.absolute_path);
 }
 
 void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
@@ -213,7 +217,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 
     Aws::S3::Model::DeleteObjectRequest request;
     request.SetBucket(bucket);
-    request.SetKey(path);
+    request.SetKey(object.absolute_path);
     auto outcome = client_ptr->DeleteObject(request);
 
     throwIfUnexpectedError(outcome, if_exists);
@@ -244,12 +248,12 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
             for (; current_position < objects.size() && current_chunk.size() < chunk_size_limit; ++current_position)
             {
                 Aws::S3::Model::ObjectIdentifier obj;
-                obj.SetKey(objects[current_position].path);
+                obj.SetKey(objects[current_position].absolute_path);
                 current_chunk.push_back(obj);
 
                 if (!keys.empty())
                     keys += ", ";
-                keys += objects[current_position].path;
+                keys += objects[current_position].absolute_path;
             }
 
             Aws::S3::Model::Delete delkeys;
@@ -307,9 +311,13 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 {
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
-        copyObjectImpl(bucket, object_from.path, dest_s3->bucket, object_to.path, {}, object_to_attributes);
+    {
+        copyObjectImpl(bucket, object_from.absolute_path, dest_s3->bucket, object_to.absolute_path, {}, object_to_attributes);
+    }
     else
+    {
         IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
+    }
 }
 
 void S3ObjectStorage::copyObjectImpl(
@@ -342,7 +350,11 @@ void S3ObjectStorage::copyObjectImpl(
     throwIfError(outcome);
 }
 
-void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+void S3ObjectStorage::copyObjectMultipartImpl(
+    const String & src_bucket,
+    const String & src_key,
+    const String & dst_bucket,
+    const String & dst_key,
     std::optional<Aws::S3::Model::HeadObjectResult> head,
     std::optional<ObjectAttributes> metadata) const
 {
@@ -422,11 +434,19 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
 void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto head = requestObjectHeadData(bucket, object_from.path).GetResult();
-    if (head.GetContentLength() >= static_cast<int64_t>(5UL * 1024 * 1024 * 1024))
-        copyObjectMultipartImpl(bucket, object_from.path, bucket, object_to.path, head, object_to_attributes);
+    auto head = requestObjectHeadData(bucket, object_from.absolute_path).GetResult();
+    static constexpr int64_t multipart_upload_threashold = 5UL * 1024 * 1024 * 1024;
+
+    if (head.GetContentLength() >= multipart_upload_threashold)
+    {
+        copyObjectMultipartImpl(
+            bucket, object_from.absolute_path, bucket, object_to.absolute_path, head, object_to_attributes);
+    }
     else
-        copyObjectImpl(bucket, object_from.path, bucket, object_to.path, head, object_to_attributes);
+    {
+        copyObjectImpl(
+            bucket, object_from.absolute_path, bucket, object_to.absolute_path, head, object_to_attributes);
+    }
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)

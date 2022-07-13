@@ -57,6 +57,8 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
     void finalize() override
     {
     }
+
+    std::string getInfoForLog() const override { return fmt::format("PureMetadataObjectStorageOperation"); }
 };
 
 struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
@@ -65,6 +67,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     bool delete_metadata_only;
     StoredObjects objects_to_remove;
     bool if_exists;
+    bool remove_from_cache = false;
 
     RemoveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -77,6 +80,11 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         , delete_metadata_only(delete_metadata_only_)
         , if_exists(if_exists_)
     {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("RemoveObjectStorageOperation (path: {}, if exists: {})", path, if_exists);
+    }
 
     void execute(MetadataTransactionPtr tx) override
     {
@@ -99,7 +107,9 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
             tx->unlinkMetadata(path);
 
             if (hardlink_count == 0)
+            {
                 objects_to_remove = objects;
+            }
         }
         catch (const Exception & e)
         {
@@ -134,6 +144,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     std::unordered_map<std::string, StoredObjects> objects_to_remove;
     bool keep_all_batch_data;
     NameSet file_names_remove_metadata_only;
+    StoredObjects objects_to_remove_from_cache;
 
     RemoveRecursiveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -146,6 +157,11 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         , keep_all_batch_data(keep_all_batch_data_)
         , file_names_remove_metadata_only(file_names_remove_metadata_only_)
     {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("RemoveRecursiveObjectStorageOperation (path: {})", path);
+    }
 
     void removeMetadataRecursive(MetadataTransactionPtr tx, const std::string & path_to_remove)
     {
@@ -161,8 +177,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                 tx->unlinkMetadata(path_to_remove);
 
                 if (hardlink_count == 0)
+                {
                     objects_to_remove[path_to_remove] = objects_paths;
-
+                }
             }
             catch (const Exception & e)
             {
@@ -231,6 +248,11 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
         , path_to(path_to_)
     {}
 
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("ReplaceFileObjectStorageOperation (path_from: {}, path_to: {})", path_from, path_to);
+    }
+
     void execute(MetadataTransactionPtr tx) override
     {
         if (metadata_storage.exists(path_to))
@@ -266,6 +288,11 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , object(object_)
     {}
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("WriteFileObjectStorageOperation");
+    }
 
     void setOnExecute(std::function<void(MetadataTransactionPtr)> && on_execute_)
     {
@@ -308,6 +335,11 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         , to_path(to_path_)
     {}
 
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("CopyFileObjectStorageOperation (path_from: {}, path_to: {})", from_path, to_path);
+    }
+
     void execute(MetadataTransactionPtr tx) override
     {
         tx->createEmptyMetadataFile(to_path);
@@ -315,8 +347,9 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto blob_name = object_storage.generateBlobNameForPath(to_path);
-            auto object_to = metadata_storage.createStorageObject(blob_name);
+            std::string blob_name = object_storage.generateBlobNameForPath(to_path);
+            auto object_to = StoredObject::create(
+                object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
 
             object_storage.copyObject(object_from, object_to);
 
@@ -353,7 +386,7 @@ void DiskObjectStorageTransaction::createDirectories(const std::string & path)
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
-            tx->createDicrectoryRecursive(path);
+            tx->createDirectoryRecursive(path);
         }));
 }
 
@@ -384,7 +417,8 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
 
 void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, const std::string & to_path)
 {
-    operations_to_execute.emplace_back(std::make_unique<ReplaceFileObjectStorageOperation>(object_storage, metadata_storage, from_path, to_path));
+    auto operation = std::make_unique<ReplaceFileObjectStorageOperation>(object_storage, metadata_storage, from_path, to_path);
+    operations_to_execute.emplace_back(std::move(operation));
 }
 
 void DiskObjectStorageTransaction::clearDirectory(const std::string & path)
@@ -403,17 +437,22 @@ void DiskObjectStorageTransaction::removeFile(const std::string & path)
 
 void DiskObjectStorageTransaction::removeSharedFile(const std::string & path, bool keep_shared_data)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveObjectStorageOperation>(object_storage, metadata_storage, path, keep_shared_data, false));
+    auto operation = std::make_unique<RemoveObjectStorageOperation>(object_storage, metadata_storage, path, keep_shared_data, false);
+    operations_to_execute.emplace_back(std::move(operation));
 }
 
-void DiskObjectStorageTransaction::removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
+void DiskObjectStorageTransaction::removeSharedRecursive(
+    const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveObjectStorageOperation>(object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only));
+    auto operation = std::make_unique<RemoveRecursiveObjectStorageOperation>(
+        object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only);
+    operations_to_execute.emplace_back(std::move(operation));
 }
 
 void DiskObjectStorageTransaction::removeSharedFileIfExists(const std::string & path, bool keep_shared_data)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveObjectStorageOperation>(object_storage, metadata_storage, path, keep_shared_data, true));
+    auto operation = std::make_unique<RemoveObjectStorageOperation>(object_storage, metadata_storage, path, keep_shared_data, true);
+    operations_to_execute.emplace_back(std::move(operation));
 }
 
 void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
@@ -437,7 +476,8 @@ void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
 }
 
 
-void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+void DiskObjectStorageTransaction::removeSharedFiles(
+    const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     for (const auto & file : files)
     {
@@ -466,10 +506,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-    auto blob_name = object_storage.generateBlobNameForPath(path);
-    auto object = metadata_storage.createStorageObject(blob_name);
-
+    String blob_name;
     std::optional<ObjectAttributes> object_attributes;
+
+    blob_name = object_storage.generateBlobNameForPath(path);
     if (metadata_helper)
     {
         auto revision = metadata_helper->revision_counter + 1;
@@ -480,6 +520,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
+    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 
@@ -585,7 +626,7 @@ void DiskObjectStorageTransaction::commit()
         }
         catch (Exception & ex)
         {
-            ex.addMessage(fmt::format("While executing operation #{}", i));
+            ex.addMessage(fmt::format("While executing operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
             {

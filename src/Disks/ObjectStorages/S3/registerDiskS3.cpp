@@ -20,7 +20,8 @@
 #include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include <Disks/ObjectStorages/MetadataStorageFromRemoteDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <IO/S3Common.h>
 
 #include <Storages/StorageS3Settings.h>
 
@@ -69,10 +70,10 @@ void checkRemoveAccess(IDisk & disk)
 
 bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_with_trailing_slash)
 {
-    const String path = key_with_trailing_slash + "_test_remove_objects_capability";
+    StoredObject object(key_with_trailing_slash + "_test_remove_objects_capability");
     try
     {
-        auto file = storage.writeObject(path, WriteMode::Rewrite);
+        auto file = storage.writeObject(object, WriteMode::Rewrite);
         file->write("test", 4);
         file->finalize();
     }
@@ -80,7 +81,7 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_wit
     {
         try
         {
-            storage.removeObject(path);
+            storage.removeObject(object);
         }
         catch (...)
         {
@@ -90,14 +91,14 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_wit
     try
     {
         /// Uses `DeleteObjects` request (batch delete).
-        storage.removeObjects({{ path, 0 }});
+        storage.removeObjects({object});
         return false;
     }
     catch (const Exception &)
     {
         try
         {
-            storage.removeObject(path);
+            storage.removeObject(object);
         }
         catch (...)
         {
@@ -114,7 +115,8 @@ void registerDiskS3(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
+                      const DisksMap & /*map*/) -> DiskPtr
+    {
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
 
         if (uri.key.empty())
@@ -125,7 +127,7 @@ void registerDiskS3(DiskFactory & factory)
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        auto metadata_storage = std::make_shared<MetadataStorageFromRemoteDisk>(metadata_disk, uri.key);
+        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
 
         auto s3_storage = std::make_unique<S3ObjectStorage>(

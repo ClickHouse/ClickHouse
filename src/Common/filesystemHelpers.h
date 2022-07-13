@@ -68,7 +68,12 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
 int getINodeNumberFromPath(const String & path);
 
-std::optional<size_t> getFileSizeIfPossible(const String & path);
+std::optional<size_t> tryGetSizeFromFilePath(const String & path);
+
+/// Get inode number for a file path.
+/// Will not work correctly if filesystem does not support inodes.
+int getINodeNumberFromPath(const String & path);
+
 }
 
 namespace FS

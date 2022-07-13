@@ -12,6 +12,7 @@
 #include <IO/WriteSettings.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Common/ThreadPool.h>
 #include <Disks/WriteMode.h>
 
@@ -37,26 +38,6 @@ struct RelativePathWithSize
 using RelativePathsWithSize = std::vector<RelativePathWithSize>;
 
 
-/// Object metadata: path, size. cache_hint.
-struct StoredObject
-{
-    std::string path; /// absolute
-    uint64_t bytes_size;
-
-    /// Optional cache hint for cache. Use delayed initialization
-    /// because somecache hint implementation requires it.
-    using CacheHintCreator = std::function<std::string(const std::string &)>;
-    CacheHintCreator cache_hint_creator;
-
-    StoredObject() = default;
-
-    explicit StoredObject(const std::string & path_, uint64_t bytes_size_ = 0, CacheHintCreator && cache_hint_creator_ = {});
-
-    std::string getCacheHint() const;
-};
-
-using StoredObjects = std::vector<StoredObject>;
-
 struct ObjectMetadata
 {
     uint64_t size_bytes;
@@ -73,6 +54,8 @@ class IObjectStorage
 {
 public:
     IObjectStorage() = default;
+
+    virtual std::string getName() const = 0;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
@@ -167,13 +150,20 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix, ContextPtr context) = 0;
 
-    /// Generate object storage path.
+    /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual std::string generateBlobNameForPath(const std::string & path) = 0;
 
+    /// Get unique id for passed absolute path in object storage.
+    virtual std::string getUniqueId(const std::string & path) const { return path; }
+
     virtual bool supportsAppend() const { return false; }
 
-    virtual void removeCacheIfExists(const std::string & /* path_hint_for_cache */) {}
+    /// Remove filesystem cache. `path` is a result of object.getPathKeyForCache() method,
+    /// which is used to define a cache key for the source object path.
+    virtual void removeCacheIfExists(const std::string & /* path */) {}
+
+    virtual bool supportsCache() const { return false; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

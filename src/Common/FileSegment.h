@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Core/Types.h>
+
 #include <Common/IFileCache.h>
-#include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 namespace Poco { class Logger; }
 

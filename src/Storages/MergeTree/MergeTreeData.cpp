@@ -1221,7 +1221,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
         {
             defined_disk_names.insert(disk_ptr->getName());
-            if (disk_ptr->isCached())
+            if (disk_ptr->supportsCache())
             {
                 auto caches = disk_ptr->getCacheLayersNames();
                 disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
@@ -1230,7 +1230,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (const auto & [name, disk_ptr] : getContext()->getDisksMap())
         {
-            if (disk_ptr->isCached())
+            if (disk_ptr->supportsCache())
             {
                 auto caches = disk_ptr->getCacheLayersNames();
                 disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());

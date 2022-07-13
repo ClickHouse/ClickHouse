@@ -16,6 +16,8 @@ class CachedObjectStorage : public IObjectStorage
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_);
 
+        std::string getName() const override { return "CachedObjectStorage(" + object_storage->getName() + ")"; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -86,6 +88,10 @@ public:
     bool isRemote() const override { return object_storage->isRemote(); }
 
     void removeCacheIfExists(const std::string & cache_hint) override;
+
+    bool supportsCache() const override { return true; }
+
+    std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;

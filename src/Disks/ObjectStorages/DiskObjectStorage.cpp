@@ -101,8 +101,8 @@ DiskObjectStorage::DiskObjectStorage(
     ObjectStoragePtr object_storage_,
     DiskType disk_type_,
     bool send_metadata_,
-    uint64_t thread_pool_size)
-    : IDisk(std::make_unique<AsyncThreadPoolExecutor>(log_name, thread_pool_size))
+    uint64_t thread_pool_size_)
+    : IDisk(std::make_unique<AsyncThreadPoolExecutor>(log_name, thread_pool_size_))
     , name(name_)
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
@@ -110,6 +110,7 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(send_metadata_)
+    , threadpool_size(thread_pool_size_)
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
@@ -118,7 +119,7 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
     return metadata_storage->getStorageObjects(local_path);
 }
 
-void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
+void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
     /// Protect against concurrent delition of files (for example because of a merge).
     if (metadata_storage->isFile(local_path))
@@ -247,25 +248,20 @@ std::unordered_map<String, String> DiskObjectStorage::getSerializedMetadata(cons
 
 String DiskObjectStorage::getUniqueId(const String & path) const
 {
-    LOG_TRACE(log, "Remote path: {}, Path: {}", object_storage_root_path, path);
     String id;
     auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0].path;
+        id = blobs_paths[0].absolute_path;
     return id;
-}
-
-bool DiskObjectStorage::checkObjectExists(const String & path) const
-{
-    if (!path.starts_with(object_storage_root_path))
-        return false;
-
-    return object_storage->exists(StoredObject{path, 0});
 }
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    return checkObjectExists(id);
+    if (!id.starts_with(object_storage_root_path))
+        return false;
+
+    auto object = StoredObject::create(*object_storage, id, {}, {}, true);
+    return object_storage->exists(object);
 }
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata)
@@ -394,7 +390,8 @@ ReservationPtr DiskObjectStorage::reserve(UInt64 bytes)
     if (!tryReserve(bytes))
         return {};
 
-    return std::make_unique<DiskObjectStorageReservation>(std::static_pointer_cast<DiskObjectStorage>(shared_from_this()), bytes);
+    return std::make_unique<DiskObjectStorageReservation>(
+        std::static_pointer_cast<DiskObjectStorage>(shared_from_this()), bytes);
 }
 
 void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
@@ -404,7 +401,8 @@ void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delet
     transaction->commit();
 }
 
-void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+void DiskObjectStorage::removeSharedRecursive(
+    const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     auto transaction = createObjectStorageTransaction();
     transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
@@ -437,12 +435,17 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
     return {};
 }
 
-DiskObjectStoragePtr DiskObjectStorage::getObjectStorage(const String & name_)
+bool DiskObjectStorage::supportsCache() const
+{
+    return object_storage->supportsCache();
+}
+
+DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage(const String & name_)
 {
     return std::make_shared<DiskObjectStorage>(
         name_,
         object_storage_root_path,
-        "DiskObjectStorage(" + name + ")",
+        name,
         metadata_storage,
         object_storage,
         disk_type,
@@ -454,11 +457,6 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const String & layer_n
 {
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache);
     cache_layers.insert(layer_name);
-}
-
-bool DiskObjectStorage::isCached() const
-{
-    return dynamic_cast<CachedObjectStorage *>(object_storage.get());
 }
 
 template <typename T>
@@ -475,11 +473,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    auto objects = metadata_storage->getStorageObjects(path);
-    String r;
-    for (const auto & object : objects)
-        r += object.path + ", ";
-    LOG_TEST(log, "Read: {}, objects: {} ({})", path, objects.size(), r);
     return object_storage->readObjects(
         metadata_storage->getStorageObjects(path),
         updateSettingsForReadWrite(path, settings),
@@ -505,7 +498,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
-void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
+void DiskObjectStorage::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
     const auto config_prefix = "storage_configuration.disks." + name;
     object_storage->applyNewSettings(config, config_prefix, context_);
@@ -514,13 +508,15 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
         exec->setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
 }
 
-void DiskObjectStorage::restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+void DiskObjectStorage::restoreMetadataIfNeeded(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     if (send_metadata)
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        if (metadata_helper->readSchemaVersion(object_storage.get(), object_storage_root_path) < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
+        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_storage_root_path);
+        if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 
         metadata_helper->findLastRevision();
