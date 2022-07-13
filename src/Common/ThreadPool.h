@@ -198,7 +198,7 @@ public:
 
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
     {
-        if (joinable())
+        if (initialized())
             abort();
         state = std::move(rhs.state);
         thread_id = std::move(rhs.thread_id);
@@ -207,13 +207,13 @@ public:
 
     ~ThreadFromGlobalPool()
     {
-        if (joinable())
+        if (initialized())
             abort();
     }
 
     void join()
     {
-        if (!joinable())
+        if (!initialized())
             abort();
 
         state->wait();
@@ -222,7 +222,7 @@ public:
 
     void detach()
     {
-        if (!joinable())
+        if (!initialized())
             abort();
         state.reset();
     }
@@ -241,6 +241,14 @@ private:
     /// The state used in this object and inside the thread job.
     std::shared_ptr<Poco::Event> state;
     std::shared_ptr<std::thread::id> thread_id;
+
+    /// Internally initialized() should be used over joinable(),
+    /// since it is enough to know that the thread is initialized,
+    /// and ignore that fact that thread cannot join itself.
+    bool initialized() const
+    {
+        return static_cast<bool>(state);
+    }
 };
 
 
