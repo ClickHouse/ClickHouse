@@ -113,7 +113,7 @@ KeeperServer::KeeperServer(
           checkAndGetSuperdigest(configuration_and_settings_->super_digest),
           config.getBool("keeper_server.digest_enabled", true)))
     , state_manager(nuraft::cs_new<KeeperStateManager>(
-          server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
+          server_id, "keeper_server", configuration_and_settings_->log_storage_path, configuration_and_settings_->state_file_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
     , is_recovering(config.has("keeper_server.force_recovery") && config.getBool("keeper_server.force_recovery"))
 {
@@ -444,13 +444,11 @@ bool KeeperServer::isLeader() const
     return raft_instance->is_leader();
 }
 
-
 bool KeeperServer::isObserver() const
 {
     auto srv_config = state_manager->get_srv_config();
     return srv_config->is_learner();
 }
-
 
 bool KeeperServer::isFollower() const
 {
@@ -576,7 +574,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
     auto set_initialized = [this]()
     {
-        std::unique_lock lock(initialized_mutex);
+        std::lock_guard lock(initialized_mutex);
         initialized_flag = true;
         initialized_cv.notify_all();
     };
@@ -804,6 +802,27 @@ bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
     else
         LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
     return true;
+}
+
+Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
+{
+    Keeper4LWInfo result;
+    result.is_leader = raft_instance->is_leader();
+
+    auto srv_config = state_manager->get_srv_config();
+    result.is_observer = srv_config->is_learner();
+
+    result.is_follower = !result.is_leader && !result.is_observer;
+    result.has_leader = result.is_leader || isLeaderAlive();
+    result.is_standalone = !result.is_follower && getFollowerCount() == 0;
+    if (result.is_leader)
+    {
+        result.follower_count = getFollowerCount();
+        result.synced_follower_count = getSyncedFollowerCount();
+    }
+    result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
+    result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
+    return result;
 }
 
 }

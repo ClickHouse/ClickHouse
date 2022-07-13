@@ -43,14 +43,14 @@ MultipleAccessStorage::~MultipleAccessStorage()
 
 void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     nested_storages = std::make_shared<const Storages>(storages);
     ids_cache.reset();
 }
 
 void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     if (boost::range::find(*nested_storages, new_storage) != nested_storages->end())
         return;
     auto new_storages = std::make_shared<Storages>(*nested_storages);
@@ -60,7 +60,7 @@ void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
 
 void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     auto it = boost::range::find(*nested_storages, storage_to_remove);
     if (it == nested_storages->end())
         return;
@@ -383,40 +383,38 @@ bool MultipleAccessStorage::isRestoreAllowed() const
 }
 
 
-std::vector<std::pair<UUID, AccessEntityPtr>> MultipleAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings & backup_settings) const
+void MultipleAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const
 {
-    std::vector<std::pair<UUID, AccessEntityPtr>> res;
     auto storages = getStoragesInternal();
-    size_t count = 0;
+    bool allowed = false;
 
     for (const auto & storage : *storages)
     {
         if (storage->isBackupAllowed())
         {
-            insertAtEnd(res, storage->readAllForBackup(type, backup_settings));
-            ++count;
+            storage->backup(backup_entries_collector, data_path_in_backup, type);
+            allowed = true;
         }
     }
 
-    if (!count)
+    if (!allowed)
         throwBackupNotAllowed();
-
-    return res;
 }
 
-
-void MultipleAccessStorage::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)
+void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 {
     auto storages = getStoragesInternal();
+
     for (const auto & storage : *storages)
     {
         if (storage->isRestoreAllowed())
         {
-            storage->insertFromBackup(entities_from_backup, restore_settings, restore_coordination);
+            storage->restoreFromBackup(restorer);
             return;
         }
     }
-    throwRestoreNotAllowed();
+
+    throwBackupNotAllowed();
 }
 
 }
