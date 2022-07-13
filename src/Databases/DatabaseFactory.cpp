@@ -93,13 +93,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
-        "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
-
-    if (!database_engines.contains(engine_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
-
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
         "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
@@ -128,8 +121,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                             "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     }
-
-    if (engine_name == "Atomic")
+    else if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name, context);
@@ -403,7 +395,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 database_name, configuration.database, connection_info,
                 std::move(postgresql_replica_settings));
     }
-
 
 #endif
 
