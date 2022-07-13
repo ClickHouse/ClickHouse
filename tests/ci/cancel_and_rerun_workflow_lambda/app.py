@@ -329,7 +329,7 @@ def main(event):
             exec_workflow_url([most_recent_workflow.cancel_url], token)
             print("Cancelled")
 
-        for _ in range(30):
+        for _ in range(45):
             latest_workflow_desc = get_workflow_description(most_recent_workflow.run_id)
             print("Checking latest workflow", latest_workflow_desc)
             if latest_workflow_desc.status in ("completed", "cancelled"):

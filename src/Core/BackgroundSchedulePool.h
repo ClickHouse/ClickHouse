@@ -62,6 +62,8 @@ private:
     void threadFunction();
     void delayExecutionThreadFunction();
 
+    void scheduleTask(TaskInfoPtr task_info);
+
     /// Schedule task for execution after specified delay from now.
     void scheduleDelayedTask(const TaskInfoPtr & task_info, size_t ms, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
@@ -69,12 +71,16 @@ private:
     void cancelDelayedTask(const TaskInfoPtr & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
     std::atomic<bool> shutdown {false};
+
+    /// Tasks.
+    std::condition_variable tasks_cond_var;
+    std::mutex tasks_mutex;
+    std::deque<TaskInfoPtr> tasks;
     Threads threads;
-    Poco::NotificationQueue queue;
 
-    /// Delayed notifications.
+    /// Delayed tasks.
 
-    std::condition_variable wakeup_cond;
+    std::condition_variable delayed_tasks_cond_var;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
     ThreadFromGlobalPool delayed_thread;
@@ -102,7 +108,7 @@ public:
 
     /// Schedule for execution after specified delay.
     /// If overwrite is set then the task will be re-scheduled (if it was already scheduled, i.e. delayed == true).
-    bool scheduleAfter(size_t ms, bool overwrite = true);
+    bool scheduleAfter(size_t milliseconds, bool overwrite = true);
 
     /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
     void deactivate();
@@ -161,7 +167,7 @@ public:
             task_info->deactivate();
     }
 
-    operator bool() const { return task_info != nullptr; } /// NOLINT
+    explicit operator bool() const { return task_info != nullptr; }
 
     BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
     const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }

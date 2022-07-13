@@ -15,28 +15,14 @@ CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
 if [ "$(id -u)" = "0" ]; then
     USER=$CLICKHOUSE_UID
     GROUP=$CLICKHOUSE_GID
-    if command -v gosu &> /dev/null; then
-        gosu="gosu $USER:$GROUP"
-    elif command -v su-exec &> /dev/null; then
-        gosu="su-exec $USER:$GROUP"
-    else
-        echo "No gosu/su-exec detected!"
-        exit 1
-    fi
 else
     USER="$(id -u)"
     GROUP="$(id -g)"
-    gosu=""
     DO_CHOWN=0
 fi
 
 # set some vars
 CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
-
-if ! $gosu test -f "$CLICKHOUSE_CONFIG" -a -r "$CLICKHOUSE_CONFIG"; then
-    echo "Configuration file '$CLICKHOUSE_CONFIG' isn't readable by user with id '$USER'"
-    exit 1
-fi
 
 # get CH directories locations
 DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=path || true)"
@@ -50,6 +36,9 @@ ERROR_LOG_DIR=""
 if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
+# There could be many disks declared in config
+readarray -t FILESYSTEM_CACHE_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.data_cache_path' || true)
+
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
@@ -60,17 +49,13 @@ for dir in "$DATA_DIR" \
   "$LOG_DIR" \
   "$TMP_DIR" \
   "$USER_PATH" \
-  "$FORMAT_SCHEMA_PATH"
+  "$FORMAT_SCHEMA_PATH" \
+  "${FILESYSTEM_CACHE_PATHS[@]}"
 do
     # check if variable not empty
     [ -z "$dir" ] && continue
     # ensure directories exist
-    if [ "$DO_CHOWN" = "1" ]; then
-      mkdir="mkdir"
-    else
-      mkdir="$gosu mkdir"
-    fi
-    if ! $mkdir -p "$dir"; then
+    if ! mkdir -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi
@@ -81,9 +66,6 @@ do
         if [ "$(stat -c %u "$dir")" != "$USER" ] || [ "$(stat -c %g "$dir")" != "$GROUP" ]; then
             chown -R "$USER:$GROUP" "$dir"
         fi
-    elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
-        echo "Necessary directory '$dir' isn't accessible by user with id '$USER'"
-        exit 1
     fi
 done
 
@@ -117,7 +99,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
 
     # Listen only on localhost until the initialization is done
-    $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
+    /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
     pid="$!"
 
     # check if clickhouse is ready to accept connections
@@ -173,7 +155,7 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
-    exec $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+    exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

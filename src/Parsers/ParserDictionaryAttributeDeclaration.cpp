@@ -15,6 +15,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_expression{"EXPRESSION"};
     ParserKeyword s_hierarchical{"HIERARCHICAL"};
+    ParserKeyword s_bidirectional{"BIDIRECTIONAL"};
     ParserKeyword s_injective{"INJECTIVE"};
     ParserKeyword s_is_object_id{"IS_OBJECT_ID"};
     ParserLiteral default_parser;
@@ -30,6 +31,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_value;
     ASTPtr expression;
     bool hierarchical = false;
+    bool bidirectional = false;
     bool injective = false;
     bool is_object_id = false;
 
@@ -60,6 +62,12 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
         if (!hierarchical && s_hierarchical.ignore(pos, expected))
         {
             hierarchical = true;
+            continue;
+        }
+
+        if (!bidirectional && s_bidirectional.ignore(pos, expected))
+        {
+            bidirectional = true;
             continue;
         }
 
@@ -101,6 +109,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     }
 
     attribute_declaration->hierarchical = hierarchical;
+    attribute_declaration->bidirectional = bidirectional;
     attribute_declaration->injective = injective;
     attribute_declaration->is_object_id = is_object_id;
 

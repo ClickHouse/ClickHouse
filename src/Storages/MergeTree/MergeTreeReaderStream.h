@@ -1,4 +1,5 @@
 #pragma once
+#include <tuple>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -18,7 +19,7 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        DiskPtr disk_,
+        DataPartStoragePtr data_part_storage_,
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
@@ -37,23 +38,34 @@ public:
      */
     void adjustRightMark(size_t right_mark);
 
-    ReadBuffer * data_buffer;
-    CompressedReadBufferBase * compressed_data_buffer;
+    ReadBuffer * getDataBuffer();
+    CompressedReadBufferBase * getCompressedDataBuffer();
 
 private:
+    void init();
     size_t getRightOffset(size_t right_mark_non_included);
 
-    DiskPtr disk;
+    const MergeTreeReaderSettings settings;
+    const ReadBufferFromFileBase::ProfileCallback profile_callback;
+    clockid_t clock_type;
+    const MarkRanges all_mark_ranges;
+    size_t file_size;
+    UncompressedCache * uncompressed_cache;
+
+    DataPartStoragePtr data_part_storage;
     std::string path_prefix;
     std::string data_file_extension;
 
     bool is_low_cardinality_dictionary = false;
 
     size_t marks_count;
-    size_t file_size;
 
+
+    ReadBuffer * data_buffer;
+    CompressedReadBufferBase * compressed_data_buffer;
     MarkCache * mark_cache;
     bool save_marks_in_cache;
+    bool initialized = false;
 
     std::optional<size_t> last_right_offset;
 

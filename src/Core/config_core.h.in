@@ -7,6 +7,7 @@
 #cmakedefine01 USE_RDKAFKA
 #cmakedefine01 USE_HIREDIS
 #cmakedefine01 USE_AMQPCPP
+#cmakedefine01 USE_NATSIO
 #cmakedefine01 USE_EMBEDDED_COMPILER
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_LDAP

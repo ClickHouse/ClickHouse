@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
@@ -29,6 +30,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int FUNCTION_NOT_ALLOWED;
     extern const int UNKNOWN_USER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -118,6 +120,7 @@ namespace
 
         AccessRights res = access;
         res.modifyFlags(modifier);
+        res.modifyFlagsWithGrantOption(modifier);
 
         /// Anyone has access to the "system" and "information_schema" database.
         res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
@@ -149,6 +152,21 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 }
 
 
+ContextAccess::~ContextAccess()
+{
+    enabled_settings.reset();
+    enabled_quota.reset();
+    enabled_row_policies.reset();
+    access_with_implicit.reset();
+    access.reset();
+    roles_info.reset();
+    subscription_for_roles_changes.reset();
+    enabled_roles.reset();
+    subscription_for_user_change.reset();
+    user.reset();
+}
+
+
 void ContextAccess::initialize()
 {
      std::lock_guard lock{mutex};
@@ -172,6 +190,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     if (!user)
     {
         /// User has been dropped.
+        user_was_dropped = true;
         subscription_for_user_change = {};
         subscription_for_roles_changes = {};
         access = nullptr;
@@ -246,6 +265,20 @@ void ContextAccess::calculateAccessRights() const
 
 
 UserPtr ContextAccess::getUser() const
+{
+    auto res = tryGetUser();
+
+    if (likely(res))
+        return res;
+
+    if (user_was_dropped)
+        throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in current context, it's a bug");
+}
+
+
+UserPtr ContextAccess::tryGetUser() const
 {
     std::lock_guard lock{mutex};
     return user;
@@ -359,7 +392,7 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
 {
     auto access_granted = [&]
     {
@@ -379,11 +412,17 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
         return false;
     };
 
-    if (!flags || is_full_access)
+    if (is_full_access)
         return access_granted();
 
-    if (!getUser())
+    if (user_was_dropped)
         return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
+
+    if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
+        flags &= ~AccessType::CLUSTER;
+
+    if (!flags)
+        return access_granted();
 
     /// Access to temporary tables is controlled in an unusual way, not like normal tables.
     /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
@@ -427,10 +466,11 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
+        const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
         const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;
@@ -563,9 +603,6 @@ void ContextAccess::checkGrantOption(const AccessRightsElements & elements) cons
 template <bool throw_if_denied, typename Container, typename GetNameFunction>
 bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const
 {
-    if (!std::size(role_ids) || is_full_access)
-        return true;
-
     auto show_error = [this](const String & msg, int error_code [[maybe_unused]])
     {
         UNUSED(this);
@@ -573,11 +610,17 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
             throw Exception(getUserName() + ": " + msg, error_code);
     };
 
-    if (!getUser())
+    if (is_full_access)
+        return true;
+
+    if (user_was_dropped)
     {
         show_error("User has been dropped", ErrorCodes::UNKNOWN_USER);
         return false;
     }
+
+    if (!std::size(role_ids))
+        return true;
 
     if (isGranted(AccessType::ROLE_ADMIN))
         return true;
@@ -662,5 +705,35 @@ void ContextAccess::checkAdminOption(const UUID & role_id, const std::unordered_
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids) const { checkAdminOptionImpl<true>(role_ids); }
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const { checkAdminOptionImpl<true>(role_ids, names_of_roles); }
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const { checkAdminOptionImpl<true>(role_ids, names_of_roles); }
+
+
+void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const
+{
+    if (is_full_access)
+        return;
+
+    auto current_user = getUser();
+    if (!current_user->grantees.match(grantee_id))
+        throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
+}
+
+void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const
+{
+    if (is_full_access)
+        return;
+
+    auto current_user = getUser();
+    if (current_user->grantees == RolesOrUsersSet::AllTag{})
+        return;
+
+    for (const auto & id : grantee_ids)
+    {
+        auto entity = access_control->tryRead(id);
+        if (auto role_entity = typeid_cast<RolePtr>(entity))
+            checkGranteeIsAllowed(id, *role_entity);
+        else if (auto user_entity = typeid_cast<UserPtr>(entity))
+            checkGranteeIsAllowed(id, *user_entity);
+    }
+}
 
 }

@@ -3,14 +3,14 @@ sidebar_position: 38
 sidebar_label: FUNCTION
 ---
 
-# CREATE FUNCTION {#create-function}
+# CREATE FUNCTION
 
 Creates a user defined function from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
 
 **Syntax**
 
 ```sql
-CREATE FUNCTION name AS (parameter0, ...) -> expression
+CREATE FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
 ```
 A function can have an arbitrary number of parameters.
 
