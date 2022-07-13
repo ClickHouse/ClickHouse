@@ -2150,7 +2150,7 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     {
         /// Add merge tree settings manually, because names of some settings
         /// may clash. Query settings have higher priority and we just
-        /// skip ambigous merge tree settings.
+        /// skip ambiguous merge tree settings.
         auto & main_options = options_description.main_description.value();
         for (const auto & setting : cmd_merge_tree_settings.all())
         {
