@@ -1702,14 +1702,15 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (*start_pos == '0')
     {
         ++start_pos;
-        --size;
+        // shadowing buf size to ignore prefix length
+        size_t numeric_size = size - 1;
 
         /// binary
         if (*start_pos == 'b')
         {
             ++start_pos;
-            --size;
-            if (parseNumber(start_pos, size, negative, 2, res))
+            --numeric_size;
+            if (parseNumber(start_pos, numeric_size, negative, 2, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1726,8 +1727,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (*start_pos == 'x' || *start_pos == 'X')
         {
             ++start_pos;
-            --size;
-            if (parseNumber(start_pos, size, negative, 16, res))
+            --numeric_size;
+            if (parseNumber(start_pos, numeric_size, negative, 16, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1743,9 +1744,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             while (*start_pos == '0')
             {
                 ++start_pos;
-                --size;
+                --numeric_size;
             }
-            if (parseNumber(start_pos, size, negative, 10, res))
+            if (parseNumber(start_pos, numeric_size, negative, 10, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
