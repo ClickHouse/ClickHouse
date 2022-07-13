@@ -10,7 +10,7 @@ namespace DB
 
 struct RemoveRequest
 {
-    std::string path;
+    std::string path; /// Relative path.
     bool if_exists = false;
 
     explicit RemoveRequest(std::string path_, bool if_exists_ = false)
