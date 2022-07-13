@@ -55,7 +55,8 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
     // std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
 
     if (child_idx >= child->getInputStreams().size() || child_idx >= child_node->children.size())
-        return 0;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Child index {} is out of range (streams: {}, children: {})",
+                        child_idx, child->getInputStreams().size(), child_node->children.size());
 
     const auto & all_inputs = child->getInputStreams()[child_idx].header.getColumnsWithTypeAndName();
 
