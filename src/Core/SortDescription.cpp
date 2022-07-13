@@ -3,7 +3,6 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
-#include <Common/logger_useful.h>
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
 #include <Interpreters/JIT/compileFunction.h>
