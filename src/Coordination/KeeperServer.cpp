@@ -163,7 +163,7 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         reconfigure(new_config);
     }
 
-    RaftAppendResult getLeaderInfo()
+    RaftResult getLeaderInfo()
     {
         nuraft::ptr<nuraft::req_msg> req
             = nuraft::cs_new<nuraft::req_msg>(0ull, nuraft::msg_type::leader_status_request, 0, 0, 0ull, 0ull, 0ull);
@@ -447,7 +447,7 @@ void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & 
     state_machine->processReadRequest(request_for_session);
 }
 
-RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
+RaftResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     for (const auto & request_for_session : requests_for_sessions)
@@ -658,8 +658,12 @@ std::vector<int64_t> KeeperServer::getDeadSessions()
     return state_machine->getDeadSessions();
 }
 
-RaftAppendResult KeeperServer::getLeaderInfo()
+RaftResult KeeperServer::getLeaderInfo()
 {
+    std::lock_guard lock{server_write_mutex};
+    if (is_recovering)
+        return nullptr;
+
     return raft_instance->getLeaderInfo();
 }
 
