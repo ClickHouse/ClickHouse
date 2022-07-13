@@ -118,7 +118,7 @@ Token Lexer::nextTokenImpl()
 
             /// Disambiguation: if previous token was dot, then we could parse only simple integer,
             ///  for chained tuple access operators (x.1.1) to work.
-            //  Otherwise it will be tokenized as x . 1.1, not as x . 1 . 1
+            ///  Otherwise it will be tokenized as x . 1.1, not as x . 1 . 1
             if (prev_significant_token_type == TokenType::Dot)
             {
                 ++pos;
