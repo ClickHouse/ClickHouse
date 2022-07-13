@@ -2134,7 +2134,6 @@ TEST_P(CoordinationTest, TestCurrentApiVersion)
     EXPECT_EQ(keeper_version, current_keeper_api_version);
 }
 
-
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
     ::testing::ValuesIn(std::initializer_list<CompressionParam>{
