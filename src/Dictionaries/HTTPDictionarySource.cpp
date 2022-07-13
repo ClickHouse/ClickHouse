@@ -302,7 +302,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         if (created_from_ddl)
             context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
 
-        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);
+        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
     factory.registerSource("http", create_table_source);
 }
