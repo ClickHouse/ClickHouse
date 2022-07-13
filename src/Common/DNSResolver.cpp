@@ -143,9 +143,11 @@ static Strings reverseResolveImpl(const Poco::Net::IPAddress & address)
 {
     auto ptr_resolver = DB::DNSPTRResolverProvider::get();
 
-    if (address.family() == Poco::Net::IPAddress::Family::IPv4) {
+    if (address.family() == Poco::Net::IPAddress::Family::IPv4)
+    {
         return ptr_resolver->resolve(address.toString());
-    } else {
+    } else
+    {
         return ptr_resolver->resolve_v6(address.toString());
     }
 }

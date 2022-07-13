@@ -118,7 +118,8 @@ namespace
             throw Exception(ErrorCodes::DNS_ERROR, "{} could not be resolved", address.toString());
 
 
-        for (const auto & host : hosts) {
+        for (const auto & host : hosts)
+        {
             /// Check that PTR record is resolved back to client address
             if (!isAddressOfHost(address, host))
                 throw Exception(ErrorCodes::DNS_ERROR, "Host {} isn't resolved back to {}", host, address.toString());
@@ -537,10 +538,12 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 resolved_hosts = getHostsByAddress(client_address);
             }
 
-            for (const auto & host : resolved_hosts.value()) {
+            for (const auto & host : resolved_hosts.value())
+            {
                 Poco::RegularExpression re(name_regexp_);
                 Poco::RegularExpression::Match match;
-                if (re.match(host, match) != 0) {
+                if (re.match(host, match) != 0)
+                {
                     return true;
                 }
             }

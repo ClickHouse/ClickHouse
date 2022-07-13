@@ -4,14 +4,16 @@
 
 using ares_channel = struct ares_channeldata *;
 
-namespace DB {
+namespace DB
+{
 
     /*
      * Implements reverse DNS resolution using c-ares lib. System reverse DNS resolution via
      * gethostbyaddr or getnameinfo does not work reliably because in some systems
      * it returns all PTR records for a given IP and in others it returns only one.
      * */
-    class CaresPTRResolver : public DNSPTRResolver {
+    class CaresPTRResolver : public DNSPTRResolver
+    {
         friend class DNSPTRResolverProvider;
 
         /*
@@ -20,7 +22,7 @@ namespace DB {
         struct provider_token {};
 
     public:
-        CaresPTRResolver(provider_token);
+        explicit CaresPTRResolver(provider_token);
         ~CaresPTRResolver() override;
 
         std::vector<std::string> resolve(const std::string & ip) override;

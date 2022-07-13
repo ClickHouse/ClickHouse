@@ -4,7 +4,8 @@
 #include <vector>
 
 namespace DB {
-    struct DNSPTRResolver {
+    struct DNSPTRResolver
+    {
 
         virtual ~DNSPTRResolver() = default;
 
