@@ -119,6 +119,8 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
 
+    ADDITIONAL_OPTIONS+=("--randomize-merge-tree-settings")
+
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
