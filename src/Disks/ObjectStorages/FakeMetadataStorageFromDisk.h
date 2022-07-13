@@ -1,27 +1,29 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-
-#include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
+
 
 namespace DB
 {
 
-class MetadataStorageFromDisk final : public IMetadataStorage
+class FakeMetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
-    friend class MetadataStorageFromDiskTransaction;
+    friend class FakeMetadataStorageFromDiskTransaction;
 
     mutable std::shared_mutex metadata_mutex;
 
     DiskPtr disk;
+    ObjectStoragePtr object_storage;
     std::string object_storage_root_path;
 
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, const std::string & object_storage_root_path_);
+    FakeMetadataStorageFromDisk(
+        DiskPtr disk_,
+        ObjectStoragePtr object_storage_,
+        const std::string & object_storage_root_path_);
 
     MetadataTransactionPtr createTransaction() const override;
 
@@ -54,17 +56,13 @@ public:
     StoredObjects getStorageObjects(const std::string & path) const override;
 
     std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
-
-private:
-    DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
-
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
 };
 
-class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
+class FakeMetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
-    const MetadataStorageFromDisk & metadata_storage;
+    DiskPtr disk;
+    const FakeMetadataStorageFromDisk & metadata_storage;
 
     std::vector<MetadataOperationPtr> operations;
     MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
@@ -74,11 +72,13 @@ private:
     void rollback(size_t until_pos);
 
 public:
-    explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
-        : metadata_storage(metadata_storage_)
+    FakeMetadataStorageFromDiskTransaction(
+        const FakeMetadataStorageFromDisk & metadata_storage_, DiskPtr disk_)
+        : disk(disk_)
+        , metadata_storage(metadata_storage_)
     {}
 
-    ~MetadataStorageFromDiskTransaction() override = default;
+    ~FakeMetadataStorageFromDiskTransaction() override = default;
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
@@ -116,6 +116,5 @@ public:
 
     void unlinkMetadata(const std::string & path) override;
 };
-
 
 }
