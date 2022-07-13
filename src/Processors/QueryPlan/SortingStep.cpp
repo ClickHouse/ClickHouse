@@ -228,6 +228,12 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const bool skip_part
     }
 }
 
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
+{
+    type = Type::FinishSorting;
+    prefix_description = std::move(prefix_description_);
+}
+
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto input_sort_mode = input_streams.front().sort_mode;

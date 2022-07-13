@@ -51,6 +51,8 @@ public:
 
     const SortDescription & getSortDescription() const { return result_description; }
 
+    void convertToFinishSorting(SortDescription prefix_description);
+
 private:
     void updateOutputStream() override;
 
@@ -67,7 +69,7 @@ private:
 
     Type type;
 
-    const SortDescription prefix_description;
+    SortDescription prefix_description;
     const SortDescription result_description;
     const size_t max_block_size;
     UInt64 limit;
