@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --multiquery <<EOF
 SET allow_experimental_window_view = 1;
 SET window_view_clean_interval = 1;
 
@@ -26,6 +26,8 @@ EOF
 while true; do
 	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM test_01086.\`.inner.wv\`" | grep -q "5" && break || sleep .5 ||:
 done
+
+$CLICKHOUSE_CLIENT --query="SELECT sleep(2);"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_01086.mt VALUES (1, 6, toDateTime('1990/01/01 12:00:11', 'US/Samoa'));"
 

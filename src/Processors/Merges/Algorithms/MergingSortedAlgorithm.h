@@ -18,6 +18,7 @@ public:
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size,
+        SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
@@ -47,16 +48,18 @@ private:
     /// Chunks currently being merged.
     Inputs current_inputs;
 
+    SortingQueueStrategy sorting_queue_strategy;
+
     SortCursorImpls cursors;
 
-    SortingHeap<SimpleSortCursor> queue_simple;
-    SortingHeap<SortCursor> queue_without_collation;
-    SortingHeap<SortCursorWithCollation> queue_with_collation;
+    SortQueueVariants queue_variants;
 
-    Status insertFromChunk(size_t source_num);
+    template <typename TSortingQueue>
+    Status mergeImpl(TSortingQueue & queue);
 
-    template <typename TSortingHeap>
-    Status mergeImpl(TSortingHeap & queue);
+    template <typename TSortingQueue>
+    Status mergeBatchImpl(TSortingQueue & queue);
+
 };
 
 }

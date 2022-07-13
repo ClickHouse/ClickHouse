@@ -10,7 +10,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
-
+#if USE_KRB5
+#include <Access/KerberosInit.h>
+#endif // USE_KRB5
 
 namespace DB
 {
@@ -18,8 +20,10 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NETWORK_ERROR;
+    #if USE_KRB5
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int KERBEROS_ERROR;
+    #endif // USE_KRB5
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
@@ -40,25 +44,28 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         String key_name;
         if (key == "hadoop_kerberos_keytab")
         {
+            #if USE_KRB5
             need_kinit = true;
             hadoop_kerberos_keytab = config.getString(key_path);
+            #else // USE_KRB5
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_keytab parameter is ignored because ClickHouse was built without support of krb5 library.");
+            #endif // USE_KRB5
             continue;
         }
         else if (key == "hadoop_kerberos_principal")
         {
+            #if USE_KRB5
             need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
-            continue;
-        }
-        else if (key == "hadoop_kerberos_kinit_command")
-        {
-            need_kinit = true;
-            hadoop_kerberos_kinit_command = config.getString(key_path);
+            #else // USE_KRB5
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
+            #endif // USE_KRB5
             continue;
         }
         else if (key == "hadoop_security_kerberos_ticket_cache_path")
         {
+            #if USE_KRB5
             if (isUser)
             {
                 throw Exception("hadoop.security.kerberos.ticket.cache.path cannot be set per user",
@@ -67,6 +74,9 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 
             hadoop_security_kerberos_ticket_cache_path = config.getString(key_path);
             // standard param - pass further
+            #else // USE_KRB5
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 library.");
+            #endif // USE_KRB5
         }
 
         key_name = boost::replace_all_copy(key, "_", ".");
@@ -76,44 +86,21 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
     }
 }
 
-String HDFSBuilderWrapper::getKinitCmd()
-{
-
-    if (hadoop_kerberos_keytab.empty() || hadoop_kerberos_principal.empty())
-    {
-        throw Exception("Not enough parameters to run kinit",
-            ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-    }
-
-    WriteBufferFromOwnString ss;
-
-    String cache_name =  hadoop_security_kerberos_ticket_cache_path.empty() ?
-        String() :
-        (String(" -c \"") + hadoop_security_kerberos_ticket_cache_path + "\"");
-
-    // command to run looks like
-    // kinit -R -t /keytab_dir/clickhouse.keytab -k somebody@TEST.CLICKHOUSE.TECH || ..
-    ss << hadoop_kerberos_kinit_command << cache_name <<
-        " -R -t \"" << hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal <<
-        "|| " << hadoop_kerberos_kinit_command << cache_name << " -t \"" <<
-        hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal;
-    return ss.str();
-}
-
+#if USE_KRB5
 void HDFSBuilderWrapper::runKinit()
 {
-    String cmd = getKinitCmd();
-    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "running kinit: {}", cmd);
-
-    std::unique_lock<std::mutex> lck(kinit_mtx);
-
-    auto command = ShellCommand::execute(cmd);
-    auto status = command->tryWait();
-    if (status)
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Running KerberosInit");
+    try
     {
-        throw Exception("kinit failure: " + cmd, ErrorCodes::BAD_ARGUMENTS);
+        kerberosInit(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
     }
+    catch (const DB::Exception & e)
+    {
+        throw Exception("KerberosInit failure: "+ getExceptionMessage(e, false), ErrorCodes::KERBEROS_ERROR);
+    }
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
 }
+#endif // USE_KRB5
 
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
 {
@@ -184,15 +171,15 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         }
     }
 
+    #if USE_KRB5
     if (builder.need_kinit)
     {
         builder.runKinit();
     }
+    #endif // USE_KRB5
 
     return builder;
 }
-
-std::mutex HDFSBuilderWrapper::kinit_mtx;
 
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {

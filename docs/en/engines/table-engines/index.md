@@ -12,7 +12,7 @@ The table engine (type of table) determines:
 -   Which queries are supported, and how.
 -   Concurrent data access.
 -   Use of indexes, if present.
--   Whether multithreaded request execution is possible.
+-   Whether multithread request execution is possible.
 -   Data replication parameters.
 
 ## Engine Families {#engine-families}

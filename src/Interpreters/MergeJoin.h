@@ -29,7 +29,6 @@ public:
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
 
     void setTotals(const Block &) override;
-    const Block & getTotals() const override { return totals; }
 
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
@@ -100,7 +99,6 @@ private:
     std::unique_ptr<SortedBlocksWriter> disk_writer;
     /// Set of files with sorted blocks
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
-    Block totals;
     std::atomic<bool> is_in_memory{true};
     const bool is_any_join;
     const bool is_all_join;

@@ -736,6 +736,18 @@ AccessRights::AccessRights(const AccessFlags & access)
 }
 
 
+AccessRights::AccessRights(const AccessRightsElement & element)
+{
+    grant(element);
+}
+
+
+AccessRights::AccessRights(const AccessRightsElements & elements)
+{
+    grant(elements);
+}
+
+
 bool AccessRights::isEmpty() const
 {
     return !root && !root_with_grant_option;
