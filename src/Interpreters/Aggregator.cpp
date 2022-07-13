@@ -1945,40 +1945,76 @@ Aggregator::ConvertToBlockRes<return_single_block>
 
 template <bool return_single_block, typename Method, typename Table>
 Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
-Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const
+Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t) const
 {
-    auto && out_cols = prepareOutputBlockColumns(aggregates_pools, /* final */ false, rows);
-    auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
+    const size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    ConvertToBlockRes<return_single_block> res;
 
-    if constexpr (Method::low_cardinality_optimization)
+    std::optional<OutputBlockColumns> out_cols;
+    std::optional<Sizes> shuffled_key_sizes;
+    const Sizes * key_sizes_ptr = nullptr;
+
+    auto init_out_cols = [&]()
     {
-        if (data.hasNullKeyData())
+        out_cols = prepareOutputBlockColumns(aggregates_pools, /* final */ false, max_block_size);
+
+        if constexpr (Method::low_cardinality_optimization)
         {
-            raw_key_columns[0]->insertDefault();
+            if (data.hasNullKeyData())
+            {
+                out_cols->raw_key_columns[0]->insertDefault();
 
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_columns_data[i]->push_back(data.getNullKeyData() + offsets_of_aggregate_states[i]);
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    out_cols->aggregate_columns_data[i]->push_back(data.getNullKeyData() + offsets_of_aggregate_states[i]);
 
-            data.getNullKeyData() = nullptr;
+                data.getNullKeyData() = nullptr;
+            }
         }
-    }
 
-    auto shuffled_key_sizes = method.shuffleKeyColumns(raw_key_columns, key_sizes);
-    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes :  key_sizes;
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+        key_sizes_ptr = shuffled_key_sizes ? &*shuffled_key_sizes : &key_sizes;
+    };
+
+    size_t rows_in_current_block = 0;
 
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            method.insertKeyIntoColumns(key, out_cols.raw_key_columns, key_sizes_ref);
+            if (!out_cols.has_value())
+                init_out_cols();
+
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, *key_sizes_ptr);
 
             /// reserved, so push_back does not throw exceptions
             for (size_t i = 0; i < params.aggregates_size; ++i)
-                out_cols.aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+                out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
 
             mapped = nullptr;
+
+            ++rows_in_current_block;
+
+            if constexpr (!return_single_block)
+            {
+                if (rows_in_current_block >= max_block_size)
+                {
+                    res.emplace_back(finalizeBlock(std::move(out_cols.value()), /* final */ false, rows_in_current_block));
+                    out_cols.reset();
+                    rows_in_current_block = 0;
+                }
+            }
         });
 
-    return {finalizeBlock(std::move(out_cols), /* final */ false, rows)};
+    if constexpr (return_single_block)
+    {
+        return finalizeBlock(std::move(out_cols).value(), /* final */ false, rows_in_current_block);
+    }
+    else
+    {
+        if (rows_in_current_block)
+            res.emplace_back(finalizeBlock(std::move(out_cols).value(), /* final */ false, rows_in_current_block));
+        return res;
+    }
+    return res;
 }
 
 Aggregator::OutputBlockColumns Aggregator::prepareOutputBlockColumns(Arenas & aggregates_pools, bool final, size_t rows) const
