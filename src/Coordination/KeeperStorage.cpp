@@ -1993,8 +1993,10 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         {
             if (response->error == Coordination::Error::ZOK)
             {
-                auto & watches_type
-                    = zk_request->getOpNum() == Coordination::OpNum::List || zk_request->getOpNum() == Coordination::OpNum::SimpleList
+                static constexpr std::array list_requests{
+                    Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
+
+                auto & watches_type = std::find(list_requests.begin(), list_requests.end(), zk_request->getOpNum()) != list_requests.end()
                     ? list_watches
                     : watches;
 
