@@ -13,15 +13,6 @@ FROM t_tuple_element
 2
 SELECT `t2.1`
 FROM t_tuple_element
-z
-SELECT tupleElement(t1, \'z\', \'z\')
-FROM t_tuple_element
-0
-SELECT tupleElement(t1, \'z\', 0)
-FROM t_tuple_element
-z
-SELECT tupleElement(t2, \'z\', \'z\')
-FROM t_tuple_element
 1	2
 WITH (1, 2) AS t
 SELECT
