@@ -1085,7 +1085,7 @@ void ZooKeeper::initApiVersion()
     if (response.error != Coordination::Error::ZOK)
         return;
 
-    uint8_t keeper_version{0}; 
+    uint8_t keeper_version{0};
     DB::ReadBufferFromOwnString buf(response.data);
     DB::readIntText(keeper_version, buf);
     keeper_api_version = static_cast<Coordination::KeeperApiVersion>(keeper_version);
