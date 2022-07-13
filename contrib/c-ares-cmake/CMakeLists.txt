@@ -27,10 +27,9 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "SunOS")
     set(HAVE_LIBNSL OFF CACHE BOOL "" FORCE)
 endif()
 
+# Force use of c-ares inet_net_pton instead of libresolv one
+set(HAVE_INET_NET_PTON OFF CACHE BOOL "" FORCE)
+
 add_subdirectory("../c-ares/" "../c-ares/")
 
 add_library(ch_contrib::c-ares ALIAS c-ares)
-
-find_library(LIBRESOLV_LIBRARY NAMES resolv libresolv REQUIRED)
-
-target_link_libraries(c-ares PRIVATE ${LIBRESOLV_LIBRARY})

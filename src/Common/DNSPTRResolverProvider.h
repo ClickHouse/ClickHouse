@@ -3,7 +3,8 @@
 #include <memory>
 #include "DNSPTRResolver.h"
 
-namespace DB {
+namespace DB
+{
     /*
      * Provides a ready-to-use DNSPTRResolver instance.
      * It hides 3rd party lib dependencies, handles initialization and lifetime.
