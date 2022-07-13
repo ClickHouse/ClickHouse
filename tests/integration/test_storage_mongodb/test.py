@@ -264,6 +264,9 @@ def test_simple_insert_select(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
+        "DROP TABLE IF EXISTS simple_mongo_table"
+    )
+    node.query(
         "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
     )
     node.query("INSERT INTO simple_mongo_table SELECT 1, 'kek'")
