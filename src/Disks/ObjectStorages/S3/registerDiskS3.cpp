@@ -75,10 +75,10 @@ void checkRemoveAccess(IDisk & disk)
 
 bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_with_trailing_slash)
 {
-    const String path = key_with_trailing_slash + "_test_remove_objects_capability";
+    StoredObject object(key_with_trailing_slash + "_test_remove_objects_capability");
     try
     {
-        auto file = storage.writeObject(path, WriteMode::Rewrite);
+        auto file = storage.writeObject(object, WriteMode::Rewrite);
         file->write("test", 4);
         file->finalize();
     }
@@ -86,7 +86,7 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_wit
     {
         try
         {
-            storage.removeObject(path);
+            storage.removeObject(object);
         }
         catch (...)
         {
@@ -96,14 +96,14 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_wit
     try
     {
         /// Uses `DeleteObjects` request (batch delete).
-        storage.removeObjects({{ path, 0 }});
+        storage.removeObjects({object});
         return false;
     }
     catch (const Exception &)
     {
         try
         {
-            storage.removeObject(path);
+            storage.removeObject(object);
         }
         catch (...)
         {
