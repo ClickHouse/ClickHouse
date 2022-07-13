@@ -1,56 +1,23 @@
 #pragma once
+
 #include <Common/config.h>
 
-
-#if USE_HDFS
-
-#include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/HDFS/HDFSCommon.h>
-#include <Core/UUID.h>
-#include <memory>
-#include <Poco/Util/AbstractConfiguration.h>
+
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
 
-struct HDFSObjectStorageSettings
-{
-
-    HDFSObjectStorageSettings() = default;
-
-    size_t min_bytes_for_seek;
-    int objects_chunk_size_to_delete;
-    int replication;
-
-    HDFSObjectStorageSettings(
-            int min_bytes_for_seek_,
-            int objects_chunk_size_to_delete_,
-            int replication_)
-        : min_bytes_for_seek(min_bytes_for_seek_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
-        , replication(replication_)
-    {}
-};
-
-
-class HDFSObjectStorage : public IObjectStorage
+class LocalObjectStorage : public IObjectStorage
 {
 public:
+    LocalObjectStorage();
 
-    using SettingsPtr = std::unique_ptr<HDFSObjectStorageSettings>;
-
-    HDFSObjectStorage(
-        const String & hdfs_root_path_,
-        SettingsPtr settings_,
-        const Poco::Util::AbstractConfiguration & config_)
-        : config(config_)
-        , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
-        , hdfs_fs(createHDFSFS(hdfs_builder.get()))
-        , settings(std::move(settings_))
-    {}
-
-    std::string getName() const override { return "HDFSObjectStorage"; }
+    std::string getName() const override { return "LocalObjectStorage"; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -77,10 +44,9 @@ public:
 
     void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
-    /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object) override;
 
-    void removeObjects(const StoredObjects & objects) override;
+    void removeObjects(const StoredObjects &  objects) override;
 
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -110,19 +76,16 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    bool supportsAppend() const override { return true; }
 
-    bool isRemote() const override { return true; }
+    std::string generateBlobNameForPath(const std::string & path) override { return path; }
+
+    std::string getUniqueId(const std::string & path) const override;
+
+    bool isRemote() const override { return false; }
 
 private:
-    const Poco::Util::AbstractConfiguration & config;
-
-    HDFSBuilderWrapper hdfs_builder;
-    HDFSFSPtr hdfs_fs;
-
-    SettingsPtr settings;
+    Poco::Logger * log;
 };
 
 }
-
-#endif
