@@ -273,16 +273,16 @@ Converts ASCII Latin symbols in a string to uppercase.
 ## lowerUTF8
 
 Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It does not detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. E.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
-If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
+If the string contains a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
 
 ## upperUTF8
 
 Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It does not detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. E.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
-If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
+If the string contains a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
 
 ## isValidUTF8
 
@@ -493,6 +493,48 @@ If the ‘s’ string is non-empty and does not contain the ‘c’ character at
 ## convertCharset(s, from, to)
 
 Returns the string ‘s’ that was converted from the encoding in ‘from’ to the encoding in ‘to’.
+
+## Base58Encode(plaintext[, alphabet_name]), Base58Decode(encoded_text[, alphabet_name])
+
+Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using specified alphabet.
+
+**Syntax**
+
+```sql
+base58Encode(decoded[, alphabet_name])
+base58Decode(encoded[, alphabet_name])
+```
+
+**Arguments**
+
+- `decoded` — [String](../../sql-reference/data-types/string.md) column or constant.
+- `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
+- `alphabet_name` — String constant. Specifies alphabet used for encoding. Possible values: `gmp`, `bitcoin`, `ripple`, `flickr`. Default: `bitcoin`.
+
+**Returned value**
+
+-   A string containing encoded/decoded value of 1st argument.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT base58Encode('encode', 'flickr');
+SELECT base58Decode('izCFiDUY', 'ripple');
+```
+
+Result:
+```text
+┌─base58Encode('encode', 'flickr')─┐
+│ SvyTHb1D                         │
+└──────────────────────────────────┘
+┌─base58Decode('izCFiDUY', 'ripple')─┐
+│ decode                             │
+└────────────────────────────────────┘
+```
 
 ## base64Encode(s)
 

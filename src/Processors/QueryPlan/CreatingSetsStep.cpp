@@ -40,13 +40,18 @@ CreatingSetStep::CreatingSetStep(
     , WithContext(context_)
     , description(std::move(description_))
     , subquery_for_set(std::move(subquery_for_set_))
-    , network_transfer_limits(network_transfer_limits_)
+    , network_transfer_limits(std::move(network_transfer_limits_))
 {
 }
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
+}
+
+void CreatingSetStep::updateOutputStream()
+{
+    output_stream = createOutputStream(input_streams.front(), Block{}, getDataStreamTraits());
 }
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const

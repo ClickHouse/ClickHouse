@@ -318,7 +318,8 @@ namespace MySQLReplication
     public:
         EventHeader header;
 
-        EventBase(EventHeader & header_) : header(header_) {}
+        EventBase(EventHeader && header_) : header(std::move(header_)) {}
+
         virtual ~EventBase() = default;
         virtual void dump(WriteBuffer & out) const = 0;
         virtual void parseEvent(ReadBuffer & payload) { parseImpl(payload); }
@@ -331,8 +332,8 @@ namespace MySQLReplication
     class FormatDescriptionEvent : public EventBase
     {
     public:
-        FormatDescriptionEvent(EventHeader & header_)
-            : EventBase(header_), binlog_version(0), create_timestamp(0), event_header_length(0)
+        FormatDescriptionEvent(EventHeader && header_)
+            : EventBase(std::move(header_)), binlog_version(0), create_timestamp(0), event_header_length(0)
         {
         }
 
@@ -356,8 +357,7 @@ namespace MySQLReplication
         UInt64 position;
         String next_binlog;
 
-        RotateEvent(EventHeader & header_) : EventBase(header_), position(0) {}
-
+        RotateEvent(EventHeader && header_) : EventBase(std::move(header_)), position(0) {}
         void dump(WriteBuffer & out) const override;
 
     protected:
@@ -385,8 +385,8 @@ namespace MySQLReplication
         QueryType typ = QUERY_EVENT_DDL;
         bool transaction_complete = true;
 
-        QueryEvent(EventHeader & header_)
-            : EventBase(header_), thread_id(0), exec_time(0), schema_len(0), error_code(0), status_len(0)
+        QueryEvent(EventHeader && header_)
+            : EventBase(std::move(header_)), thread_id(0), exec_time(0), schema_len(0), error_code(0), status_len(0)
         {
         }
 
@@ -400,8 +400,7 @@ namespace MySQLReplication
     class XIDEvent : public EventBase
     {
     public:
-        XIDEvent(EventHeader & header_) : EventBase(header_), xid(0) {}
-
+        XIDEvent(EventHeader && header_) : EventBase(std::move(header_)), xid(0) {}
 
     protected:
         UInt64 xid;
@@ -421,7 +420,6 @@ namespace MySQLReplication
             String table;
 
         TableMapEventHeader(): table_id(0), flags(0), schema_len(0), table_len(0) {}
-
         void parse(ReadBuffer & payload);
     };
 
@@ -439,7 +437,7 @@ namespace MySQLReplication
         std::vector<UInt16> column_meta;
         Bitmap null_bitmap;
 
-        TableMapEvent(EventHeader & header_, const TableMapEventHeader & map_event_header) : EventBase(header_), column_count(0)
+        TableMapEvent(EventHeader && header_, const TableMapEventHeader & map_event_header) : EventBase(std::move(header_)), column_count(0)
         {
             table_id = map_event_header.table_id;
             flags = map_event_header.flags;
@@ -479,8 +477,8 @@ namespace MySQLReplication
         String table;
         Row rows;
 
-        RowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader & header_, const RowsEventHeader & rows_header)
-            : EventBase(header_), number_columns(0), table_map(table_map_)
+        RowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
+            : EventBase(std::move(header_)), number_columns(0), table_map(table_map_)
         {
             table_id = rows_header.table_id;
             flags = rows_header.flags;
@@ -498,6 +496,7 @@ namespace MySQLReplication
 
         void parseImpl(ReadBuffer & payload) override;
         void parseRow(ReadBuffer & payload, Bitmap & bitmap);
+
     private:
         std::shared_ptr<TableMapEvent> table_map;
     };
@@ -505,24 +504,24 @@ namespace MySQLReplication
     class WriteRowsEvent : public RowsEvent
     {
     public:
-        WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader & header_, const RowsEventHeader & rows_header)
-            : RowsEvent(table_map_, header_, rows_header) {}
+        WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
+            : RowsEvent(table_map_, std::move(header_), rows_header) {}
         MySQLEventType type() const override { return MYSQL_WRITE_ROWS_EVENT; }
     };
 
     class DeleteRowsEvent : public RowsEvent
     {
     public:
-        DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader & header_, const RowsEventHeader & rows_header)
-            : RowsEvent(table_map_, header_, rows_header) {}
+        DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
+            : RowsEvent(table_map_, std::move(header_), rows_header) {}
         MySQLEventType type() const override { return MYSQL_DELETE_ROWS_EVENT; }
     };
 
     class UpdateRowsEvent : public RowsEvent
     {
     public:
-        UpdateRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader & header_, const RowsEventHeader & rows_header)
-            : RowsEvent(table_map_, header_, rows_header) {}
+        UpdateRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
+            : RowsEvent(table_map_, std::move(header_), rows_header) {}
         MySQLEventType type() const override { return MYSQL_UPDATE_ROWS_EVENT; }
     };
 
@@ -532,7 +531,7 @@ namespace MySQLReplication
         UInt8 commit_flag;
         GTID gtid;
 
-        GTIDEvent(EventHeader & header_) : EventBase(header_), commit_flag(0) {}
+        GTIDEvent(EventHeader && header_) : EventBase(std::move(header_)), commit_flag(0) {}
         void dump(WriteBuffer & out) const override;
 
     protected:
@@ -542,8 +541,7 @@ namespace MySQLReplication
     class DryRunEvent : public EventBase
     {
     public:
-        DryRunEvent(EventHeader & header_) : EventBase(header_) {}
-
+        DryRunEvent(EventHeader && header_) : EventBase(std::move(header_)) {}
         void dump(WriteBuffer & out) const override;
 
     protected:

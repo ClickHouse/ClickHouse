@@ -67,7 +67,10 @@ def create_table(node, table_name, **additional_settings):
 
 def run_s3_mocks(cluster):
     logging.info("Starting s3 mocks")
-    mocks = (("unstable_proxy.py", "resolver", "8081"),)
+    mocks = (
+        ("unstable_proxy.py", "resolver", "8081"),
+        ("no_delete_objects.py", "resolver", "8082"),
+    )
     for mock_filename, container, port in mocks:
         container_id = cluster.get_container_id(container)
         current_dir = os.path.dirname(__file__)
@@ -526,6 +529,38 @@ def test_freeze_unfreeze(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
+def test_freeze_system_unfreeze(cluster, node_name):
+    node = cluster.instances[node_name]
+    create_table(node, "s3_test")
+    create_table(node, "s3_test_removed")
+    minio = cluster.minio_client
+
+    node.query(
+        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096))
+    )
+    node.query(
+        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096))
+    )
+    node.query("ALTER TABLE s3_test FREEZE WITH NAME 'backup3'")
+    node.query("ALTER TABLE s3_test_removed FREEZE WITH NAME 'backup3'")
+
+    node.query("TRUNCATE TABLE s3_test")
+    node.query("DROP TABLE s3_test_removed NO DELAY")
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/")))
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    )
+
+    # Unfreeze all data from backup3.
+    node.query("SYSTEM UNFREEZE WITH NAME 'backup3'")
+
+    # Data should be removed from S3.
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/"))) == FILES_OVERHEAD
+    )
+
+
+@pytest.mark.parametrize("node_name", ["node"])
 def test_s3_disk_apply_new_settings(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
@@ -603,6 +638,15 @@ def test_s3_disk_restart_during_load(cluster, node_name):
 
     for thread in threads:
         thread.join()
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_s3_no_delete_objects(cluster, node_name):
+    node = cluster.instances[node_name]
+    create_table(
+        node, "s3_test_no_delete_objects", storage_policy="no_delete_objects_s3"
+    )
+    node.query("DROP TABLE s3_test_no_delete_objects SYNC")
 
 
 @pytest.mark.parametrize("node_name", ["node"])

@@ -98,7 +98,7 @@ struct PushingAsyncPipelineExecutor::Data
 
 static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    setThreadName("QueryPipelineEx");
+    setThreadName("QueryPushPipeEx");
 
     try
     {

@@ -6,7 +6,7 @@ sidebar_position: 33
 
 Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
 
-It represents an unbiased estimate of the variance of a random variable if passed values form its sample.
+It represents an unbiased estimate of the variance of a random variable if passed values from its sample.
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 

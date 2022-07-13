@@ -68,6 +68,7 @@ public:
     /// map(..., Nothing) -> Map(..., Nothing)
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -333,7 +334,7 @@ public:
             }
 
             size_t col_key_size = sub_map_column->size();
-            auto column = is_const? ColumnConst::create(std::move(sub_map_column), col_key_size) : std::move(sub_map_column);
+            auto column = is_const? ColumnConst::create(std::move(sub_map_column), std::move(col_key_size)) : std::move(sub_map_column);
 
             ColumnsWithTypeAndName new_arguments =
                 {
@@ -480,7 +481,7 @@ public:
             }
 
             size_t col_key_size = sub_map_column->size();
-            auto column = is_const? ColumnConst::create(std::move(sub_map_column), col_key_size) : std::move(sub_map_column);
+            auto column = is_const? ColumnConst::create(std::move(sub_map_column), std::move(col_key_size)) : std::move(sub_map_column);
 
             new_arguments = {
                     {

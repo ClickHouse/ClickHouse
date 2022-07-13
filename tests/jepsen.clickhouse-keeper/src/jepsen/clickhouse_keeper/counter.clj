@@ -43,7 +43,9 @@
   "A generator, client, and checker for a set test."
   [opts]
   {:client    (CounterClient. nil nil)
-   :checker   (checker/counter)
+   :checker   (checker/compose
+                {:counter (checker/counter)
+                 :perf    (checker/perf)})
    :generator (->> (range)
                    (map (fn [x]
                           (->> (gen/mix [r add])))))

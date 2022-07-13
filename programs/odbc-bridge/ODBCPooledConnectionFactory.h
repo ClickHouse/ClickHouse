@@ -4,6 +4,7 @@
 #include <nanodbc/nanodbc.h>
 #include <mutex>
 #include <base/BorrowedObjectPool.h>
+#include <base/defines.h>
 #include <unordered_map>
 
 
@@ -90,7 +91,11 @@ T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodb
     }
     catch (const nanodbc::database_error & e)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_ERROR(
+            &Poco::Logger::get("ODBCConnection"),
+            "ODBC query failed with error: {}, state: {}, native code: {}",
+            e.what(), e.state(), e.native());
+
         /// SQLState, connection related errors start with 08 (main: 08S01), cursor invalid state is 24000.
         /// Invalid cursor state is a retriable error.
         /// Invalid transaction state 25000. Truncate to 2 letters on purpose.
@@ -165,7 +170,7 @@ public:
 private:
     /// [connection_settings_string] -> [connection_pool]
     using PoolFactory = std::unordered_map<std::string, nanodbc::PoolPtr>;
-    PoolFactory factory;
+    PoolFactory factory TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
