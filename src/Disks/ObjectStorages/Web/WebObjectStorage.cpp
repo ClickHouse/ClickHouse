@@ -1,4 +1,7 @@
-#include "DiskWebServer.h"
+#include <Disks/ObjectStorages/Web/WebObjectStorage.h>
+
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
+#include <filesystem>
 
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
@@ -25,30 +28,41 @@
 #include <Poco/Exception.h>
 
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int NETWORK_ERROR;
 }
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_UNLINK;
+}
 
-void DiskWebServer::initialize(const String & uri_path) const
+void WebObjectStorage::initialize(const String & uri_path) const
 {
     std::vector<String> directories_to_load;
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
+
     try
     {
         Poco::Net::HTTPBasicCredentials credentials{};
-        ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_path) / ".index"),
-                                            Poco::Net::HTTPRequest::HTTP_GET,
-                                            ReadWriteBufferFromHTTP::OutStreamCallback(),
-                                            ConnectionTimeouts::getHTTPTimeouts(getContext()),
-                                            credentials);
+        ReadWriteBufferFromHTTP metadata_buf(
+            Poco::URI(fs::path(uri_path) / ".index"),
+            Poco::Net::HTTPRequest::HTTP_GET,
+            ReadWriteBufferFromHTTP::OutStreamCallback(),
+            ConnectionTimeouts::getHTTPTimeouts(getContext()),
+            credentials);
+
         String file_name;
         FileData file_data{};
 
@@ -74,7 +88,6 @@ void DiskWebServer::initialize(const String & uri_path) const
             if (file_data.type == FileType::Directory)
             {
                 directories_to_load.push_back(file_path);
-                // file_path = fs::path(file_path) / "";
             }
 
             file_path = file_path.substr(url.size());
@@ -95,42 +108,19 @@ void DiskWebServer::initialize(const String & uri_path) const
 }
 
 
-class DiskWebServerDirectoryIterator final : public IDirectoryIterator
-{
-public:
-    explicit DiskWebServerDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
-        : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin()) {}
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != dir_file_paths.end(); }
-
-    String path() const override { return iter->string(); }
-
-    String name() const override { return iter->filename(); }
-
-private:
-    std::vector<fs::path> dir_file_paths;
-    std::vector<fs::path>::iterator iter;
-};
-
-
-DiskWebServer::DiskWebServer(
-            const String & disk_name_,
-            const String & url_,
-            ContextPtr context_,
-            size_t min_bytes_for_seek_)
-        : WithContext(context_->getGlobalContext())
-        , log(&Poco::Logger::get("DiskWeb"))
-        , url(url_)
-        , name(disk_name_)
-        , min_bytes_for_seek(min_bytes_for_seek_)
+WebObjectStorage::WebObjectStorage(
+    const String & url_,
+    ContextPtr context_)
+    : WithContext(context_->getBufferContext())
+    , url(url_)
+    , log(&Poco::Logger::get("WebObjectStorage"))
 {
 }
 
-
-bool DiskWebServer::exists(const String & path) const
+bool WebObjectStorage::exists(const StoredObject & object) const
 {
+    const auto & path = object.absolute_path;
+
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
 
     if (files.find(path) != files.end())
@@ -158,10 +148,28 @@ bool DiskWebServer::exists(const String & path) const
     return false;
 }
 
-
-std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT
+    const StoredObjects & objects,
+    const ReadSettings & read_settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
+    if (objects.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "WebObjectStorage support read only from single object");
+
+    return readObject(objects[0], read_settings, read_hint, file_size);
+
+}
+
+std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    std::optional<size_t>,
+    std::optional<size_t>) const
+{
+    const auto & path = object.absolute_path;
     LOG_TRACE(log, "Read from path: {}", path);
+
     auto iter = files.find(path);
     if (iter == files.end())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
@@ -187,94 +195,82 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     }
 }
 
-
-DirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path) const
+void WebObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
-    std::vector<fs::path> dir_file_paths;
-    if (files.find(path) == files.end())
+    for (const auto & [file_path, file_info] : files)
     {
-        try
+        if (file_info.type == FileType::File && file_path.starts_with(path))
         {
-            initialize(fs::path(url) / path);
-        }
-        catch (...)
-        {
-            const auto message = getCurrentExceptionMessage(false);
-            bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
-            if (can_throw)
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
-
-            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
-            return std::make_unique<DiskWebServerDirectoryIterator>(std::move(dir_file_paths));
+            children.emplace_back(file_path, file_info.size);
         }
     }
-
-    if (files.find(path) == files.end())
-        throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
-
-    for (const auto & file : files)
-        if (parentPath(file.first) == path)
-            dir_file_paths.emplace_back(file.first);
-
-    LOG_TRACE(log, "Iterate directory {} with {} files", path, dir_file_paths.size());
-    return std::make_unique<DiskWebServerDirectoryIterator>(std::move(dir_file_paths));
 }
 
-
-size_t DiskWebServer::getFileSize(const String & path) const
+void WebObjectStorage::throwNotAllowed()
 {
-    auto iter = files.find(path);
-    if (iter == files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
-
-    return iter->second.size;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported");
 }
 
-
-bool DiskWebServer::isFile(const String & path) const
+std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLINT
+    const StoredObject & /* object */,
+    WriteMode /* mode */,
+    std::optional<ObjectAttributes> /* attributes */,
+    FinalizeCallback && /* finalize_callback */,
+    size_t /* buf_size */,
+    const WriteSettings & /* write_settings */)
 {
-    auto iter = files.find(path);
-    if (iter == files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
-
-    return iter->second.type == FileType::File;
+    throwNotAllowed();
 }
 
-
-bool DiskWebServer::isDirectory(const String & path) const
+void WebObjectStorage::removeObject(const StoredObject &)
 {
-    auto iter = files.find(path);
-    if (iter == files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
-
-    return iter->second.type == FileType::Directory;
+    throwNotAllowed();
 }
 
-
-void registerDiskWebServer(DiskFactory & factory)
+void WebObjectStorage::removeObjects(const StoredObjects &)
 {
-    auto creator = [](const String & disk_name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr
-    {
-        String uri{config.getString(config_prefix + ".endpoint")};
-        if (!uri.ends_with('/'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "URI must end with '/', but '{}' doesn't.", uri);
-        try
-        {
-            Poco::URI poco_uri(uri);
-        }
-        catch (const Poco::Exception & e)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
-        }
+    throwNotAllowed();
+}
 
-        return std::make_shared<DiskWebServer>(disk_name, uri, context, config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
-    };
+void WebObjectStorage::removeObjectIfExists(const StoredObject &)
+{
+    throwNotAllowed();
+}
 
-    factory.registerDiskType("web", creator);
+void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
+{
+    throwNotAllowed();
+}
+
+void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, std::optional<ObjectAttributes>) // NOLINT
+{
+    throwNotAllowed();
+}
+
+void WebObjectStorage::shutdown()
+{
+}
+
+void WebObjectStorage::startup()
+{
+}
+
+void WebObjectStorage::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
+{
+}
+
+ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
+}
+
+std::unique_ptr<IObjectStorage> WebObjectStorage::cloneObjectStorage(
+    const std::string & /* new_namespace */,
+    const Poco::Util::AbstractConfiguration & /* config */,
+    const std::string & /* config_prefix */, ContextPtr /* context */)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for WebObjectStorage");
 }
 
 }

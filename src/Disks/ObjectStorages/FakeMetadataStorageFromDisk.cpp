@@ -96,7 +96,7 @@ StoredObjects FakeMetadataStorageFromDisk::getStorageObjects(const std::string &
     std::string blob_name = object_storage->generateBlobNameForPath(path);
 
     std::string object_path = fs::path(object_storage_root_path) / blob_name;
-    size_t object_size = getFileSize(object_path);
+    size_t object_size = getFileSize(path);
 
     auto object = StoredObject::create(*object_storage, object_path, object_size, /* exists */true);
     return {std::move(object)};
