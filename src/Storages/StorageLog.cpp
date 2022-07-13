@@ -535,15 +535,16 @@ StorageLog::StorageLog(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool attach,
-    size_t max_compress_block_size_)
+    ContextMutablePtr context_)
     : IStorage(table_id_)
+    , WithMutableContext(context_)
     , engine_name(engine_name_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(max_compress_block_size_)
+    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -750,9 +751,9 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     return std::chrono::seconds{lock_timeout};
 }
 
-void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
+void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    WriteLock lock{rwlock, getLockTimeout(context)};
+    WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -769,6 +770,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 
     marks_loaded = true;
     num_marks_saved = 0;
+    getContext()->dropMMappedFileCache();
 }
 
 
@@ -776,14 +778,14 @@ Pipe StorageLog::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
     storage_snapshot->check(column_names);
 
-    auto lock_timeout = getLockTimeout(context);
+    auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -817,7 +819,7 @@ Pipe StorageLog::read(
     bool limited_by_file_sizes = !use_marks_file;
     size_t row_limit = std::numeric_limits<size_t>::max();
 
-    ReadSettings read_settings = context->getReadSettings();
+    ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
 
     for (size_t stream = 0; stream < num_streams; ++stream)
@@ -848,18 +850,18 @@ Pipe StorageLog::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    WriteLock lock{rwlock, getLockTimeout(context)};
+    WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr context)
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
 {
-    ReadLock lock{rwlock, getLockTimeout(context)};
+    ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -1114,7 +1116,7 @@ void registerStorageLog(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.attach,
-            args.getContext()->getSettings().max_compress_block_size);
+            args.getContext());
     };
 
     factory.registerStorage("Log", create_fn, features);
