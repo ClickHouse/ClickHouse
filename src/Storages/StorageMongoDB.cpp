@@ -15,6 +15,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MongoDBSource.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 namespace DB
 {
@@ -86,6 +87,62 @@ void StorageMongoDB::connectIfNotConnected()
 }
 
 
+class StorageMongoDBSink : public SinkToStorage
+{
+public:
+    explicit StorageMongoDBSink(
+        const std::string & collection_name_,
+        const std::string & db_name_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        std::shared_ptr<Poco::MongoDB::Connection> connection_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , collection_name(collection_name_)
+        , db_name(db_name_)
+        , metadata_snapshot{metadata_snapshot_}
+        , connection(connection_)
+    {
+    }
+
+    String getName() const override { return "StorageMongoDBSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        Poco::MongoDB::Database db(db_name);
+        Poco::MongoDB::Document::Ptr index = new Poco::MongoDB::Document();
+
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+
+        size_t num_rows = block.rows();
+        size_t num_cols = block.columns();
+
+        const auto columns = block.getColumns();
+        const auto data_types = block.getDataTypes();
+        const auto data_names = block.getNames();
+
+        std::vector<std::string> row(num_cols);
+        for (const auto i : collections::range(0, num_rows))
+        {
+            for (const auto j : collections::range(0, num_cols))
+            {
+                WriteBufferFromOwnString ostr;
+                data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
+                row[j] = ostr.str();
+                index->add(data_names[j], row[j]);
+            }
+        }
+        Poco::SharedPtr<Poco::MongoDB::InsertRequest> insert_request = db.createInsertRequest(collection_name);
+        insert_request->documents().push_back(index);
+        connection->sendRequest(*insert_request);
+    }
+
+private:
+    String collection_name;
+    String db_name;
+    StorageMetadataPtr metadata_snapshot;
+    std::shared_ptr<Poco::MongoDB::Connection> connection;
+};
+
+
 Pipe StorageMongoDB::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -109,6 +166,11 @@ Pipe StorageMongoDB::read(
     return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
 }
 
+SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
+{
+    connectIfNotConnected();
+    return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
+}
 
 StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
