@@ -80,7 +80,7 @@ SortingStep::SortingStep(
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
-    , type(Type::Auto)
+    , type(Type::MergingSorted)
     , result_description(sort_description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
@@ -252,6 +252,23 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     {
         LOG_DEBUG(getLogger(), "MergingSorted, SortMode::Port");
         mergingSorted(pipeline, result_description, limit);
+        return;
+    }
+
+    if (type == Type::MergingSorted)
+    {
+        mergingSorted(pipeline, result_description, limit);
+        return;
+    }
+
+    if (type == Type::FinishSorting)
+    {
+        bool need_finish_sorting = (prefix_description.size() < result_description.size());
+        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
+        if (need_finish_sorting)
+        {
+            finishSorting(pipeline, prefix_description);
+        }
         return;
     }
 
