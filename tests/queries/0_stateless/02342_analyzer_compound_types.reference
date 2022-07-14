@@ -1,0 +1,142 @@
+Constant tuple
+(1,'Value')	1	Value
+(1,'Value')	1	Value
+(1,'Value')	1
+(1,'Value')	Value
+(1,'Value')	1
+(1,'Value')	Value
+Tuple
+--
+id	UInt64					
+value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+0	(('value_0_level_1','value_1_level_1'),'value_1_level_0')
+--
+id	UInt64					
+value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+0	(('value_0_level_1','value_1_level_1'),'value_1_level_0')
+--
+value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+value.value_1_level_0	String					
+('value_0_level_1','value_1_level_1')	value_1_level_0
+--
+value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+tupleElement(value, \'value_0_level_0\')	Tuple(value_0_level_1 String, value_1_level_1 String)					
+tupleElement(value, \'value_1_level_0\')	String					
+(('value_0_level_1','value_1_level_1'),'value_1_level_0')	('value_0_level_1','value_1_level_1')	value_1_level_0
+--
+value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+tupleElement(value, \'value_0_level_0\')	Tuple(value_0_level_1 String, value_1_level_1 String)					
+tupleElement(value, \'value_1_level_0\')	String					
+(('value_0_level_1','value_1_level_1'),'value_1_level_0')	('value_0_level_1','value_1_level_1')	value_1_level_0
+--
+value	Tuple(value_0_level_0 Tuple(value_0_level_1 String, value_1_level_1 String), value_1_level_0 String)					
+toString(tupleElement(value, \'value_0_level_0\'))	String					
+toString(tupleElement(value, \'value_1_level_0\'))	String					
+(('value_0_level_1','value_1_level_1'),'value_1_level_0')	(\'value_0_level_1\',\'value_1_level_1\')	value_1_level_0
+--
+tupleElement(value, \'value_0_level_0\')	Tuple(value_0_level_1 String, value_1_level_1 String)					
+tupleElement(value, \'value_1_level_0\')	String					
+('value_0_level_1','value_1_level_1')	value_1_level_0
+--
+toString(tupleElement(value, \'value_0_level_0\'))	String					
+toString(tupleElement(value, \'value_1_level_0\'))	String					
+(\'value_0_level_1\',\'value_1_level_1\')	value_1_level_0
+--
+value.value_0_level_0.value_0_level_1	String					
+value.value_0_level_0.value_1_level_1	String					
+value_0_level_1	value_1_level_1
+--
+value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	String					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	String					
+('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
+--
+value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	String					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	String					
+('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
+--
+value.value_0_level_0	Tuple(value_0_level_1 String, value_1_level_1 String)					
+toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
+toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+('value_0_level_1','value_1_level_1')	value_0_level_1	value_1_level_1
+--
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	String					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	String					
+value_0_level_1	value_1_level_1
+--
+toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
+toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+value_0_level_1	value_1_level_1
+Array of tuples
+id	UInt64					
+value.value_0_level_0	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
+value.value_1_level_0	Array(String)					
+0	[('value_0_level_1','value_1_level_1')]	['value_1_level_0']
+--
+value.value_0_level_0	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
+value.value_1_level_0	Array(String)					
+[('value_0_level_1','value_1_level_1')]	['value_1_level_0']
+--
+value.value_0_level_0.value_0_level_1	Array(String)					
+value.value_0_level_0.value_1_level_1	Array(String)					
+['value_0_level_1']	['value_1_level_1']
+--
+value.value_0_level_0	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(String)					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(String)					
+[('value_0_level_1','value_1_level_1')]	['value_0_level_1']	['value_1_level_1']
+--
+value.value_0_level_0	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(String)					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(String)					
+[('value_0_level_1','value_1_level_1')]	['value_0_level_1']	['value_1_level_1']
+--
+value.value_0_level_0	Array(Tuple(value_0_level_1 String, value_1_level_1 String))					
+toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
+toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+[('value_0_level_1','value_1_level_1')]	[\'value_0_level_1\']	[\'value_1_level_1\']
+--
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(String)					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(String)					
+['value_0_level_1']	['value_1_level_1']
+--
+toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
+toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+[\'value_0_level_1\']	[\'value_1_level_1\']
+Nested
+id	UInt64					
+value.value_0_level_0	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
+value.value_1_level_0	Array(String)					
+0	[[('value_0_level_1','value_1_level_1')]]	['value_1_level_0']
+--
+value.value_0_level_0	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
+value.value_1_level_0	Array(String)					
+[[('value_0_level_1','value_1_level_1')]]	['value_1_level_0']
+--
+value.value_0_level_0.value_0_level_1	Array(Array(String))					
+value.value_0_level_0.value_1_level_1	Array(Array(String))					
+[['value_0_level_1']]	[['value_1_level_1']]
+--
+value.value_0_level_0	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(Array(String))					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(Array(String))					
+[[('value_0_level_1','value_1_level_1')]]	[['value_0_level_1']]	[['value_1_level_1']]
+--
+value.value_0_level_0	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(Array(String))					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(Array(String))					
+[[('value_0_level_1','value_1_level_1')]]	[['value_0_level_1']]	[['value_1_level_1']]
+--
+value.value_0_level_0	Array(Nested(value_0_level_1 String, value_1_level_1 String))					
+toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
+toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+[[('value_0_level_1','value_1_level_1')]]	[[\'value_0_level_1\']]	[[\'value_1_level_1\']]
+--
+tupleElement(value.value_0_level_0, \'value_0_level_1\')	Array(Array(String))					
+tupleElement(value.value_0_level_0, \'value_1_level_1\')	Array(Array(String))					
+[['value_0_level_1']]	[['value_1_level_1']]
+--
+toString(tupleElement(value.value_0_level_0, \'value_0_level_1\'))	String					
+toString(tupleElement(value.value_0_level_0, \'value_1_level_1\'))	String					
+[[\'value_0_level_1\']]	[[\'value_1_level_1\']]
