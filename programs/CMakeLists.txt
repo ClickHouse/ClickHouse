@@ -2,7 +2,7 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
@@ -17,6 +17,12 @@ endif ()
 option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
+
+if (CLICKHOUSE_SPLIT_BINARY OR NOT ENABLE_UTILS)
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
+else ()
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
+endif ()
 
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
@@ -99,6 +105,12 @@ if (ENABLE_CLICKHOUSE_LOCAL)
     message(STATUS "Local mode: ON")
 else()
     message(STATUS "Local mode: OFF")
+endif()
+
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+    message(STATUS "Self-extracting executable: ON")
+else()
+    message(STATUS "Self-extracting executable: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
@@ -223,7 +235,7 @@ endmacro()
 
 macro(clickhouse_program_add_executable name)
     if(CLICKHOUSE_SPLIT_BINARY)
-        add_executable(clickhouse-${name} clickhouse-${name}.cpp)
+        clickhouse_add_executable(clickhouse-${name} clickhouse-${name}.cpp)
         clickhouse_program_link_split_binary(${name})
         install(TARGETS clickhouse-${name} ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
@@ -264,6 +276,10 @@ endif ()
 
 if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
     add_subdirectory (library-bridge)
+endif ()
+
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+    add_subdirectory (self-extracting)
 endif ()
 
 if (CLICKHOUSE_ONE_SHARED)
@@ -358,7 +374,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
-    add_executable (clickhouse main.cpp)
+    clickhouse_add_executable (clickhouse main.cpp)
 
     # A library that prevent usage of several functions from libc.
     if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
@@ -508,13 +524,13 @@ else ()
     endif()
 
     if (USE_BINARY_HASH)
-        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
     endif()
 
-    if (INSTALL_STRIPPED_BINARIES)
-        clickhouse_strip_binary(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT} BINARY_PATH clickhouse)
+    if (SPLIT_DEBUG_SYMBOLS)
+        clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLITTED_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
     else()
-        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT})
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLITTED_DEBUG_SYMBOLS_DIR})
         install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
 endif()

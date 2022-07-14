@@ -100,6 +100,8 @@ public:
 
     Poco::Timestamp getLastModified(const String &) const override { return Poco::Timestamp{}; }
 
+    time_t getLastChanged(const String &) const override { return {}; }
+
     /// Write and modification part
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override
@@ -142,6 +144,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
+    void removeSharedFileIfExists(const String &, bool) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
+
     void removeSharedRecursive(const String &, bool, const NameSet &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
@@ -167,9 +174,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    std::vector<String> getRemotePaths(const String &) const override { return {}; }
+    StoredObjects getStorageObjects(const String &) const override { return {}; }
 
-    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &) override {}
 
     /// Create part
 

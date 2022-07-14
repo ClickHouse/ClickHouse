@@ -19,11 +19,10 @@ private:
 
     const std::string & common_metadata_path;
 
-    /// Remote FS objects paths and their sizes.
-    std::vector<BlobPathWithSize> remote_fs_objects;
+    /// Relative paths of blobs.
+    RelativePathsWithSize storage_objects;
 
-    /// URI
-    const std::string & remote_fs_root_path;
+    const std::string object_storage_root_path;
 
     /// Relative path to metadata file on local FS.
     const std::string metadata_file_path;
@@ -44,7 +43,7 @@ public:
 
     DiskObjectStorageMetadata(
         const std::string & common_metadata_path_,
-        const std::string & remote_fs_root_path_,
+        const std::string & object_storage_root_path_,
         const std::string & metadata_file_path_);
 
     void addObject(const std::string & path, size_t size);
@@ -57,12 +56,12 @@ public:
 
     std::string getBlobsCommonPrefix() const
     {
-        return remote_fs_root_path;
+        return object_storage_root_path;
     }
 
-    std::vector<BlobPathWithSize> getBlobs() const
+    RelativePathsWithSize getBlobsRelativePaths() const
     {
-        return remote_fs_objects;
+        return storage_objects;
     }
 
     bool isReadOnly() const

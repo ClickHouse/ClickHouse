@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -134,6 +135,7 @@ public:
         size_t visit_depth;
         ScopeStack actions_stack;
         AggregationKeysInfo aggregation_keys_info;
+        bool build_expression_with_window_functions;
 
         /*
          * Remember the last unique column suffix to avoid quadratic behavior
@@ -154,10 +156,13 @@ public:
             bool no_makeset_,
             bool only_consts_,
             bool create_source_for_in_,
-            AggregationKeysInfo aggregation_keys_info_);
+            AggregationKeysInfo aggregation_keys_info_,
+            bool build_expression_with_window_functions_ = false);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
+        std::vector<std::string_view> getAllColumnNames() const;
+
         void addColumn(ColumnWithTypeAndName column)
         {
             actions_stack.addColumn(std::move(column));

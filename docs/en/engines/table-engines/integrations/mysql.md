@@ -17,10 +17,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     ...
 ) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 SETTINGS
-    [connection_pool_size=16, ]
-    [connection_max_tries=3, ]
-    [connection_wait_timeout=5, ] /* 0 -- do not wait */
-    [connection_auto_close=true ]
+    [ connection_pool_size=16, ]
+    [ connection_max_tries=3, ]
+    [ connection_wait_timeout=5, ]
+    [ connection_auto_close=true, ]
+    [ connect_timeout=10, ]
+    [ read_write_timeout=300 ]
 ;
 ```
 
@@ -143,6 +145,36 @@ Possible values:
 -   Positive integer.
 
 Default value: `16`.
+
+### connection_wait_timeout {#connection-wait-timeout}
+
+Timeout (in seconds) for waiting for free connection (in case of there is already connection_pool_size active connections), 0 - do not wait.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `5`.
+
+### connect_timeout {#connect-timeout}
+
+Connect timeout (in seconds).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `10`.
+
+### read_write_timeout {#read-write-timeout}
+
+Read/write timeout (in seconds).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `300`.
 
 ## See Also {#see-also}
 

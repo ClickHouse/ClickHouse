@@ -83,6 +83,8 @@ public:
 
     Poco::Timestamp getLastModified(const String &) const override { return Poco::Timestamp(); }
 
+    time_t getLastChanged(const String &) const override { return {}; }
+
     void setReadOnly(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
