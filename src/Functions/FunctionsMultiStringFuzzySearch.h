@@ -23,6 +23,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+/**
+  * multiFuzzyMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiFuzzyMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiFuzzyMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  *
+  */
 
 template <typename Impl>
 class FunctionsMultiStringFuzzySearch : public IFunction

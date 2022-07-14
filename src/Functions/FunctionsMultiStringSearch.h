@@ -30,6 +30,11 @@ namespace DB
   * multiSearchFirstIndexUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchFirstIndexCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  *
+  * multiSearchFirstPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- returns the leftmost offset of the matched string or zero if nothing was found
+  * multiSearchFirstPositionUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstPositionCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstPositionCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   */
 
 namespace ErrorCodes
