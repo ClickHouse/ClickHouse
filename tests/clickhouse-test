@@ -334,7 +334,7 @@ def stacktraces_collector() -> None:
     global stop_stacktraces_collection
     with open("/test_output/tsan_traces.txt", "w") as traces_file:
         while True:
-            sleep(300)
+            sleep(210)
             if not stop_stacktraces_collection.is_set():
                 print("\nStarting to collect stacktraces at", datetime.now(), "\n", file=traces_file)
                 print_stacktraces(traces_file)
