@@ -167,7 +167,6 @@ def test_cache(cluster, node_name):
         """
         )
         assert int(result) > 0
-        assert int(result) == (i + 1) * 3
 
         result = node2.query("SELECT count() FROM test{}".format(i))
         assert int(result) == 500000 * (i + 1)
