@@ -37,7 +37,7 @@ def test_concurrent_backups(start_cluster):
         backup_name = f"Disk('hdd', '/backups/{i}')"
         node.query(f"BACKUP TABLE s3_test TO {backup_name} ASYNC")
 
-    p = Pool(20)
+    p = Pool(40)
 
     p.map(create_backup, range(40))
 
