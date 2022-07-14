@@ -33,9 +33,13 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("CREATE DATABASE IF NOT EXISTS _01078_window_view_alter_query_watch")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS _01078_window_view_alter_query_watch.mt NO DELAY")
+    client1.send(
+        "DROP TABLE IF EXISTS _01078_window_view_alter_query_watch.mt NO DELAY"
+    )
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS _01078_window_view_alter_query_watch.wv NO DELAY")
+    client1.send(
+        "DROP TABLE IF EXISTS _01078_window_view_alter_query_watch.wv NO DELAY"
+    )
     client1.expect(prompt)
 
     client1.send(
