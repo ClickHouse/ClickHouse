@@ -147,12 +147,16 @@ namespace ErrorCodes
   *
   * TODO: Add expression name into query tree node. Example: SELECT plus(1, 1). Result: SELECT 2. Expression name of constant node should be 2.
   * TODO: Table identifiers with optional UUID.
+  * TODO: Table ALIAS columns
   * TODO: Support STRICT except, replace matchers.
   * TODO: Support multiple entities with same alias.
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
-  * TODO: CTE, JOIN, ARRAY JOIN, bulding sets, grouping, in.
+  * TODO: CTE
+  * TODO: JOIN, ARRAY JOIN
+  * TODO: bulding sets
+  * TODO: Special functions grouping, in.
   */
 
 /// Identifier lookup context
@@ -1222,6 +1226,9 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
 
             for (const auto & element_name : element_names)
             {
+                if (!matcher_node_typed.isMatchingColumn(element_name))
+                    continue;
+
                 auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
                 tuple_element_function->getArguments().getNodes().push_back(expression_query_tree_node);
                 tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
@@ -1259,10 +1266,14 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
           */
         IQueryTreeNode * scope_node = scope.scope_node.get();
         auto * scope_query_node = scope_node->as<QueryNode>();
-        while (scope.scope_node && !scope_query_node)
+
+        while (!scope_query_node)
         {
-            if (scope.parent_scope)
-                scope_node = scope.parent_scope->scope_node.get();
+            if (!scope.parent_scope)
+                break;
+
+            scope_node = scope.parent_scope->scope_node.get();
+            scope_query_node = scope_node->as<QueryNode>();
         }
 
         /// If there are no parent scope that has tables or query scope does not have FROM section
@@ -1683,11 +1694,11 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
 
         for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
         {
-            auto lambda_argument_clone = function_arguments[function_lambda_argument_index]->clone();
-            auto & lambda_argument_clone_typed = lambda_argument_clone->as<LambdaNode &>();
-            const auto & lambda_argument_clone_argument_names = lambda_argument_clone_typed.getArgumentNames();
+            auto lambda_to_resolve = function_arguments[function_lambda_argument_index]->clone();
+            auto & lambda_to_resolve_typed = lambda_to_resolve->as<LambdaNode &>();
 
-            size_t lambda_arguments_size = lambda_argument_clone_typed.getArguments().getNodes().size();
+            const auto & lambda_argument_names = lambda_to_resolve_typed.getArgumentNames();
+            size_t lambda_arguments_size = lambda_to_resolve_typed.getArguments().getNodes().size();
 
             const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_lambda_argument_index].get());
             if (!function_data_type)
@@ -1715,16 +1726,16 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             for (size_t i = 0; i < lambda_arguments_size; ++i)
             {
                 const auto & argument_type = function_data_type_argument_types[i];
-                auto column_name_and_type = NameAndTypePair{lambda_argument_clone_argument_names[i], argument_type};
-                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_argument_clone));
+                auto column_name_and_type = NameAndTypePair{lambda_argument_names[i], argument_type};
+                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve));
             }
 
-            IdentifierResolveScope lambda_scope(lambda_argument_clone, &scope /*parent_scope*/);
-            resolveLambda(lambda_argument_clone, lambda_arguments, lambda_scope);
+            IdentifierResolveScope lambda_scope(lambda_to_resolve, &scope /*parent_scope*/);
+            resolveLambda(lambda_to_resolve, lambda_arguments, lambda_scope);
 
-            argument_types[function_lambda_argument_index] = std::make_shared<DataTypeFunction>(function_data_type_argument_types, lambda_argument_clone->getResultType());
+            argument_types[function_lambda_argument_index] = std::make_shared<DataTypeFunction>(function_data_type_argument_types, lambda_to_resolve->getResultType());
             argument_columns[function_lambda_argument_index].type = argument_types[function_lambda_argument_index];
-            function_arguments[function_lambda_argument_index] = std::move(lambda_argument_clone);
+            function_arguments[function_lambda_argument_index] = std::move(lambda_to_resolve);
         }
     }
 
