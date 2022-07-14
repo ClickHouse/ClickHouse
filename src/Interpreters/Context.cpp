@@ -3197,9 +3197,5 @@ ReadSettings Context::getReadSettings() const
 
     return res;
 }
-void Context::setBackgroundExecutorsInitialized(bool initialized)
-{
-    shared->is_background_executors_initialized = initialized;
-}
 
 }

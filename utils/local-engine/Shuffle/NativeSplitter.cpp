@@ -1,6 +1,7 @@
 #include "NativeSplitter.h"
 #include <Functions/FunctionFactory.h>
 #include <Parser/SerializedPlanParser.h>
+#include <Common/JNIUtils.h>
 
 
 using namespace DB;
@@ -48,13 +49,10 @@ void NativeSplitter::split(DB::Block & block)
     }
 }
 
-NativeSplitter::NativeSplitter(Options options_, jobject input_, JavaVM * vm_) : options(options_), vm(vm_)
+NativeSplitter::NativeSplitter(Options options_, jobject input_) : options(options_)
 {
-    JNIEnv * env;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) != JNI_OK)
-    {
-        throwError("get env error");
-    }
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     input = env->NewGlobalRef(input_);
     partition_ids.reserve(options.buffer_size);
     partition_buffer.reserve(options.partition_nums);
@@ -62,15 +60,20 @@ NativeSplitter::NativeSplitter(Options options_, jobject input_, JavaVM * vm_) :
     {
         partition_buffer.emplace_back(std::make_shared<ColumnsBuffer>());
     }
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
 }
 NativeSplitter::~NativeSplitter()
 {
-    JNIEnv * env;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) != JNI_OK)
-    {
-        throwError("get env error");
-    }
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     env->DeleteGlobalRef(input);
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
 }
 bool NativeSplitter::hasNext()
 {
@@ -114,38 +117,41 @@ int32_t NativeSplitter::nextPartitionId()
 
 bool NativeSplitter::inputHasNext()
 {
-    JNIEnv * env;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) != JNI_OK)
-    {
-        throwError("get env error");
-    }
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     bool next = env->CallBooleanMethod(input, iterator_has_next);
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
     return next;
 }
 
 int64_t NativeSplitter::inputNext()
 {
-    JNIEnv * env;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) != JNI_OK)
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
+    int64_t result = env->CallLongMethod(input, iterator_next);
+    if (attached)
     {
-        throwError("get env error");
+        JNIUtils::detachCurrentThread();
     }
-    return env->CallLongMethod(input, iterator_next);
+    return result;
 }
-std::unique_ptr<NativeSplitter> NativeSplitter::create(std::string short_name, Options options_, jobject input, JavaVM * vm)
+std::unique_ptr<NativeSplitter> NativeSplitter::create(std::string short_name, Options options_, jobject input)
 {
     if (short_name == "rr")
     {
-        return std::make_unique<RoundRobinNativeSplitter>(options_, input, vm);
+        return std::make_unique<RoundRobinNativeSplitter>(options_, input);
     }
     else if (short_name == "hash")
     {
-        return std::make_unique<HashNativeSplitter>(options_, input, vm);
+        return std::make_unique<HashNativeSplitter>(options_, input);
     }
     else if (short_name == "single")
     {
         options_.partition_nums = 1;
-        return std::make_unique<RoundRobinNativeSplitter>(options_, input, vm);
+        return std::make_unique<RoundRobinNativeSplitter>(options_, input);
     }
     else
     {

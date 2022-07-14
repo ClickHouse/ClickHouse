@@ -12,7 +12,7 @@ public:
     static jmethodID output_stream_write;
     static jmethodID output_stream_flush;
 
-    WriteBufferFromJavaOutputStream(JavaVM * vm, jobject output_stream, jbyteArray buffer);
+    WriteBufferFromJavaOutputStream(jobject output_stream, jbyteArray buffer);
     ~WriteBufferFromJavaOutputStream() override;
 
 private:
@@ -22,7 +22,6 @@ protected:
     void finalizeImpl() override;
 
 private:
-    JavaVM * vm;
     jobject output_stream;
     jbyteArray buffer;
     size_t buffer_size;

@@ -89,11 +89,6 @@ public:
         input_iters.emplace_back(iter);
     }
 
-    void setJavaVM(JavaVM * vm_)
-    {
-        vm = vm_;
-    }
-
     static ContextMutablePtr global_context;
     static Context::ConfigurationPtr config;
     static SharedContextHolder shared_context;
@@ -146,8 +141,6 @@ private:
     std::unordered_map<std::string, std::string> function_mapping;
     std::vector<jobject> input_iters;
     ContextPtr context;
-    JavaVM* vm;
-
 
 //    DB::QueryPlanPtr query_plan;
 

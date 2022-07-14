@@ -1,6 +1,7 @@
 #include "SourceFromJavaIter.h"
-#include<Processors/Transforms/AggregatingTransform.h>
-#include<Common/DebugUtils.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Common/DebugUtils.h>
+#include <Common/JNIUtils.h>
 
 namespace local_engine
 {
@@ -10,9 +11,10 @@ jmethodID SourceFromJavaIter::serialized_record_batch_iterator_next = nullptr;
 
 DB::Chunk SourceFromJavaIter::generate()
 {
-    int attach;
-    JNIEnv * env = getENV(vm, &attach);
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     jboolean has_next = env->CallBooleanMethod(java_iter,serialized_record_batch_iterator_hasNext);
+    DB::Chunk result = {};
     if (has_next)
     {
         jbyteArray block = static_cast<jbyteArray>(env->CallObjectMethod(java_iter, serialized_record_batch_iterator_next));
@@ -23,18 +25,23 @@ DB::Chunk SourceFromJavaIter::generate()
         info->is_overflows = data->info.is_overflows;
         info->bucket_num = data->info.bucket_num;
         chunk.setChunkInfo(info);
-        return chunk;
+        result = std::move(chunk);
     }
-    else
+    if (attached)
     {
-        return {};
+        JNIUtils::detachCurrentThread();
     }
+    return result;
 }
 SourceFromJavaIter::~SourceFromJavaIter()
 {
-    int attach;
-    JNIEnv * env = getENV(vm, &attach);
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     env->DeleteGlobalRef(java_iter);
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
 }
 Int64 SourceFromJavaIter::byteArrayToLong(JNIEnv* env, jbyteArray arr)
 {

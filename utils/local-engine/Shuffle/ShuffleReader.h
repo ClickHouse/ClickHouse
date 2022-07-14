@@ -14,7 +14,6 @@ public:
     explicit ShuffleReader(std::unique_ptr<DB::ReadBuffer> in_, bool compressed);
     DB::Block* read();
     ~ShuffleReader();
-    static thread_local JNIEnv * env;
     static jclass input_stream_class;
     static jmethodID input_stream_read;
     std::unique_ptr<DB::ReadBuffer> in;

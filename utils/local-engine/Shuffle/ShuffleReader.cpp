@@ -1,8 +1,7 @@
 #include "ShuffleReader.h"
-#include <Shuffle/ShuffleSplitter.h>
 #include <Common/DebugUtils.h>
-#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/JNIUtils.h>
 
 using namespace DB;
 
@@ -40,7 +39,6 @@ ShuffleReader::~ShuffleReader()
     input_stream.reset();
 }
 
-thread_local JNIEnv * ShuffleReader::env = nullptr;
 jclass ShuffleReader::input_stream_class = nullptr;
 jmethodID ShuffleReader::input_stream_read = nullptr;
 
@@ -55,17 +53,22 @@ bool ReadBufferFromJavaInputStream::nextImpl()
 }
 int ReadBufferFromJavaInputStream::readFromJava()
 {
-    assert(ShuffleReader::env != nullptr);
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     if (buf == nullptr)
     {
-        jbyteArray local_buf = ShuffleReader::env->NewByteArray(4096);
-        buf = static_cast<jbyteArray>(ShuffleReader::env->NewGlobalRef(local_buf));
-        ShuffleReader::env->DeleteLocalRef(local_buf);
+        jbyteArray local_buf = env->NewByteArray(4096);
+        buf = static_cast<jbyteArray>(env->NewGlobalRef(local_buf));
+        env->DeleteLocalRef(local_buf);
     }
-    jint count = ShuffleReader::env->CallIntMethod(java_in, ShuffleReader::input_stream_read, buf);
+    jint count = env->CallIntMethod(java_in, ShuffleReader::input_stream_read, buf);
     if (count > 0)
     {
-        ShuffleReader::env->GetByteArrayRegion(buf, 0, count, reinterpret_cast<jbyte *>(internal_buffer.begin()));
+        env->GetByteArrayRegion(buf, 0, count, reinterpret_cast<jbyte *>(internal_buffer.begin()));
+    }
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
     }
     return count;
 }
@@ -74,11 +77,12 @@ ReadBufferFromJavaInputStream::ReadBufferFromJavaInputStream(jobject input_strea
 }
 ReadBufferFromJavaInputStream::~ReadBufferFromJavaInputStream()
 {
-    assert(ShuffleReader::env != nullptr);
-    ShuffleReader::env->DeleteGlobalRef(java_in);
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
+    env->DeleteGlobalRef(java_in);
     if (buf != nullptr)
     {
-        ShuffleReader::env->DeleteGlobalRef(buf);
+        env->DeleteGlobalRef(buf);
     }
 }
 

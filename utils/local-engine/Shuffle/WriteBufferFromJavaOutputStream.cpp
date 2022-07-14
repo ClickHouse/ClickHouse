@@ -1,4 +1,5 @@
 #include "WriteBufferFromJavaOutputStream.h"
+#include <Common/JNIUtils.h>
 
 namespace local_engine
 {
@@ -8,11 +9,8 @@ jmethodID WriteBufferFromJavaOutputStream::output_stream_flush = nullptr;
 
 void WriteBufferFromJavaOutputStream::nextImpl()
 {
-    JNIEnv * env;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) != JNI_OK)
-    {
-        throw std::runtime_error("get env error");
-    }
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
 
     size_t bytes_write = 0;
     while (offset() - bytes_write > 0)
@@ -22,34 +20,43 @@ void WriteBufferFromJavaOutputStream::nextImpl()
         env->CallVoidMethod(output_stream, output_stream_write, buffer, 0, copy_num);
         bytes_write += copy_num;
     }
-}
-WriteBufferFromJavaOutputStream::WriteBufferFromJavaOutputStream(JavaVM * vm_, jobject output_stream_, jbyteArray buffer_)
-    : vm(vm_)
-{
-    JNIEnv * env;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) != JNI_OK)
+    if (attached)
     {
-        throw std::runtime_error("get env error");
+        JNIUtils::detachCurrentThread();
     }
+}
+WriteBufferFromJavaOutputStream::WriteBufferFromJavaOutputStream(jobject output_stream_, jbyteArray buffer_)
+{
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     buffer = static_cast<jbyteArray>(env->NewWeakGlobalRef(buffer_));
     output_stream = env->NewWeakGlobalRef(output_stream_);
     buffer_size = env->GetArrayLength(buffer);
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
 }
 void WriteBufferFromJavaOutputStream::finalizeImpl()
 {
     next();
-    JNIEnv * env;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) != JNI_OK)
-    {
-        throw std::runtime_error("get env error");
-    }
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     env->CallVoidMethod(output_stream, output_stream_flush);
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
 }
 WriteBufferFromJavaOutputStream::~WriteBufferFromJavaOutputStream()
 {
-    JNIEnv * env;
-    vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8);
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
     env->DeleteWeakGlobalRef(output_stream);
     env->DeleteWeakGlobalRef(buffer);
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
 }
 }

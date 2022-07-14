@@ -14,6 +14,8 @@
 #include <Shuffle/ShuffleWriter.h>
 #include <Poco/StringTokenizer.h>
 #include <Common/ExceptionUtils.h>
+#include <Common/JNIUtils.h>
+#include <Builder/BroadCastJoinBuilder.h>
 #include "jni_common.h"
 
 bool inside_main = true;
@@ -32,11 +34,9 @@ namespace dbms
 
 static jclass spark_row_info_class;
 static jmethodID spark_row_info_constructor;
-static jclass ch_column_batch_class;
 
 static jclass split_result_class;
 static jmethodID split_result_constructor;
-static JavaVM * global_vm = nullptr;
 
 jint JNI_OnLoad(JavaVM * vm, void * reserved)
 {
@@ -57,27 +57,28 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     split_result_class = CreateGlobalClassReference(env, "Lio/glutenproject/vectorized/SplitResult;");
     split_result_constructor = GetMethodID(env, split_result_class, "<init>", "(JJJJJJ[J[J)V");
 
-    ch_column_batch_class = CreateGlobalClassReference(env, "Lio/glutenproject/vectorized/CHColumnVector;");
     local_engine::ShuffleReader::input_stream_class = CreateGlobalClassReference(env, "Ljava/io/InputStream;");
+    local_engine::NativeSplitter::iterator_class = CreateGlobalClassReference(env, "Lio/glutenproject/vectorized/IteratorWrapper;");
+    local_engine::WriteBufferFromJavaOutputStream::output_stream_class = CreateGlobalClassReference(env, "Ljava/io/OutputStream;");
+    local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class
+        = CreateGlobalClassReference(env, "Lio/glutenproject/execution/ColumnarNativeIterator;");
+
     local_engine::ShuffleReader::input_stream_read = env->GetMethodID(local_engine::ShuffleReader::input_stream_class, "read", "([B)I");
 
-    local_engine::NativeSplitter::iterator_class = CreateGlobalClassReference(env, "Lio/glutenproject/vectorized/IteratorWrapper;");
     local_engine::NativeSplitter::iterator_has_next = GetMethodID(env, local_engine::NativeSplitter::iterator_class, "hasNext", "()Z");
     local_engine::NativeSplitter::iterator_next = GetMethodID(env, local_engine::NativeSplitter::iterator_class, "next", "()J");
 
-    local_engine::WriteBufferFromJavaOutputStream::output_stream_class = CreateGlobalClassReference(env, "Ljava/io/OutputStream;");
     local_engine::WriteBufferFromJavaOutputStream::output_stream_write
         = GetMethodID(env, local_engine::WriteBufferFromJavaOutputStream::output_stream_class, "write", "([BII)V");
     local_engine::WriteBufferFromJavaOutputStream::output_stream_flush
         = GetMethodID(env, local_engine::WriteBufferFromJavaOutputStream::output_stream_class, "flush", "()V");
 
-    local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class
-        = CreateGlobalClassReference(env, "Lio/glutenproject/execution/ColumnarNativeIterator;");
+
     local_engine::SourceFromJavaIter::serialized_record_batch_iterator_hasNext
         = GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "hasNext", "()Z");
     local_engine::SourceFromJavaIter::serialized_record_batch_iterator_next
         = GetMethodID(env, local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class, "next", "()[B");
-    global_vm = vm;
+    local_engine::JNIUtils::vm = vm;
     return JNI_VERSION_1_8;
 }
 
@@ -85,7 +86,6 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
 {
     JNIEnv * env;
     vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8);
-
     env->DeleteGlobalRef(io_exception_class);
     env->DeleteGlobalRef(runtime_exception_class);
     env->DeleteGlobalRef(unsupportedoperation_exception_class);
@@ -96,6 +96,13 @@ void JNI_OnUnload(JavaVM * vm, void * reserved)
     env->DeleteGlobalRef(local_engine::SourceFromJavaIter::serialized_record_batch_iterator_class);
     env->DeleteGlobalRef(local_engine::NativeSplitter::iterator_class);
     env->DeleteGlobalRef(local_engine::WriteBufferFromJavaOutputStream::output_stream_class);
+    if (local_engine::SerializedPlanParser::global_context)
+    {
+        local_engine::SerializedPlanParser::global_context->shutdown();
+        local_engine::SerializedPlanParser::global_context.reset();
+        local_engine::SerializedPlanParser::shared_context.reset();
+    }
+    local_engine::BroadCastJoinBuilder::clean();
 }
 //static SharedContextHolder shared_context;
 
@@ -103,8 +110,7 @@ void Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNa
 {
     try
     {
-        static std::once_flag init_flag;
-        std::call_once(init_flag, [](){init();});
+        init();
     }
     catch (const DB::Exception & e)
     {
@@ -138,7 +144,6 @@ jlong Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeCreat
     {
         auto context = Context::createCopy(local_engine::SerializedPlanParser::global_context);
         local_engine::SerializedPlanParser parser(context);
-        parser.setJavaVM(global_vm);
         jsize iter_num = env->GetArrayLength(iter_arr);
         for (jsize i = 0; i < iter_num; i++)
         {
@@ -496,10 +501,8 @@ jlong Java_io_glutenproject_vectorized_CHStreamReader_nativeNext(JNIEnv * env, j
 {
 //    try
 //    {
-        local_engine::ShuffleReader::env = env;
         local_engine::ShuffleReader * reader = reinterpret_cast<local_engine::ShuffleReader *>(shuffle_reader);
         Block * block = reader->read();
-        local_engine::ShuffleReader::env = nullptr;
         return reinterpret_cast<jlong>(block);
 //    }
 //    catch (DB::Exception & e)
@@ -511,10 +514,8 @@ jlong Java_io_glutenproject_vectorized_CHStreamReader_nativeNext(JNIEnv * env, j
 
 void Java_io_glutenproject_vectorized_CHStreamReader_nativeClose(JNIEnv * env, jobject obj, jlong shuffle_reader)
 {
-    local_engine::ShuffleReader::env = env;
     local_engine::ShuffleReader * reader = reinterpret_cast<local_engine::ShuffleReader *>(shuffle_reader);
     delete reader;
-    local_engine::ShuffleReader::env = nullptr;
 }
 
 // CHCoalesceOperator
@@ -798,7 +799,6 @@ void Java_io_glutenproject_vectorized_BlockNativeWriter_nativeClose(JNIEnv *, jo
 void Java_io_glutenproject_vectorized_StorageJoinBuilder_nativeBuild(
     JNIEnv * env, jobject, jstring hash_table_id_, jobject in, jstring join_key_, jstring join_type_, jbyteArray named_struct)
 {
-    local_engine::ShuffleReader::env = env;
     auto * input = env->NewGlobalRef(in);
     auto read_buffer = std::make_unique<local_engine::ReadBufferFromJavaInputStream>(input);
     auto hash_table_id = jstring2string(env, hash_table_id_);
@@ -810,7 +810,6 @@ void Java_io_glutenproject_vectorized_StorageJoinBuilder_nativeBuild(
     struct_string.assign(reinterpret_cast<const char *>(struct_address), struct_size);
     local_engine::BroadCastJoinBuilder::buildJoinIfNotExist(hash_table_id, std::move(read_buffer), join_key, join_type, struct_string);
     env->ReleaseByteArrayElements(named_struct, struct_address, JNI_ABORT);
-    local_engine::ShuffleReader::env = nullptr;
 }
 
 // BlockSplitIterator
@@ -824,7 +823,7 @@ jlong Java_io_glutenproject_vectorized_BlockSplitIterator_nativeCreate(
     Poco::StringTokenizer exprs(expr_str, ",");
     options.exprs.insert(options.exprs.end(), exprs.begin(), exprs.end());
     local_engine::NativeSplitter::Holder * splitter = new local_engine::NativeSplitter::Holder{
-        .splitter = local_engine::NativeSplitter::create(jstring2string(env, name), options, in, global_vm)};
+        .splitter = local_engine::NativeSplitter::create(jstring2string(env, name), options, in)};
     return reinterpret_cast<jlong>(splitter);
 }
 
@@ -856,7 +855,7 @@ jint Java_io_glutenproject_vectorized_BlockSplitIterator_nativeNextPartitionId(J
 
 jlong Java_io_glutenproject_vectorized_BlockOutputStream_nativeCreate(JNIEnv * /*env*/, jobject, jobject output_stream, jbyteArray buffer)
 {
-    local_engine::ShuffleWriter * writer = new local_engine::ShuffleWriter(global_vm, output_stream, buffer);
+    local_engine::ShuffleWriter * writer = new local_engine::ShuffleWriter(output_stream, buffer);
     return reinterpret_cast<jlong>(writer);
 }
 

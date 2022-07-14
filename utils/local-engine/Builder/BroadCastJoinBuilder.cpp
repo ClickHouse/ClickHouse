@@ -127,5 +127,14 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
     ColumnsDescription columns_description(header.getNamesAndTypesList());
     buildJoinIfNotExist(key, std::move(read_buffer), key_names, kind, strictness, columns_description);
 }
+void BroadCastJoinBuilder::clean()
+{
+    storage_join_lock.clear();
+    storage_join_map.clear();
+    while (!storage_join_queue.empty())
+    {
+        storage_join_queue.pop();
+    }
+}
 
 }

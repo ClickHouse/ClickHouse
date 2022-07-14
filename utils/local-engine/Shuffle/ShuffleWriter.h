@@ -7,7 +7,7 @@ namespace local_engine
 class ShuffleWriter
 {
 public:
-    ShuffleWriter(JavaVM * vm, jobject output_stream, jbyteArray buffer);
+    ShuffleWriter(jobject output_stream, jbyteArray buffer);
     virtual ~ShuffleWriter();
     void write(const DB::Block & block);
     void flush();

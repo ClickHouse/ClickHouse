@@ -5,9 +5,9 @@ using namespace DB;
 namespace local_engine
 {
 
-ShuffleWriter::ShuffleWriter(JavaVM * vm, jobject output_stream, jbyteArray buffer)
+ShuffleWriter::ShuffleWriter(jobject output_stream, jbyteArray buffer)
 {
-    write_buffer = std::make_unique<WriteBufferFromJavaOutputStream>(vm, output_stream, buffer);
+    write_buffer = std::make_unique<WriteBufferFromJavaOutputStream>(output_stream, buffer);
 }
 void ShuffleWriter::write(const Block & block)
 {
