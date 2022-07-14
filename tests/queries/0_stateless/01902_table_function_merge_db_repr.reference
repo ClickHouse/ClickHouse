@@ -41,7 +41,7 @@ _01902_db3	t3	7
 _01902_db3	t3	8
 _01902_db3	t3	9
 SHOW CREATE TABLE _01902_db.t_merge
-CREATE TABLE `_01902_db`.t_merge\n(\n    `n` Int8\n)\nENGINE = Merge(REGEXP(\'^_01902_db\'), \'^t\')
+CREATE TABLE _01902_db.t_merge\n(\n    `n` Int8\n)\nENGINE = Merge(REGEXP(\'^_01902_db\'), \'^t\')
 SELECT _database, _table, n FROM merge(REGEXP(^_01902_db), ^t) ORDER BY _database, _table, n
 _01902_db	t	0
 _01902_db	t	1
@@ -181,7 +181,7 @@ _01902_db1	t1	7
 _01902_db1	t1	8
 _01902_db1	t1	9
 SHOW CREATE TABLE _01902_db.t_merge_1
-CREATE TABLE `_01902_db`.t_merge_1\n(\n    `n` Int8\n)\nENGINE = Merge(\'_01902_db1\', \'^t\')
+CREATE TABLE _01902_db.t_merge_1\n(\n    `n` Int8\n)\nENGINE = Merge(\'_01902_db1\', \'^t\')
 SELECT _database, _table, n FROM merge(currentDatabase(), ^t) ORDER BY _database, _table, n
 _01902_db1	t1	0
 _01902_db1	t1	1
