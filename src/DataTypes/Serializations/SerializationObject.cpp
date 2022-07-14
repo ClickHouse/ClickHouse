@@ -33,71 +33,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-using Node = typename ColumnObject::Subcolumns::Node;
-
-/// Finds a subcolumn from the same Nested type as @entry and inserts
-/// an array with default values with consistent sizes as in Nested type.
-bool tryInsertDefaultFromNested(
-    const std::shared_ptr<Node> & entry, const ColumnObject::Subcolumns & subcolumns)
-{
-    if (!entry->path.hasNested())
-        return false;
-
-    const Node * current_node = subcolumns.findLeaf(entry->path);
-    const Node * leaf = nullptr;
-    size_t num_skipped_nested = 0;
-
-    while (current_node)
-    {
-        /// Try to find the first Nested up to the current node.
-        const auto * node_nested = subcolumns.findParent(current_node,
-            [](const auto & candidate) { return candidate.isNested(); });
-
-        if (!node_nested)
-            break;
-
-        /// If there are no leaves, skip current node and find
-        /// the next node up to the current.
-        leaf = subcolumns.findLeaf(node_nested,
-            [&](const auto & candidate)
-            {
-                return candidate.data.size() == entry->data.size() + 1;
-            });
-
-        if (leaf)
-            break;
-
-        current_node = node_nested->parent;
-        ++num_skipped_nested;
-    }
-
-    if (!leaf)
-        return false;
-
-    auto last_field = leaf->data.getLastField();
-    if (last_field.isNull())
-        return false;
-
-    const auto & least_common_type = entry->data.getLeastCommonType();
-    size_t num_dimensions = getNumberOfDimensions(*least_common_type);
-    assert(num_skipped_nested < num_dimensions);
-
-    /// Replace scalars to default values with consistent array sizes.
-    size_t num_dimensions_to_keep = num_dimensions - num_skipped_nested;
-    auto default_scalar = num_skipped_nested
-        ? createEmptyArrayField(num_skipped_nested)
-        : getBaseTypeOfArray(least_common_type)->getDefault();
-
-    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, num_dimensions_to_keep), last_field);
-    entry->data.insert(std::move(default_field));
-    return true;
-}
-
-}
-
 template <typename Parser>
 template <typename Reader>
 void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader && reader) const
@@ -126,29 +61,23 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     auto & [paths, values] = *result;
     assert(paths.size() == values.size());
 
-    HashSet<StringRef, StringRefHash> paths_set;
-    size_t column_size = column_object.size();
-
+    size_t old_column_size = column_object.size();
     for (size_t i = 0; i < paths.size(); ++i)
     {
         auto field_info = getFieldInfo(values[i]);
         if (isNothing(field_info.scalar_type))
             continue;
 
-        if (!paths_set.insert(paths[i].getPath()).second)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Object has ambiguous path: {}", paths[i].getPath());
-
         if (!column_object.hasSubcolumn(paths[i]))
         {
             if (paths[i].hasNested())
-                column_object.addNestedSubcolumn(paths[i], field_info, column_size);
+                column_object.addNestedSubcolumn(paths[i], field_info, old_column_size);
             else
-                column_object.addSubcolumn(paths[i], column_size);
+                column_object.addSubcolumn(paths[i], old_column_size);
         }
 
         auto & subcolumn = column_object.getSubcolumn(paths[i]);
-        assert(subcolumn.size() == column_size);
+        assert(subcolumn.size() == old_column_size);
 
         subcolumn.insert(std::move(values[i]), std::move(field_info));
     }
@@ -157,9 +86,9 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     const auto & subcolumns = column_object.getSubcolumns();
     for (const auto & entry : subcolumns)
     {
-        if (!paths_set.has(entry->path.getPath()))
+        if (entry->data.size() == old_column_size)
         {
-            bool inserted = tryInsertDefaultFromNested(entry, subcolumns);
+            bool inserted = column_object.tryInsertDefaultFromNested(entry);
             if (!inserted)
                 entry->data.insertDefault();
         }

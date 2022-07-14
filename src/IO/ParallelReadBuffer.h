@@ -43,10 +43,11 @@ public:
     ~ParallelReadBuffer() override { finishAndWait(); }
 
     off_t seek(off_t off, int whence) override;
-    std::optional<size_t> getFileSize();
+    size_t getFileSize();
     off_t getPosition() override;
 
     const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
+    ReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
 
 private:
     /// Reader in progress with a list of read segments

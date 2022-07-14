@@ -50,9 +50,7 @@ function thread_insert_rollback()
 function thread_optimize()
 {
     set -e
-    trap "STOP_THE_LOOP=1" INT
-    STOP_THE_LOOP=0
-    while [[ $STOP_THE_LOOP != 1 ]]; do
+    while true; do
         optimize_query="OPTIMIZE TABLE src"
         partition_id=$(( RANDOM % 2 ))
         if (( RANDOM % 2 )); then
@@ -82,7 +80,6 @@ function thread_optimize()
 function thread_select()
 {
     set -e
-    trap "exit 0" INT
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
@@ -91,21 +88,14 @@ function thread_select()
         SELECT throwIf((SELECT (sum(nm), count() % 2) FROM dst) != (0, 1)) FORMAT Null;
         SELECT throwIf((SELECT arraySort(groupArray(nm)) FROM mv) != (SELECT arraySort(groupArray(nm)) FROM dst)) FORMAT Null;
         SELECT throwIf((SELECT arraySort(groupArray(nm)) FROM mv) != (SELECT arraySort(groupArray(n*m)) FROM src)) FORMAT Null;
-        COMMIT;" || $CLICKHOUSE_CLIENT --multiquery --query "
-                          begin transaction;
-                          set transaction snapshot 3;
-                          select 'src', n, m, _part from src order by n, m;
-                          select 'dst', nm, _part from dst order by nm;
-                          rollback" ||:
+        COMMIT;"
     done
 }
 
 function thread_select_insert()
 {
     set -e
-    trap "STOP_THE_LOOP=1" INT
-    STOP_THE_LOOP=0
-    while [[ $STOP_THE_LOOP != 1 ]]; do
+    while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         SELECT throwIf((SELECT count() FROM tmp) != 0) FORMAT Null;
@@ -118,12 +108,7 @@ function thread_select_insert()
         -- now check that all results are the same
         SELECT throwIf(1 != (SELECT countDistinct(arr) FROM (SELECT x, arraySort(groupArray(nm)) AS arr FROM tmp WHERE x!=4 GROUP BY x))) FORMAT Null;
         SELECT throwIf((SELECT count(), sum(nm) FROM tmp WHERE x=4) != (SELECT count(), sum(nm) FROM tmp WHERE x!=4)) FORMAT Null;
-        ROLLBACK;" || $CLICKHOUSE_CLIENT --multiquery --query "
-                            begin transaction;
-                            set transaction snapshot 3;
-                            select 'src', n, m, _part from src order by n, m;
-                            select 'dst', nm, _part from dst order by nm;
-                            rollback" ||:
+        ROLLBACK;"
     done
 }
 
@@ -139,12 +124,13 @@ thread_select & PID_7=$!
 thread_select_insert & PID_8=$!
 
 wait $PID_1 && wait $PID_2 && wait $PID_3
-kill -INT $PID_4
-kill -INT $PID_5
-kill -INT $PID_6
-kill -INT $PID_7
-kill -INT $PID_8
+kill -TERM $PID_4
+kill -TERM $PID_5
+kill -TERM $PID_6
+kill -TERM $PID_7
+kill -TERM $PID_8
 wait
+wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;

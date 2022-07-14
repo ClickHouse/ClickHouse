@@ -5,7 +5,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <IO/HTTPCommon.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
 #include <azure/storage/blobs.hpp>
@@ -13,13 +13,14 @@
 namespace DB
 {
 
-class ReadBufferFromAzureBlobStorage : public SeekableReadBuffer, public WithFileName
+class ReadBufferFromAzureBlobStorage : public ReadBufferFromFileBase
 {
 public:
 
     ReadBufferFromAzureBlobStorage(
         std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & path_,
+        const ReadSettings & read_settings_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         size_t tmp_buffer_size_,

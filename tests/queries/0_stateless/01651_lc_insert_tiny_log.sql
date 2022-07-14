@@ -1,4 +1,5 @@
--- Tags: high-memory-usage
+-- Tags: no-tsan, high-memory-usage
+-- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
 
 drop table if exists perf_lc_num;
 

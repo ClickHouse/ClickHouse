@@ -38,7 +38,6 @@ MutableColumns InternalTextLogsQueue::getSampleColumns()
 
 void InternalTextLogsQueue::pushBlock(Block && log_block)
 {
-    OvercommitTrackerBlockerInThread blocker;
     static Block sample_block = getSampleBlock();
 
     if (blocksHaveEqualStructure(sample_block, log_block))
@@ -65,6 +64,21 @@ const char * InternalTextLogsQueue::getPriorityName(int priority)
     };
 
     return (priority >= 1 && priority <= 8) ? PRIORITIES[priority] : PRIORITIES[0];
+}
+
+bool InternalTextLogsQueue::isNeeded(int priority, const String & source) const
+{
+    bool is_needed = priority <= max_priority;
+
+    if (is_needed && source_regexp)
+        is_needed = re2::RE2::PartialMatch(source, *source_regexp);
+
+    return is_needed;
+}
+
+void InternalTextLogsQueue::setSourceRegexp(const String & regexp)
+{
+    source_regexp = std::make_unique<re2::RE2>(regexp);
 }
 
 }

@@ -93,7 +93,7 @@ def get_failed_report(
         elapsed_seconds=0,
         with_coverage=False,
     )
-    return [build_result], [[""]], [""]
+    return [build_result], [[""]], [GITHUB_RUN_URL]
 
 
 def process_report(
@@ -151,6 +151,8 @@ def main():
             needs_data = json.load(file_handler)
             required_builds = len(needs_data)
 
+    logging.info("The next builds are required: %s", ", ".join(needs_data))
+
     gh = Github(get_best_robot_token())
     pr_info = PRInfo()
     rerun_helper = RerunHelper(gh, pr_info, build_check_name)
@@ -159,7 +161,6 @@ def main():
         sys.exit(0)
 
     builds_for_check = CI_CONFIG["builds_report_config"][build_check_name]
-    logging.info("My reports list %s", builds_for_check)
     required_builds = required_builds or len(builds_for_check)
 
     # Collect reports from json artifacts
