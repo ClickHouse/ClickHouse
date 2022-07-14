@@ -23,7 +23,6 @@ public:
         const ReadSettings & read_settings_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
-        size_t tmp_buffer_size_,
         bool use_external_buffer_ = false,
         size_t read_until_position_ = 0);
 
@@ -48,6 +47,7 @@ private:
     const String path;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
+    ReadSettings read_settings;
     std::vector<char> tmp_buffer;
     size_t tmp_buffer_size;
     bool use_external_buffer;
