@@ -20,7 +20,6 @@ if (COMPILER_CLANG)
     # We want to get everything out of the compiler for code quality.
     add_warning(everything)
     add_warning(pedantic)
-    no_warning(vla-extension)
     no_warning(zero-length-array)
     no_warning(c11-extensions)
     no_warning(c++98-compat-pedantic)
