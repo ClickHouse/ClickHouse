@@ -7,6 +7,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -16,7 +17,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
-
 
 namespace DB
 {
@@ -60,7 +60,6 @@ Block InterpreterDescribeQuery::getSampleBlock(bool include_subcolumns)
     return block;
 }
 
-
 BlockIO InterpreterDescribeQuery::execute()
 {
     ColumnsDescription columns;
@@ -72,8 +71,20 @@ BlockIO InterpreterDescribeQuery::execute()
 
     if (table_expression.subquery)
     {
-        auto names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(
-            table_expression.subquery->children.at(0), getContext()).getNamesAndTypesList();
+        NamesAndTypesList names_and_types;
+        auto select_query = table_expression.subquery->children.at(0);
+        auto current_context = getContext();
+
+        if (settings.use_analyzer)
+        {
+            SelectQueryOptions select_query_options;
+            names_and_types = InterpreterSelectQueryAnalyzer(select_query, select_query_options, current_context).getSampleBlock().getNamesAndTypesList();
+        }
+        else
+        {
+            names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context).getNamesAndTypesList();
+        }
+
         columns = ColumnsDescription(std::move(names_and_types));
     }
     else if (table_expression.table_function)
