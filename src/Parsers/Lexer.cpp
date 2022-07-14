@@ -45,7 +45,8 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 
 /// Consume underscore-grouped numeric chars.
 /// Leading, consecutive and trailing underscores are not allowed.
-void consumeNumericPart(const char *& pos, const char * end, bool hex) {
+void consumeNumericPart(const char *& pos, const char * end, bool hex)
+{
     if (pos >= end || *pos == '_')
         return;
 
@@ -61,7 +62,8 @@ void consumeNumericPart(const char *& pos, const char * end, bool hex) {
     }
 }
 
-void consumeNumericPart(const char *& pos, const char * end) {
+void consumeNumericPart(const char *& pos, const char * end)
+{
     if (pos >= end || *pos == '_')
         return;
 
