@@ -64,6 +64,7 @@ private:
     {
         Auto,
         FinishSorting,
+        MergingSorted,
     };
 
     Type type;
