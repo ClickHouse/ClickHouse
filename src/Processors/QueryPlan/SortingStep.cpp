@@ -40,7 +40,7 @@ SortingStep::SortingStep(
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
-    , type(Type::Full)
+    , type(Type::Auto)
     , result_description(description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
@@ -80,7 +80,7 @@ SortingStep::SortingStep(
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
-    , type(Type::MergingSorted)
+    , type(Type::Auto)
     , result_description(sort_description_)
     , max_block_size(max_block_size_)
     , limit(limit_)
@@ -106,16 +106,8 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::finishSorting(QueryPipelineBuilder & pipeline)
+void SortingStep::finishSorting(QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc)
 {
-    if (pipeline.getNumStreams() > 1)
-    {
-        auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(), pipeline.getNumStreams(), prefix_description, max_block_size, SortingQueueStrategy::Batch, 0);
-
-        pipeline.addTransform(std::move(transform));
-    }
-
     pipeline.addSimpleTransform(
         [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
@@ -140,7 +132,7 @@ void SortingStep::finishSorting(QueryPipelineBuilder & pipeline)
                 increase_sort_description_compile_attempts = false;
 
             return std::make_shared<FinishSortingTransform>(
-                header, prefix_description, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current);
+                header, input_sort_desc, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current);
         });
 }
 
@@ -234,10 +226,23 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
     prefix_description = std::move(prefix_description_);
 }
 
+static Poco::Logger * getLogger()
+{
+    static Poco::Logger & logger = Poco::Logger::get("SortingStep");
+    return &logger;
+}
+
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto input_sort_mode = input_streams.front().sort_mode;
     const SortDescription & input_sort_desc = input_streams.front().sort_description;
+
+    // dump input_sort_desc, prefix_description, result_description
+    LOG_DEBUG(getLogger(), "Sort type : {}", type);
+    LOG_DEBUG(getLogger(), "Sort mode : {}", input_sort_mode);
+    LOG_DEBUG(getLogger(), "Input ({}): {}", input_sort_desc.size(), dumpSortDescription(input_sort_desc));
+    LOG_DEBUG(getLogger(), "Prefix({}): {}", prefix_description.size(), dumpSortDescription(prefix_description));
+    LOG_DEBUG(getLogger(), "Result({}): {}", result_description.size(), dumpSortDescription(result_description));
 
     if (input_sort_mode == DataStream::SortMode::Stream && input_sort_desc.hasPrefix(result_description))
         return;
@@ -245,41 +250,35 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     /// merge sorted
     if (input_sort_mode == DataStream::SortMode::Port && input_sort_desc.hasPrefix(result_description))
     {
+        LOG_DEBUG(getLogger(), "MergingSorted, SortMode::Port");
         mergingSorted(pipeline, result_description, limit);
         return;
     }
 
-    /// almost full sort but chunks are already sorted, so skipping partial sort
-    if (input_sort_mode == DataStream::SortMode::Chunk && input_sort_desc.hasPrefix(result_description))
+    if (input_sort_mode == DataStream::SortMode::Chunk)
     {
-        fullSort(pipeline, true);
-        return;
-    }
-
-    /// finish shorting
-    if (input_sort_mode == DataStream::SortMode::Chunk && result_description.hasPrefix(input_sort_desc))
-    {
-        finishSorting(pipeline);
-        return;
-    }
-
-    if (type == Type::FinishSorting)
-    {
-        bool need_finish_sorting = (prefix_description.size() < result_description.size());
-        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
-        if (need_finish_sorting)
+        if (result_description.hasPrefix(input_sort_desc))
         {
-            finishSorting(pipeline);
+            LOG_DEBUG(getLogger(), "FinishSorting, SortMode::Chunk");
+            bool need_finish_sorting = (input_sort_desc.size() < result_description.size());
+            mergingSorted(pipeline, input_sort_desc, (need_finish_sorting ? 0 : limit));
+            if (need_finish_sorting)
+            {
+                finishSorting(pipeline, input_sort_desc);
+            }
+            return;
         }
-        return;
+
+        /// almost full sort but chunks are already sorted, so skipping partial sort
+        if (input_sort_desc.hasPrefix(result_description))
+        {
+            LOG_DEBUG(getLogger(), "Almost FullSort");
+            fullSort(pipeline, true);
+            return;
+        }
     }
 
-    if (type == Type::MergingSorted)
-    {
-        mergingSorted(pipeline, result_description, limit);
-        return;
-    }
-
+    LOG_DEBUG(getLogger(), "FullSort");
     fullSort(pipeline);
 }
 
