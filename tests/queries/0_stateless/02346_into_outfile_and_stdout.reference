@@ -2,8 +2,15 @@ performing test: select
 1	2	3
 1	2	3
 performing test: bad_query_incorrect_usage
-query failed
+1
 performing test: bad_query_no_into_outfile
-query failed
+1
 performing test: bad_query_file_exists
-query failed
+1
+performing test: compression
+Hello, World! From clickhouse.
+Hello, World! From clickhouse.
+performing test: bad_query_misplaced_compression
+1
+performing test: bad_query_misplaced_format
+1
