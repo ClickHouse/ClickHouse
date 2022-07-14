@@ -69,7 +69,7 @@
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <IO/TeeWriteBuffer.h>
+#include <IO/ForkWriteBuffer.h>
 
 
 namespace fs = std::filesystem;
@@ -548,14 +548,18 @@ try
                             range.first,
                             range.second);
                 }
-                if (query_with_output->is_stdout_enabled)
+
+                if (query_with_output->is_into_outfile_with_stdout)
                 {
                     select_into_file_and_stdout = true;
-                    out_file_buf = wrapWriteBufferWithCompressionMethod(
-                        std::make_unique<TeeWriteBuffer>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    WriteBufferPtr file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                         compression_method,
                         compression_level
                     );
+
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{file_buf,
+                            std::make_shared<WriteBufferFromFileDescriptor>(STDOUT_FILENO)});
                 }
                 else
                 {
