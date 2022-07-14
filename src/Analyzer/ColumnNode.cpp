@@ -42,6 +42,10 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(column.name.size());
     hash_state.update(column.name);
 
+    const auto & column_type_name = column.type->getName();
+    hash_state.update(column_type_name.size());
+    hash_state.update(column_type_name);
+
     auto column_source_ptr = column_source.lock();
     if (column_source_ptr)
         column_source_ptr->updateTreeHashImpl(hash_state);
