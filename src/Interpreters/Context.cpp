@@ -3458,7 +3458,7 @@ ReadSettings Context::getReadSettings() const
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;
 
-    res.throttler = getRemoteReadThrottler();
+    res.remote_throttler = getRemoteReadThrottler();
 
     res.http_max_tries = settings.http_max_tries;
     res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
@@ -3476,7 +3476,7 @@ WriteSettings Context::getWriteSettings() const
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
 
-    res.throttler = getRemoteWriteThrottler();
+    res.remote_throttler = getRemoteWriteThrottler();
 
     return res;
 }

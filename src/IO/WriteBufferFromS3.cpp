@@ -125,8 +125,8 @@ void WriteBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
     last_part_size += offset();
-    if (write_settings.throttler)
-        write_settings.throttler->add(offset());
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(offset());
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
     if (multipart_upload_id.empty() && last_part_size > s3_settings.max_single_part_upload_size)

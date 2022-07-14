@@ -165,8 +165,8 @@ bool ReadBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
-    if (read_settings.throttler)
-        read_settings.throttler->add(working_buffer.size());
+    if (read_settings.remote_throttler)
+        read_settings.remote_throttler->add(working_buffer.size());
 
     return true;
 }

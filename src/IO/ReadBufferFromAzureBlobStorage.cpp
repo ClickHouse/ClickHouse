@@ -77,8 +77,8 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         try
         {
             bytes_read = data_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), to_read_bytes);
-            if (read_settings.throttler)
-                read_settings.throttler->add(bytes_read);
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->add(bytes_read);
             break;
         }
         catch (const Azure::Storage::StorageException & e)

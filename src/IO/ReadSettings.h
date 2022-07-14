@@ -91,7 +91,7 @@ struct ReadSettings
     FileCachePtr remote_fs_cache;
 
     /// Bandwidth throttler to use during reading
-    ThrottlerPtr throttler;
+    ThrottlerPtr remote_throttler;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;

@@ -58,8 +58,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     int write(const char * start, size_t size) const
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, size);
-        if (write_settings.throttler)
-            write_settings.throttler->add(bytes_written);
+        if (write_settings.remote_throttler)
+            write_settings.remote_throttler->add(bytes_written);
 
         if (bytes_written < 0)
             throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),

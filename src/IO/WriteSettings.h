@@ -11,7 +11,7 @@ struct WriteSettings
     bool enable_filesystem_cache_on_write_operations = false;
 
     /// Bandwidth throttler to use during writing
-    ThrottlerPtr throttler;
+    ThrottlerPtr remote_throttler;
 };
 
 }

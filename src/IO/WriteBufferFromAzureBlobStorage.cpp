@@ -88,8 +88,8 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 
     block_blob_client.CommitBlockList(block_ids);
 
-    if (write_settings.throttler)
-        write_settings.throttler->add(read);
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(read);
 }
 
 }
