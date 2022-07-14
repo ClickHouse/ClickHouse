@@ -48,18 +48,30 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         &processors);
 }
 
+bool JoinStep::allowPushDownToRight() const
+{
+    return join->pipelineType() == JoinPipelineType::YShaped;
+}
+
 void JoinStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void JoinStep::updateLeftStream(const DataStream & left_stream_)
+void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t idx)
 {
-    input_streams = {left_stream_, input_streams.at(1)};
-    output_stream = DataStream
+    if (idx == 0)
     {
-        .header = JoiningTransform::transformHeader(left_stream_.header, join),
-    };
+        input_streams = {new_input_stream_, input_streams.at(1)};
+        output_stream = DataStream
+        {
+            .header = JoiningTransform::transformHeader(new_input_stream_.header, join),
+        };
+    }
+    else
+    {
+        input_streams = {input_streams.at(0), new_input_stream_};
+    }
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
