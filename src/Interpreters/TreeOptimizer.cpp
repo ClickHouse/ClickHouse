@@ -154,9 +154,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            /// don't optimise functions that shadow any of it's arguments:
-            /// https://github.com/ClickHouse/ClickHouse/issues/37032
-            else if (!function->alias.empty())
+            /// don't optimise functions that shadow any of it's arguments, e.g.:
+            /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
+            if (!function->alias.empty())
             {
                 FunctionMaskingArgumentCheckVisitor::Data data{.alias=function->alias};
                 FunctionMaskingArgumentCheckVisitor(data).visit(function->arguments);
