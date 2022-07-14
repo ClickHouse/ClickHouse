@@ -56,15 +56,14 @@ public:
 private:
     void updateOutputStream() override;
 
-    void finishSorting(QueryPipelineBuilder & pipeline);
+    void finishSorting(QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc);
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & sort_desc, UInt64 limit_);
     void fullSort(QueryPipelineBuilder & pipeline, bool skip_partial_sort = false);
 
     enum class Type
     {
-        Full,
+        Auto,
         FinishSorting,
-        MergingSorted,
     };
 
     Type type;

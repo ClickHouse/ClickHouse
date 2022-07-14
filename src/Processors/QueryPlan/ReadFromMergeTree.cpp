@@ -141,7 +141,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         output_stream->sort_mode = DataStream::SortMode::Chunk;
 
         auto const& settings = context->getSettingsRef();
-        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && getInputOrderInfo())
+        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order || settings.optimize_read_in_window_order) && getInputOrderInfo())
             output_stream->sort_mode = DataStream::SortMode::Port;
     }
 }
