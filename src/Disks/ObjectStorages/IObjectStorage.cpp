@@ -50,15 +50,15 @@ std::string IObjectStorage::getCacheBasePath() const
 void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
 {
     std::unique_lock lock{throttlers_mutex};
-    read_throttler = context->getRemoteReadThrottler();
-    write_throttler = context->getRemoteWriteThrottler();
+    remote_read_throttler = context->getRemoteReadThrottler();
+    remote_write_throttler = context->getRemoteWriteThrottler();
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     std::unique_lock lock{throttlers_mutex};
     ReadSettings settings{read_settings};
-    settings.throttler = read_throttler;
+    settings.remote_throttler = remote_read_throttler;
     return settings;
 }
 
@@ -66,7 +66,7 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
 {
     std::unique_lock lock{throttlers_mutex};
     WriteSettings settings{write_settings};
-    settings.throttler = write_throttler;
+    settings.remote_throttler = remote_write_throttler;
     return settings;
 }
 

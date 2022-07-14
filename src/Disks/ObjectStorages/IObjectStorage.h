@@ -178,8 +178,8 @@ protected:
 
 private:
     mutable std::mutex throttlers_mutex;
-    ThrottlerPtr read_throttler;
-    ThrottlerPtr write_throttler;
+    ThrottlerPtr remote_read_throttler;
+    ThrottlerPtr remote_write_throttler;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
