@@ -26,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -64,11 +65,15 @@ public:
         const ColumnPtr & needles_ptr = arguments[1].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
-        assert(col_haystack_vector);
+        const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
+        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
         const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
         assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
+
+        if (col_haystack_const && col_needles_vector)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);
 
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
@@ -89,7 +94,9 @@ public:
                 col_needles_vector->getData(), col_needles_vector->getOffsets(),
                 vec_res, offsets_res);
 
-        // TODO: add comment about const const
+        // the combination of const haystack + const needle is not implemented because
+        // useDefaultImplementationForConstants() == true makes upper layers convert both to
+        // non-const columns
 
         return ColumnArray::create(std::move(col_res), std::move(col_offsets));
     }
