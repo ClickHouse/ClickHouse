@@ -1,11 +1,9 @@
 #include <Storages/IStorage.h>
 
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -14,7 +12,8 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Backups/IBackup.h>
 
 
 namespace DB
@@ -24,6 +23,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -248,54 +248,32 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-ASTPtr IStorage::getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const
+void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
 {
-    auto table_id = getStorageID();
-    auto db = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
-    if (!db)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-    ASTPtr query = db->tryGetCreateTableQuery(table_id.getTableName(), context);
-    if (!query)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
-
-    /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
-    auto & create = query->as<ASTCreateQuery &>();
-    create.uuid = UUIDHelpers::Nil;
-    create.to_inner_uuid = UUIDHelpers::Nil;
-
-    /// If this is a definition of a system table we'll remove columns and comment because they're excessive for backups.
-    if (create.storage && create.storage->engine && create.storage->engine->name.starts_with("System"))
-    {
-        create.reset(create.columns_list);
-        create.reset(create.comment);
-    }
-
-    if (database)
-        *database = db;
-
-    return query;
-}
-
-ASTPtr IStorage::getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const
-{
-    DatabasePtr database;
-    auto query = getCreateQueryForBackup(backup_entries_collector.getContext(), &database);
-    database->checkCreateTableQueryForBackup(query, backup_entries_collector);
-    return query;
 }
 
 void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
 {
 }
 
-void IStorage::restoreDataFromBackup(RestorerFromBackup &, const String &, const std::optional<ASTs> &)
+void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
+    /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
+    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
+    if (!filenames.empty())
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
+                        getStorageID().getFullTableName(), data_path_in_backup);
 }
 
 std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
+
+    if (row_level_filter)
+    {
+        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
+    }
 
     if (prewhere_actions)
     {

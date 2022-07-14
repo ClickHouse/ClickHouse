@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
@@ -27,6 +28,9 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     const JoinPtr & getJoin() const { return join; }
+    bool allowPushDownToRight() const;
+
+    void updateInputStream(const DataStream & new_input_stream_, size_t idx);
 
 private:
     JoinPtr join;
@@ -47,6 +51,8 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
+    void updateOutputStream() override;
+
     JoinPtr join;
     size_t max_block_size;
 };

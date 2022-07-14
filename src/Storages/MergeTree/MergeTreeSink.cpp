@@ -3,6 +3,10 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
 
+namespace ProfileEvents
+{
+    extern const Event DuplicatedInsertedBlocks;
+}
 
 namespace DB
 {
@@ -133,8 +137,40 @@ void MergeTreeSink::finishDelayedChunk()
 
         auto & part = partition.temp_part.part;
 
+        bool added = false;
+
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
+        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+        {
+            auto lock = storage.lockParts();
+            storage.fillNewPartName(part, lock);
+
+            auto * deduplication_log = storage.getDeduplicationLog();
+            if (deduplication_log)
+            {
+                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
+                auto res = deduplication_log->addPart(block_id, part->info);
+                if (!res.second)
+                {
+                    ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
+                }
+                else
+                {
+                    added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
+                    transaction.commit(&lock);
+                }
+            }
+            else
+            {
+                added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
+                transaction.commit(&lock);
+            }
+        }
+
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
-        if (storage.renameTempPartAndAdd(part, context->getCurrentTransaction().get(), &storage.increment, nullptr, storage.getDeduplicationLog(), partition.block_dedup_token))
+        if (added)
         {
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
             storage.incrementInsertedPartsProfileEvent(part->getType());
