@@ -14,8 +14,10 @@ namespace
     template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
     /// For implicit conversion of fmt::basic_runtime<> to char* for std::string ctor
     template <typename T, typename... Ts> constexpr auto firstArg(fmt::basic_runtime<T> && data, Ts &&...) { return data.str.data(); }
-}
 
+    [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; };
+    [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); };
+}
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
@@ -25,20 +27,21 @@ namespace
 
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                              \
 {                                                                                 \
-    const bool is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&     \
+    auto _logger = ::getLogger(logger);                                           \
+    const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&    \
         (DB::CurrentThread::getGroup()->client_logs_level >= (priority));         \
-    if ((logger)->is((PRIORITY)) || is_clients_log)                               \
+    if (_logger->is((PRIORITY)) || _is_clients_log)                               \
     {                                                                             \
         std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
-        if (auto channel = (logger)->getChannel())                                \
+        if (auto _channel = _logger->getChannel())                                \
         {                                                                         \
             std::string file_function;                                            \
             file_function += __FILE__;                                            \
             file_function += "; ";                                                \
             file_function += __PRETTY_FUNCTION__;                                 \
-            Poco::Message poco_message((logger)->name(), formatted_message,       \
+            Poco::Message poco_message(_logger->name(), formatted_message,        \
                                  (PRIORITY), file_function.c_str(), __LINE__);    \
-            channel->log(poco_message);                                           \
+            _channel->log(poco_message);                                          \
         }                                                                         \
     }                                                                             \
 } while (false)
