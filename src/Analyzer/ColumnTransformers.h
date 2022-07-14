@@ -157,13 +157,23 @@ const char * toString(ExceptColumnTransformerType type);
 class ExceptColumnTransformerNode;
 using ExceptColumnTransformerNodePtr = std::shared_ptr<ExceptColumnTransformerNode>;
 
-/// Except column transformer
+/** Except column transformer
+  * Strict column transformer must use all column names during matched nodes transformation.
+  *
+  * Example:
+  * CREATE TABLE test_table (id UInt64, value String) ENGINE=TinyLog;
+  * SELECT * EXCEPT STRICT (id, value1) FROM test_table;
+  * Such query will throw exception because column name with value1 was not matched by strict EXCEPT transformer.
+  *
+  * Strict is valid only for EXCEPT COLUMN_LIST transformer.
+  */
 class ExceptColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
     /// Initialize except column transformer with column names
-    explicit ExceptColumnTransformerNode(Names except_column_names_)
+    explicit ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_)
         : except_transformer_type(ExceptColumnTransformerType::COLUMN_LIST)
+        , is_strict(is_strict_)
         , except_column_names(std::move(except_column_names_))
     {
     }
@@ -171,6 +181,7 @@ public:
     /// Initialize except column transformer with regexp column matcher
     explicit ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_)
         : except_transformer_type(ExceptColumnTransformerType::REGEXP)
+        , is_strict(false)
         , column_matcher(std::move(column_matcher_))
     {
     }
@@ -181,8 +192,24 @@ public:
         return except_transformer_type;
     }
 
+    /** Get is except transformer strict.
+      * Valid only for EXCEPT COLUMN_LIST transformer.
+      */
+    bool isStrict() const
+    {
+        return is_strict;
+    }
+
     /// Returns true if except transformer match column name, false otherwise.
     bool isColumnMatching(const std::string & column_name) const;
+
+    /** Get except column names.
+      * Valid only for column list except transformer.
+      */
+    const Names & getExceptColumnNames() const
+    {
+        return except_column_names;
+    }
 
     ColumnTransfomerType getTransformerType() const override
     {
@@ -197,8 +224,10 @@ protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;
+
 private:
     ExceptColumnTransformerType except_transformer_type;
+    bool is_strict;
     Names except_column_names;
     std::shared_ptr<re2::RE2> column_matcher;
 };
@@ -206,7 +235,14 @@ private:
 class ReplaceColumnTransformerNode;
 using ReplaceColumnTransformerNodePtr = std::shared_ptr<ReplaceColumnTransformerNode>;
 
-/// Replace column transformer
+/** Replace column transformer
+  * Strict replace column transformer must use all replacements during matched nodes transformation.
+  *
+  * Example:
+  * REATE TABLE test_table (id UInt64, value String) ENGINE=TinyLog;
+  * SELECT * REPLACE STRICT (1 AS id, 2 AS value_1) FROM test_table;
+  * Such query will throw exception because column name with value1 was not matched by strict REPLACE transformer.
+  */
 class ReplaceColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
@@ -218,11 +254,17 @@ public:
     };
 
     /// Initialize replace column transformer with replacements
-    explicit ReplaceColumnTransformerNode(const std::vector<Replacement> & replacements_);
+    explicit ReplaceColumnTransformerNode(const std::vector<Replacement> & replacements_, bool is_strict);
 
     ColumnTransfomerType getTransformerType() const override
     {
         return ColumnTransfomerType::REPLACE;
+    }
+
+    /// Is replace column transformer strict
+    bool isStrict() const
+    {
+        return is_strict;
     }
 
     /// Get replacements
@@ -260,6 +302,7 @@ protected:
 private:
     ReplaceColumnTransformerNode() = default;
 
+    bool is_strict;
     Names replacements_names;
     static constexpr size_t replacements_child_index = 0;
 };

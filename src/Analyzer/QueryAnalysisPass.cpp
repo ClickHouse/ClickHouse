@@ -148,7 +148,6 @@ namespace ErrorCodes
   * TODO: Add expression name into query tree node. Example: SELECT plus(1, 1). Result: SELECT 2. Expression name of constant node should be 2.
   * TODO: Table identifiers with optional UUID.
   * TODO: Table ALIAS columns
-  * TODO: Support STRICT except, replace matchers.
   * TODO: Support multiple entities with same alias.
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
@@ -1185,7 +1184,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifier(const IdentifierLookup & id
 
 /// Resolve query tree nodes functions implementation
 
-/** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description.
+/** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description. Check ColumnTransformers.h for detailed transformers description.
   *
   * 1. Populate matcher_expression_nodes.
   *
@@ -1195,7 +1194,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifier(const IdentifierLookup & id
   *
   * If we resolve non qualified matcher, use current scope join tree node.
   *
-  * 2. Apply column transforms to matched expression nodes.
+  * 2. Apply column transformers to matched expression nodes. For strict column transformers save used column names.
+  * 3. Validate strict column transformers.
   */
 QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
@@ -1316,7 +1316,21 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
         }
     }
 
+    std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
+    auto add_strict_transformer_column_name = [&](const IColumnTransformerNode * transformer, const std::string & column_name)
+    {
+        auto it = strict_transformer_to_used_column_names.find(transformer);
+        if (it == strict_transformer_to_used_column_names.end())
+        {
+            auto [inserted_it, _] = strict_transformer_to_used_column_names.emplace(transformer, std::unordered_set<std::string>());
+            it = inserted_it;
+        }
+
+        it->second.insert(column_name);
+    };
+
     ListNodePtr list = std::make_shared<ListNode>();
+
     for (auto & node : matcher_expression_nodes)
     {
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
@@ -1352,8 +1366,12 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
             else if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
             {
                 auto node_name = node->getName();
+
                 if (except_transformer->isColumnMatching(node_name))
                 {
+                    if (except_transformer->isStrict())
+                        add_strict_transformer_column_name(except_transformer, node_name);
+
                     node = {};
                     break;
                 }
@@ -1365,6 +1383,9 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
                 if (!replace_expression)
                     continue;
 
+                if (replace_transformer->isStrict())
+                    add_strict_transformer_column_name(replace_transformer, node_name);
+
                 node = replace_expression;
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/);
             }
@@ -1372,6 +1393,72 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
 
         if (node)
             list->getNodes().push_back(node);
+    }
+
+    for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
+    {
+        auto strict_transformer_type = strict_transformer->getTransformerType();
+        const Names * strict_transformer_column_names = nullptr;
+
+        switch (strict_transformer_type)
+        {
+            case ColumnTransfomerType::EXCEPT:
+            {
+                const auto * except_transformer = static_cast<const ExceptColumnTransformerNode *>(strict_transformer);
+                const auto & except_names = except_transformer->getExceptColumnNames();
+
+                if (except_names.size() != used_column_names.size())
+                    strict_transformer_column_names = &except_transformer->getExceptColumnNames();
+
+                break;
+            }
+            case ColumnTransfomerType::REPLACE:
+            {
+                const auto * replace_transformer = static_cast<const ReplaceColumnTransformerNode *>(strict_transformer);
+                const auto & replacement_names = replace_transformer->getReplacementsNames();
+
+                if (replacement_names.size() != used_column_names.size())
+                    strict_transformer_column_names = &replace_transformer->getReplacementsNames();
+
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expected strict EXCEPT or REPLACE column transformer. Actual type {}. In scope {}",
+                    toString(strict_transformer_type),
+                    scope.scope_node->formatASTForErrorMessage());
+            }
+        }
+
+        if (!strict_transformer_column_names)
+            continue;
+
+        Names non_matched_column_names;
+        size_t strict_transformer_column_names_size = strict_transformer_column_names->size();
+        for (size_t i = 0; i < strict_transformer_column_names_size; ++i)
+        {
+            const auto & column_name = (*strict_transformer_column_names)[i];
+            if (used_column_names.find(column_name) == used_column_names.end())
+                non_matched_column_names.push_back(column_name);
+        }
+
+        WriteBufferFromOwnString non_matched_column_names_buffer;
+        size_t non_matched_column_names_size = non_matched_column_names.size();
+        for (size_t i = 0; i < non_matched_column_names_size; ++i)
+        {
+            const auto & column_name = non_matched_column_names[i];
+
+            non_matched_column_names_buffer << column_name;
+            if (i + 1 != non_matched_column_names_size)
+                non_matched_column_names_buffer << ", ";
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Strict {} column transformer {} expects following column(s) {}",
+            toString(strict_transformer_type),
+            strict_transformer->formatASTForErrorMessage(),
+            non_matched_column_names_buffer.str());
     }
 
     return list;
