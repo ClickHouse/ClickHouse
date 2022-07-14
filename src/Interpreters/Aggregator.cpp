@@ -1908,6 +1908,9 @@ Aggregator::ConvertToBlockRes<return_single_block>
         places.reserve(max_block_size);
     };
 
+    // should be invoked at least once, because null data might be the only content of the `data`
+    init_out_cols();
+
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
@@ -1974,6 +1977,9 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
         shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
         key_sizes_ptr = shuffled_key_sizes ? &*shuffled_key_sizes : &key_sizes;
     };
+
+    // should be invoked at least once, because null data might be the only content of the `data`
+    init_out_cols();
 
     size_t rows_in_current_block = 0;
 
