@@ -1,8 +1,5 @@
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <filesystem>
-
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
@@ -12,12 +9,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <IO/ReadBufferFromFile.h>
-
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -26,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Poco/Exception.h>
+#include <filesystem>
 
 
 namespace fs = std::filesystem;
@@ -37,15 +29,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
-    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int NETWORK_ERROR;
-}
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_UNLINK;
 }
 
 void WebObjectStorage::initialize(const String & uri_path) const

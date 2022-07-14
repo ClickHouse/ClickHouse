@@ -440,6 +440,11 @@ bool DiskObjectStorage::supportsCache() const
     return object_storage->supportsCache();
 }
 
+bool DiskObjectStorage::isReadOnly() const
+{
+    return object_storage->isReadOnly();
+}
+
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage(const String & name_)
 {
     return std::make_shared<DiskObjectStorage>(
