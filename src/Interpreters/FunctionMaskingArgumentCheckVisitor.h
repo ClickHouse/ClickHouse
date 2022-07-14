@@ -10,7 +10,8 @@ namespace DB
 {
 
 /// Checks from bottom to top if a function's alias shadows the name
-/// of one of it's arguments
+/// of one of it's arguments, e.g.
+/// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
 class FunctionMaskingArgumentCheckMatcher
 {
 public:
