@@ -286,8 +286,6 @@ def main():
     if some_builds_are_missing:
         addition = f"({len(build_reports)} of {required_builds} builds are OK)"
 
-    description = f"{ok_builds}/{total_builds} builds are OK {addition}"
-
     description = f"{ok_groups}/{total_groups} artifact groups are OK {addition}"
 
     commit = get_commit(gh, pr_info.sha)
