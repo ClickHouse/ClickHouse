@@ -138,8 +138,6 @@ struct QuantileInterpolatedWeighted
 
 
         /// perform linear interpolation
-        UnderlyingType g;
-
         size_t idx = 0;
 
         if (size >= 2)
@@ -166,36 +164,7 @@ struct QuantileInterpolatedWeighted
         if (level > xr)
             yl = yr;
 
-        UnderlyingType dy;
-
-        if (yr - yl > std::numeric_limits<UnderlyingType>::max())
-            dy = std::numeric_limits<UnderlyingType>::max();
-        else if (yr - yl < std::numeric_limits<UnderlyingType>::min())
-            dy = std::numeric_limits<UnderlyingType>::min();
-        else
-            dy = yr - yl;
-
-        Float64 dx;
-
-        if (xr - xl > std::numeric_limits<Float64>::max())
-            dx = std::numeric_limits<Float64>::max();
-        else if (xr - xl < std::numeric_limits<Float64>::min())
-            dx = std::numeric_limits<Float64>::min();
-        else
-            dx = xr - xl;
-
-        dx = dx == 0 ? 1 : dx;
-
-        if ((yl + (dy / dx) * (level - xl)) > std::numeric_limits<UnderlyingType>::max())
-            g = std::numeric_limits<UnderlyingType>::max();
-        else if (yl + (dy / dx) * (level - xl) < std::numeric_limits<UnderlyingType>::min())
-            g = std::numeric_limits<UnderlyingType>::min();
-        else if (isNaN(yl + (dy / dx) * (level - xl)))
-            g = std::numeric_limits<UnderlyingType>::quiet_NaN();
-        else
-            g = yl + (dy / dx) * (level - xl);
-
-        return g;
+        return interpolate(level, xl, xr, yl, yr);
     }
 
 
@@ -262,7 +231,6 @@ struct QuantileInterpolatedWeighted
         while (level_index < num_levels)
         {
             /// perform linear interpolation for every level
-            UnderlyingType g;
             auto level = levels[indices[level_index]];
 
             size_t idx = 0;
@@ -290,38 +258,23 @@ struct QuantileInterpolatedWeighted
             if (level > xr)
                 yl = yr;
 
-            UnderlyingType dy;
-
-            if (yr - yl > std::numeric_limits<UnderlyingType>::max())
-                dy = std::numeric_limits<UnderlyingType>::max();
-            else if (yr - yl < std::numeric_limits<UnderlyingType>::min())
-                dy = std::numeric_limits<UnderlyingType>::min();
-            else
-                dy = yr - yl;
-
-            Float64 dx;
-
-            if (xr - xl > std::numeric_limits<Float64>::max())
-                dx = std::numeric_limits<Float64>::max();
-            else if (xr - xl < std::numeric_limits<Float64>::min())
-                dx = std::numeric_limits<Float64>::min();
-            else
-                dx = xr - xl;
-
-            dx = dx == 0 ? 1 : dx;
-
-            if ((yl + (dy / dx) * (level - xl)) > std::numeric_limits<UnderlyingType>::max())
-                g = std::numeric_limits<UnderlyingType>::max();
-            else if ((yl + (dy / dx) * (level - xl)) < std::numeric_limits<UnderlyingType>::min())
-                g = std::numeric_limits<UnderlyingType>::min();
-            else if (isNaN(yl + (dy / dx) * (level - xl)))
-                g = std::numeric_limits<UnderlyingType>::quiet_NaN();
-            else
-                g = yl + (dy / dx) * (level - xl);
-
-            result[indices[level_index]] = g;
+            result[indices[level_index]] = interpolate(level, xl, xr, yl, yr);
             ++level_index;
         }
+    }
+
+    /// This ignores overflows that may arise during add, sub and mul operations and doesn't aim to provide exact results.
+    /// Since `the quantileInterpolatedWeighted` function itself relies mainly on approximation, this is fine.
+    UnderlyingType interpolate(Float64 level, Float64 xl, Float64 xr, UnderlyingType yl, UnderlyingType yr) const
+    {
+        UnderlyingType dy = common::subIgnoreOverflow(yr, yl);
+        Float64 dx = common::subIgnoreOverflow(xr, xl);
+        dx = dx == 0 ? 1 : dx; /// to handle NaN behavior that might arise during integer division below.
+
+        /// yl + (dy / dx) * (level - xl)
+        UnderlyingType g = common::addIgnoreOverflow(yl, common::mulIgnoreOverflow((dy / dx), common::subIgnoreOverflow(level, xl)));
+
+        return g;
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
