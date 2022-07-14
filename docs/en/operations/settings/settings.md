@@ -3329,6 +3329,15 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
 
+## compatibility {#compatibility}
+
+This setting changes other settings according to provided ClickHouse version.
+If we know that we changed some behaviour in ClickHouse by changing some settings in some version, this compatibility setting will control these settings if they were not set by user.
+
+This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
+
+Disabled by default.
+
 # Format settings {#format-settings}
 
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
