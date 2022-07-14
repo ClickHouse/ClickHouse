@@ -586,7 +586,7 @@ class TestCase:
         return testcase_args
 
     @staticmethod
-    def cli_format_settings(self, settings_list) -> str:
+    def cli_format_settings(settings_list) -> str:
         return " ".join([f"--{setting}" for setting in settings_list])
 
     def add_random_settings(self, args, client_options):
