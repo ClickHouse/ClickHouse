@@ -14,6 +14,7 @@ node = cluster.add_instance(
     with_minio=True,
 )
 
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -22,10 +23,11 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_concurrent_backups(start_cluster):
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     columns = [f"column_{i} UInt64" for i in range(1000)]
-    columns_str = ', '.join(columns)
+    columns_str = ", ".join(columns)
     node.query(
         f"CREATE TABLE s3_test ({columns_str}) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='s3';"
     )
