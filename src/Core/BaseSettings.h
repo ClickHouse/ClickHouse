@@ -45,7 +45,9 @@ class BaseSettings : public TTraits::Data
 public:
     BaseSettings() = default;
     BaseSettings(const BaseSettings &) = default;
+    BaseSettings(BaseSettings &&) noexcept = default;
     BaseSettings & operator=(const BaseSettings &) = default;
+    BaseSettings & operator=(BaseSettings &&) noexcept = default;
     virtual ~BaseSettings() = default;
 
     using Traits = TTraits;
@@ -68,7 +70,7 @@ public:
     /// Resets all the settings to their default values.
     void resetToDefault();
     /// Resets specified setting to its default value.
-    void resetToDefault(const std::string_view & name);
+    void resetToDefault(const std::string_view name);
 
     bool has(const std::string_view & name) const { return hasBuiltin(name) || hasCustom(name); }
     static bool hasBuiltin(const std::string_view & name);
@@ -323,7 +325,7 @@ void BaseSettings<TTraits>::resetToDefault()
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::resetToDefault(const std::string_view & name)
+void BaseSettings<TTraits>::resetToDefault(const std::string_view name)
 {
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
