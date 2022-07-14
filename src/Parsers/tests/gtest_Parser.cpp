@@ -477,6 +477,29 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "Customers | where Age in ((Customers|project Age|where Age < 30))",
             "SELECT *\nFROM Customers\nWHERE Age IN (\n    SELECT Age\n    FROM Customers\n    WHERE Age < 30\n)"
+        },
+        {
+            "Customers | project ipv4_is_in_range('127.0.0.1', '127.0.0.1')",
+            "SELECT '127.0.0.1' = '127.0.0.1'\nFROM Customers"
+        },
+        {
+            "Customers | project ipv4_is_in_range('192.168.1.6', '192.168.1.1/24')",
+            "SELECT isIPAddressInRange('192.168.1.6', '192.168.1.1/24')\nFROM Customers"
+        },
+        {
+            "Customers | project ipv4_netmask_suffix('192.168.1.1/24')",
+            "SELECT if(isIPv4String('192.168.1.1') AND ((24 >= 1) AND (24 <= 32)), 24, NULL)\nFROM Customers"
+        },
+        {
+            "Customers | project ipv4_netmask_suffix('192.168.1.1')",
+            "SELECT if(isIPv4String('192.168.1.1') AND ((32 >= 1) AND (32 <= 32)), 32, NULL)\nFROM Customers"
+        },
+        {
+            "Customers | project parse_ipv4('127.0.0.1')",
+            "SELECT toIPv4OrNull('127.0.0.1')\nFROM Customers"
+        },
+        {
+            "Customers | project parse_ipv6('127.0.0.1')",
+            "SELECT toIPv6OrNull('127.0.0.1')\nFROM Customers"
         }
-
 })));
