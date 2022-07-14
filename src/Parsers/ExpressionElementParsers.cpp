@@ -1667,8 +1667,44 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Field res;
 
+    if (pos->type == TokenType::BareWord && pos->size() == 3)
+    {
+        const char * word = pos->begin;
+
+        /// Inf and NaN are considered as numbers
+        if ((word[0] == 'n' || word[0] == 'N') &&
+            (word[1] == 'a' || word[1] == 'A') &&
+            (word[2] == 'n' || word[2] == 'N'))
+        {
+            res = std::numeric_limits<Float64>::quiet_NaN();
+
+            auto literal = std::make_shared<ASTLiteral>(res);
+            literal->begin = literal_begin;
+            literal->end = ++pos;
+            node = literal;
+            return true;
+        }
+        else if ((word[0] == 'i' || word[0] == 'I') &&
+                 (word[1] == 'n' || word[1] == 'N') &&
+                 (word[2] == 'f' || word[2] == 'F'))
+        {
+            if (negative)
+                res = -std::numeric_limits<Float64>::infinity();
+            else
+                res = std::numeric_limits<Float64>::infinity();
+
+            auto literal = std::make_shared<ASTLiteral>(res);
+            literal->begin = literal_begin;
+            literal->end = ++pos;
+            node = literal;
+            return true;
+        }
+        return false;
+    }
+
     if (pos->type != TokenType::Number)
         return false;
+
 
     /** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
       * Copy is needed to use strto* functions, which require 0-terminated string.

@@ -293,37 +293,3 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
             "^$"
         }
 })));
-
-INSTANTIATE_TEST_SUITE_P(ParserNumber, ParserTest,
-    ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserNumber>()),
-        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
-        {
-            "1_234_567",
-            "1234567"
-        },
-        {
-            "-0_1234_5678",
-            "-12345678"
-        },
-        {
-            "1.234_567",
-            "1.234567"
-        },
-        {
-            "123.000_1e3",
-            "123000.1"
-        },
-        {
-            "0b0100_1001_0110",
-            "1174"
-        },
-        {
-            "0x1a2b_3c4d_5f00",
-            "28772997619456"
-        },
-        {
-            "0x01_02.1p0_1",
-            "516.125"
-        }
-})));

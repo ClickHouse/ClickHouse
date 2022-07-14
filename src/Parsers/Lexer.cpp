@@ -44,7 +44,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 }
 
 /// Consume underscore-grouped numeric chars.
-/// Leading or consecutive or trailing underscores are not allowed.
+/// Leading, consecutive and trailing underscores are not allowed.
 void consumeNumericPart(const char *& pos, const char * end, bool hex) {
     if (pos >= end || *pos == '_')
         return;
@@ -61,6 +61,21 @@ void consumeNumericPart(const char *& pos, const char * end, bool hex) {
     }
 }
 
+void consumeNumericPart(const char *& pos, const char * end) {
+    if (pos >= end || *pos == '_')
+        return;
+
+    for (;;)
+    {
+        while (pos < end && isNumericASCII(*pos))
+            ++pos;
+
+        if (pos + 1 < end && *pos == '_' && isNumericASCII(pos[1]))
+            ++pos;
+        else
+            break;
+    }
+}
 }
 
 
@@ -154,7 +169,7 @@ Token Lexer::nextTokenImpl()
                     if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                         ++pos;
 
-                    consumeNumericPart(pos, end, false);
+                    consumeNumericPart(pos, end);
                 }
             }
 
@@ -207,8 +222,9 @@ Token Lexer::nextTokenImpl()
                     || prev_significant_token_type == TokenType::Number))
                 return Token(TokenType::Dot, token_begin, ++pos);
 
+            /// decimal
             ++pos;
-            consumeNumericPart(pos, end, false);
+            consumeNumericPart(pos, end);
 
             /// exponentiation
             if (pos + 1 < end && (*pos == 'e' || *pos == 'E'))
@@ -219,7 +235,16 @@ Token Lexer::nextTokenImpl()
                 if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                     ++pos;
 
-                consumeNumericPart(pos, end, false);
+                consumeNumericPart(pos, end);
+            }
+
+            if (pos < end && isWordCharASCII(*pos))
+            {
+                ++pos;
+                while (pos < end && isWordCharASCII(*pos))
+                    ++pos;
+
+                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
             }
 
             return Token(TokenType::Number, token_begin, pos);
