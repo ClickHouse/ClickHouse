@@ -274,17 +274,17 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (input_sort_mode == DataStream::SortMode::Chunk)
     {
-        if (result_description.hasPrefix(input_sort_desc))
-        {
-            LOG_DEBUG(getLogger(), "FinishSorting, SortMode::Chunk");
-            bool need_finish_sorting = (input_sort_desc.size() < result_description.size());
-            mergingSorted(pipeline, input_sort_desc, (need_finish_sorting ? 0 : limit));
-            if (need_finish_sorting)
-            {
-                finishSorting(pipeline, input_sort_desc);
-            }
-            return;
-        }
+        // if (result_description.hasPrefix(input_sort_desc))
+        // {
+        //     LOG_DEBUG(getLogger(), "FinishSorting, SortMode::Chunk");
+        //     bool need_finish_sorting = (input_sort_desc.size() < result_description.size());
+        //     mergingSorted(pipeline, input_sort_desc, (need_finish_sorting ? 0 : limit));
+        //     if (need_finish_sorting)
+        //     {
+        //         finishSorting(pipeline, input_sort_desc);
+        //     }
+        //     return;
+        // }
 
         /// almost full sort but chunks are already sorted, so skipping partial sort
         if (input_sort_desc.hasPrefix(result_description))
