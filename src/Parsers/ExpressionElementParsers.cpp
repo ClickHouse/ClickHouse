@@ -1667,36 +1667,24 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Field res;
 
-    if (pos->type == TokenType::BareWord && pos->size() == 3)
+    /// NaN and Inf
+    if (pos->type == TokenType::BareWord)
     {
-        const char * word = pos->begin;
-
-        /// Inf and NaN are considered as numbers
-        if ((word[0] == 'n' || word[0] == 'N') &&
-            (word[1] == 'a' || word[1] == 'A') &&
-            (word[2] == 'n' || word[2] == 'N'))
-        {
-            res = std::numeric_limits<Float64>::quiet_NaN();
-
-            auto literal = std::make_shared<ASTLiteral>(res);
-            literal->begin = literal_begin;
-            literal->end = ++pos;
-            node = literal;
-            return true;
-        }
-        else if ((word[0] == 'i' || word[0] == 'I') &&
-                 (word[1] == 'n' || word[1] == 'N') &&
-                 (word[2] == 'f' || word[2] == 'F'))
+        char * float_end = nullptr;
+        errno = 0; /// Functions strto* don't clear errno.
+        Float64 float_value = std::strtod(pos->begin, &float_end);
+        if (float_end == pos->begin + pos->size() && errno != ERANGE)
         {
             if (negative)
-                res = -std::numeric_limits<Float64>::infinity();
-            else
-                res = std::numeric_limits<Float64>::infinity();
+                float_value = -float_value;
+
+            res = float_value;
 
             auto literal = std::make_shared<ASTLiteral>(res);
             literal->begin = literal_begin;
             literal->end = ++pos;
             node = literal;
+
             return true;
         }
         return false;
@@ -1704,7 +1692,6 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (pos->type != TokenType::Number)
         return false;
-
 
     /** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
       * Copy is needed to use strto* functions, which require 0-terminated string.
@@ -1727,7 +1714,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     buf[size] = 0;
 
-    if (size == MAX_LENGTH_OF_NUMBER && cur < end)
+    /// If there are remaining chars,
+    /// the length of original number is greater than the MAX_LENGTH_OF_NUMBER
+    if (cur < end)
     {
         expected.add(pos, "number");
         return false;
@@ -1738,15 +1727,12 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (*start_pos == '0')
     {
         ++start_pos;
-        // shadowing buf size to ignore prefix length
-        size_t numeric_size = size - 1;
 
         /// binary
         if (*start_pos == 'b')
         {
             ++start_pos;
-            --numeric_size;
-            if (parseNumber(start_pos, numeric_size, negative, 2, res))
+            if (parseNumber(start_pos, size - 2, negative, 2, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1763,8 +1749,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (*start_pos == 'x' || *start_pos == 'X')
         {
             ++start_pos;
-            --numeric_size;
-            if (parseNumber(start_pos, numeric_size, negative, 16, res))
+            if (parseNumber(start_pos, size - 2, negative, 16, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1776,13 +1761,14 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else
         {
+            size_t real_size = size - 1;
             /// possible leading zeroes in integer
             while (*start_pos == '0')
             {
                 ++start_pos;
-                --numeric_size;
+                --real_size;
             }
-            if (parseNumber(start_pos, numeric_size, negative, 10, res))
+            if (parseNumber(start_pos, real_size, negative, 10, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1804,9 +1790,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     char * pos_double = buf;
-    errno = 0;    /// Functions strto* don't clear errno.
+    errno = 0; /// Functions strto* don't clear errno.
     Float64 float_value = std::strtod(buf, &pos_double);
-    if (pos_double == buf + size && errno != ERANGE)
+    if (errno != ERANGE)
     {
         if (float_value < 0)
             throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
