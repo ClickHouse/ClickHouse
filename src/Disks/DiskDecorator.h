@@ -12,6 +12,8 @@ class DiskDecorator : public IDisk
 {
 public:
     explicit DiskDecorator(const DiskPtr & delegate_);
+
+    DiskTransactionPtr createTransaction() override;
     const String & getName() const override;
     ReservationPtr reserve(UInt64 bytes) override;
     ~DiskDecorator() override = default;
@@ -50,11 +52,15 @@ public:
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
+    void removeSharedFileIfExists(const String & path, bool keep_s3) override;
+
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
+
     void removeSharedFile(const String & path, bool keep_s3) override;
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
     time_t getLastChanged(const String & path) const override;
     Poco::Timestamp getLastModified(const String & path) const override;
@@ -69,14 +75,20 @@ public:
     DiskType getType() const override { return delegate->getType(); }
     bool isRemote() const override { return delegate->isRemote(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
+    bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
     void startup(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
+
+    bool supportsCache() const override { return delegate->supportsCache(); }
     String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
-    std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
-    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
+
+    StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
+    DiskObjectStoragePtr createDiskObjectStorage(const String &) override;
+
+    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
 

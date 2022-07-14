@@ -563,7 +563,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 /// Has to be called even if totals are empty
 void MergeJoin::setTotals(const Block & totals_block)
 {
-    totals = totals_block;
+    IJoin::setTotals(totals_block);
     mergeRightBlocks();
 
     if (is_right || is_full)
@@ -580,7 +580,7 @@ void MergeJoin::mergeRightBlocks()
 
 void MergeJoin::mergeInMemoryRightBlocks()
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (right_blocks.empty())
         return;
@@ -613,7 +613,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
 void MergeJoin::mergeFlushedRightBlocks()
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     auto callback = [&](const Block & block)
     {
@@ -638,7 +638,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 {
     if (is_in_memory)
     {
-        std::unique_lock lock(rwlock);
+        std::lock_guard lock(rwlock);
 
         if (!is_in_memory)
         {

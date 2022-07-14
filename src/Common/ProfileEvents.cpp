@@ -350,7 +350,21 @@
     M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
     M(SchemaInferenceCacheTTLExpirations, "Number of times a schema from cache expires due to TTL") \
     M(SchemaInferenceCacheTTLUpdates, "Number of times TTL for schema in cache was updated") \
-    M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data")
+    M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data") \
+    \
+    M(KeeperPacketsSent, "Packets sent by keeper server") \
+    M(KeeperPacketsReceived, "Packets received by keeper server") \
+    M(KeeperRequestTotal, "Total requests number on keeper server") \
+    M(KeeperLatency, "Keeper latency") \
+    M(KeeperCommits, "Number of successful commits") \
+    M(KeeperCommitsFailed, "Number of failed commits") \
+    M(KeeperSnapshotCreations, "Number of snapshots creations")\
+    M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations")\
+    M(KeeperSnapshotApplys, "Number of snapshot applying")\
+    M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
+    M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
+    M(KeeperSaveSnapshot, "Number of snapshot save")\
+
 
 namespace ProfileEvents
 {

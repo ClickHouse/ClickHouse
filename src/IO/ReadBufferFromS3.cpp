@@ -47,7 +47,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
-    : SeekableReadBuffer(nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -227,7 +227,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, false);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
 
     file_size = object_size;
     return *file_size;
