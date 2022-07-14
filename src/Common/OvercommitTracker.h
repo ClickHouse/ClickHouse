@@ -86,8 +86,6 @@ protected:
     // overcommit tracker is in SELECTED state.
     MemoryTracker * picked_tracker;
 
-    virtual Poco::Logger * getLogger() = 0;
-
 private:
 
     void pickQueryToExclude()
@@ -145,10 +143,8 @@ struct UserOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessListForUser * user_process_list;
-    Poco::Logger * logger = &Poco::Logger::get("UserOvercommitTracker");
 };
 
 struct GlobalOvercommitTracker : OvercommitTracker
@@ -160,10 +156,8 @@ struct GlobalOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessList * process_list;
-    Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };
 
 // This class is used to disallow tracking during logging to avoid deadlocks.

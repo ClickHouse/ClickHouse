@@ -29,6 +29,7 @@
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 
@@ -1046,10 +1047,13 @@ bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & 
     return true;
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
+    ExpressionActionsChain & chain,
+    ActionsDAGPtr & converting_join_columns)
 {
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, converting_join_columns);
+
+    JoinPtr join = makeJoin(*syntax->ast_join, left_sample_columns, converting_join_columns);
 
     if (converting_join_columns)
     {
@@ -1059,9 +1063,9 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
     chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
-        syntax->analyzed_join, table_join, step.getResultColumns()));
+        syntax->analyzed_join, join, step.getResultColumns()));
     chain.addStep();
-    return table_join;
+    return join;
 }
 
 static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
@@ -1087,7 +1091,17 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
+    {
         return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
+    }
+    else if (analyzed_join->forceFullSortingMergeJoin())
+    {
+        if (analyzed_join->getClauses().size() != 1)
+            throw Exception("Full sorting merge join is supported only for single-condition joins", ErrorCodes::NOT_IMPLEMENTED);
+        if (analyzed_join->isSpecialStorage())
+            throw Exception("Full sorting merge join is not supported for special storage", ErrorCodes::NOT_IMPLEMENTED);
+        return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
+    }
     return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
 }
 
@@ -1190,7 +1204,7 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
     return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
+JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
     const ASTTablesInSelectQueryElement & join_element,
     const ColumnsWithTypeAndName & left_columns,
     ActionsDAGPtr & left_convert_actions)
@@ -1483,6 +1497,25 @@ void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(Expres
     }
 }
 
+void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node)
+{
+    if (auto * function = node->as<ASTFunction>())
+    {
+        // Skip window function columns here -- they are calculated after
+        // other SELECT expressions by a special step.
+        // Also skipping lambda functions because they can't be explicitly evaluated.
+        if (function->is_window_function || function->name == "lambda")
+            return;
+        if (function->compute_after_window_functions)
+        {
+            for (auto & arg : function->arguments->children)
+                appendSelectSkipWindowExpressions(step, arg);
+            return;
+        }
+    }
+    step.addRequiredOutput(node->getColumnName());
+}
+
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -1507,18 +1540,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
     getRootActions(select_query->select(), only_types, step.actions());
 
     for (const auto & child : select_query->select()->children)
-    {
-        if (const auto * function = typeid_cast<const ASTFunction *>(child.get());
-            function
-            && (function->is_window_function || function->compute_after_window_functions))
-        {
-            // Skip window function columns here -- they are calculated after
-            // other SELECT expressions by a special step.
-            continue;
-        }
-
-        step.addRequiredOutput(child->getColumnName());
-    }
+        appendSelectSkipWindowExpressions(step, child);
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
