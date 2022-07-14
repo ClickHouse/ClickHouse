@@ -126,6 +126,9 @@ struct MergeListElement : boost::noncopyable
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
+    // Description used for logging
+    const String description{"Mutate/Merge"};
+
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
