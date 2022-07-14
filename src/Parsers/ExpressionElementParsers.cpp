@@ -1634,7 +1634,7 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
-    errno = 0;    /// Functions strto* don't clear errno.
+    errno = 0; /// Functions strto* don't clear errno.
 
     char * pos_integer = buffer;
     UInt64 uint_value = std::strtoull(buffer, &pos_integer, base);
@@ -1662,7 +1662,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
         negative = true;
     }
-    else if (pos->type == TokenType::Plus)  /// Leading plus is simply ignored.
+    else if (pos->type == TokenType::Plus) /// Leading plus is simply ignored.
         ++pos;
 
     Field res;
