@@ -113,7 +113,7 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(StringRef{s}, buf);
 }
 
-inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
+inline void writeStringBinary(std::string_view s, WriteBuffer & buf)
 {
     writeStringBinary(StringRef{s}, buf);
 }
@@ -365,7 +365,7 @@ inline void writeJSONString(const StringRef & s, WriteBuffer & buf, const Format
     writeJSONString(s.data, s.data + s.size, buf, settings);
 }
 
-inline void writeJSONString(const std::string_view & s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(StringRef{s}, buf, settings);
 }
@@ -440,7 +440,7 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
     writeEscapedString(ref.data, ref.size, buf);
 }
 
-inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
+inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
 {
     writeEscapedString(ref.data(), ref.size(), buf);
 }
@@ -478,7 +478,7 @@ inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
+inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
 }
@@ -493,7 +493,7 @@ inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(std::string_view s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
@@ -891,7 +891,7 @@ inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf)
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -1015,7 +1015,7 @@ inline void writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
-inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+inline void writeQuoted(std::string_view x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
 inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
@@ -1048,7 +1048,7 @@ inline void writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
-inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+inline void writeDoubleQuoted(std::string_view x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
