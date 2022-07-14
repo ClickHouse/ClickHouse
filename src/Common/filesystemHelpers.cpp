@@ -87,7 +87,10 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 #if defined(OS_LINUX)
     try
     {
-        ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/rotational");
+        const String path = "/sys/dev/block/" + device_id + "/queue/rotational";
+        if (!std::filesystem::exists(path))
+            return BlockDeviceType::UNKNOWN;
+        ReadBufferFromFile in(path);
         int rotational;
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
