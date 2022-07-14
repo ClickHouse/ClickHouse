@@ -33,7 +33,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const String & path, size_t file_size)
+std::shared_ptr<ReadBufferFromFileBase>
+ReadBufferFromRemoteFSGather::createImplementationBuffer(const String & path, size_t file_size)
 {
     if (!current_file_path.empty() && !with_cache && enable_cache_log)
     {
@@ -44,35 +45,19 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     current_file_size = file_size;
     total_bytes_read_from_current_file = 0;
 
-    return createImplementationBufferImpl(path, file_size);
-}
-
-#if USE_AWS_S3
-SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(const String & path, size_t file_size)
-{
-    auto remote_file_reader_creator = [=, this]()
-    {
-        return std::make_unique<ReadBufferFromS3>(
-            client_ptr,
-            bucket,
-            path,
-            version_id,
-            max_single_read_retries,
-            settings,
-            /* use_external_buffer */true,
-            /* offset */0,
-            read_until_position,
-            /* restricted_seek */true);
-    };
-
     if (with_cache)
     {
+        auto remote_file_reader_creator = [path, file_size, this]()
+        {
+            return createImplementationBufferImpl(path, file_size);
+        };
+
         auto cache_key = settings.remote_fs_cache->hash(path);
         return std::make_shared<CachedReadBufferFromFile>(
             path,
             cache_key,
             settings.remote_fs_cache,
-            remote_file_reader_creator,
+            std::move(remote_file_reader_creator),
             settings,
             query_id,
             file_size,
@@ -80,14 +65,34 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
             /* use_external_buffer */true,
             read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt);
     }
+    else
+    {
+        return createImplementationBufferImpl(path, file_size);
+    }
+}
 
-    return remote_file_reader_creator();
+#if USE_AWS_S3
+std::shared_ptr<ReadBufferFromFileBase>
+ReadBufferFromS3Gather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
+{
+    return std::make_unique<ReadBufferFromS3>(
+        client_ptr,
+        bucket,
+        path,
+        version_id,
+        max_single_read_retries,
+        settings,
+        /* use_external_buffer */true,
+        /* offset */0,
+        read_until_position,
+        /* restricted_seek */true);
 }
 #endif
 
 
 #if USE_AZURE_BLOB_STORAGE
-SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
+std::shared_ptr<ReadBufferFromFileBase>
+ReadBufferFromAzureBlobStorageGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         blob_container_client,
@@ -102,7 +107,8 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 #endif
 
 
-SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
+std::shared_ptr<ReadBufferFromFileBase>
+ReadBufferFromWebServerGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
     return std::make_unique<ReadBufferFromWebServer>(
         fs::path(uri) / path,
@@ -114,7 +120,8 @@ SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferI
 
 
 #if USE_HDFS
-SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
+std::shared_ptr<ReadBufferFromFileBase>
+ReadBufferFromHDFSGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
     size_t begin_of_path = path.find('/', path.find("//") + 2);
     auto hdfs_path = path.substr(begin_of_path);

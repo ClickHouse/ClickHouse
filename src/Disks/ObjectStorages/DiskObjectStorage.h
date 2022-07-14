@@ -168,10 +168,24 @@ public:
 
     bool supportsCache() const override;
 
+    /// Is object storage read only?
+    /// For example: WebObjectStorage is read only as it allows to read from a web server
+    /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
+    /// Add a cache layer.
+    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// There can be any number of cache layers:
+    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
     void wrapWithCache(FileCachePtr cache, const String & layer_name);
 
+    /// Get structure of object storage this disk works with. Examples:
+    /// DiskObjectStorage(S3ObjectStorage)
+    /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
+    String getStructure() const { return "DiskObjectStorage(" + object_storage->getName() + ")"; }
+
+    /// Get names of all cache layers. Name is how cache is defined in configuration file.
     const std::unordered_set<String> & getCacheLayersNames() const override { return cache_layers; }
 
 private:

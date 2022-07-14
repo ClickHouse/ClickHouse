@@ -4,6 +4,8 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Common/logger_useful.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -42,12 +44,17 @@ void registerDiskCache(DiskFactory & factory)
             fs::create_directories(cache_base_path);
 
         auto disk = disk_it->second;
-        auto object_storage = disk->createDiskObjectStorage(disk_name);
+        auto disk_object_storage = disk->createDiskObjectStorage(disk_name);
 
         auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
-        object_storage->wrapWithCache(cache, name);
+        disk_object_storage->wrapWithCache(cache, name);
 
-        return object_storage;
+        LOG_TEST(
+            &Poco::Logger::get("DiskCache"),
+            "Registered disk cached disk with structure: {}",
+            assert_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
+
+        return disk_object_storage;
     };
 
     factory.registerDiskType("cache", creator);

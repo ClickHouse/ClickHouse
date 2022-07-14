@@ -51,7 +51,7 @@ public:
     size_t getImplementationBufferOffset() const;
 
 protected:
-    virtual SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) = 0;
+    virtual std::shared_ptr<ReadBufferFromFileBase> createImplementationBufferImpl(const String & path, size_t file_size) = 0;
 
     StoredObjects blobs_to_read;
 
@@ -69,7 +69,7 @@ protected:
     Poco::Logger * log;
 
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
+    std::shared_ptr<ReadBufferFromFileBase> createImplementationBuffer(const String & path, size_t file_size);
 
     bool nextImpl() override;
 
@@ -81,7 +81,7 @@ private:
 
     void appendFilesystemCacheLog();
 
-    SeekableReadBufferPtr current_buf;
+    std::shared_ptr<ReadBufferFromFileBase> current_buf;
 
     size_t current_buf_idx = 0;
 
@@ -120,7 +120,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    std::shared_ptr<ReadBufferFromFileBase> createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     std::shared_ptr<const Aws::S3::S3Client> client_ptr;
@@ -149,7 +149,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    std::shared_ptr<ReadBufferFromFileBase> createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
@@ -173,7 +173,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    std::shared_ptr<ReadBufferFromFileBase> createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     String uri;
@@ -195,7 +195,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    std::shared_ptr<ReadBufferFromFileBase> createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     const Poco::Util::AbstractConfiguration & config;

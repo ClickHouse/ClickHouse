@@ -16,7 +16,7 @@ class CachedObjectStorage : public IObjectStorage
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_);
 
-        std::string getName() const override { return "CachedObjectStorage(" + object_storage->getName() + ")"; }
+    std::string getName() const override { return "CachedObjectStorage(" + object_storage->getName() + ")"; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -92,6 +92,8 @@ public:
     bool supportsCache() const override { return true; }
 
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
+
+    bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;
