@@ -218,7 +218,8 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
-    Scalars local_scalars;
+    /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
+    Scalars special_scalars;
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
@@ -478,8 +479,8 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    const Block * tryGetLocalScalar(const String & name) const;
-    void addLocalScalar(const String & name, const Block & block);
+    const Block * tryGetSpecialScalar(const String & name) const;
+    void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(
