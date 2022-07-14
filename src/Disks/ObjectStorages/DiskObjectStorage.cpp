@@ -471,7 +471,6 @@ NameSet DiskObjectStorage::getCacheLayersNames() const
     {
         auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
         cache_layers.insert(cached_object_storage->getCacheConfigName());
-        std::cerr << "\n\n" << "having cache layer: " << cached_object_storage->getCacheConfigName() << " for " << object_storage->getName() << "\n\n";
         current_object_storage = cached_object_storage->getWrappedObjectStorage();
     }
     return cache_layers;
