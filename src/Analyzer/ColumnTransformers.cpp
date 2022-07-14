@@ -191,12 +191,13 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
     if (except_transformer_type == ExceptColumnTransformerType::REGEXP)
         return std::make_shared<ExceptColumnTransformerNode>(column_matcher);
 
-    return std::make_shared<ExceptColumnTransformerNode>(except_column_names);
+    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict);
 }
 
 /// ReplaceColumnTransformerNode implementation
 
-ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Replacement> & replacements_)
+ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Replacement> & replacements_, bool is_strict_)
+    : is_strict(is_strict_)
 {
     children.resize(1);
     children[replacements_child_index] = std::make_shared<ListNode>();
@@ -294,6 +295,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
 {
     ReplaceColumnTransformerNodePtr result_replace_transformers(new ReplaceColumnTransformerNode());
 
+    result_replace_transformers->is_strict = is_strict;
     result_replace_transformers->replacements_names = replacements_names;
 
     return result_replace_transformers;

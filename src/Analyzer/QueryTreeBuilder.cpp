@@ -480,7 +480,7 @@ ColumnTransformersNodes QueryTreeBuilder::getColumnTransformers(const ASTPtr & m
                 for (auto & except_transformer_child : except_transformer->children)
                     except_column_names.push_back(except_transformer_child->as<ASTIdentifier &>().full_name);
 
-                column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names)));
+                column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict));
             }
         }
         else if (auto * replace_transformer = child->as<ASTColumnsReplaceTransformer>())
@@ -494,7 +494,7 @@ ColumnTransformersNodes QueryTreeBuilder::getColumnTransformers(const ASTPtr & m
                 replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, getExpression(replacement.expr)});
             }
 
-            column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements));
+            column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));
         }
         else
         {
