@@ -35,6 +35,7 @@ void registerDiskCache(DiskFactory & factory)
                 "There is not disk with name `{}`, disk name should be initialized before cache disk",
                 disk_name);
         }
+        /// TODO: Add a check that there underlying storage is unique among cached storages.
 
         FileCacheSettings file_cache_settings;
         file_cache_settings.loadFromConfig(config, config_prefix);
@@ -44,9 +45,10 @@ void registerDiskCache(DiskFactory & factory)
             fs::create_directories(cache_base_path);
 
         auto disk = disk_it->second;
-        auto disk_object_storage = disk->createDiskObjectStorage(disk_name);
 
         auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
+        auto disk_object_storage = disk->createDiskObjectStorage();
+
         disk_object_storage->wrapWithCache(cache, name);
 
         LOG_TEST(

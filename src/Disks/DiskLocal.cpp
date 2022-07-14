@@ -596,7 +596,7 @@ catch (...)
     return false;
 }
 
-DiskObjectStoragePtr DiskLocal::createDiskObjectStorage(const String & name_)
+DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
 {
     auto object_storage = std::make_shared<LocalObjectStorage>();
     auto metadata_storage = std::make_shared<FakeMetadataStorageFromDisk>(
@@ -605,9 +605,9 @@ DiskObjectStoragePtr DiskLocal::createDiskObjectStorage(const String & name_)
         /* object_storage_root_path */getPath());
 
     return std::make_shared<DiskObjectStorage>(
-        name_,
+        getName(),
         disk_path,
-        "DiskLocalObjectStorage",
+        "Local",
         metadata_storage,
         object_storage,
         DiskType::Local,

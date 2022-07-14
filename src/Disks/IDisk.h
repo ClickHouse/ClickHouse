@@ -222,14 +222,9 @@ public:
 
     virtual bool supportsCache() const { return false; }
 
-    virtual const std::unordered_set<String> & getCacheLayersNames() const
+    virtual NameSet getCacheLayersNames() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getType());
-    }
-
-    virtual DiskPtr getWrappedDisk() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getWrappedDisk()` is not implemented for disk: {}", getType());
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -351,7 +346,7 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual DiskObjectStoragePtr createDiskObjectStorage(const String &)
+    virtual DiskObjectStoragePtr createDiskObjectStorage()
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

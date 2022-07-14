@@ -88,16 +88,14 @@ public:
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
-    DiskObjectStoragePtr createDiskObjectStorage(const String &) override;
-    const std::unordered_set<String> & getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
+    DiskObjectStoragePtr createDiskObjectStorage() override;
+    NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
 
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
-
-    DiskPtr getWrappedDisk() const override { return delegate; }
 
     void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
 

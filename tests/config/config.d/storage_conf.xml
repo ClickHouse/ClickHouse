@@ -30,6 +30,13 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
             </s3_disk_4>
+            <s3_disk_5>
+                <type>s3</type>
+                <path>s3_disk_5/</path>
+                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </s3_disk_5>
             <!-- cache for s3 disks -->
             <s3_cache>
                 <type>cache</type>
@@ -61,6 +68,12 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <enable_filesystem_query_cache_limit>1</enable_filesystem_query_cache_limit>
             </s3_cache_4>
+            <s3_cache_5>
+                <type>cache</type>
+                <disk>s3_disk_5</disk>
+                <path>s3_cache_5/</path>
+                <max_size>22548578304</max_size>
+            </s3_cache_5>
             <!-- local disks -->
             <local_disk>
                 <type>local</type>
@@ -96,6 +109,19 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
             </local_cache_3>
+            <!-- multi layer cache -->
+            <s3_cache_multi>
+                <type>cache</type>
+                <disk>s3_cache_5</disk>
+                <path>s3_cache_multi/</path>
+                <max_size>22548578304</max_size>
+            </s3_cache_multi>
+            <s3_cache_multi_2>
+                <type>cache</type>
+                <disk>s3_cache_multi</disk>
+                <path>s3_cache_multi_2/</path>
+                <max_size>22548578304</max_size>
+            </s3_cache_multi_2>
         </disks>
         <policies>
             <s3_cache>
@@ -126,6 +152,13 @@
                     </main>
                 </volumes>
             </s3_cache_4>
+            <s3_cache_multi>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_multi_2</disk>
+                    </main>
+                </volumes>
+            </s3_cache_multi>
             <local_cache>
                 <volumes>
                     <main>

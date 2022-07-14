@@ -164,7 +164,7 @@ public:
 
     UInt64 getRevision() const override;
 
-    DiskObjectStoragePtr createDiskObjectStorage(const String & name_) override;
+    DiskObjectStoragePtr createDiskObjectStorage() override;
 
     bool supportsCache() const override;
 
@@ -186,7 +186,7 @@ public:
     String getStructure() const { return "DiskObjectStorage(" + object_storage->getName() + ")"; }
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
-    const std::unordered_set<String> & getCacheLayersNames() const override { return cache_layers; }
+    NameSet getCacheLayersNames() const override;
 
 private:
 
@@ -212,8 +212,6 @@ private:
     size_t threadpool_size;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
-
-    std::unordered_set<String> cache_layers;
 };
 
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
