@@ -14,7 +14,7 @@ namespace DB
 class CachedObjectStorage : public IObjectStorage
 {
 public:
-    CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_);
+    CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const String & cache_config_name_);
 
     std::string getName() const override { return "CachedObjectStorage(" + object_storage->getName() + ")"; }
 
@@ -95,6 +95,10 @@ public:
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
+    const std::string & getCacheConfigName() const { return cache_config_name; }
+
+    ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
+
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;
     String getCachePath(const std::string & path) const;
@@ -102,6 +106,7 @@ private:
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;
+    std::string cache_config_name;
     Poco::Logger * log;
 };
 

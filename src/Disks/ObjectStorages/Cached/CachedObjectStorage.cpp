@@ -21,10 +21,14 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
 }
 
-CachedObjectStorage:: CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_)
+CachedObjectStorage:: CachedObjectStorage(
+    ObjectStoragePtr object_storage_,
+    FileCachePtr cache_,
+    const std::string & cache_config_name_)
     : object_storage(object_storage_)
     , cache(cache_)
-    , log(&Poco::Logger::get(getName() + "(" + object_storage_->getName() +")"))
+    , cache_config_name(cache_config_name_)
+    , log(&Poco::Logger::get(getName()))
 {
     cache->initialize();
 }

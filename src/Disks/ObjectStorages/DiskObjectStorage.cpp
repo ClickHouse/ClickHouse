@@ -445,12 +445,12 @@ bool DiskObjectStorage::isReadOnly() const
     return object_storage->isReadOnly();
 }
 
-DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage(const String & name_)
+DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     return std::make_shared<DiskObjectStorage>(
-        name_,
+        getName(),
         object_storage_root_path,
-        name,
+        getName(),
         metadata_storage,
         object_storage,
         disk_type,
@@ -460,8 +460,21 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage(const String & n
 
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const String & layer_name)
 {
-    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache);
-    cache_layers.insert(layer_name);
+    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, layer_name);
+}
+
+NameSet DiskObjectStorage::getCacheLayersNames() const
+{
+    NameSet cache_layers;
+    auto current_object_storage = object_storage;
+    while (current_object_storage->supportsCache())
+    {
+        auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
+        cache_layers.insert(cached_object_storage->getCacheConfigName());
+        std::cerr << "\n\n" << "having cache layer: " << cached_object_storage->getCacheConfigName() << " for " << object_storage->getName() << "\n\n";
+        current_object_storage = cached_object_storage->getWrappedObjectStorage();
+    }
+    return cache_layers;
 }
 
 template <typename T>

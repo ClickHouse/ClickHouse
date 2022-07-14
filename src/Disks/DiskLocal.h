@@ -122,7 +122,7 @@ public:
     bool canRead() const noexcept;
     bool canWrite() const noexcept;
 
-    DiskObjectStoragePtr createDiskObjectStorage(const String & name_) override;
+    DiskObjectStoragePtr createDiskObjectStorage() override;
 
 private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
