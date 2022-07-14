@@ -11,7 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int FS_METADATA_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int NETWORK_ERROR;
 }
@@ -174,16 +173,6 @@ void MetadataStorageFromStaticFilesWebServerTransaction::removeRecursive(const s
     WebObjectStorage::throwNotAllowed();
 }
 
-void MetadataStorageFromStaticFilesWebServerTransaction::createDirectory(const std::string &)
-{
-    WebObjectStorage::throwNotAllowed();
-}
-
-void MetadataStorageFromStaticFilesWebServerTransaction::createDirectoryRecursive(const std::string &)
-{
-    WebObjectStorage::throwNotAllowed();
-}
-
 void MetadataStorageFromStaticFilesWebServerTransaction::removeDirectory(const std::string &)
 {
     WebObjectStorage::throwNotAllowed();
@@ -214,6 +203,26 @@ void MetadataStorageFromStaticFilesWebServerTransaction::createHardLink(const st
     WebObjectStorage::throwNotAllowed();
 }
 
+void MetadataStorageFromStaticFilesWebServerTransaction::addBlobToMetadata(const std::string &, const std::string &, uint64_t)
+{
+    WebObjectStorage::throwNotAllowed();
+}
+
+void MetadataStorageFromStaticFilesWebServerTransaction::unlinkMetadata(const std::string &)
+{
+    WebObjectStorage::throwNotAllowed();
+}
+
+void MetadataStorageFromStaticFilesWebServerTransaction::createDirectory(const std::string &)
+{
+    /// Noop.
+}
+
+void MetadataStorageFromStaticFilesWebServerTransaction::createDirectoryRecursive(const std::string &)
+{
+    /// Noop.
+}
+
 void MetadataStorageFromStaticFilesWebServerTransaction::createEmptyMetadataFile(const std::string & /* path */)
 {
     /// Noop.
@@ -228,16 +237,6 @@ void MetadataStorageFromStaticFilesWebServerTransaction::createMetadataFile(
 void MetadataStorageFromStaticFilesWebServerTransaction::commit()
 {
     /// Noop.
-}
-
-void MetadataStorageFromStaticFilesWebServerTransaction::addBlobToMetadata(const std::string &, const std::string &, uint64_t)
-{
-    WebObjectStorage::throwNotAllowed();
-}
-
-void MetadataStorageFromStaticFilesWebServerTransaction::unlinkMetadata(const std::string &)
-{
-    WebObjectStorage::throwNotAllowed();
 }
 
 std::unordered_map<String, String> MetadataStorageFromStaticFilesWebServer::getSerializedMetadata(const std::vector<String> &) const

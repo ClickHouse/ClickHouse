@@ -164,6 +164,8 @@ public:
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
     virtual bool supportsCache() const { return false; }
+
+    virtual bool isReadOnly() const { return false; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

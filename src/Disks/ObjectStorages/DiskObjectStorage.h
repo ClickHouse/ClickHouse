@@ -168,6 +168,8 @@ public:
 
     bool supportsCache() const override;
 
+    bool isReadOnly() const override;
+
     void wrapWithCache(FileCachePtr cache, const String & layer_name);
 
     const std::unordered_set<String> & getCacheLayersNames() const override { return cache_layers; }

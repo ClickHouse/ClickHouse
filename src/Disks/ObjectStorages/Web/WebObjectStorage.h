@@ -79,11 +79,13 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool supportsAppend() const override { return true; }
+    bool supportsAppend() const override { return false; }
 
     std::string generateBlobNameForPath(const std::string & path) override { return path; }
 
-    bool isRemote() const override { return false; }
+    bool isRemote() const override { return true; }
+
+    bool isReadOnly() const override { return true; }
 
 protected:
     void initialize(const String & uri_path) const;
