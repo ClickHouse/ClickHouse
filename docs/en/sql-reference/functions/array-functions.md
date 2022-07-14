@@ -1715,3 +1715,7 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Distance functions
+
+All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
