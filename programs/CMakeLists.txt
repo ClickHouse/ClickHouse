@@ -235,7 +235,7 @@ endmacro()
 
 macro(clickhouse_program_add_executable name)
     if(CLICKHOUSE_SPLIT_BINARY)
-        add_executable(clickhouse-${name} clickhouse-${name}.cpp)
+        clickhouse_add_executable(clickhouse-${name} clickhouse-${name}.cpp)
         clickhouse_program_link_split_binary(${name})
         install(TARGETS clickhouse-${name} ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
@@ -374,7 +374,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
-    add_executable (clickhouse main.cpp)
+    clickhouse_add_executable (clickhouse main.cpp)
 
     # A library that prevent usage of several functions from libc.
     if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
