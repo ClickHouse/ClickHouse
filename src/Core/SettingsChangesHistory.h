@@ -69,6 +69,10 @@ struct SettingChangesHistory
     std::vector<Change> changes;
 };
 
+/// History of settings changes that controls some backward incompatible changes
+/// across all ClickHouse versions. It maps setting name to special struct
+/// SettingChangesHistory {initial_value, {{changed_value_1, version1}, {changed_value_2, version_2}, ...}}
+/// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 const std::unordered_map<String, SettingChangesHistory> settings_changes_history =
 {
         {"enable_positional_arguments", {false, {{true, "22.7"}}}},
