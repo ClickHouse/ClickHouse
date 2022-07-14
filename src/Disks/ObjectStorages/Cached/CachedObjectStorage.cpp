@@ -24,7 +24,7 @@ namespace ErrorCodes
 CachedObjectStorage:: CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_)
     : object_storage(object_storage_)
     , cache(cache_)
-    , log(&Poco::Logger::get("CachedOjectStorage"))
+    , log(&Poco::Logger::get(getName() + "(" + object_storage_->getName() +")"))
 {
     cache->initialize();
 }
@@ -199,7 +199,6 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
 
 void CachedObjectStorage::removeCacheIfExists(const std::string & cache_hint)
 {
-    LOG_TRACE(log, "KSSENII {} : {}", getName(), cache_hint);
     if (cache_hint.empty())
         return;
 
