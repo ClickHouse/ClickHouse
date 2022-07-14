@@ -12,11 +12,10 @@ def started_cluster(request):
         cluster = ClickHouseCluster(__file__)
         node = cluster.add_instance(
             "node",
+            with_mongo=True,
             main_configs=[
                 "configs_secure/config.d/ssl_conf.xml",
-                "configs/named_collections.xml",
             ],
-            with_mongo=True,
             with_mongo_secure=request.param,
         )
         cluster.start()
@@ -46,27 +45,39 @@ def test_simple_select(started_cluster):
     db = mongo_connection["test"]
     db.add_user("root", "clickhouse")
     simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
-    )
-
-    assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
+    for i in range(0, 100):
+        node.query(
+            "INSERT INTO FUNCTION mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') (key, data) VALUES ({}, '{}')".format(
+                i, hex(i * i)
+            )
+        )
     assert (
-        node.query("SELECT sum(key) FROM simple_mongo_table")
+        node.query(
+            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
+        == "100\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-        node.query("SELECT data from simple_mongo_table where key = 42")
+        node.query(
+            "SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') where key = 42"
+        )
         == hex(42 * 42) + "\n"
     )
-    node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
 
 
@@ -82,21 +93,26 @@ def test_complex_data_type(started_cluster):
     incomplete_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query(
-        "CREATE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse')"
-    )
 
-    assert node.query("SELECT COUNT() FROM incomplete_mongo_table") == "100\n"
     assert (
-        node.query("SELECT sum(key) FROM incomplete_mongo_table")
+        node.query(
+            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')"
+        )
+        == "100\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-        node.query("SELECT data from incomplete_mongo_table where key = 42")
+        node.query(
+            "SELECT data from mongodb('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse', structure='key UInt64, data String, dict Map(UInt64, String)') where key = 42"
+        )
         == hex(42 * 42) + "\n"
     )
-    node.query("DROP TABLE incomplete_mongo_table")
     incomplete_mongo_table.drop()
 
 
@@ -112,22 +128,12 @@ def test_incorrect_data_type(started_cluster):
     strange_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query(
-        "CREATE TABLE strange_mongo_table(key String, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')"
-    )
 
     with pytest.raises(QueryRuntimeException):
-        node.query("SELECT COUNT() FROM strange_mongo_table")
+        node.query(
+            "SELECT aaaa FROM mongodb('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("SELECT uniq(key) FROM strange_mongo_table")
-
-    node.query(
-        "CREATE TABLE strange_mongo_table2(key UInt64, data String, bbbb String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')"
-    )
-
-    node.query("DROP TABLE strange_mongo_table")
-    node.query("DROP TABLE strange_mongo_table2")
     strange_mongo_table.drop()
 
 
@@ -143,21 +149,32 @@ def test_secure_connection(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'ssl=true')"
-    )
 
-    assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
-        node.query("SELECT sum(key) FROM simple_mongo_table")
+        node.query(
+            "SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')"
+        )
+        == "100\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true')"
+        )
+        == str(sum(range(0, 100))) + "\n"
+    )
+    assert (
+        node.query(
+            "SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'key UInt64, data String', 'ssl=true')"
+        )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-        node.query("SELECT data from simple_mongo_table where key = 42")
+        node.query(
+            "SELECT data from mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='ssl=true') where key = 42"
+        )
         == hex(42 * 42) + "\n"
     )
-    node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
 
 
@@ -173,11 +190,12 @@ def test_predefined_connection_configuration(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query("drop table if exists simple_mongo_table")
-    node.query(
-        "create table simple_mongo_table(key UInt64, data String) engine = MongoDB(mongo1)"
+    assert (
+        node.query(
+            "SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
+        )
+        == "100\n"
     )
-    assert node.query("SELECT count() FROM simple_mongo_table") == "100\n"
     simple_mongo_table.drop()
 
 
@@ -192,10 +210,12 @@ def test_no_credentials(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query(
-        "create table simple_mongo_table_2(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', '', '')"
+    assert (
+        node.query(
+            "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', '', '', structure='key UInt64, data String')"
+        )
+        == "100\n"
     )
-    assert node.query("SELECT count() FROM simple_mongo_table_2") == "100\n"
     simple_mongo_table.drop()
 
 
@@ -221,14 +241,17 @@ def test_auth_source(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query(
-        "create table simple_mongo_table_fail(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse')"
+
+    node.query_and_get_error(
+        "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')"
     )
-    node.query_and_get_error("SELECT count() FROM simple_mongo_table_fail")
-    node.query(
-        "create table simple_mongo_table_ok(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', 'authSource=admin')"
+
+    assert (
+        node.query(
+            "SELECT count() FROM mongodb('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String', options='authSource=admin')"
+        )
+        == "100\n"
     )
-    assert node.query("SELECT count() FROM simple_mongo_table_ok") == "100\n"
     simple_mongo_table.drop()
 
 
@@ -246,37 +269,8 @@ def test_missing_columns(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query("drop table if exists simple_mongo_table")
-    node.query(
-        "create table simple_mongo_table(key UInt64, data Nullable(String)) engine = MongoDB(mongo1)"
+    result = node.query(
+        "SELECT count() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data Nullable(String)') WHERE isNull(data)"
     )
-    result = node.query("SELECT count() FROM simple_mongo_table WHERE isNull(data)")
     assert result == "10\n"
-    simple_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_simple_insert_select(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    simple_mongo_table = db["simple_table"]
-
-    node = started_cluster.instances["node"]
-    node.query("DROP TABLE IF EXISTS simple_mongo_table")
-    node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
-    )
-    node.query("INSERT INTO simple_mongo_table SELECT 1, 'kek'")
-
-    assert (
-        node.query("SELECT data from simple_mongo_table where key = 1").strip() == "kek"
-    )
-    node.query("INSERT INTO simple_mongo_table(key) SELECT 12")
-    assert int(node.query("SELECT count() from simple_mongo_table")) == 2
-    assert (
-        node.query("SELECT data from simple_mongo_table where key = 12").strip() == ""
-    )
-
-    node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
