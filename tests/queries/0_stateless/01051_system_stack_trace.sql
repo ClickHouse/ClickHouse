@@ -10,3 +10,5 @@ SELECT length(trace) > 0 FROM system.stack_trace LIMIT 1;
 SELECT length(query_id) > 0 FROM system.stack_trace WHERE query_id != '' LIMIT 1;
 -- optimization for thread_name
 SELECT length(thread_name) > 0 FROM system.stack_trace WHERE thread_name != '' LIMIT 1;
+-- enough rows (optimizations works "correctly")
+SELECT count() > 100 FROM system.stack_trace;
