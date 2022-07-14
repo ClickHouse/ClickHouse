@@ -19,6 +19,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_ast("AST");
     ParserKeyword s_explain("EXPLAIN");
     ParserKeyword s_syntax("SYNTAX");
+    ParserKeyword s_query_tree("QUERYTREE");
     ParserKeyword s_pipeline("PIPELINE");
     ParserKeyword s_plan("PLAN");
     ParserKeyword s_estimates("ESTIMATE");
@@ -33,6 +34,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::ParsedAST;
         else if (s_syntax.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::AnalyzedSyntax;
+        else if (s_query_tree.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::QueryTree;
         else if (s_pipeline.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
@@ -84,6 +87,15 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         explain_query->setTableFunction(table_function);
         explain_query->setTableOverride(table_override);
     }
+    if (kind == ASTExplainQuery::ExplainKind::QueryTree)
+    {
+        if (select_p.parse(pos, query, expected))
+            explain_query->setExplainedQuery(std::move(query));
+        else
+        {
+            return false;
+        }
+    }
     else if (kind == ASTExplainQuery::ExplainKind::CurrentTransaction)
     {
         /// Nothing to parse
@@ -94,7 +106,9 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         system_p.parse(pos, query, expected))
         explain_query->setExplainedQuery(std::move(query));
     else
+    {
         return false;
+    }
 
     node = std::move(explain_query);
     return true;

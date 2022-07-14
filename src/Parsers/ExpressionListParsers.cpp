@@ -581,6 +581,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         auto lambda = std::make_shared<ASTFunction>();
         node = lambda;
         lambda->name = "lambda";
+        lambda->is_lambda_function = true;
 
         auto outer_arguments = std::make_shared<ASTExpressionList>();
         lambda->arguments = outer_arguments;

@@ -82,7 +82,10 @@ public:
 
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(tuple_col);
         if (!tuple)
-            throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be tuple or array of tuple. Actual {}",
+                getName(),
+                arguments[0].type->getName());
 
         auto index = getElementNum(arguments[1].column, *tuple, number_of_arguments);
         if (index.has_value())
@@ -137,7 +140,10 @@ public:
         const DataTypeTuple * tuple_type_concrete = checkAndGetDataType<DataTypeTuple>(tuple_type);
         const ColumnTuple * tuple_col_concrete = checkAndGetColumn<ColumnTuple>(tuple_col);
         if (!tuple_type_concrete || !tuple_col_concrete)
-            throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be tuple or array of tuple. Actual {}",
+                getName(),
+                first_arg.type->getName());
 
         auto index = getElementNum(arguments[1].column, *tuple_type_concrete, arguments.size());
 
@@ -221,20 +227,18 @@ private:
 
     std::optional<size_t> getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple, const size_t argument_size) const
     {
-        if (
-            checkAndGetColumnConst<ColumnUInt8>(index_column.get())
-                || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
-                || checkAndGetColumnConst<ColumnUInt32>(index_column.get())
-                || checkAndGetColumnConst<ColumnUInt64>(index_column.get())
-        )
+        if (checkAndGetColumnConst<ColumnUInt8>(index_column.get())
+            || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
+            || checkAndGetColumnConst<ColumnUInt32>(index_column.get())
+            || checkAndGetColumnConst<ColumnUInt64>(index_column.get()))
         {
             size_t index = index_column->getUInt(0);
 
             if (index == 0)
-                throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
+                throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indices in tuples are 1-based.");
 
             if (index > tuple.getElements().size())
-                throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
+                throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index for tuple element is out of range.");
 
             return std::optional<size_t>(index - 1);
         }
@@ -253,7 +257,9 @@ private:
             return std::nullopt;
         }
         else
-            throw Exception("Second argument to " + getName() + " must be a constant UInt or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument to {} must be a constant UInt or String",
+                getName());
     }
 };
 
