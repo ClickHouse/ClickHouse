@@ -339,7 +339,7 @@ endmacro ()
 dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 if (ENABLE_CUDA)
-    target_include_directories(clickhouse_common_io SYSTEM PUBLIC "/usr/local/cuda-11.6/include")
+    target_include_directories(clickhouse_common_io SYSTEM PUBLIC "${CUDA_INCLUDE}")
 endif ()
 
 if (TARGET ch_contrib::llvm)
