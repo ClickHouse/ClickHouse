@@ -71,11 +71,35 @@ bool Ipv4IsMatch::convertImpl(String & out, IParser::Pos & pos)
     return false;
 }
 
-bool Ipv4IsPrivate::convertImpl(String &out,IParser::Pos &pos)
+bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
+    static const std::array<String, 3> PRIVATE_SUBNETS{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"};
+
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
         return false;
+
+    const auto ip_address = trimQuotes(getConvertedArgument(function_name, pos));
+    const auto slash_index = ip_address.find('/');
+
+    out += "or(";
+    for (int i = 0; i < std::ssize(PRIVATE_SUBNETS); ++i)
+    {
+        out += i > 0 ? ", " : "";
+
+        const auto & subnet = PRIVATE_SUBNETS[i];
+        out += slash_index == String::npos
+            ? std::format("isIPAddressInRange('{0}', '{1}')", ip_address, subnet)
+            : std::format(
+                "and(isIPAddressInRange(IPv4NumToString(tupleElement((IPv4CIDRToRange(toIPv4('{0}'), {1}) as range), 1)) as begin, '{2}'), "
+                "isIPAddressInRange(IPv4NumToString(tupleElement(range, 2)) as end, '{2}'))",
+                std::string_view(ip_address.c_str(), slash_index),
+                std::string_view(ip_address.c_str() + slash_index + 1, ip_address.length() - slash_index - 1),
+                subnet);
+    }
+
+    out += ")";
+    return true;
 }
 
 bool Ipv4NetmaskSuffix::convertImpl(String & out, IParser::Pos & pos)

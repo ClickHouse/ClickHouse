@@ -487,6 +487,14 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT isIPAddressInRange('192.168.1.6', '192.168.1.1/24')\nFROM Customers"
         },
         {
+            "Customers | project ipv4_is_private('192.168.1.6')",
+            "SELECT isIPAddressInRange('192.168.1.6', '10.0.0.0/8') OR isIPAddressInRange('192.168.1.6', '172.16.0.0/12') OR isIPAddressInRange('192.168.1.6', '192.168.0.0/16')\nFROM Customers"
+        },
+        {
+            "Customers | project ipv4_is_private('192.168.1.6/24')",
+            "SELECT (isIPAddressInRange(IPv4NumToString((IPv4CIDRToRange(toIPv4('192.168.1.6'), 24) AS range).1) AS begin, '10.0.0.0/8') AND isIPAddressInRange(IPv4NumToString(range.2) AS end, '10.0.0.0/8')) OR (isIPAddressInRange(begin, '172.16.0.0/12') AND isIPAddressInRange(end, '172.16.0.0/12')) OR (isIPAddressInRange(begin, '192.168.0.0/16') AND isIPAddressInRange(end, '192.168.0.0/16'))\nFROM Customers"
+        },
+        {
             "Customers | project ipv4_netmask_suffix('192.168.1.1/24')",
             "SELECT if(isIPv4String('192.168.1.1') AND ((24 >= 1) AND (24 <= 32)), 24, NULL)\nFROM Customers"
         },
