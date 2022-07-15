@@ -42,6 +42,40 @@ String IQueryTreeNode::dumpTree() const
     return buff.str();
 }
 
+bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
+{
+    if (getNodeType() != rhs.getNodeType())
+        return false;
+
+    if (alias != rhs.alias)
+        return false;
+
+    if (!isEqualImpl(rhs))
+        return false;
+
+    size_t children_size = children.size();
+    if (children_size != rhs.children.size())
+        return false;
+
+    for (size_t i = 0; i < children_size; ++i)
+    {
+        const auto & child = children[i];
+        const auto & rhs_child = rhs.children[i];
+
+        if (!child && !rhs_child)
+            continue;
+        else if (child && !rhs_child)
+            return false;
+        else if (!child && rhs_child)
+            return false;
+
+        if (!child->isEqual(*rhs.children[i]))
+            return false;
+    }
+
+    return true;
+}
+
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 {
     HashState hash_state;
@@ -56,6 +90,11 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 void IQueryTreeNode::updateTreeHash(HashState & state) const
 {
     state.update(static_cast<size_t>(getNodeType()));
+    if (!alias.empty())
+    {
+        state.update(alias.size());
+        state.update(alias);
+    }
 
     updateTreeHashImpl(state);
 

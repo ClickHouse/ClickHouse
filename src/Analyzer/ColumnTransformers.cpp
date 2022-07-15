@@ -69,6 +69,12 @@ void ApplyColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent) c
     expression_node->dumpTree(buffer, indent + 4);
 }
 
+bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const ApplyColumnTransformerNode &>(rhs);
+    return apply_transformer_type == rhs_typed.apply_transformer_type;
+}
+
 void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
@@ -150,6 +156,26 @@ void ExceptColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent) 
         if (i + 1 != except_column_names_size)
             buffer << ", ";
     }
+}
+
+bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const ExceptColumnTransformerNode &>(rhs);
+    if (except_transformer_type != rhs_typed.except_transformer_type ||
+        is_strict != rhs_typed.is_strict ||
+        except_column_names != rhs_typed.except_column_names)
+        return false;
+
+    const auto & rhs_column_matcher = rhs_typed.column_matcher;
+
+    if (!column_matcher && !rhs_column_matcher)
+        return true;
+    else if (column_matcher && !rhs_column_matcher)
+        return false;
+    else if (!column_matcher && rhs_column_matcher)
+        return false;
+
+    return column_matcher->pattern() == rhs_column_matcher->pattern();
 }
 
 void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
@@ -254,6 +280,12 @@ void ReplaceColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent)
         if (i + 1 != replacements_size)
             buffer << '\n';
     }
+}
+
+bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const ReplaceColumnTransformerNode &>(rhs);
+    return is_strict == rhs_typed.is_strict && replacements_names == rhs_typed.replacements_names;
 }
 
 void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const

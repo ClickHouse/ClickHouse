@@ -37,6 +37,25 @@ void ColumnNode::dumpTree(WriteBuffer & buffer, size_t indent) const
     writePointerHex(column_source_ptr.get(), buffer);
 }
 
+bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const ColumnNode &>(rhs);
+    if (column != rhs_typed.column)
+        return false;
+
+    auto source_ptr = column_source.lock();
+    auto rhs_source_ptr = rhs_typed.column_source.lock();
+
+    if (!source_ptr && !rhs_source_ptr)
+        return true;
+    else if (source_ptr && !rhs_source_ptr)
+        return false;
+    else if (!source_ptr && rhs_source_ptr)
+        return false;
+
+    return source_ptr->isEqualImpl(*rhs_source_ptr);
+}
+
 void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(column.name.size());

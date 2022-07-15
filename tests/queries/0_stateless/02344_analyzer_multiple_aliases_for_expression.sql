@@ -17,6 +17,7 @@ SELECT (SELECT 1) AS subquery, (SELECT 1) AS subquery;
 SELECT 1 AS value, 2 AS value; -- { serverError 179 }
 SELECT plus(1, 1) AS value, 2 AS value; -- { serverError 179 }
 SELECT (SELECT 1) AS subquery, 1 AS subquery; -- { serverError 179 }
+WITH x -> x + 1 AS lambda, x -> x + 2 AS lambda SELECT lambda(1); -- { serverError 179 }
 WITH x -> x + 1 AS lambda SELECT (SELECT 1) AS lambda; -- { serverError 179 }
 WITH x -> x + 1 AS lambda SELECT 1 AS lambda; -- { serverError 179 }
 SELECT id AS value, value AS value FROM test_table; -- { serverError 179 }

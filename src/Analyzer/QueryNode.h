@@ -96,6 +96,8 @@ public:
     void dumpTree(WriteBuffer & buffer, size_t indent) const override;
 
 protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+
     void updateTreeHashImpl(HashState &) const override;
 
     ASTPtr toASTImpl() const override;
