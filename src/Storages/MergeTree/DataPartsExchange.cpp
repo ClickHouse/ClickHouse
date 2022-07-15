@@ -174,6 +174,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             std::sregex_token_iterator());
 
         if (data_settings->allow_remote_fs_zero_copy_replication &&
+            /// In memory data part does not have metadata yet.
+            !isInMemoryPart(part) &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk_type = part->data_part_storage->getDiskType();
@@ -796,7 +798,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getPartDirectory());
+        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getRelativePath());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 

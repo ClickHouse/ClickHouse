@@ -20,6 +20,7 @@ CamelCase
 CapnProto
 CentOS
 ClickHouse
+ClickHouse's
 Config
 Contrib
 Ctrl

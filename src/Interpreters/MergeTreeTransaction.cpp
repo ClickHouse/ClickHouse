@@ -149,11 +149,12 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         checkIsNotCancelled();
 
         part_to_remove->version.lockRemovalTID(tid, context);
-        NOEXCEPT_SCOPE;
-        storages.insert(storage);
-        if (maybe_lock)
-            table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
-        removing_parts.push_back(part_to_remove);
+        NOEXCEPT_SCOPE({
+            storages.insert(storage);
+            if (maybe_lock)
+                table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
+            removing_parts.push_back(part_to_remove);
+        });
     }
 
     part_to_remove->appendRemovalTIDToVersionMetadata();

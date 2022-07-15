@@ -223,11 +223,25 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+    set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT ON)
+else()
+    set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT OFF)
+endif()
+# Provides faster linking and lower binary size.
+# Tradeoff is the inability to debug some source files with e.g. gdb
+# (empty stack frames and no local variables)."
+option(OMIT_HEAVY_DEBUG_SYMBOLS
+    "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
+    ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
+
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     set(USE_DEBUG_HELPERS ON)
 endif()
-
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
+
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 if (NOT BUILD_STANDALONE_KEEPER)
     option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
@@ -320,6 +334,22 @@ endif ()
 if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 endif ()
+
+if (ARCH_AMD64)
+    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
+    # which makes benchmark results more stable.
+    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
+    if (COMPILER_GCC)
+        # gcc is in assembler, need to add "-Wa," prefix
+        set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("${BRANCHES_WITHIN_32B_BOUNDARIES}" HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
+    if (HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+endif()
 
 if (COMPILER_GCC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
@@ -493,14 +523,14 @@ if (NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 endif ()
 
-macro (add_executable target)
+macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
-        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
     get_target_property (type ${target} TYPE)
