@@ -1,4 +1,4 @@
-# mutations {#system_tables-mutations}
+# mutations
 
 The table contains information about [mutations](../../sql-reference/statements/alter/index.md#mutations) of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
@@ -8,7 +8,7 @@ Columns:
 
 -   `table` ([String](../../sql-reference/data-types/string.md)) — The name of the table to which the mutation was applied.
 
--   `mutation_id` ([String](../../sql-reference/data-types/string.md)) — The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For non-replicated tables the IDs correspond to file names in the data directory of the table.
+-   `mutation_id` ([String](../../sql-reference/data-types/string.md)) — The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_clickhouse_keeper>/mutations/` directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table.
 
 -   `command` ([String](../../sql-reference/data-types/string.md)) — The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 

@@ -1,5 +1,5 @@
 #include <string>
-#include <string.h>
+#include <cstring>
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/NumberParser.h>
@@ -12,7 +12,14 @@
 #define JSON_MAX_DEPTH 100
 
 
-POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException")
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#endif
+POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException") // NOLINT(cert-err60-cpp, modernize-use-noexcept, hicpp-use-noexcept)
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 
 /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.

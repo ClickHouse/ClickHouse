@@ -4,7 +4,7 @@
 #include <memory>
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Core/Block.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 

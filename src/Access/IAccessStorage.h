@@ -3,7 +3,6 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <base/scope_guard.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -19,10 +18,12 @@ struct User;
 class Credentials;
 class ExternalAuthenticators;
 enum class AuthenticationType;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
-class IAccessStorage
+class IAccessStorage : public boost::noncopyable
 {
 public:
     explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
@@ -40,6 +41,15 @@ public:
 
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
+
+    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
+    virtual void reload() {}
+
+    /// Starts periodic reloading and update of entities in this storage.
+    virtual void startPeriodicReloading() {}
+
+    /// Stops periodic reloading and update of entities in this storage.
+    virtual void stopPeriodicReloading() {}
 
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
@@ -93,6 +103,16 @@ public:
     std::optional<String> tryReadName(const UUID & id) const;
     Strings tryReadNames(const std::vector<UUID> & ids) const;
 
+    std::pair<String, AccessEntityType> readNameWithType(const UUID & id) const;
+    std::optional<std::pair<String, AccessEntityType>> readNameWithType(const UUID & id, bool throw_if_not_exists) const;
+    std::optional<std::pair<String, AccessEntityType>> tryReadNameWithType(const UUID & id) const;
+
+    /// Reads all entities and returns them with their IDs.
+    template <typename EntityClassT>
+    std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> readAllWithIDs() const;
+
+    std::vector<std::pair<UUID, AccessEntityPtr>> readAllWithIDs(AccessEntityType type) const;
+
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
@@ -130,38 +150,27 @@ public:
     /// Updates multiple entities in the storage. Returns the list of successfully updated.
     std::vector<UUID> tryUpdate(const std::vector<UUID> & ids, const UpdateFunc & update_func);
 
-    using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
-
-    /// Subscribes for all changes.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    scope_guard subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const;
-
-    template <typename EntityClassT>
-    scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
-
-    /// Subscribes for changes of a specific entry.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
-    scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
-
-    virtual bool hasSubscription(AccessEntityType type) const = 0;
-    virtual bool hasSubscription(const UUID & id) const = 0;
-
     /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
     /// Throws an exception if no such user or credentials are invalid.
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool allow_no_password, bool allow_plaintext_password) const;
     std::optional<UUID> authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
 
+    /// Returns true if this storage can be stored to or restored from a backup.
+    virtual bool isBackupAllowed() const { return false; }
+    virtual bool isRestoreAllowed() const { return isBackupAllowed() && !isReadOnly(); }
+
+    /// Makes a backup of this access storage.
+    virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
+    virtual void restoreFromBackup(RestorerFromBackup & restorer);
+
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
-    virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
+    virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
     virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
-    virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
-    virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;
     virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
@@ -181,9 +190,8 @@ protected:
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
     [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
-    using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
-    using Notifications = std::vector<Notification>;
-    static void notify(const Notifications & notifications);
+    [[noreturn]] void throwBackupNotAllowed() const;
+    [[noreturn]] void throwRestoreNotAllowed() const;
 
 private:
     const String storage_name;
@@ -232,4 +240,17 @@ std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const String & name)
 {
     return read<EntityClassT>(name, false);
 }
+
+template <typename EntityClassT>
+std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage::readAllWithIDs() const
+{
+    std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> entities;
+    for (const auto & id : findAll<EntityClassT>())
+    {
+        if (auto entity = tryRead<EntityClassT>(id))
+            entities.emplace_back(id, entity);
+    }
+    return entities;
+}
+
 }

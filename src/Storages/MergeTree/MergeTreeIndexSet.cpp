@@ -484,7 +484,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
-};
+}
 
 bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
 {

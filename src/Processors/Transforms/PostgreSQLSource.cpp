@@ -1,4 +1,5 @@
 #include "PostgreSQLSource.h"
+#include "Common/Exception.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -22,6 +23,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_COLUMNS;
+}
 
 template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
@@ -29,7 +34,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     const std::string & query_str_,
     const Block & sample_block,
     UInt64 max_block_size_)
-    : SourceWithProgress(sample_block.cloneEmpty())
+    : ISource(sample_block.cloneEmpty())
     , query_str(query_str_)
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
@@ -45,7 +50,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     const Block & sample_block,
     UInt64 max_block_size_,
     bool auto_commit_)
-    : SourceWithProgress(sample_block.cloneEmpty())
+    : ISource(sample_block.cloneEmpty())
     , query_str(query_str_)
     , tx(std::move(tx_))
     , max_block_size(max_block_size_)
@@ -98,7 +103,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
         started = true;
     }
 
-    auto status = SourceWithProgress::prepare();
+    auto status = ISource::prepare();
     if (status == Status::Finished)
         onFinish();
 
@@ -122,6 +127,11 @@ Chunk PostgreSQLSource<T>::generate()
         /// row is nullptr if pqxx::stream_from is finished
         if (!row)
             break;
+
+        if (row->size() > description.sample_block.columns())
+            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+                            "Row has too many columns: {}, expected structure: {}",
+                            row->size(), description.sample_block.dumpStructure());
 
         for (const auto idx : collections::range(0, row->size()))
         {

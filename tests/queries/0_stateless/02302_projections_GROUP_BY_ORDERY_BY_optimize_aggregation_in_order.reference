@@ -1,0 +1,13 @@
+-- { echoOn }
+select x + y, sum(x - y) as s from test_agg_proj_02302 group by x + y order by s desc limit 5 settings allow_experimental_projection_optimization=1, optimize_aggregation_in_order=0, optimize_read_in_order=0;
+15	480
+14	450
+13	420
+12	390
+11	360
+select x + y, sum(x - y) as s from test_agg_proj_02302 group by x + y order by s desc limit 5 settings allow_experimental_projection_optimization=1, optimize_aggregation_in_order=1, optimize_read_in_order=1;
+15	480
+14	450
+13	420
+12	390
+11	360

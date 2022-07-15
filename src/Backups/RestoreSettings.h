@@ -8,13 +8,6 @@ namespace DB
 {
 class ASTBackupQuery;
 
-struct StorageRestoreSettings
-{
-    /// Internal, should not be specified by user.
-    /// The current host's ID in the format 'escaped_host_name:port'.
-    String host_id;
-};
-
 /// How the RESTORE command will handle table/database existence.
 enum class RestoreTableCreationMode
 {
@@ -30,12 +23,26 @@ enum class RestoreTableCreationMode
 
 using RestoreDatabaseCreationMode = RestoreTableCreationMode;
 
+/// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+enum class RestoreAccessCreationMode
+{
+    /// RESTORE will throw an exception if some user already exists.
+    kCreate,
+
+    /// RESTORE will skip existing users.
+    kCreateIfNotExists,
+
+    /// RESTORE will replace existing users with definitions from backup.
+    kReplace,
+};
+
+using RestoreUDFCreationMode = RestoreAccessCreationMode;
+
 /// Settings specified in the "SETTINGS" clause of a RESTORE query.
-struct RestoreSettings : public StorageRestoreSettings
+struct RestoreSettings
 {
     /// Base backup, with this setting we can override the location of the base backup while restoring.
-    /// Any incremental backup keeps inside the information about its base backup,
-    /// so using this setting is optional.
+    /// Any incremental backup keeps inside the information about its base backup, so using this setting is optional.
     std::optional<BackupInfo> base_backup_info;
 
     /// Password used to decrypt the backup.
@@ -87,8 +94,22 @@ struct RestoreSettings : public StorageRestoreSettings
     /// Setting "allow_non_empty_tables=true" thus can cause data duplication in the table, use with caution.
     bool allow_non_empty_tables = false;
 
+    /// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+    RestoreAccessCreationMode create_access = RestoreAccessCreationMode::kCreateIfNotExists;
+
+    /// Skip dependencies of access entities which can't be resolved.
+    /// For example, if an user has a profile assigned and that profile is not in the backup and doesn't exist locally.
+    bool allow_unresolved_access_dependencies = false;
+
+    /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
+    RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
+
     /// Internal, should not be specified by user.
     bool internal = false;
+
+    /// Internal, should not be specified by user.
+    /// The current host's ID in the format 'escaped_host_name:port'.
+    String host_id;
 
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.

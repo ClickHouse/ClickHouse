@@ -1,7 +1,7 @@
 #include <Storages/System/StorageSystemDisks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
-#include <Disks/IDiskRemote.h>
 
 namespace DB
 {
@@ -57,7 +57,7 @@ Pipe StorageSystemDisks::read(
         col_type->insert(toString(disk_ptr->getType()));
 
         String cache_path;
-        if (disk_ptr->isRemote())
+        if (disk_ptr->supportsCache())
             cache_path = disk_ptr->getCacheBasePath();
 
         col_cache_path->insert(cache_path);

@@ -71,6 +71,7 @@ public:
 
     void list(
             const String & path,
+            ListRequestType list_request_type,
             ListCallback callback,
             WatchCallback watch) override;
 
@@ -78,6 +79,10 @@ public:
             const String & path,
             int32_t version,
             CheckCallback callback) override;
+
+    void sync(
+            const String & path,
+            SyncCallback callback) override;
 
     void multi(
             const Requests & requests,

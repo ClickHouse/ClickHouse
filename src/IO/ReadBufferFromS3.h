@@ -11,7 +11,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WithFileName.h>
 
 #include <aws/s3/model/GetObjectResult.h>
@@ -26,10 +26,10 @@ namespace DB
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
-class ReadBufferFromS3 : public SeekableReadBuffer, public WithFileName, public WithFileSize
+class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
     String version_id;
@@ -48,7 +48,7 @@ private:
 
 public:
     ReadBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
@@ -65,7 +65,7 @@ public:
 
     off_t getPosition() override;
 
-    std::optional<size_t> getFileSize() override;
+    size_t getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
 
@@ -85,8 +85,6 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
-
-    std::optional<size_t> file_size;
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
@@ -94,7 +92,7 @@ class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public
 {
 public:
     explicit ReadBufferS3Factory(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
@@ -120,12 +118,12 @@ public:
 
     off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
-    std::optional<size_t> getFileSize() override;
+    size_t getFileSize() override;
 
     String getFileName() const override { return bucket + "/" + key; }
 
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const String bucket;
     const String key;
     const String version_id;
