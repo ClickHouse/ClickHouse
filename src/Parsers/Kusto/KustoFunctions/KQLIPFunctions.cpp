@@ -26,14 +26,14 @@ namespace
 {
 String trimQuotes(const String & str)
 {
-    static constexpr auto sQuote = '\'';
+    static constexpr auto QUOTE = '\'';
 
-    const auto firstIndex = str.find(sQuote);
-    const auto lastIndex = str.rfind(sQuote);
-    if (firstIndex == String::npos || lastIndex == String::npos)
+    const auto first_index = str.find(QUOTE);
+    const auto last_index = str.rfind(QUOTE);
+    if (first_index == String::npos || last_index == String::npos)
         throw DB::Exception("Syntax error, improper quotation: " + str, DB::ErrorCodes::SYNTAX_ERROR);
 
-    return str.substr(firstIndex + 1, lastIndex - firstIndex - 1);
+    return str.substr(first_index + 1, last_index - first_index - 1);
 }
 }
 
@@ -49,15 +49,18 @@ bool Ipv4Compare::convertImpl(String & out, IParser::Pos & pos)
 
 bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
 {
-    const auto functionName = getKQLFunctionName(pos);
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
     ++pos;
 
-    const auto ipAddress = getConvertedArgument(functionName, pos);
+    const auto ip_address = getConvertedArgument(function_name, pos);
     ++pos;
 
-    const auto ipRange = getConvertedArgument(functionName, pos);
-    const auto slashIndex = ipRange.find('/');
-    out = std::format(slashIndex == String::npos ? "{0} = {1}" : "isIPAddressInRange({0}, {1})", ipAddress, ipRange);
+    const auto ip_range = getConvertedArgument(function_name, pos);
+    const auto slash_index = ip_range.find('/');
+    out = std::format(slash_index == String::npos ? "{0} = {1}" : "isIPAddressInRange({0}, {1})", ip_address, ip_range);
     return true;
 }
 
@@ -72,21 +75,24 @@ bool Ipv4IsPrivate::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
-    return false;
+        return false;
 }
 
 bool Ipv4NetmaskSuffix::convertImpl(String & out, IParser::Pos & pos)
 {
-    static constexpr auto sDefaultNetmask = 32;
+    static constexpr auto DEFAULT_NETMASK = 32;
 
-    const auto functionName = getKQLFunctionName(pos);
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
     ++pos;
 
-    const auto ipRange = trimQuotes(getConvertedArgument(functionName, pos));
-    const auto slashIndex = ipRange.find('/');
-    const auto ipAddress = ipRange.substr(0, slashIndex);
-    const auto netmask = slashIndex == String::npos ? sDefaultNetmask : std::strtol(ipRange.c_str() + slashIndex + 1, nullptr, 10);
-    out = std::format("if(and(isIPv4String('{0}'), {1} between 1 and 32), {1}, null)", ipAddress, netmask);
+    const auto ip_range = trimQuotes(getConvertedArgument(function_name, pos));
+    const auto slash_index = ip_range.find('/');
+    const std::string_view ip_address(ip_range.c_str(), std::min(ip_range.length(), slash_index));
+    const auto netmask = slash_index == String::npos ? DEFAULT_NETMASK : std::strtol(ip_range.c_str() + slash_index + 1, nullptr, 10);
+    out = std::format("if(and(isIPv4String('{0}'), {1} between 1 and 32), {1}, null)", ip_address, netmask);
     return true;
 }
 
@@ -141,5 +147,4 @@ bool FormatIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
     out = res;
     return false;
 }
-
 }
