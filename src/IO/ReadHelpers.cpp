@@ -1053,7 +1053,7 @@ template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateL
 template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 {
     if (buf.eof())
         throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);

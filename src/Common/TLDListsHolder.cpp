@@ -20,13 +20,13 @@ TLDList::TLDList(size_t size)
     : tld_container(size)
     , pool(std::make_unique<Arena>(10 << 20))
 {}
-bool TLDList::insert(const StringRef & host)
+bool TLDList::insert(StringRef host)
 {
     bool inserted;
     tld_container.emplace(DB::ArenaKeyHolder{host, *pool}, inserted);
     return inserted;
 }
-bool TLDList::has(const StringRef & host) const
+bool TLDList::has(StringRef host) const
 {
     return tld_container.has(host);
 }
