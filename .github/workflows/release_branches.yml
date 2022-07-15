@@ -12,10 +12,13 @@ on: # yamllint disable-line rule:truthy
       - opened
     branches:
       - '**/22.3*'
-  push:
-    branches:
-      # Anything/22.3 (e.g customizations/22.3)
-      - '**/22.3*'
+  release:
+    types:
+      - published
+  # push:
+  #   branches:
+  #     # Anything/22.3 (e.g customizations/22.3)
+  #     - '**/22.3*'
 
 jobs:
   DockerHubPushAarch64:
