@@ -89,7 +89,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -1079,34 +1078,58 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context)
-{
-    /// HashJoin with Dictionary optimisation
-    if (analyzed_join->tryInitDictJoin(right_sample_block, context))
-        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
 
-    bool allow_merge_join = analyzed_join->allowMergeJoin();
-    if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
+{
+    Block right_sample_block = joined_plan->getCurrentDataStream().header;
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
+    {
+        if (JoinPtr kvjoin = tryKeyValueJoin(analyzed_join, right_sample_block))
+        {
+            /// Do not need to execute plan for right part
+            joined_plan.reset();
+            return kvjoin;
+        }
+
+        /// It's not a hash join actually, that's why we check JoinAlgorithm::DIRECT
+        /// It's would be fixed in https://github.com/ClickHouse/ClickHouse/pull/38956
+        if (analyzed_join->tryInitDictJoin(right_sample_block, context))
+        {
+            joined_plan.reset();
+            return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+        }
+    }
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE) ||
+        analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
+    {
+        if (MergeJoin::isSupported(analyzed_join))
+            return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
+    }
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::HASH) ||
+        /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
+        analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
+        analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
         if (analyzed_join->allowParallelHashJoin())
-        {
             return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, right_sample_block);
-        }
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
-    else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
     {
-        return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
+        if (FullSortingMergeJoin::isSupported(analyzed_join))
+            return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
-    else if (analyzed_join->forceFullSortingMergeJoin())
-    {
-        if (analyzed_join->getClauses().size() != 1)
-            throw Exception("Full sorting merge join is supported only for single-condition joins", ErrorCodes::NOT_IMPLEMENTED);
-        if (analyzed_join->isSpecialStorage())
-            throw Exception("Full sorting merge join is not supported for special storage", ErrorCodes::NOT_IMPLEMENTED);
-        return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
-    }
-    return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+        return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+
+    throw Exception("Can't execute any of specified algorithms for specified strictness/kind and right storage type",
+                     ErrorCodes::NOT_IMPLEMENTED);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1164,27 +1187,26 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
 
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block)
 {
-    auto error_or_null = [&](const String & msg)
-    {
-        if (analyzed_join->isForcedAlgorithm(JoinAlgorithm::DIRECT))
-            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't use '{}' join algorithm: {}", JoinAlgorithm::DIRECT, msg);
-        return nullptr;
-    };
-
-    if (!analyzed_join->isAllowedAlgorithm(JoinAlgorithm::DIRECT))
+    if (!analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return nullptr;
 
     auto storage = analyzed_join->getStorageKeyValue();
     if (!storage)
-        return error_or_null("unsupported storage");
+    {
+        return nullptr;
+    }
 
     if (!isInnerOrLeft(analyzed_join->kind()))
-        return error_or_null("illegal kind");
+    {
+        return nullptr;
+    }
 
     if (analyzed_join->strictness() != ASTTableJoin::Strictness::All &&
         analyzed_join->strictness() != ASTTableJoin::Strictness::Any &&
         analyzed_join->strictness() != ASTTableJoin::Strictness::RightAny)
-        return error_or_null("illegal strictness");
+    {
+        return nullptr;
+    }
 
     const auto & clauses = analyzed_join->getClauses();
     bool only_one_key = clauses.size() == 1 &&
@@ -1194,15 +1216,16 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
         !clauses[0].on_filter_condition_right;
 
     if (!only_one_key)
-        return error_or_null("multiple keys is not allowed");
+    {
+        return nullptr;
+    }
 
     String key_name = clauses[0].key_names_right[0];
     String original_key_name = analyzed_join->getOriginalName(key_name);
     const auto & storage_primary_key = storage->getPrimaryKey();
     if (storage_primary_key.size() != 1 || storage_primary_key[0] != original_key_name)
     {
-        return error_or_null(fmt::format("key '{}'{} doesn't match storage '{}'",
-            key_name, (key_name != original_key_name ? " (aka '" + original_key_name + "')" : ""), fmt::join(storage_primary_key, ",")));
+        return nullptr;
     }
 
     return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
@@ -1240,18 +1263,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    const Block & right_sample_block = joined_plan->getCurrentDataStream().header;
-    if (JoinPtr kvjoin = tryKeyValueJoin(analyzed_join, right_sample_block))
-    {
-        joined_plan.reset();
-        return kvjoin;
-    }
-
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, right_sample_block, getContext());
-
-    /// Do not make subquery for join over dictionary.
-    if (analyzed_join->getDictionaryReader())
-        joined_plan.reset();
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan, getContext());
 
     return join;
 }
