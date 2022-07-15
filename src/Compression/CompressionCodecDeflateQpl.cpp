@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 std::array<qpl_job *, DeflateQplJobHWPool::MAX_HW_JOB_NUMBER> DeflateQplJobHWPool::hw_job_ptr_pool;
 std::array<std::atomic_bool, DeflateQplJobHWPool::MAX_HW_JOB_NUMBER> DeflateQplJobHWPool::hw_job_ptr_locks;
-bool DeflateQplJobHWPool::job_pool_ready;
+bool DeflateQplJobHWPool::job_pool_ready = false;
 std::unique_ptr<uint8_t[]> DeflateQplJobHWPool::hw_jobs_buffer;
 
 DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
@@ -28,8 +28,7 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 }
 
 DeflateQplJobHWPool::DeflateQplJobHWPool()
-    :job_pool_ready(false)
-    ,random_engine(std::random_device()())
+    :random_engine(std::random_device()())
     ,distribution(0, MAX_HW_JOB_NUMBER-1)
 {
     Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
@@ -48,7 +47,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
         if (qpl_init_job(qpl_path_hardware, qpl_job_ptr) != QPL_STS_OK)
         {
             job_pool_ready = false;
-            LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. QPL Version:{}.",qpl_version);
+            LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. QPL Version: {}.",qpl_version);
             return;
         }
         hw_job_ptr_pool[index] = qpl_job_ptr;
@@ -56,7 +55,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
     }
 
     job_pool_ready = true;
-    LOG_DEBUG(log, "Hardware-assisted DeflateQpl codec is ready! QPL Version:{}",qpl_version);
+    LOG_DEBUG(log, "Hardware-assisted DeflateQpl codec is ready! QPL Version: {}",qpl_version);
 }
 
 DeflateQplJobHWPool::~DeflateQplJobHWPool()
@@ -97,17 +96,10 @@ qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 * job_id)
         return nullptr;
 }
 
-qpl_job * DeflateQplJobHWPool::releaseJob(UInt32 job_id)
+void DeflateQplJobHWPool::releaseJob(UInt32 job_id)
 {
     if (isJobPoolReady())
-    {
-        UInt32 index = MAX_HW_JOB_NUMBER - job_id;
-        assert(index < MAX_HW_JOB_NUMBER);
-        ReleaseJobObjectGuard _(index);
-        return hw_job_ptr_pool[index];
-    }
-    else
-        return nullptr;
+        unLockJob(MAX_HW_JOB_NUMBER - job_id);
 }
 
 bool DeflateQplJobHWPool::tryLockJob(UInt32 index)
@@ -168,7 +160,7 @@ Int32 HardwareCodecDeflateQpl::doCompressData(const char * source, UInt32 source
     if (auto status = qpl_execute_job(job_ptr); status == QPL_STS_OK)
         compressed_size = job_ptr->total_out;
     else
-        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doCompressData->qpl_execute_job with error code:{} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doCompressData->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
     DeflateQplJobHWPool::instance().releaseJob(job_id);
     return compressed_size;
 }
@@ -199,7 +191,7 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataAsynchronous(const char * source,
     else
     {
         DeflateQplJobHWPool::instance().releaseJob(job_id);
-        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataAsynchronous->qpl_execute_job with error code:{} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataAsynchronous->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
         return RET_ERROR;
     }
 }
@@ -224,8 +216,8 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
         }
         else
         {
-            DeflateQplJobHWPool::instance().releaseJob(job_id);
             it = decomp_async_job_map.erase(it);
+            DeflateQplJobHWPool::instance().releaseJob(job_id);
             n_jobs_processing--;
             if (n_jobs_processing <= 0)
                 break;
@@ -240,7 +232,7 @@ void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
 
 SoftwareCodecDeflateQpl::~SoftwareCodecDeflateQpl()
 {
-    if (nullptr != sw_job)
+    if (!sw_job)
         qpl_fini_job(sw_job);
 }
 
@@ -257,7 +249,7 @@ qpl_job * SoftwareCodecDeflateQpl::getJobCodecPtr()
         // Job initialization
         if (auto status = qpl_init_job(qpl_path_software, sw_job); status != QPL_STS_OK)
             throw Exception(ErrorCodes::CANNOT_COMPRESS,
-                "Initialization of DeflateQpl software fallback codec failed. (Details: qpl_init_job with error code {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
+                "Initialization of DeflateQpl software fallback codec failed. (Details: qpl_init_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
     }
     return sw_job;
 }
@@ -276,7 +268,7 @@ UInt32 SoftwareCodecDeflateQpl::doCompressData(const char * source, UInt32 sourc
 
     if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
         throw Exception(ErrorCodes::CANNOT_COMPRESS,
-            "Execution of DeflateQpl software fallback codec failed. (Details: qpl_execute_job with error code {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
+            "Execution of DeflateQpl software fallback codec failed. (Details: qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
 
     return job_ptr->total_out;
 }
@@ -295,7 +287,7 @@ void SoftwareCodecDeflateQpl::doDecompressData(const char * source, UInt32 sourc
 
     if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-            "Execution of DeflateQpl software fallback codec failed. (Details: qpl_execute_job with error code {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
+            "Execution of DeflateQpl software fallback codec failed. (Details: qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
 }
 
 //CompressionCodecDeflateQpl
