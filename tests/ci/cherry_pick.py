@@ -85,6 +85,15 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             "git -c user.email=robot-clickhouse@clickhouse.com "
             "-c user.name=robot-clickhouse -c commit.gpgsign=false"
         )
+        self.pre_check()
+
+    def pre_check(self):
+        branch_updated = git_runner(
+            f"git branch -a --contains={self.pr.merge_commit_sha} "
+            f"{self.REMOTE}/{self.name}"
+        )
+        if branch_updated:
+            self._backported = True
 
     def pop_prs(self, prs: PullRequests):
         to_pop = []  # type: List[int]
