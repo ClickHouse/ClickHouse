@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int CYCLIC_ALIASES;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -148,7 +149,6 @@ namespace ErrorCodes
   * TODO: Add expression name into query tree node. Example: SELECT plus(1, 1). Result: SELECT 2. Expression name of constant node should be 2.
   * TODO: Table identifiers with optional UUID.
   * TODO: Table ALIAS columns
-  * TODO: Support multiple entities with same alias.
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
@@ -260,12 +260,7 @@ public:
         if (node->hasAlias())
         {
             expressions.emplace_back(node.get(), node->getAlias());
-
-            auto [it, inserted] = expressions_aliases.emplace(expressions.back().second);
-            if (!inserted)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expression with alias {} already exists in stack",
-                node->getAlias());
+            ++alias_name_to_expressions_size[expressions.back().second];
             return;
         }
 
@@ -276,7 +271,13 @@ public:
     {
         const auto & [_, top_expression_alias] = expressions.back();
         if (!top_expression_alias.empty())
-            expressions_aliases.erase(top_expression_alias);
+        {
+            auto it = alias_name_to_expressions_size.find(top_expression_alias);
+            --it->second;
+
+            if (it->second == 0)
+                alias_name_to_expressions_size.erase(it);
+        }
 
         expressions.pop_back();
     }
@@ -299,7 +300,7 @@ public:
 
     bool hasExpressionWithAlias(const std::string & alias) const
     {
-        return expressions_aliases.find(alias) != expressions_aliases.end();
+        return alias_name_to_expressions_size.find(alias) != alias_name_to_expressions_size.end();
     }
 
     size_t size() const
@@ -330,7 +331,7 @@ public:
 
 private:
     std::vector<std::pair<const IQueryTreeNode *, std::string>> expressions;
-    std::unordered_set<std::string> expressions_aliases;
+    std::unordered_map<std::string, size_t> alias_name_to_expressions_size;
 };
 
 struct IdentifierResolveScope
@@ -357,6 +358,9 @@ struct IdentifierResolveScope
 
     /// Alias name to table expression node
     std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_table_expression_node;
+
+    /// Nodes with duplicated identifiers
+    std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
 
     /// Current scope expression in resolve process stack
     ExpressionsStack expressions_in_resolve_process_stack;
@@ -390,6 +394,10 @@ struct IdentifierResolveScope
         buffer << "Alias name to table expression node " << alias_name_to_table_expression_node.size() << '\n';
         for (const auto & [alias_name, node] : alias_name_to_table_expression_node)
             buffer << "Alias name " << alias_name << " table node " << node->formatASTForErrorMessage() << '\n';
+
+        buffer << "Nodes with duplicated aliases " << nodes_with_duplicated_aliases.size() << '\n';
+        for (const auto & node : nodes_with_duplicated_aliases)
+            buffer << "Alias name " << node->getAlias() << " node " << node->formatASTForErrorMessage() << '\n';
 
         buffer << "Expression resolve process stack " << '\n';
         expressions_in_resolve_process_stack.dump(buffer);
@@ -641,7 +649,9 @@ void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node)
         scalar_type = std::make_shared<DataTypeTuple>(block.getDataTypes());
     }
 
+    auto original_ast = node->getOriginalAST();
     node = std::make_shared<ConstantNode>(std::move(scalar_value), std::move(scalar_type));
+    node->setOriginalAST(std::move(original_ast));
 }
 
 /// Resolve identifier functions implementation
@@ -690,24 +700,24 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
 
 /** Visitor that extracts expression and function aliases from node and initialize scope tables with it.
   * Does not go into child lambdas and queries.
-  * If there are multiple entities with same alias, exception is raised.
   *
   * TODO: Maybe better for this visitor to handle QueryNode. Handle table nodes.
   *
   * Important:
   * Identifier nodes with aliases are added both in alias to expression and alias to function map.
   *
-  * These is necessary because identifier with alias can give any node alias name, expression or function.
-  *
-  * TODO: Disable identifier with alias node propagation for table nodes. This can occur only for special functions
-  * if their argument can be table.
+  * These is necessary because identifier with alias can give alias name to any query tree node.
   *
   * Example:
   * WITH (x -> x + 1) AS id, id AS value SELECT value(1);
   * In this example id as value is identifier node that has alias, during scope initialization we cannot derive
   * that id is actually lambda or expression.
   *
-  * There are no easy solution here, without trying to make full featured expression resolution at this stage, because example can be much complex:
+  *
+  * TODO: Disable identifier with alias node propagation for table nodes. This can occur only for special functions
+  * if their argument can be table.
+  *
+  * There are no easy solution here, without trying to make full featured expression resolution at this stage.
   * Example:
   * WITH (x -> x + 1) AS id, id AS id_1, id_1 AS id_2 SELECT id_2(1);
   *
@@ -754,32 +764,25 @@ private:
             return;
 
         const auto & alias = node->getAlias();
-        auto throw_exception = [&]()
-        {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Having multiple alises with same name {} is not allowed. In scope {}",
-                alias,
-                data.scope.scope_node->formatASTForErrorMessage());
-        };
 
         if (function_node)
         {
             if (data.scope.alias_name_to_expression_node.contains(alias))
-                throw_exception();
+                data.scope.nodes_with_duplicated_aliases.insert(node);
 
             auto [_, inserted] = data.scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
             if (!inserted)
-               throw_exception();
+                data.scope.nodes_with_duplicated_aliases.insert(node);
 
             return;
         }
 
         if (data.scope.alias_name_to_lambda_node.contains(alias))
-            throw_exception();
+            data.scope.nodes_with_duplicated_aliases.insert(node);
 
         auto [_, inserted] = data.scope.alias_name_to_expression_node.insert(std::make_pair(alias, node));
         if (!inserted)
-            throw_exception();
+            data.scope.nodes_with_duplicated_aliases.insert(node);
 
         /// If node is identifier put it also in scope alias name to lambda node map
         if (node->getNodeType() == QueryTreeNodeType::IDENTIFIER)
@@ -827,14 +830,14 @@ using ScopeAliasVisitor = ScopeAliasVisitorMatcher::Visitor;
   *
   * Special case for QueryNode, if lookup context is expression, evaluate it as scalar subquery.
   *
-  * 6. If identifier is compound and identifier lookup is in expression context, pop first part from identifier lookup and wrap alias node
+  * 6. Pop node from current expressions to resolve.
+  * 7. If identifier is compound and identifier lookup is in expression context, pop first part from identifier lookup and wrap alias node
   * using nested parts of identifier using `wrapExpressionNodeInTupleElement` function.
   *
   * Example: SELECT value AS alias, alias.nested_path.
   * Result: SELECT value AS alias, tupleElement(value, 'nested_path') value.nested_path.
   *
-  * 7. If identifier lookup is in expression context, clone result expression.
-  * 8. Pop node from current expressions to resolve.
+  * 8. If identifier lookup is in expression context, clone result expression.
   */
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
@@ -918,25 +921,21 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
             evaluateScalarSubquery(it->second);
     }
 
-    if (!it->second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Node with alias {} is not valid. In scope {}",
-            identifier_bind_part,
-            scope.scope_node->formatASTForErrorMessage());
+    scope.expressions_in_resolve_process_stack.popNode();
 
     QueryTreeNodePtr result = it->second;
 
-    if (identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
+    if (identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup() && result)
     {
         auto nested_path = IdentifierView(identifier_lookup.identifier);
         nested_path.popFirst();
 
-        auto tuple_element_result = wrapExpressionNodeInTupleElement(it->second, nested_path);
+        auto tuple_element_result = wrapExpressionNodeInTupleElement(result, nested_path);
         resolveFunction(tuple_element_result, scope);
 
         result = tuple_element_result;
     }
-    else if (identifier_lookup.isExpressionLookup())
+    else if (identifier_lookup.isExpressionLookup() && result)
     {
         /** If expression node was resolved throught aliases we must clone it to keep query tree state valid.
           *
@@ -946,11 +945,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
           *
           * This query is broken because multiple aliases with same name are not allowed in query tree.
           */
-        result = it->second->clone();
+        result = result->clone();
         result->removeAlias();
     }
-
-    scope.expressions_in_resolve_process_stack.popNode();
 
     return result;
 }
@@ -1858,7 +1855,10 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
                 /// Replace function node with result constant node
                 Field constant_value;
                 column->get(0, constant_value);
+
+                auto original_ast = function_node.getOriginalAST();
                 node = std::make_shared<ConstantNode>(std::move(constant_value), result_type);
+                node->setOriginalAST(std::move(original_ast));
                 return;
             }
         }
@@ -1892,16 +1892,16 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
   */
 void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression)
 {
-    String node_alias;
+    String node_alias = node->getAlias();
 
-    if (node->hasAlias())
+    /// Do not update node from alias table if we resolve it for duplicate alias
+    if (!node_alias.empty() && scope.nodes_with_duplicated_aliases.contains(node))
     {
         /** Node could be potentially resolved by resolving other nodes.
           * SELECT b, a as b FROM test_table;
           *
           * To resolve b we need to resolve a.
           */
-        node_alias = node->getAlias();
         auto it = scope.alias_name_to_expression_node.find(node_alias);
         if (it != scope.alias_name_to_expression_node.end())
             node = it->second;
@@ -1996,8 +1996,10 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    /// Update aliases after expression node was resolved
-    if (!node_alias.empty())
+    /** Update aliases after expression node was resolved.
+      * Do not update node in alias table if we resolve it for duplicate alias.
+      */
+    if (!node_alias.empty() && scope.nodes_with_duplicated_aliases.contains(node))
     {
         auto it = scope.alias_name_to_expression_node.find(node_alias);
         if (it != scope.alias_name_to_expression_node.end())
@@ -2088,16 +2090,14 @@ void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_tree_node, IdentifierR
     {
         auto [_, inserted] = scope.alias_name_to_table_expression_node.insert(std::make_pair(from_node_alias, query_tree.getFrom()));
         if (!inserted)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Multiple alises does not point to same entity {}", from_node_alias);
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Multiple aliases does not point to same entity {}", from_node_alias);
     }
 
-    /** Resolve query node sections.
-      *
-      * WITH section is not resolved at all and will be removed after query analysis pass.
-      * WITH section only can provide aliases to expressions and CTE for other sections to use.
-      *
-      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
-      */
+    /// Resolve query node sections.
+
+    if (query_tree.getWithNode())
+        resolveExpressionNodeList(query_tree.getWithNode(), scope, true /*allow_lambda_expression*/);
+
     resolveExpressionNodeList(query_tree.getProjectionNode(), scope, false /*allow_lambda_expression*/);
 
     if (query_tree.getPrewhere())
@@ -2106,14 +2106,69 @@ void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_tree_node, IdentifierR
     if (query_tree.getWhere())
         resolveExpressionNode(query_tree.getWhere(), scope, false /*allow_lambda_expression*/);
 
-    /// Remove WITH section
+    /** WITH section can be safely removed, because  WITH section only can provide aliases to expressions
+      * and CTE for other sections to use.
+      *
+      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
+      */
     query_tree.getWithNode() = std::make_shared<ListNode>();
+
+    /** Resolve nodes with duplicate aliases.
+      *
+      * Such nodes during scope aliases collection are placed into duplicated array.
+      * After scope nodes are resolved, we can compare node with duplicate alias with
+      * node from scope alias table.
+      */
+    for (const auto & node : scope.nodes_with_duplicated_aliases)
+    {
+        auto node_copy = node;
+        auto node_alias = node_copy->getAlias();
+        resolveExpressionNode(node_copy, scope, true /*allow_lambda_expression*/);
+
+        auto node_tree_hash = node->getTreeHash();
+        bool has_node_in_alias_table = false;
+
+        auto it = scope.alias_name_to_expression_node.find(node_alias);
+        if (it != scope.alias_name_to_expression_node.end())
+        {
+            has_node_in_alias_table = true;
+
+            if (it->second->getTreeHash() != node_tree_hash)
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "Multiple expressions {} and {} for alias {}. In scope {}",
+                    node_copy->formatASTForErrorMessage(),
+                    it->second->formatASTForErrorMessage(),
+                    node_alias,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+
+        it = scope.alias_name_to_lambda_node.find(node_alias);
+        if (it != scope.alias_name_to_lambda_node.end())
+        {
+            has_node_in_alias_table = true;
+
+            if (it->second->getTreeHash() != node_tree_hash)
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "Multiple expressions {} and {} for alias {}. In scope {}",
+                    node_copy->formatASTForErrorMessage(),
+                    it->second->formatASTForErrorMessage(),
+                    node_alias,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+
+        if (!has_node_in_alias_table)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Node {} with duplicate alias {} does not exists in alias table. In scope {}",
+                node_copy->formatASTForErrorMessage(),
+                node_alias,
+                scope.scope_node->formatASTForErrorMessage());
+    }
 }
 
 void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     if (query_tree_node->getNodeType() != QueryTreeNodeType::QUERY)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryAnalysis pass requires query tree node");
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryAnalysis pass requires query node");
 
     QueryAnalyzer analyzer(std::move(context));
     analyzer.resolve(query_tree_node);

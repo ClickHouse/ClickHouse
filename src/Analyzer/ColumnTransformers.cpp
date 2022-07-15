@@ -72,6 +72,8 @@ void ApplyColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent) c
 void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
+    hash_state.update(static_cast<size_t>(getApplyTransformerType()));
+
     getExpressionNode()->updateTreeHash(hash_state);
 }
 

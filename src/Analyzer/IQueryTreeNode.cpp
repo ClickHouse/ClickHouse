@@ -55,7 +55,10 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 
 void IQueryTreeNode::updateTreeHash(HashState & state) const
 {
+    state.update(static_cast<size_t>(getNodeType()));
+
     updateTreeHashImpl(state);
+
     state.update(children.size());
 
     for (const auto & child : children)
