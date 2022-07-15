@@ -12,7 +12,18 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#if defined __APPLE__
+
+// dependencies
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
+
+// define 64 bit macros
+#define le64toh(x) OSSwapLittleToHostInt64(x)
+
+#else
 #include <endian.h>
+#endif
 
 #include "types.h"
 
