@@ -10,6 +10,13 @@
 `set dialect='kusto_auto'`
 
 ## IP functions
+- [parse_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4function)
+   `"Customers | project parse_ipv4('127.0.0.1')"`
+- [parse_ipv6](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv6function)
+   `"Customers | project parse_ipv6('127.0.0.1')"`
+
+Please note that the functions listed below only take constant parameters for now. Further improvement is to be expected to support expressions.
+
 - [ipv4_is_private](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-privatefunction)
    `"Customers | project ipv4_is_private('192.168.1.6/24')"`
    `"Customers | project ipv4_is_private('192.168.1.6')"`
@@ -19,10 +26,6 @@
 - [ipv4_netmask_suffix](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-netmask-suffix-function)
    `"Customers | project ipv4_netmask_suffix('192.168.1.1/24')"`
    `"Customers | project ipv4_netmask_suffix('192.168.1.1')"`
-- [parse_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4function)
-   `"Customers | project parse_ipv4('127.0.0.1')"`
-- [parse_ipv6](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv6function)
-   `"Customers | project parse_ipv6('127.0.0.1')"`
 
 ## string functions
 - **support subquery for `in` orerator** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/in-cs-operator)  
