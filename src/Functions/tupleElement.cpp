@@ -144,7 +144,7 @@ public:
         {
             if (!array_offsets.empty())
             {
-                checkArrayOffsets(arguments[0].column, arguments[2].column);
+                recursiveCheckArrayOffsets(arguments[0].column, arguments[2].column, array_offsets.size());
             }
             return arguments[2].column;
         }
@@ -163,6 +163,17 @@ public:
     }
 
 private:
+
+    void recursiveCheckArrayOffsets(ColumnPtr col_x, ColumnPtr col_y, size_t depth) const
+    {
+        for (size_t i = 1; i < depth; ++i)
+        {
+            checkArrayOffsets(col_x, col_y);
+            col_x = assert_cast<const ColumnArray *>(col_x.get())->getDataPtr();
+            col_y = assert_cast<const ColumnArray *>(col_y.get())->getDataPtr();
+        }
+        checkArrayOffsets(col_x, col_y);
+    }
 
     void checkArrayOffsets(ColumnPtr col_x, ColumnPtr col_y) const
     {
