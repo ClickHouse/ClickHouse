@@ -165,20 +165,20 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const bool skip_part
 
                 return std::make_shared<PartialSortingTransform>(header, result_description, limit);
             });
+
+        StreamLocalLimits limits;
+        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+        limits.size_limits = size_limits;
+
+        pipeline.addSimpleTransform(
+            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<LimitsCheckingTransform>(header, limits);
+            });
     }
-
-    StreamLocalLimits limits;
-    limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
-    limits.size_limits = size_limits;
-
-    pipeline.addSimpleTransform(
-        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
-
-            return std::make_shared<LimitsCheckingTransform>(header, limits);
-        });
 
     bool increase_sort_description_compile_attempts = true;
 
@@ -274,23 +274,49 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (input_sort_mode == DataStream::SortMode::Chunk)
     {
-        // if (result_description.hasPrefix(input_sort_desc))
-        // {
-        //     LOG_DEBUG(getLogger(), "FinishSorting, SortMode::Chunk");
-        //     bool need_finish_sorting = (input_sort_desc.size() < result_description.size());
-        //     mergingSorted(pipeline, input_sort_desc, (need_finish_sorting ? 0 : limit));
-        //     if (need_finish_sorting)
-        //     {
-        //         finishSorting(pipeline, input_sort_desc);
-        //     }
-        //     return;
-        // }
-
-        /// almost full sort but chunks are already sorted, so skipping partial sort
-        if (input_sort_desc.hasPrefix(result_description))
+        const bool result_has_input_prefix = result_description.hasPrefix(input_sort_desc);
+        const bool input_has_result_prefix = input_sort_desc.hasPrefix(result_description);
+        if (input_has_result_prefix || (input_has_result_prefix && result_has_input_prefix))
         {
             LOG_DEBUG(getLogger(), "Almost FullSort");
             fullSort(pipeline, true);
+            return;
+        }
+        if (result_has_input_prefix)
+        {
+            LOG_DEBUG(getLogger(), "FinishSorting, SortMode::Chunk");
+            {
+                bool increase_sort_description_compile_attempts = true;
+
+                pipeline.addSimpleTransform(
+                    [&, increase_sort_description_compile_attempts](
+                        const Block & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
+                    {
+                        if (stream_type == QueryPipelineBuilder::StreamType::Totals)
+                            return nullptr;
+
+                        // For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
+                        // To property support min_count_to_compile_sort_description.
+                        bool increase_sort_description_compile_attempts_current = increase_sort_description_compile_attempts;
+
+                        if (increase_sort_description_compile_attempts)
+                            increase_sort_description_compile_attempts = false;
+
+                        return std::make_shared<MergeSortingTransform>(
+                            header,
+                            input_sort_desc,
+                            max_block_size,
+                            0,
+                            increase_sort_description_compile_attempts_current,
+                            max_bytes_before_remerge / pipeline.getNumStreams(),
+                            remerge_lowered_memory_bytes_ratio,
+                            max_bytes_before_external_sort,
+                            tmp_volume,
+                            min_free_disk_space);
+                    });
+            }
+            mergingSorted(pipeline, input_sort_desc, 0);
+            finishSorting(pipeline, input_sort_desc);
             return;
         }
     }
