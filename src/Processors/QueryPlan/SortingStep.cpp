@@ -106,6 +106,12 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
+{
+    type = Type::FinishSorting;
+    prefix_description = std::move(prefix_description_);
+}
+
 void SortingStep::finishSorting(QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc)
 {
     pipeline.addSimpleTransform(
@@ -218,12 +224,6 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const bool skip_part
 
         pipeline.addTransform(std::move(transform));
     }
-}
-
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
-{
-    type = Type::FinishSorting;
-    prefix_description = std::move(prefix_description_);
 }
 
 static Poco::Logger * getLogger()
