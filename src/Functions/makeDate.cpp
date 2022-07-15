@@ -164,9 +164,8 @@ struct MakeDate32Traits
     using ReturnDataType = DataTypeDate32;
     using ReturnColumnType = ColumnInt32;
 
-    static constexpr auto MIN_YEAR = 1900; //1925;
-    static constexpr auto MAX_YEAR = 2300; //2283;
-    // static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 11, 11);
+    static constexpr auto MIN_YEAR = 1900;
+    static constexpr auto MAX_YEAR = 2299;
     static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 12, 31);
 };
 
