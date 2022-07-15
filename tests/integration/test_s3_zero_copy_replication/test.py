@@ -150,6 +150,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     node2.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
 
+@pytest.mark.skip(reason="Test is flaky (and never was stable)")
 def test_s3_zero_copy_on_hybrid_storage(cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
