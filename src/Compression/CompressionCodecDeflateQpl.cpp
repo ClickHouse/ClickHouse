@@ -73,7 +73,7 @@ DeflateQplJobHWPool::~DeflateQplJobHWPool()
     job_pool_ready = false;
 }
 
-qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 * job_id)
+qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 &job_id)
 {
     if (isJobPoolReady())
     {
@@ -88,7 +88,7 @@ qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 * job_id)
                 return nullptr;
             }
         }
-        *job_id = MAX_HW_JOB_NUMBER - index;
+        job_id = MAX_HW_JOB_NUMBER - index;
         assert(index < MAX_HW_JOB_NUMBER);
         return hw_job_ptr_pool[index];
     }
@@ -143,7 +143,7 @@ Int32 HardwareCodecDeflateQpl::doCompressData(const char * source, UInt32 source
     UInt32 job_id = 0;
     qpl_job* job_ptr = nullptr;
     UInt32 compressed_size = 0;
-    if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(&job_id)))
+    if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(job_id)))
     {
         LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doCompressData->acquireJob fail, probably job pool exhausted)");
         return RET_ERROR;
@@ -158,18 +158,24 @@ Int32 HardwareCodecDeflateQpl::doCompressData(const char * source, UInt32 source
     job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_DYNAMIC_HUFFMAN | QPL_FLAG_LAST | QPL_FLAG_OMIT_VERIFY;
 
     if (auto status = qpl_execute_job(job_ptr); status == QPL_STS_OK)
+    {
         compressed_size = job_ptr->total_out;
+        DeflateQplJobHWPool::instance().releaseJob(job_id);
+        return compressed_size;
+    }
     else
+    {
         LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doCompressData->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
-    DeflateQplJobHWPool::instance().releaseJob(job_id);
-    return compressed_size;
+        DeflateQplJobHWPool::instance().releaseJob(job_id);
+        return RET_ERROR;
+    }
 }
 
 Int32 HardwareCodecDeflateQpl::doDecompressDataAsynchronous(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
 {
     UInt32 job_id = 0;
     qpl_job * job_ptr = nullptr;
-    if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(&job_id)))
+    if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(job_id)))
     {
         LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataAsynchronous->acquireJob fail, probably job pool exhausted)");
         return RET_ERROR;
@@ -198,19 +204,17 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataAsynchronous(const char * source,
 
 void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
 {
-    UInt32 job_id = 0;
-    qpl_job * job_ptr = nullptr;
-
-    std::map<UInt32, qpl_job *>::iterator it;
     UInt32 n_jobs_processing = decomp_async_job_map.size();
-    it = decomp_async_job_map.begin();
+    std::map<UInt32, qpl_job *>::iterator it = decomp_async_job_map.begin();
 
     while (n_jobs_processing)
     {
+        UInt32 job_id = 0;
+        qpl_job * job_ptr = nullptr;
         job_id = it->first;
         job_ptr = it->second;
 
-        if (QPL_STS_BEING_PROCESSED == qpl_check_job(job_ptr))
+        if (qpl_check_job(job_ptr) == QPL_STS_BEING_PROCESSED)
         {
             it++;
         }
