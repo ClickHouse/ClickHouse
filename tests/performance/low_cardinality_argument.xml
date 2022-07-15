@@ -3,7 +3,7 @@
         CREATE TABLE test_lc (x UInt64, lc LowCardinality(Nullable(String))) ENGINE = MergeTree order by x
     </create_query>
 
-    <fill_query>INSERT INTO test_lc SELECT number, number % 10 ? NULL : toString(number % 10000) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO test_lc SELECT number, number % 10 ? NULL : toString(number % 10000) FROM numbers(1e7)</fill_query>
     
     <query>SELECT isNullable(lc) FROM test_lc FORMAT Null</query>
     <query>SELECT isConstant(lc) FROM test_lc FORMAT Null</query>
