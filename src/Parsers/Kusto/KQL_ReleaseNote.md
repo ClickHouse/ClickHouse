@@ -5,9 +5,24 @@
 
 ## Renamed dialect from sql_dialect to dialect
 
-`set sql_dialect='clickhouse'`  
-`set sql_dialect='kusto'`  
-`set sql_dialect='kusto_auto'`
+`set dialect='clickhouse'`  
+`set dialect='kusto'`  
+`set dialect='kusto_auto'`
+
+## IP functions
+- [ipv4_is_private](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-privatefunction)
+   `"Customers | project ipv4_is_private('192.168.1.6/24')"`
+   `"Customers | project ipv4_is_private('192.168.1.6')"`
+- [ipv4_is_in_range](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-in-range-function)
+   `"Customers | project ipv4_is_in_range('127.0.0.1', '127.0.0.1')"`
+   `"Customers | project ipv4_is_in_range('192.168.1.6', '192.168.1.1/24')"`
+- [ipv4_netmask_suffix](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-netmask-suffix-function)
+   `"Customers | project ipv4_netmask_suffix('192.168.1.1/24')"`
+   `"Customers | project ipv4_netmask_suffix('192.168.1.1')"`
+- [parse_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4function)
+   `"Customers | project parse_ipv4('127.0.0.1')"`
+- [parse_ipv6](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv6function)
+   `"Customers | project parse_ipv6('127.0.0.1')"`
 
 ## string functions
 - **support subquery for `in` orerator** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/in-cs-operator)  
