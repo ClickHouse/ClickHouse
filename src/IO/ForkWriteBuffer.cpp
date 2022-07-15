@@ -1,7 +1,5 @@
 #include <IO/ForkWriteBuffer.h>
 #include <Common/Exception.h>
-#include <ranges>
-
 
 namespace DB
 {
@@ -28,14 +26,14 @@ void ForkWriteBuffer::nextImpl()
 
     try
     {
-        for (const WriteBufferPtr & write_buffer : sources | std::views::reverse)
+        auto & source_buffer = sources.front();
+        for (auto it = sources.begin() + 1; it != sources.end(); ++it)
         {
-            if (write_buffer != sources.front())
-            {
-                write_buffer->write(sources.front()->buffer().begin(), sources.front()->offset());
-            }
-            write_buffer->next();
+            auto & buffer = *it;
+            buffer->write(source_buffer->buffer().begin(), source_buffer->offset());
+            buffer->next();
         }
+        source_buffer->next();
     }
     catch (Exception & exception)
     {
