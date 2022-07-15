@@ -320,14 +320,10 @@ static void prepareChunk(Chunk & chunk)
 void MergeJoinAlgorithm::initialize(Inputs inputs)
 {
     if (inputs.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two inputs  arerequired, got {}", inputs.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two inputs are required, got {}", inputs.size());
 
-    LOG_DEBUG(log, "Initialize, number of inputs: {}", inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {
-        assert(inputs[i].chunk.getNumColumns() == cursors[i]->sampleBlock().columns());
-        prepareChunk(inputs[i].chunk);
-        copyColumnsResized(inputs[i].chunk.getColumns(), 0, 0, sample_chunks.emplace_back());
         consume(inputs[i], i);
     }
 }
@@ -476,7 +472,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
         MutableColumns result_cols;
         for (size_t i = 0; i < 2; ++i)
         {
-            for (const auto & col : sample_chunks[i].getColumns())
+            for (const auto & col : cursors[i]->sampleColumns())
                 result_cols.push_back(col->cloneEmpty());
         }
 
@@ -750,8 +746,8 @@ Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t star
 {
     ColumnRawPtrs cols;
     {
-        const auto & columns_left = source_num == 0 ? cursors[0]->getCurrent().getColumns() : sample_chunks[0].getColumns();
-        const auto & columns_right = source_num == 1 ? cursors[1]->getCurrent().getColumns() : sample_chunks[1].getColumns();
+        const auto & columns_left = source_num == 0 ? cursors[0]->getCurrent().getColumns() : cursors[0]->sampleColumns();
+        const auto & columns_right = source_num == 1 ? cursors[1]->getCurrent().getColumns() : cursors[1]->sampleColumns();
 
         for (size_t i = 0; i < columns_left.size(); ++i)
         {
@@ -859,7 +855,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.logElapsed(total_stopwatch.elapsedSeconds(), true);
+    algorithm.logElapsed(total_stopwatch.elapsedSeconds());
 }
 
 }

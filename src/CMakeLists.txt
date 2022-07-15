@@ -401,11 +401,11 @@ dbms_target_link_libraries (
         clickhouse_parsers
         ch_contrib::lz4
         Poco::JSON
-        Poco::MongoDB
         string_utils
     PUBLIC
         boost::system
         clickhouse_common_io
+        Poco::MongoDB
 )
 
 if (TARGET ch::mysqlxx)
@@ -564,7 +564,7 @@ if (ENABLE_TESTS)
 
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
-    add_executable(unit_tests_dbms ${dbms_gtest_sources})
+    clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE

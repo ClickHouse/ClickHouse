@@ -3,6 +3,8 @@
 #include "Common/ZooKeeper/IKeeper.h"
 
 #include "Coordination/KeeperStorage.h"
+#include "Core/Defines.h"
+#include "IO/WriteHelpers.h"
 #include "config_core.h"
 
 #if USE_NURAFT
@@ -106,13 +108,13 @@ TEST_P(CoordinationTest, BufferSerde)
 template <typename StateMachine>
 struct SimpliestRaftServer
 {
-    SimpliestRaftServer(int server_id_, const std::string & hostname_, int port_, const std::string & logs_path)
+    SimpliestRaftServer(int server_id_, const std::string & hostname_, int port_, const std::string & logs_path, const std::string & state_path)
         : server_id(server_id_)
         , hostname(hostname_)
         , port(port_)
         , endpoint(hostname + ":" + std::to_string(port))
         , state_machine(nuraft::cs_new<StateMachine>())
-        , state_manager(nuraft::cs_new<DB::KeeperStateManager>(server_id, hostname, port, logs_path))
+        , state_manager(nuraft::cs_new<DB::KeeperStateManager>(server_id, hostname, port, logs_path, state_path))
     {
         state_manager->loadLogStore(1, 0);
         nuraft::raft_params params;
@@ -185,7 +187,11 @@ nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 TEST_P(CoordinationTest, TestSummingRaft1)
 {
     ChangelogDirTest test("./logs");
-    SummingRaftServer s1(1, "localhost", 44444, "./logs");
+    SummingRaftServer s1(1, "localhost", 44444, "./logs", "./state");
+    SCOPE_EXIT(
+        if (std::filesystem::exists("./state"))
+            std::filesystem::remove("./state");
+    );
 
     /// Single node is leader
     EXPECT_EQ(s1.raft_instance->get_leader(), 1);
@@ -1064,6 +1070,13 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
     node.setData(data);
     node.stat.ephemeralOwner = ephemeral_owner;
     storage.container.insertOrReplace(path, node);
+    auto child_it = storage.container.find(path);
+    auto child_path = DB::getBaseName(child_it->key);
+    storage.container.updateValue(DB::parentPath(StringRef{path}), [&](auto & parent)
+    {
+        parent.addChild(child_path);
+        parent.stat.numChildren++;
+    });
 }
 
 TEST_P(CoordinationTest, TestStorageSnapshotSimple)
@@ -1221,7 +1234,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
                 storage.container.erase("/hello_" + std::to_string(i));
         }
         EXPECT_EQ(storage.container.size(), 26);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 101);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 102);
         EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
@@ -1776,6 +1789,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
         DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
         DB::KeeperStorage storage(500, "", true);
+        addNode(storage, "/hello", "");
         for (size_t j = 0; j < 5000; ++j)
         {
             addNode(storage, "/hello_" + std::to_string(j), "world", 1);
@@ -2032,6 +2046,77 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     for (const auto & child : all_children)
     {
         EXPECT_TRUE(expected_ephemeral_children.contains(child) || expected_persistent_children.contains(child)) << "Missing child " << child;
+    }
+}
+
+TEST_P(CoordinationTest, TestDurableState)
+{
+    ChangelogDirTest logs("./logs");
+
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+    std::optional<DB::KeeperStateManager> state_manager;
+
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, "./logs", "./state");
+    };
+
+    reload_state_manager();
+    ASSERT_EQ(state_manager->read_state(), nullptr);
+
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    const auto assert_read_state = [&]
+    {
+        auto read_state = state_manager->read_state();
+        ASSERT_NE(read_state, nullptr);
+        ASSERT_EQ(read_state->get_term(), state->get_term());
+        ASSERT_EQ(read_state->get_voted_for(), state->get_voted_for());
+        ASSERT_EQ(read_state->is_election_timer_allowed(), state->is_election_timer_allowed());
+    };
+
+    assert_read_state();
+
+    reload_state_manager();
+    assert_read_state();
+
+    {
+        SCOPED_TRACE("Read from corrupted file");
+        state_manager.reset();
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        write_buf.seek(20, SEEK_SET);
+        DB::writeIntBinary(31, write_buf);
+        write_buf.sync();
+        write_buf.close();
+        reload_state_manager();
+#ifdef NDEBUG
+        ASSERT_EQ(state_manager->read_state(), nullptr);
+#else
+        ASSERT_THROW(state_manager->read_state(), DB::Exception);
+#endif
+    }
+
+    {
+        SCOPED_TRACE("Read from file with invalid size");
+        state_manager.reset();
+
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        DB::writeIntBinary(20, write_buf);
+        write_buf.sync();
+        write_buf.close();
+        reload_state_manager();
+        ASSERT_EQ(state_manager->read_state(), nullptr);
+    }
+
+    {
+        SCOPED_TRACE("State file is missing");
+        state_manager.reset();
+        std::filesystem::remove("./state");
+        reload_state_manager();
+        ASSERT_EQ(state_manager->read_state(), nullptr);
     }
 }
 

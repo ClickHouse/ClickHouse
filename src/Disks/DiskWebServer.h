@@ -144,6 +144,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
+    void removeSharedFileIfExists(const String &, bool) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
+
     void removeSharedRecursive(const String &, bool, const NameSet &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
@@ -169,9 +174,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    PathsWithSize getObjectStoragePaths(const String &) const override { return {}; }
+    StoredObjects getStorageObjects(const String &) const override { return {}; }
 
-    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &) override {}
 
     /// Create part
 

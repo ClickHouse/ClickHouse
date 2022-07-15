@@ -4,7 +4,7 @@
 #include <Common/IFileCache.h>
 #include <Core/Types.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <list>
 
 namespace Poco { class Logger; }
@@ -33,7 +33,7 @@ friend class FileSegmentRangeWriter;
 
 public:
     using Key = IFileCache::Key;
-    using RemoteFileReaderPtr = std::shared_ptr<SeekableReadBuffer>;
+    using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
 
     enum class State

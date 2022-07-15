@@ -352,7 +352,10 @@ else
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.clean.log
 
     # Error messages (we should ignore some errors)
-    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38629
+    # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
+    # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 ("Cannot parse string 'Hello' as UInt64")
+    # FIXME Not sure if it's expected, but some tests from BC check may not be finished yet when we restarting server.
+    #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
     echo "Check for Error messages in server log:"
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -375,7 +378,10 @@ else
                -e "and a merge is impossible: we didn't find" \
                -e "found in queue and some source parts for it was lost" \
                -e "is lost forever." \
-               -e "pp.proj, errno: 21" \
+               -e "Unknown index: idx." \
+               -e "Cannot parse string 'Hello' as UInt64" \
+               -e "} <Error> TCPHandler: Code:" \
+               -e "} <Error> executeQuery: Code:" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
