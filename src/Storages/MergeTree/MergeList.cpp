@@ -64,7 +64,7 @@ MergeListElement::MergeListElement(
     for (const auto & source_part : future_part->parts)
     {
         source_part_names.emplace_back(source_part->name);
-        source_part_paths.emplace_back(source_part->getFullPath());
+        source_part_paths.emplace_back(source_part->data_part_storage->getFullPath());
 
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_marks += source_part->getMarksCount();

@@ -16,8 +16,12 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include <Common/noexcept_scope.h>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <utime.h>
 
 #include "config_core.h"
 
@@ -27,11 +31,9 @@
 #endif
 
 #if USE_LIBPQXX
-#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
-
-namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -77,6 +79,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
+    DatabaseCatalog::instance().addUUIDMapping(id);
     temporary_tables->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
@@ -143,6 +146,9 @@ StoragePtr TemporaryTableHolder::getTable() const
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
+    unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
+    unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
+    unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
@@ -150,6 +156,16 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
+    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
+    {
+        auto cleanup_task_holder
+            = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
+        cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
+        (*cleanup_task)->activate();
+        /// Do not start task immediately on server startup, it's not urgent.
+        (*cleanup_task)->scheduleAfter(unused_dir_hide_timeout_sec * 1000);
+    }
+
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
@@ -165,6 +181,9 @@ void DatabaseCatalog::loadDatabases()
 void DatabaseCatalog::shutdownImpl()
 {
     TemporaryLiveViewCleaner::shutdown();
+
+    if (cleanup_task)
+        (*cleanup_task)->deactivate();
 
     if (drop_task)
         (*drop_task)->deactivate();
@@ -186,24 +205,41 @@ void DatabaseCatalog::shutdownImpl()
     for (auto & database : current_databases)
         database.second->shutdown();
 
-    tables_marked_dropped.clear();
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        tables_marked_dropped.clear();
+    }
 
     std::lock_guard lock(databases_mutex);
+    for (const auto & db : databases)
+    {
+        UUID db_uuid = db.second->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            removeUUIDMapping(db_uuid);
+    }
     assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
         /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
         const auto & not_empty_mapping = [] (const auto & mapping)
         {
+            auto & db = mapping.second.first;
             auto & table = mapping.second.second;
-            return table;
+            return db || table;
         };
+        std::lock_guard map_lock{elem.mutex};
         auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
         return it != elem.map.end();
     }) == uuid_map.end());
     databases.clear();
-    db_uuid_map.clear();
     view_dependencies.clear();
 }
+
+bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
+{
+    return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
+        || database_name == INFORMATION_SCHEMA_UPPERCASE;
+}
+
 
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 {
@@ -293,6 +329,48 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     return {database, table};
 }
 
+bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
+{
+    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
+    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
+
+    auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
+    {
+        if (database_name == SYSTEM_DATABASE)
+        {
+            auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
+            return storage && storage->isSystemStorage();
+        }
+        if (database_name == INFORMATION_SCHEMA)
+        {
+            return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
+                != std::end(information_schema_views);
+        }
+        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
+        {
+            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                != std::end(information_schema_views_uppercase);
+        }
+        return false;
+    };
+
+    if (table_id.hasUUID())
+    {
+        if (auto storage = tryGetByUUID(table_id.uuid).second)
+        {
+            if (storage->isSystemStorage())
+                return true;
+            auto res_id = storage->getStorageID();
+            String database_name = res_id.getDatabaseName();
+            if (database_name != SYSTEM_DATABASE) /// If (database_name == SYSTEM_DATABASE) then we have already checked it (see isSystemStorage() above).
+                return check_database_and_table_name(database_name, res_id.getTableName());
+        }
+        return false;
+    }
+
+    return check_database_and_table_name(table_id.getDatabaseName(), table_id.getTableName());
+}
+
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
@@ -325,9 +403,11 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    UUID db_uuid = database->getUUID();
-    if (db_uuid != UUIDHelpers::Nil)
-        db_uuid_map.emplace(db_uuid, database);
+    NOEXCEPT_SCOPE({
+        UUID db_uuid = database->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            addUUIDMapping(db_uuid, database, nullptr);
+    });
 }
 
 
@@ -341,7 +421,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         std::lock_guard lock{databases_mutex};
         assertDatabaseExistsUnlocked(database_name);
         db = databases.find(database_name)->second;
-        db_uuid_map.erase(db->getUUID());
+        UUID db_uuid = db->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            removeUUIDMapping(db_uuid);
         databases.erase(database_name);
     }
 
@@ -366,6 +448,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     if (drop)
     {
+        UUID db_uuid = db->getUUID();
+
         /// Delete the database.
         db->drop(local_context);
 
@@ -375,6 +459,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         fs::remove(database_metadata_dir);
         fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
         fs::remove(database_metadata_file);
+
+        if (db_uuid != UUIDHelpers::Nil)
+            removeUUIDMappingFinally(db_uuid);
     }
 
     return db;
@@ -421,21 +508,19 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
 
 DatabasePtr DatabaseCatalog::getDatabase(const UUID & uuid) const
 {
-    std::lock_guard lock{databases_mutex};
-    auto it = db_uuid_map.find(uuid);
-    if (it == db_uuid_map.end())
+    auto db_and_table = tryGetByUUID(uuid);
+    if (!db_and_table.first || db_and_table.second)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database UUID {} does not exist", toString(uuid));
-    return it->second;
+    return db_and_table.first;
 }
 
 DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
 {
     assert(uuid != UUIDHelpers::Nil);
-    std::lock_guard lock{databases_mutex};
-    auto it = db_uuid_map.find(uuid);
-    if (it == db_uuid_map.end())
+    auto db_and_table = tryGetByUUID(uuid);
+    if (!db_and_table.first || db_and_table.second)
         return {};
-    return it->second;
+    return db_and_table.first;
 }
 
 bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
@@ -490,18 +575,22 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table)
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    assert((database && table) || (!database && !table));
+    assert(database || !table);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [it, inserted] = map_part.map.try_emplace(uuid, database, table);
     if (inserted)
+    {
+        /// Mapping must be locked before actually inserting something
+        chassert((!database && !table));
         return;
+    }
 
     auto & prev_database = it->second.first;
     auto & prev_table = it->second.second;
-    assert((prev_database && prev_table) || (!prev_database && !prev_table));
+    assert(prev_database || !prev_table);
 
-    if (!prev_table && table)
+    if (!prev_database && database)
     {
         /// It's empty mapping, it was created to "lock" UUID and prevent collision. Just update it.
         prev_database = database;
@@ -509,8 +598,8 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
         return;
     }
 
-    /// We are trying to replace existing mapping (prev_table != nullptr), it's logical error
-    if (table)
+    /// We are trying to replace existing mapping (prev_database != nullptr), it's logical error
+    if (database || table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", toString(uuid));
     /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
     /// so it's not LOGICAL_ERROR
@@ -552,6 +641,14 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     assert(prev_database && prev_table);
     prev_database = std::move(database);
     prev_table = std::move(table);
+}
+
+bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
+{
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    return map_part.map.contains(uuid);
 }
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
@@ -640,7 +737,8 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
     std::unique_lock lock(ddl_guards_mutex);
-    auto db_guard_iter = ddl_guards.try_emplace(database).first;
+    /// TSA does not support unique_lock
+    auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
     return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
@@ -649,7 +747,7 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
 {
     DDLGuards::iterator db_guard_iter;
     {
-        std::unique_lock lock(ddl_guards_mutex);
+        std::lock_guard lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
         assert(db_guard_iter->second.first.contains(""));
     }
@@ -695,6 +793,8 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
+    assert(!cleanup_task);
+
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
     /// Data directories of such tables still exists in store/
@@ -774,6 +874,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     time_t drop_time;
     if (table)
     {
+        chassert(hasUUIDMapping(table_id.uuid));
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         table->is_dropped = true;
     }
@@ -947,7 +1048,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
     std::unique_lock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock, [&]()
+    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid);
     });
@@ -1064,6 +1165,166 @@ void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, Tabl
             loading_dependencies[dependency].dependent_database_objects.insert(table_name);
 
     old_dependencies = std::move(new_dependencies);
+}
+
+void DatabaseCatalog::cleanupStoreDirectoryTask()
+{
+    fs::path store_path = fs::path(getContext()->getPath()) / "store";
+    size_t affected_dirs = 0;
+    for (const auto & prefix_dir : fs::directory_iterator{store_path})
+    {
+        String prefix = prefix_dir.path().filename();
+        bool expected_prefix_dir = prefix_dir.is_directory() &&
+            prefix.size() == 3 &&
+            isHexDigit(prefix[0]) &&
+            isHexDigit(prefix[1]) &&
+            isHexDigit(prefix[2]);
+
+        if (!expected_prefix_dir)
+        {
+            LOG_WARNING(log, "Found invalid directory {}, will try to remove it", prefix_dir.path().string());
+            affected_dirs += maybeRemoveDirectory(prefix_dir.path());
+            continue;
+        }
+
+        for (const auto & uuid_dir : fs::directory_iterator{prefix_dir.path()})
+        {
+            String uuid_str = uuid_dir.path().filename();
+            UUID uuid;
+            bool parsed = tryParse(uuid, uuid_str);
+
+            bool expected_dir = uuid_dir.is_directory() &&
+                parsed &&
+                uuid != UUIDHelpers::Nil &&
+                uuid_str.starts_with(prefix);
+
+            if (!expected_dir)
+            {
+                LOG_WARNING(log, "Found invalid directory {}, will try to remove it", uuid_dir.path().string());
+                affected_dirs += maybeRemoveDirectory(uuid_dir.path());
+                continue;
+            }
+
+            /// Order is important
+            if (!hasUUIDMapping(uuid))
+            {
+                /// We load uuids even for detached and permanently detached tables,
+                /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
+                /// No table or database using this directory should concurrently appear,
+                /// because creation of new table would fail with "directory already exists".
+                affected_dirs += maybeRemoveDirectory(uuid_dir.path());
+            }
+        }
+    }
+
+    if (affected_dirs)
+        LOG_INFO(log, "Cleaned up {} directories from store/", affected_dirs);
+
+    (*cleanup_task)->scheduleAfter(unused_dir_cleanup_period_sec * 1000);
+}
+
+bool DatabaseCatalog::maybeRemoveDirectory(const fs::path & unused_dir)
+{
+    /// "Safe" automatic removal of some directory.
+    /// At first we do not remove anything and only revoke all access right.
+    /// And remove only if nobody noticed it after, for example, one month.
+
+    struct stat st;
+    if (stat(unused_dir.string().c_str(), &st))
+    {
+        LOG_ERROR(log, "Failed to stat {}, errno: {}", unused_dir.string(), errno);
+        return false;
+    }
+
+    if (st.st_uid != geteuid())
+    {
+        /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
+        LOG_WARNING(log, "Found directory {} with unexpected owner (uid={})", unused_dir.string(), st.st_uid);
+        return false;
+    }
+
+    time_t max_modification_time = std::max(st.st_atime, std::max(st.st_mtime, st.st_ctime));
+    time_t current_time = time(nullptr);
+    if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
+    {
+        if (current_time <= max_modification_time + unused_dir_hide_timeout_sec)
+            return false;
+
+        LOG_INFO(log, "Removing access rights for unused directory {} (will remove it when timeout exceed)", unused_dir.string());
+
+        /// Explicitly update modification time just in case
+
+        struct utimbuf tb;
+        tb.actime = current_time;
+        tb.modtime = current_time;
+        if (utime(unused_dir.string().c_str(), &tb) != 0)
+            LOG_ERROR(log, "Failed to utime {}, errno: {}", unused_dir.string(), errno);
+
+        /// Remove all access right
+        if (chmod(unused_dir.string().c_str(), 0))
+            LOG_ERROR(log, "Failed to chmod {}, errno: {}", unused_dir.string(), errno);
+
+        return true;
+    }
+    else
+    {
+        if (!unused_dir_rm_timeout_sec)
+            return false;
+
+        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
+            return false;
+
+        LOG_INFO(log, "Removing unused directory {}", unused_dir.string());
+
+        /// We have to set these access rights to make recursive removal work
+        if (chmod(unused_dir.string().c_str(), S_IRWXU))
+            LOG_ERROR(log, "Failed to chmod {}, errno: {}", unused_dir.string(), errno);
+
+        fs::remove_all(unused_dir);
+
+        return true;
+    }
+}
+
+static void maybeUnlockUUID(UUID uuid)
+{
+    if (uuid == UUIDHelpers::Nil)
+        return;
+
+    chassert(DatabaseCatalog::instance().hasUUIDMapping(uuid));
+    auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(uuid);
+    if (!db_and_table.first && !db_and_table.second)
+    {
+        DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
+        return;
+    }
+    chassert(db_and_table.first || !db_and_table.second);
+}
+
+TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(UUID uuid_)
+    : uuid(uuid_)
+{
+    if (uuid != UUIDHelpers::Nil)
+        DatabaseCatalog::instance().addUUIDMapping(uuid);
+}
+
+TemporaryLockForUUIDDirectory::~TemporaryLockForUUIDDirectory()
+{
+    maybeUnlockUUID(uuid);
+}
+
+TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept
+    : uuid(rhs.uuid)
+{
+    rhs.uuid = UUIDHelpers::Nil;
+}
+
+TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (TemporaryLockForUUIDDirectory && rhs) noexcept
+{
+    maybeUnlockUUID(uuid);
+    uuid = rhs.uuid;
+    rhs.uuid = UUIDHelpers::Nil;
+    return *this;
 }
 
 

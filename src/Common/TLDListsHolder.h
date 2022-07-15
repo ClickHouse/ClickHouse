@@ -59,7 +59,7 @@ protected:
     TLDListsHolder();
 
     std::mutex tld_lists_map_mutex;
-    Map tld_lists_map;
+    Map tld_lists_map TSA_GUARDED_BY(tld_lists_map_mutex);
 };
 
 }

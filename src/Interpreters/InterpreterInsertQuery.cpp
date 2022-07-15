@@ -162,7 +162,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 static bool hasAggregateFunctions(const IAST * ast)
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast))
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
+        if (AggregateUtils::isAggregateFunction(*func))
             return true;
 
     for (const auto & child : ast->children)
@@ -457,20 +457,26 @@ BlockIO InterpreterInsertQuery::execute()
         });
 
         size_t num_select_threads = pipeline.getNumThreads();
-        size_t num_insert_threads = std::max_element(out_chains.begin(), out_chains.end(), [&](const auto &a, const auto &b)
-        {
-            return a.getNumThreads() < b.getNumThreads();
-        })->getNumThreads();
 
         for (auto & chain : out_chains)
             resources = chain.detachResources();
 
         pipeline.addChains(std::move(out_chains));
 
-        pipeline.setMaxThreads(num_insert_threads);
-        /// Don't use more threads for insert then for select to reduce memory consumption.
-        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
+        if (!settings.parallel_view_processing)
+        {
+            /// Don't use more threads for INSERT than for SELECT to reduce memory consumption.
+            if (pipeline.getNumThreads() > num_select_threads)
+                pipeline.setMaxThreads(num_select_threads);
+        }
+        else if (pipeline.getNumThreads() < settings.max_threads)
+        {
+            /// It is possible for query to have max_threads=1, due to optimize_trivial_insert_select,
+            /// however in case of parallel_view_processing and multiple views, views can still be processed in parallel.
+            ///
+            /// Note, number of threads will be limited by buildPushingToViewsChain() to max_threads.
+            pipeline.setMaxThreads(settings.max_threads);
+        }
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {

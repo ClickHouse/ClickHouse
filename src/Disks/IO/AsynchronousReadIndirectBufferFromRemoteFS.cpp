@@ -67,7 +67,7 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
     return impl->getInfoForLog();
 }
 
-std::optional<size_t> AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
+size_t AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -97,10 +97,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readInto(char * data, size_t size)
+std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>(impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
@@ -125,7 +125,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     /// Prefetch even in case hasPendingData() == true.
-    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -185,14 +185,17 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
 
         prefetch_buffer.swap(memory);
+
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        setWithBytesToIgnore(memory.data(), size, offset);
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
+        pos = working_buffer.begin();
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
-        auto result = readInto(memory.data(), memory.size()).get();
+        auto result = asyncReadInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
 
@@ -202,7 +205,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            setWithBytesToIgnore(memory.data(), size, offset);
+            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
+            pos = working_buffer.begin();
         }
     }
 

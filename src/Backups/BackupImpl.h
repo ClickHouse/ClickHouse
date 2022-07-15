@@ -57,7 +57,8 @@ public:
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override;
     UUID getUUID() const override { return *uuid; }
-    Strings listFiles(const String & prefix, const String & terminator) const override;
+    Strings listFiles(const String & directory, bool recursive) const override;
+    bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
     bool fileExists(const SizeAndChecksum & size_and_checksum) const override;
     UInt64 getFileSize(const String & file_name) const override;

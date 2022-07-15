@@ -115,7 +115,7 @@ protected:
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
-    MergeTreeReaderPtr pre_reader;
+    std::vector<MergeTreeReaderPtr> pre_reader_for_step;
 
     MergeTreeReadTaskPtr task;
 

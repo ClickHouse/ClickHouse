@@ -8,7 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -43,6 +43,7 @@
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -235,6 +236,8 @@ BlockIO InterpreterSystemQuery::execute()
     }
 
 
+    BlockIO result;
+
     volume_ptr = {};
     if (!query.storage_policy.empty() && !query.volume.empty())
         volume_ptr = getContext()->getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
@@ -309,16 +312,17 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
         case Type::DROP_FILESYSTEM_CACHE:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
             if (query.filesystem_cache_path.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data.cache->remove();
+                    cache_data->cache->removeIfReleasable(/* remove_persistent_files */false);
             }
             else
             {
                 auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->remove();
+                cache->removeIfReleasable(/* remove_persistent_files */false);
             }
             break;
         }
@@ -493,11 +497,18 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
+        case Type::UNFREEZE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
+            /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
+            result = Unfreezer().unfreeze(query.backup_name, getContext());
+            break;
+        }
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    return BlockIO();
+    return result;
 }
 
 void InterpreterSystemQuery::restoreReplica()
@@ -966,6 +977,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
+            break;
+        }
+        case Type::UNFREEZE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_UNFREEZE);
             break;
         }
         case Type::STOP_LISTEN_QUERIES:

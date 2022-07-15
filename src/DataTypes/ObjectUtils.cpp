@@ -261,7 +261,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
                     key.getPath(), subtypes[0]->getName(), subtypes[i]->getName());
 
         tuple_paths.emplace_back(key);
-        tuple_types.emplace_back(getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
+        tuple_types.emplace_back(getLeastSupertypeOrString(subtypes));
     }
 
     if (tuple_paths.empty())
@@ -455,7 +455,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         }
 
         /// Sort to always create the same type for the same set of subcolumns.
-        std::sort(tuple_elements.begin(), tuple_elements.end(),
+        ::sort(tuple_elements.begin(), tuple_elements.end(),
             [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
         auto tuple_names = extractVector<0>(tuple_elements);
@@ -692,7 +692,7 @@ void replaceMissedSubcolumnsByConstants(
                 res.emplace_back(full_name, types[i]);
             }
 
-            std::sort(res.begin(), res.end());
+            ::sort(res.begin(), res.end());
             return res;
         };
 
@@ -718,9 +718,9 @@ void replaceMissedSubcolumnsByConstants(
             addConstantToWithClause(query, name, type);
 }
 
-void finalizeObjectColumns(MutableColumns & columns)
+void finalizeObjectColumns(const MutableColumns & columns)
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
             column_object->finalize();
 }

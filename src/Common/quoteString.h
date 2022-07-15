@@ -23,4 +23,5 @@ String backQuote(const StringRef & x);
 
 /// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(const StringRef & x);
+
 }
