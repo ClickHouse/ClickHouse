@@ -25,7 +25,6 @@ Cherry-pick stage:
 import argparse
 import logging
 import os
-import sys
 from contextlib import contextmanager
 from datetime import date, timedelta
 from subprocess import CalledProcessError
@@ -260,7 +259,7 @@ class Backport:
         self.release_branches = []  # type: List[str]
         self.labels_to_backport = []  # type: List[str]
         self.prs_for_backport = []  # type: PullRequests
-        self.error = False
+        self.error = None  # type: Optional[Exception]
 
     @property
     def remote(self) -> str:
@@ -321,7 +320,7 @@ class Backport:
                 logging.error(
                     "During processing the PR #%s error occured: %s", pr.number, e
                 )
-                self.error = True
+                self.error = e
 
     def process_pr(self, pr: PullRequest):
         pr_labels = [label.name for label in pr.labels]
@@ -341,11 +340,10 @@ class Backport:
         if not branches:
             # This is definitely some error. There must be at least one branch
             # It also make the whole program exit code non-zero
-            logging.error(
-                "There are no branches to backport PR #%s, logical error", pr.number
+            self.error = Exception(
+                f"There are no branches to backport PR #{pr.number}, logical error"
             )
-            self.error = True
-            return
+            raise self.error
 
         logging.info(
             "  PR #%s is suppose to be backported to %s",
@@ -369,12 +367,11 @@ class Backport:
             # This is definitely some error. All prs must be consumed by
             # branches with ReleaseBranch.pop_prs. It also make the whole
             # program exit code non-zero
-            logging.error(
-                "The following PRs are not filtered by release branches:\n%s",
-                "\n".join(map(str, bp_cp_prs)),
+            self.error = Exception(
+                "The following PRs are not filtered by release branches:\n"
+                "\n".join(map(str, bp_cp_prs))
             )
-            self.error = True
-            return
+            raise self.error
 
         if all(br.backported for br in branches):
             # Let's check if the PR is already backported
@@ -481,9 +478,9 @@ def main():
     bp.receive_release_prs()
     bp.receive_prs_for_backport()
     bp.process_backports()
-    if bp.error:
-        logging.error("Finished successfully, but errors occured")
-        sys.exit(1)
+    if bp.error is not None:
+        logging.error("Finished successfully, but errors occured!")
+        raise bp.error
 
 
 if __name__ == "__main__":
