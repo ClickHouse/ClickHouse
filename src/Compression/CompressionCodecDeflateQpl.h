@@ -17,34 +17,24 @@ class DeflateQplJobHWPool
 {
 public:
     DeflateQplJobHWPool();
+
     ~DeflateQplJobHWPool();
 
     qpl_job * acquireJob(UInt32 * job_id);
 
-    static qpl_job * releaseJob(UInt32 job_id);
+    static void releaseJob(UInt32 job_id);
 
     static const bool & isJobPoolReady() { return job_pool_ready; }
 
     static DeflateQplJobHWPool & instance();
-
-    static constexpr auto MAX_HW_JOB_NUMBER = 1024;
 
 private:
     static bool tryLockJob(UInt32 index);
 
     static void unLockJob(UInt32 index);
 
-    class ReleaseJobObjectGuard
-    {
-        UInt32 index;
-        ReleaseJobObjectGuard() = delete;
-
-    public:
-        ReleaseJobObjectGuard(const UInt32 index_) : index(index_){}
-
-        ~ReleaseJobObjectGuard(){ hw_job_ptr_locks[index].store(false); }
-    };
-
+    /// Maximum jobs running in parallel supported by IAA hardware
+    static constexpr auto MAX_HW_JOB_NUMBER = 1024;
     /// Entire buffer for storing all job objects
     static std::unique_ptr<uint8_t[]> hw_jobs_buffer;
     /// Job pool for storing all job object pointers
