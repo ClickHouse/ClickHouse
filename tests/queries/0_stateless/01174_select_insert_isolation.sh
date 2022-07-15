@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-ordinary-database
 
 # shellcheck disable=SC2015
 

@@ -76,7 +76,6 @@ private:
 
     /// Lists of changes made by transaction
     std::unordered_set<StoragePtr> storages TSA_GUARDED_BY(mutex);
-    std::vector<TableLockHolder> table_read_locks_for_ordinary_db TSA_GUARDED_BY(mutex);
     DataPartsVector creating_parts TSA_GUARDED_BY(mutex);
     DataPartsVector removing_parts TSA_GUARDED_BY(mutex);
     using RunningMutationsList = std::vector<std::pair<StoragePtr, String>>;
