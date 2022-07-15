@@ -234,7 +234,7 @@ void DatabaseCatalog::shutdownImpl()
     view_dependencies.clear();
 }
 
-bool DatabaseCatalog::isPredefinedDatabase(const std::string_view & database_name)
+bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
 {
     return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
         || database_name == INFORMATION_SCHEMA_UPPERCASE;

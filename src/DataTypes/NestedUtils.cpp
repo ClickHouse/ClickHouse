@@ -54,7 +54,7 @@ std::pair<std::string, std::string> splitName(const std::string & name, bool rev
     return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
-std::pair<std::string_view, std::string_view> splitName(const std::string_view & name, bool reverse)
+std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse)
 {
     auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
     if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())

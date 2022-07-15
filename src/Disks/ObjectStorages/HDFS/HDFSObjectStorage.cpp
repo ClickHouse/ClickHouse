@@ -52,7 +52,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(object.absolute_path, object.absolute_path, config, read_settings);
+    return std::make_unique<ReadBufferFromHDFS>(object.absolute_path, object.absolute_path, config, patchSettings(read_settings));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
@@ -61,7 +61,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, objects, read_settings);
+    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, objects, patchSettings(read_settings));
     auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }
@@ -72,7 +72,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
     size_t buf_size,
-    const WriteSettings &)
+    const WriteSettings & write_settings)
 {
     if (attributes.has_value())
         throw Exception(
@@ -81,7 +81,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(
-        object.absolute_path, config, settings->replication, buf_size,
+        object.absolute_path, config, settings->replication, patchSettings(write_settings), buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(finalize_callback), object.absolute_path);
@@ -155,8 +155,9 @@ void HDFSObjectStorage::copyObject( /// NOLINT
 }
 
 
-void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
+void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr context)
 {
+    applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)

@@ -286,7 +286,7 @@ String Field::dump() const
     return applyVisitor(FieldVisitorDump(), *this);
 }
 
-Field Field::restoreFromDump(const std::string_view & dump_)
+Field Field::restoreFromDump(std::string_view dump_)
 {
     auto show_error = [&dump_]
     {
