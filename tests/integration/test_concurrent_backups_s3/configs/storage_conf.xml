@@ -29,7 +29,6 @@
     </merge_tree>
     <backups>
         <allowed_disk>hdd</allowed_disk>
-        <allowed_path>/backups/</allowed_path>
     </backups>
 
 </clickhouse>
