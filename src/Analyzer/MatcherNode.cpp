@@ -182,6 +182,27 @@ String MatcherNode::getName() const
     return buffer.str();
 }
 
+bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const MatcherNode &>(rhs);
+    if (matcher_type != rhs_typed.matcher_type ||
+        qualified_identifier != rhs_typed.qualified_identifier ||
+        columns_identifiers != rhs_typed.columns_identifiers ||
+        columns_identifiers_set != rhs_typed.columns_identifiers_set)
+        return false;
+
+    const auto & rhs_columns_matcher = rhs_typed.columns_matcher;
+
+    if (!columns_matcher && !rhs_columns_matcher)
+        return true;
+    else if (columns_matcher && !rhs_columns_matcher)
+        return false;
+    else if (!columns_matcher && rhs_columns_matcher)
+        return false;
+
+    return columns_matcher->pattern() == rhs_columns_matcher->pattern();
+}
+
 void MatcherNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(static_cast<size_t>(matcher_type));

@@ -46,9 +46,15 @@ String ListNode::getName() const
     return result;
 }
 
+bool ListNode::isEqualImpl(const IQueryTreeNode &) const
+{
+    /// No state
+    return true;
+}
+
 void ListNode::updateTreeHashImpl(HashState &) const
 {
-    /// Hash automatically updated with children size in IQueryTreeNode.h
+    /// No state
 }
 
 ASTPtr ListNode::toASTImpl() const

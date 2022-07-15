@@ -17,6 +17,12 @@ void IdentifierNode::dumpTree(WriteBuffer & buffer, size_t indent) const
     buffer << ' ' << identifier.getFullName();
 }
 
+bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const IdentifierNode &>(rhs);
+    return identifier == rhs_typed.identifier;
+}
+
 void IdentifierNode::updateTreeHashImpl(HashState & state) const
 {
     const auto & identifier_name = identifier.getFullName();

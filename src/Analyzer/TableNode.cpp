@@ -28,6 +28,12 @@ void TableNode::dumpTree(WriteBuffer & buffer, size_t indent) const
     buffer << ' ' << storage_id.getFullNameNotQuoted();
 }
 
+bool TableNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
+    return storage_id == rhs_typed.storage_id;
+}
+
 void TableNode::updateTreeHashImpl(HashState & state) const
 {
     auto full_name = storage_id.getFullNameNotQuoted();

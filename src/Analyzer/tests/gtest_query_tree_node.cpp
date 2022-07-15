@@ -11,9 +11,9 @@ using namespace DB;
 class SourceNode final : public IQueryTreeNode
 {
 public:
-    void updateTreeHashImpl(HashState & hash_state) const override
+    QueryTreeNodeType getNodeType() const override
     {
-        (void)(hash_state);
+        return QueryTreeNodeType::TABLE;
     }
 
     void dumpTree(WriteBuffer & buffer, size_t indent) const override
@@ -22,9 +22,14 @@ public:
         (void)(indent);
     }
 
-    QueryTreeNodeType getNodeType() const override
+    bool isEqualImpl(const IQueryTreeNode &) const override
     {
-        return QueryTreeNodeType::TABLE;
+        return true;
+    }
+
+    void updateTreeHashImpl(HashState & hash_state) const override
+    {
+        (void)(hash_state);
     }
 
     ASTPtr toASTImpl() const override

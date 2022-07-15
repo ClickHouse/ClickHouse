@@ -33,6 +33,12 @@ void ConstantNode::dumpTree(WriteBuffer & buffer, size_t indent) const
     buffer << ' ' << value.dump() << " : " << type->getName();
 }
 
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
+    return value == rhs_typed.value && value_string_dump == rhs_typed.value_string_dump && type->equals(*rhs_typed.type);
+}
+
 void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
 {
     auto type_name = type->getName();

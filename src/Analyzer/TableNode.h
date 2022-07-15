@@ -71,6 +71,8 @@ public:
     String getName() const override;
 
 protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+
     void updateTreeHashImpl(HashState & state) const override;
 
     ASTPtr toASTImpl() const override;

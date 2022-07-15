@@ -49,6 +49,12 @@ String LambdaNode::getName() const
     return "lambda(" + children[arguments_child_index]->getName() + ") -> " + children[expression_child_index]->getName();
 }
 
+bool LambdaNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const LambdaNode &>(rhs);
+    return argument_names == rhs_typed.argument_names;
+}
+
 void LambdaNode::updateTreeHashImpl(HashState & state) const
 {
     state.update(argument_names.size());

@@ -56,9 +56,15 @@ void QueryNode::dumpTree(WriteBuffer & buffer, size_t indent) const
     }
 }
 
+bool QueryNode::isEqualImpl(const IQueryTreeNode &) const
+{
+    /// No state
+    return true;
+}
+
 void QueryNode::updateTreeHashImpl(HashState &) const
 {
-    /// TODO: No state
+    /// No state
 }
 
 ASTPtr QueryNode::toASTImpl() const

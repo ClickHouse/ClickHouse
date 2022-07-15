@@ -72,6 +72,24 @@ String FunctionNode::getName() const
     return name;
 }
 
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
+{
+    const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
+    if (function_name != rhs_typed.function_name ||
+        isAggregateFunction() != rhs_typed.isAggregateFunction() ||
+        isNonAggregateFunction() != rhs_typed.isNonAggregateFunction())
+        return false;
+
+    if (!result_type && !rhs_typed.result_type)
+        return true;
+    else if (result_type && !rhs_typed.result_type)
+        return false;
+    else if (!result_type && rhs_typed.result_type)
+        return false;
+
+    return result_type->equals(*rhs_typed.result_type);
+}
+
 void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(function_name.size());

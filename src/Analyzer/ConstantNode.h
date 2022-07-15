@@ -47,6 +47,8 @@ public:
     }
 
 protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+
     void updateTreeHashImpl(HashState & hash_state) const override;
 
     ASTPtr toASTImpl() const override;
