@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/Throttler.h>
 
 
 namespace DB
@@ -15,11 +16,13 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     const String & blob_path_,
     size_t max_single_part_upload_size_,
     size_t buf_size_,
+    const WriteSettings & write_settings_,
     std::optional<std::map<std::string, std::string>> attributes_)
     : BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0)
     , blob_container_client(blob_container_client_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , blob_path(blob_path_)
+    , write_settings(write_settings_)
     , attributes(attributes_)
 {
 }
@@ -84,6 +87,9 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     }
 
     block_blob_client.CommitBlockList(block_ids);
+
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(read);
 }
 
 }

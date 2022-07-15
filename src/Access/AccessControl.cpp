@@ -101,7 +101,7 @@ public:
         registered_prefixes = prefixes_;
     }
 
-    bool isSettingNameAllowed(const std::string_view & setting_name) const
+    bool isSettingNameAllowed(std::string_view setting_name) const
     {
         if (Settings::hasBuiltin(setting_name))
             return true;
@@ -116,7 +116,7 @@ public:
         return false;
     }
 
-    void checkSettingNameIsAllowed(const std::string_view & setting_name) const
+    void checkSettingNameIsAllowed(std::string_view setting_name) const
     {
         if (isSettingNameAllowed(setting_name))
             return;
