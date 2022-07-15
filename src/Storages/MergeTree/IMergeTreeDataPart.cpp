@@ -133,8 +133,11 @@ Block IMergeTreeDataPart::MinMaxIndex::loadIntoBlock(const MergeTreeData & data,
         auto column_with_type_and_name = ColumnWithTypeAndName(column->getPtr(), data_type, column_name);
 
         block.insert(column_with_type_and_name);
+
+        hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 
+    initialized = true;
     return block;
 }
 

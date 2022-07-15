@@ -5952,10 +5952,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithD
 //    MergeTreeData::DataPart::Checksums checksums;
     MergeTreePartition pt;
 
-    IMergeTreeDataPart::MinMaxIndex min_max_index;
-
     auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
-    auto block_with_min_max_values = min_max_index.loadIntoBlock(src_part->storage, metadata_manager);
+    auto block_with_min_max_values = dst_data_part->minmax_idx->loadIntoBlock(src_part->storage, metadata_manager);
 
     pt.create(getInMemoryMetadataPtr(), block_with_min_max_values, 0, getContext());
 
@@ -5966,6 +5964,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithD
     data_part_storage_builder->removeFile("partition.dat");
 
     auto x = pt.store(*this, data_part_storage_builder, dst_data_part->checksums);
+
+    data_part_storage_builder->removeFile("minmax_timestamp.idx");
+
+    [[maybe_unused]] auto written_files = dst_data_part->minmax_idx->store(*this, data_part_storage_builder, dst_data_part->checksums);
+
+    auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, getContext()->getWriteSettings());
+    HashingWriteBuffer count_out_hashing(*count_out);
+    writeIntText(dst_data_part->rows_count, count_out_hashing);
+    count_out_hashing.next();
+    dst_data_part->checksums.files["count.txt"].file_size = count_out_hashing.count();
+    dst_data_part->checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+    count_out->preFinalize();
+    written_files.emplace_back(std::move(count_out));
 
     data_part_storage_builder->removeFile("checksums.txt");
 
