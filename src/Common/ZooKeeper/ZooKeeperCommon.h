@@ -554,4 +554,6 @@ private:
     ZooKeeperRequestFactory();
 };
 
+int32_t fourLetterCommandNameToCode(std::string_view name);
+
 }
