@@ -27,8 +27,9 @@ public:
     ~BackupWriterFile() override;
 
     bool fileExists(const String & file_name) override;
+    bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
-    void removeFilesAfterFailure(const Strings & file_names) override;
+    void removeFiles(const Strings & file_names) override;
 
 private:
     std::filesystem::path path;

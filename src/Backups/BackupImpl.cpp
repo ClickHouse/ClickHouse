@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_IS_EMPTY;
+    extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -146,9 +147,9 @@ BackupImpl::BackupImpl(
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupWriter> writer_,
     const ContextPtr & context_,
-    const std::optional<UUID> & backup_uuid_,
     bool is_internal_backup_,
-    const std::shared_ptr<IBackupCoordination> & coordination_)
+    const std::shared_ptr<IBackupCoordination> & coordination_,
+    const std::optional<UUID> & backup_uuid_)
     : backup_name(backup_name_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
@@ -177,41 +178,27 @@ BackupImpl::~BackupImpl()
     }
 }
 
-
 void BackupImpl::open(const ContextPtr & context)
 {
     std::lock_guard lock{mutex};
-
-    String file_name_to_check_existence;
-    if (use_archives)
-        file_name_to_check_existence = archive_params.archive_name;
-    else
-        file_name_to_check_existence = ".backup";
-    bool backup_exists = (open_mode == OpenMode::WRITE) ? writer->fileExists(file_name_to_check_existence) : reader->fileExists(file_name_to_check_existence);
-
-    if (open_mode == OpenMode::WRITE)
-    {
-        if (backup_exists)
-            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name);
-    }
-    else
-    {
-        if (!backup_exists)
-            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
-    }
 
     if (open_mode == OpenMode::WRITE)
     {
         timestamp = std::time(nullptr);
         if (!uuid)
             uuid = UUIDHelpers::generateV4();
+        lock_file_name = use_archives ? (archive_params.archive_name + ".lock") : ".lock";
         writing_finalized = false;
+
+        /// Check that we can write a backup there and create the lock file to own this destination.
+        checkBackupDoesntExist();
+        if (!is_internal_backup)
+            createLockFile();
+        checkLockFile(true);
     }
 
     if (open_mode == OpenMode::READ)
         readBackupMetadata();
-
-    assert(uuid); /// Backup's UUID must be loaded or generated at this point.
 
     if (base_backup_info)
     {
@@ -253,6 +240,8 @@ time_t BackupImpl::getTimestamp() const
 
 void BackupImpl::writeBackupMetadata()
 {
+    assert(!is_internal_backup);
+
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->setUInt("version", CURRENT_BACKUP_VERSION);
     config->setString("timestamp", toString(LocalDateTime{timestamp}));
@@ -308,6 +297,8 @@ void BackupImpl::writeBackupMetadata()
     config->save(stream);
     String str = stream.str();
 
+    checkLockFile(true);
+
     std::unique_ptr<WriteBuffer> out;
     if (use_archives)
         out = getArchiveWriter("")->writeFile(".backup");
@@ -321,9 +312,17 @@ void BackupImpl::readBackupMetadata()
 {
     std::unique_ptr<ReadBuffer> in;
     if (use_archives)
+    {
+        if (!reader->fileExists(archive_params.archive_name))
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
         in = getArchiveReader("")->readFile(".backup");
+    }
     else
+    {
+        if (!reader->fileExists(".backup"))
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
         in = reader->readFile(".backup");
+    }
 
     String str;
     readStringUntilEOF(str, *in);
@@ -385,6 +384,59 @@ void BackupImpl::readBackupMetadata()
             coordination->addFileInfo(info);
         }
     }
+}
+
+void BackupImpl::checkBackupDoesntExist() const
+{
+    String file_name_to_check_existence;
+    if (use_archives)
+        file_name_to_check_existence = archive_params.archive_name;
+    else
+        file_name_to_check_existence = ".backup";
+
+    if (writer->fileExists(file_name_to_check_existence))
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name);
+
+    /// Check that no other backup (excluding internal backups) is writing to the same destination.
+    if (!is_internal_backup)
+    {
+        assert(!lock_file_name.empty());
+        if (writer->fileExists(lock_file_name))
+            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name);
+    }
+}
+
+void BackupImpl::createLockFile()
+{
+    /// Internal backup must not create the lock file (it should be created by the initiator).
+    assert(!is_internal_backup);
+
+    assert(uuid);
+    auto out = writer->writeFile(lock_file_name);
+    writeUUIDText(*uuid, *out);
+}
+
+bool BackupImpl::checkLockFile(bool throw_if_failed) const
+{
+    if (!lock_file_name.empty() && uuid && writer->fileContentsEqual(lock_file_name, toString(*uuid)))
+        return true;
+
+    if (throw_if_failed)
+    {
+        if (!writer->fileExists(lock_file_name))
+            throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Lock file {} suddenly disappeared while writing backup {}", lock_file_name, backup_name);
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "A concurrent backup writing to the same destination {} detected", backup_name);
+    }
+    return false;
+}
+
+void BackupImpl::removeLockFile()
+{
+    if (is_internal_backup)
+        return; /// Internal backup must not remove the lock file (it's still used by the initiator).
+
+    if (checkLockFile(false))
+        writer->removeFiles({lock_file_name});
 }
 
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const
@@ -648,6 +700,9 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         read_buffer = entry->getReadBuffer();
     read_buffer->seek(copy_pos, SEEK_SET);
 
+    if (!num_files_written)
+        checkLockFile(true);
+
     /// Copy the entry's data after `copy_pos`.
     std::unique_ptr<WriteBuffer> out;
     if (use_archives)
@@ -675,6 +730,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     copyData(*read_buffer, *out);
     out->finalize();
+    ++num_files_written;
 }
 
 
@@ -694,6 +750,7 @@ void BackupImpl::finalizeWriting()
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name);
         writeBackupMetadata();
+        removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name);
     }
 
@@ -741,6 +798,9 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
 
 void BackupImpl::removeAllFilesAfterFailure()
 {
+    if (is_internal_backup)
+        return; /// Let the initiator remove unnecessary files.
+
     try
     {
         LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
@@ -762,7 +822,11 @@ void BackupImpl::removeAllFilesAfterFailure()
                 files_to_remove.push_back(file_info.data_file_name);
         }
 
-        writer->removeFilesAfterFailure(files_to_remove);
+        if (!checkLockFile(false))
+            return;
+
+        writer->removeFiles(files_to_remove);
+        removeLockFile();
     }
     catch (...)
     {
