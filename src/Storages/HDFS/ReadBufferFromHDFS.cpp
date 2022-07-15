@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Common/Throttler.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
 
@@ -24,13 +25,13 @@ ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
-
     String hdfs_uri;
     String hdfs_file_path;
 
     hdfsFile fin;
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
+    ReadSettings read_settings;
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
@@ -39,11 +40,13 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         const std::string & hdfs_uri_,
         const std::string & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
-        : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
+        const ReadSettings & read_settings_,
+        size_t read_until_position_)
+        : BufferWithOwnMemory<SeekableReadBuffer>(read_settings_.remote_fs_buffer_size)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , builder(createHDFSBuilder(hdfs_uri_, config_))
+        , read_settings(read_settings_)
         , read_until_position(read_until_position_)
     {
         fs = createHDFSFS(builder.get());
@@ -97,6 +100,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             working_buffer = internal_buffer;
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->add(bytes_read);
             return true;
         }
 
@@ -130,7 +135,7 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         size_t read_until_position_)
     : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(
-               hdfs_uri_, hdfs_file_path_, config_, read_settings_.remote_fs_buffer_size, read_until_position_))
+               hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_))
 {
 }
 
