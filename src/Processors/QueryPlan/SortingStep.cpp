@@ -171,9 +171,8 @@ void SortingStep::mergeSorting(QueryPipelineBuilder & pipeline, const SortDescri
             if (stream_type == QueryPipelineBuilder::StreamType::Totals)
                 return nullptr;
 
-            /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
-              * To property support min_count_to_compile_sort_description.
-              */
+            // For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
+            // To property support min_count_to_compile_sort_description.
             bool increase_sort_description_compile_attempts_current = increase_sort_description_compile_attempts;
 
             if (increase_sort_description_compile_attempts)
