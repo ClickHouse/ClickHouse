@@ -112,7 +112,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         if (options.count("codec"))
             codecs = options["codec"].as<std::vector<std::string>>();
 
-        if ((use_deflate_qpl || use_lz4hc || use_zstd || use_none) && !codecs.empty())
+        if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
             throw Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", ErrorCodes::BAD_ARGUMENTS);
 
         if (!codecs.empty() && options.count("level"))
