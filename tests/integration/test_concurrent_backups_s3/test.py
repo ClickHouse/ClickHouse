@@ -43,5 +43,10 @@ def test_concurrent_backups(start_cluster):
 
     p.map(create_backup, range(40))
 
-    assert_eq_with_retry(node, "SELECT count() FROM system.backups WHERE status != 'BACKUP_COMPLETE' and status != 'FAILED_TO_BACKUP'", "0", retry_count=100)
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.backups WHERE status != 'BACKUP_COMPLETE' and status != 'FAILED_TO_BACKUP'",
+        "0",
+        retry_count=100,
+    )
     assert node.query("SELECT count() FROM s3_test where not ignore(*)") == "10000\n"
