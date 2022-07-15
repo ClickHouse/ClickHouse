@@ -315,7 +315,13 @@ class Backport:
 
     def process_backports(self):
         for pr in self.prs_for_backport:
-            self.process_pr(pr)
+            try:
+                self.process_pr(pr)
+            except Exception as e:
+                logging.error(
+                    "During processing the PR #%s error occured: %s", pr.number, e
+                )
+                self.error = True
 
     def process_pr(self, pr: PullRequest):
         pr_labels = [label.name for label in pr.labels]
@@ -376,13 +382,7 @@ class Backport:
             return
 
         for br in branches:
-            try:
-                br.process(self.dry_run)
-            except Exception as e:
-                logging.error(
-                    "During processing the PR #%s error occured: %s", pr.number, e
-                )
-                self.error = True
+            br.process(self.dry_run)
 
         if all(br.backported for br in branches):
             # And check it after the running
