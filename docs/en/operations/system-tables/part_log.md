@@ -19,6 +19,10 @@ The `system.part_log` table contains the following columns:
     -   `REGULAR_MERGE` — Some regular merge.
     -   `TTL_DELETE_MERGE` — Cleaning up expired data.
     -   `TTL_RECOMPRESS_MERGE` — Recompressing data part with the.
+-   `merge_algorithm` ([Enum8](../../sql-reference/data-types/enum.md)) — Merge algorithm for the event with type `MERGE_PARTS`. Can have one of the following values:
+    -   `UNDECIDED`
+    -   `HORIZONTAL`
+    -   `VERTICAL`
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds precision.
@@ -52,6 +56,7 @@ Row 1:
 query_id:                      983ad9c7-28d5-4ae1-844e-603116b7de31
 event_type:                    NewPart
 merge_reason:                  NotAMerge
+merge_algorithm:               Undecided
 event_date:                    2021-02-02
 event_time:                    2021-02-02 11:14:28
 event_time_microseconds:                    2021-02-02 11:14:28.861919

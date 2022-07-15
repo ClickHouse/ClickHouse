@@ -77,18 +77,18 @@ namespace
             return convertChar(c1) == convertChar(c2);
         }
 
-        static bool equals(const std::string_view & s1, const std::string_view & s2)
+        static bool equals(std::string_view s1, std::string_view s2)
         {
             return (s1.length() == s2.length())
                 && std::equal(s1.begin(), s1.end(), s2.begin(), [](char c1, char c2) { return convertChar(c1) == convertChar(c2); });
         }
 
-        static bool less(const std::string_view & s1, const std::string_view & s2)
+        static bool less(std::string_view s1, std::string_view s2)
         {
             return std::lexicographical_compare(s1.begin(), s1.end(), s2.begin(), s2.end(), [](char c1, char c2) { return convertChar(c1) < convertChar(c2); });
         }
 
-        static bool startsWith(const std::string_view & s1, const std::string_view & s2)
+        static bool startsWith(std::string_view s1, std::string_view s2)
         {
             return (s1.length() >= s2.length()) && equals(s1.substr(0, s2.length()), s2);
         }
@@ -195,7 +195,7 @@ namespace
     {
     protected:
         ProtobufSerializerSingleValue(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : column_name(column_name_)
@@ -264,7 +264,7 @@ namespace
             return reader->readFixed<FieldType>();
         }
 
-        void writeStr(const std::string_view & str)
+        void writeStr(std::string_view str)
         {
             if (!str.empty() || !skip_zero_or_empty)
                 writer->writeString(field_tag, str);
@@ -274,7 +274,7 @@ namespace
         void readStrAndAppend(PaddedPODArray<UInt8> & str) { reader->readStringAndAppend(str); }
 
         template <typename DestType>
-        DestType parseFromStr(const std::string_view & str) const
+        DestType parseFromStr(std::string_view str) const
         {
             try
             {
@@ -307,7 +307,7 @@ namespace
             return result;
         }
 
-        [[noreturn]] void incompatibleColumnType(const std::string_view & column_type) const
+        [[noreturn]] void incompatibleColumnType(std::string_view column_type) const
         {
             throw Exception(
                 ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
@@ -318,7 +318,7 @@ namespace
                 field_descriptor.type_name());
         }
 
-        [[noreturn]] void cannotConvertValue(const std::string_view & src_value, const std::string_view & src_type_name, const std::string_view & dest_type_name) const
+        [[noreturn]] void cannotConvertValue(std::string_view src_value, std::string_view src_type_name, std::string_view dest_type_name) const
         {
             throw Exception(
                 "Could not convert value '" + String{src_value} + "' from type " + String{src_type_name} + " to type "
@@ -351,7 +351,7 @@ namespace
     public:
         using ColumnType = ColumnVector<NumberType>;
 
-        ProtobufSerializerNumber(const std::string_view & column_name_, const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
+        ProtobufSerializerNumber(std::string_view column_name_, const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
             : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
         {
             setFunctions();
@@ -590,7 +590,7 @@ namespace
         using ColumnType = std::conditional_t<is_fixed_string, ColumnFixedString, ColumnString>;
 
         ProtobufSerializerString(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const std::shared_ptr<const DataTypeFixedString> & fixed_string_data_type_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
@@ -604,7 +604,7 @@ namespace
         }
 
         ProtobufSerializerString(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
@@ -727,7 +727,7 @@ namespace
             {
                 case FieldTypeId::TYPE_INT32:
                 {
-                    write_function = [this](const std::string_view & str) { writeInt(parseFromStr<Int32>(str)); };
+                    write_function = [this](std::string_view str) { writeInt(parseFromStr<Int32>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int32()); };
                     break;
@@ -735,7 +735,7 @@ namespace
 
                 case FieldTypeId::TYPE_SINT32:
                 {
-                    write_function = [this](const std::string_view & str) { writeSInt(parseFromStr<Int32>(str)); };
+                    write_function = [this](std::string_view str) { writeSInt(parseFromStr<Int32>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readSInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int32()); };
                     break;
@@ -743,7 +743,7 @@ namespace
 
                 case FieldTypeId::TYPE_UINT32:
                 {
-                    write_function = [this](const std::string_view & str) { writeUInt(parseFromStr<UInt32>(str)); };
+                    write_function = [this](std::string_view str) { writeUInt(parseFromStr<UInt32>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readUInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint32()); };
                     break;
@@ -751,7 +751,7 @@ namespace
 
                 case FieldTypeId::TYPE_INT64:
                 {
-                    write_function = [this](const std::string_view & str) { writeInt(parseFromStr<Int64>(str)); };
+                    write_function = [this](std::string_view str) { writeInt(parseFromStr<Int64>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int64()); };
                     break;
@@ -759,7 +759,7 @@ namespace
 
                 case FieldTypeId::TYPE_SINT64:
                 {
-                    write_function = [this](const std::string_view & str) { writeSInt(parseFromStr<Int64>(str)); };
+                    write_function = [this](std::string_view str) { writeSInt(parseFromStr<Int64>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readSInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int64()); };
                     break;
@@ -767,7 +767,7 @@ namespace
 
                 case FieldTypeId::TYPE_UINT64:
                 {
-                    write_function = [this](const std::string_view & str) { writeUInt(parseFromStr<UInt64>(str)); };
+                    write_function = [this](std::string_view str) { writeUInt(parseFromStr<UInt64>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readUInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint64()); };
                     break;
@@ -775,7 +775,7 @@ namespace
 
                 case FieldTypeId::TYPE_FIXED32:
                 {
-                    write_function = [this](const std::string_view & str) { writeFixed<UInt32>(parseFromStr<UInt32>(str)); };
+                    write_function = [this](std::string_view str) { writeFixed<UInt32>(parseFromStr<UInt32>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<UInt32>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint32()); };
                     break;
@@ -783,7 +783,7 @@ namespace
 
                 case FieldTypeId::TYPE_SFIXED32:
                 {
-                    write_function = [this](const std::string_view & str) { writeFixed<Int32>(parseFromStr<Int32>(str)); };
+                    write_function = [this](std::string_view str) { writeFixed<Int32>(parseFromStr<Int32>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Int32>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int32()); };
                     break;
@@ -791,7 +791,7 @@ namespace
 
                 case FieldTypeId::TYPE_FIXED64:
                 {
-                    write_function = [this](const std::string_view & str) { writeFixed<UInt64>(parseFromStr<UInt64>(str)); };
+                    write_function = [this](std::string_view str) { writeFixed<UInt64>(parseFromStr<UInt64>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<UInt64>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint64()); };
                     break;
@@ -799,7 +799,7 @@ namespace
 
                 case FieldTypeId::TYPE_SFIXED64:
                 {
-                    write_function = [this](const std::string_view & str) { writeFixed<Int64>(parseFromStr<Int64>(str)); };
+                    write_function = [this](std::string_view str) { writeFixed<Int64>(parseFromStr<Int64>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Int64>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int64()); };
                     break;
@@ -807,7 +807,7 @@ namespace
 
                 case FieldTypeId::TYPE_FLOAT:
                 {
-                    write_function = [this](const std::string_view & str) { writeFixed<Float32>(parseFromStr<Float32>(str)); };
+                    write_function = [this](std::string_view str) { writeFixed<Float32>(parseFromStr<Float32>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Float32>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_float()); };
                     break;
@@ -815,7 +815,7 @@ namespace
 
                 case FieldTypeId::TYPE_DOUBLE:
                 {
-                    write_function = [this](const std::string_view & str) { writeFixed<Float64>(parseFromStr<Float64>(str)); };
+                    write_function = [this](std::string_view str) { writeFixed<Float64>(parseFromStr<Float64>(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Float64>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_double()); };
                     break;
@@ -823,7 +823,7 @@ namespace
 
                 case FieldTypeId::TYPE_BOOL:
                 {
-                    write_function = [this](const std::string_view & str)
+                    write_function = [this](std::string_view str)
                     {
                         if (str == "true")
                             writeUInt(1);
@@ -855,7 +855,7 @@ namespace
                 case FieldTypeId::TYPE_STRING:
                 case FieldTypeId::TYPE_BYTES:
                 {
-                    write_function = [this](const std::string_view & str) { writeStr(str); };
+                    write_function = [this](std::string_view str) { writeStr(str); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { readStrAndAppend(str); };
                     default_function = [this]() -> String { return field_descriptor.default_value_string(); };
                     break;
@@ -863,7 +863,7 @@ namespace
 
                 case FieldTypeId::TYPE_ENUM:
                 {
-                    write_function = [this](const std::string_view & str) { writeInt(stringToProtobufEnumValue(str)); };
+                    write_function = [this](std::string_view str) { writeInt(stringToProtobufEnumValue(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { protobufEnumValueToStringAppend(readInt(), str); };
                     default_function = [this]() -> String { return field_descriptor.default_value_enum()->name(); };
                     break;
@@ -908,7 +908,7 @@ namespace
             }
         }
 
-        int stringToProtobufEnumValue(const std::string_view & str) const
+        int stringToProtobufEnumValue(std::string_view str) const
         {
             auto it = string_to_protobuf_enum_value_map.find(str);
             if (it == string_to_protobuf_enum_value_map.end())
@@ -932,7 +932,7 @@ namespace
 
         const std::shared_ptr<const DataTypeFixedString> fixed_string_data_type;
         const size_t n = 0;
-        std::function<void(const std::string_view &)> write_function;
+        std::function<void(std::string_view)> write_function;
         std::function<void(PaddedPODArray<UInt8> &)> read_function;
         std::function<String()> default_function;
         std::unordered_map<std::string_view, int> string_to_protobuf_enum_value_map;
@@ -953,7 +953,7 @@ namespace
         using BaseClass = ProtobufSerializerNumber<NumberType>;
 
         ProtobufSerializerEnum(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const std::shared_ptr<const EnumDataType> & enum_data_type_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
@@ -1067,7 +1067,7 @@ namespace
                     protobuf_enum_value_to_enum_data_type_value_map.emplace(protobuf_enum_value, enum_data_type_value);
             };
 
-            auto iless = [](const std::string_view & s1, const std::string_view & s2) { return ColumnNameWithProtobufFieldNameComparator::less(s1, s2); };
+            auto iless = [](std::string_view s1, std::string_view s2) { return ColumnNameWithProtobufFieldNameComparator::less(s1, s2); };
             boost::container::flat_map<std::string_view, int, decltype(iless)> string_to_protobuf_enum_value_map;
             typename decltype(string_to_protobuf_enum_value_map)::sequence_type string_to_protobuf_enum_value_seq;
             for (int i : collections::range(enum_descriptor.value_count()))
@@ -1133,9 +1133,9 @@ namespace
 
         Int64 readInt() { return ProtobufSerializerSingleValue::readInt(); }
         void writeInt(Int64 value) { ProtobufSerializerSingleValue::writeInt(value); }
-        void writeStr(const std::string_view & str) { ProtobufSerializerSingleValue::writeStr(str); }
+        void writeStr(std::string_view str) { ProtobufSerializerSingleValue::writeStr(str); }
         void readStr(String & str) { ProtobufSerializerSingleValue::readStr(str); }
-        [[noreturn]] void cannotConvertValue(const std::string_view & src_value, const std::string_view & src_type_name, const std::string_view & dest_type_name) const { ProtobufSerializerSingleValue::cannotConvertValue(src_value, src_type_name, dest_type_name); }
+        [[noreturn]] void cannotConvertValue(std::string_view src_value, std::string_view src_type_name, std::string_view dest_type_name) const { ProtobufSerializerSingleValue::cannotConvertValue(src_value, src_type_name, dest_type_name); }
 
         const std::shared_ptr<const EnumDataType> enum_data_type;
         std::unordered_map<NumberType, int> enum_data_type_value_to_protobuf_enum_value_map;
@@ -1152,7 +1152,7 @@ namespace
         using ColumnType = ColumnDecimal<DecimalType>;
 
         ProtobufSerializerDecimal(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const DataTypeDecimalBase<DecimalType> & decimal_data_type_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
@@ -1412,7 +1412,7 @@ namespace
     {
     public:
         ProtobufSerializerDate(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : ProtobufSerializerNumber<UInt16>(column_name_, field_descriptor_, reader_or_writer_)
@@ -1490,7 +1490,7 @@ namespace
     {
     public:
         ProtobufSerializerDateTime(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const DataTypeDateTime & type,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
@@ -1574,7 +1574,7 @@ namespace
     {
     public:
         ProtobufSerializerUUID(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
@@ -1654,7 +1654,7 @@ namespace
     {
     public:
         ProtobufSerializerAggregateFunction(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const std::shared_ptr<const DataTypeAggregateFunction> & aggregate_function_data_type_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
@@ -2061,7 +2061,7 @@ namespace
     {
     public:
         ProtobufSerializerTupleAsArray(
-            const std::string_view & column_name_,
+            std::string_view column_name_,
             const std::shared_ptr<const DataTypeTuple> & tuple_data_type_,
             const FieldDescriptor & field_descriptor_,
             std::vector<std::unique_ptr<ProtobufSerializer>> element_serializers_)
@@ -2833,7 +2833,7 @@ namespace
             return field_names;
         }
 
-        static bool columnNameEqualsToFieldName(const std::string_view & column_name, const FieldDescriptor & field_descriptor)
+        static bool columnNameEqualsToFieldName(std::string_view column_name, const FieldDescriptor & field_descriptor)
         {
             std::string_view suffix;
             return columnNameStartsWithFieldName(column_name, field_descriptor, suffix) && suffix.empty();
@@ -2844,7 +2844,7 @@ namespace
         /// which doesn't match to the field's name.
         /// The function requires that rest part of the column's name to be started with a dot '.' or underline '_',
         /// but doesn't include those '.' or '_' characters into `suffix`.
-        static bool columnNameStartsWithFieldName(const std::string_view & column_name, const FieldDescriptor & field_descriptor, std::string_view & suffix)
+        static bool columnNameStartsWithFieldName(std::string_view column_name, const FieldDescriptor & field_descriptor, std::string_view & suffix)
         {
             size_t matching_length = 0;
             const MessageDescriptor & containing_type = *field_descriptor.containing_type();
@@ -2887,7 +2887,7 @@ namespace
         /// for that case suffixes are also returned.
         /// This is only the first filter, buildMessageSerializerImpl() does other checks after calling this function.
         static bool findFieldsByColumnName(
-            const std::string_view & column_name,
+            std::string_view column_name,
             const MessageDescriptor & message_descriptor,
             std::vector<std::pair<const FieldDescriptor *, std::string_view /* suffix */>> & out_field_descriptors_with_suffixes,
             bool google_wrappers_special_treatment)
@@ -3030,7 +3030,7 @@ namespace
             used_column_indices_sorted.reserve(num_columns);
             size_t sequential_column_index = 0;
 
-            auto add_field_serializer = [&](const std::string_view & column_name_,
+            auto add_field_serializer = [&](std::string_view column_name_,
                                             std::vector<size_t> && column_indices_,
                                             const FieldDescriptor & field_descriptor_,
                                             std::unique_ptr<ProtobufSerializer> field_serializer_)
@@ -3243,7 +3243,7 @@ namespace
         /// Builds a serializer for one-to-one match:
         /// one column is serialized as one field in the protobuf message.
         std::unique_ptr<ProtobufSerializer> buildFieldSerializer(
-            const std::string_view & column_name,
+            std::string_view column_name,
             const DataTypePtr & data_type,
             const FieldDescriptor & field_descriptor,
             bool allow_repeat,
@@ -3395,7 +3395,7 @@ namespace
             }
         }
 
-        [[noreturn]] static void throwFieldNotRepeated(const FieldDescriptor & field_descriptor, const std::string_view & column_name)
+        [[noreturn]] static void throwFieldNotRepeated(const FieldDescriptor & field_descriptor, std::string_view column_name)
         {
             if (!field_descriptor.is_repeated())
                 throw Exception(
