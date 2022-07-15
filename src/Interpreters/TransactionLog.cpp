@@ -140,8 +140,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     }
     futures.clear();
 
-    NOEXCEPT_SCOPE_STRICT;
-    {
+    NOEXCEPT_SCOPE_STRICT({
         std::lock_guard lock{mutex};
         for (const auto & entry : loaded)
         {
@@ -151,7 +150,8 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
             tid_to_csn.emplace(entry.first, entry.second);
         }
         last_loaded_entry = last_entry;
-    }
+    });
+
     {
         std::lock_guard lock{running_list_mutex};
         latest_snapshot = loaded.back().second.csn;
@@ -445,10 +445,11 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
         /// Do not allow exceptions between commit point and the and of transaction finalization
         /// (otherwise it may stuck in COMMITTING state holding snapshot).
-        NOEXCEPT_SCOPE_STRICT;
-        /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
-        /// (overflow is possible in a several weeks/months of active usage)
-        allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
+        NOEXCEPT_SCOPE_STRICT({
+            /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
+            /// (overflow is possible in a several weeks/months of active usage)
+            allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
+        });
     }
 
     return finalizeCommittedTransaction(txn.get(), allocated_csn, state_guard);

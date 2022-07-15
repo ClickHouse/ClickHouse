@@ -876,7 +876,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     auto progress_out = process_list_elem->getProgressOut();
                     elem.result_rows = progress_out.written_rows;
-                    elem.result_bytes = progress_out.written_rows;
+                    elem.result_bytes = progress_out.written_bytes;
                 }
 
                 if (elem.read_rows != 0)
