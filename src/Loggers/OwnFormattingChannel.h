@@ -4,6 +4,7 @@
 #include <Poco/Channel.h>
 #include <Poco/FormattingChannel.h>
 #include "ExtendedLogChannel.h"
+#include "OwnJSONPatternFormatter.h"
 #include "OwnPatternFormatter.h"
 
 
@@ -16,6 +17,12 @@ public:
     explicit OwnFormattingChannel(
         Poco::AutoPtr<OwnPatternFormatter> pFormatter_ = nullptr, Poco::AutoPtr<Poco::Channel> pChannel_ = nullptr)
         : pFormatter(std::move(pFormatter_)), pChannel(std::move(pChannel_)), priority(Poco::Message::PRIO_TRACE)
+    {
+    }
+
+    explicit OwnFormattingChannel(
+        Poco::AutoPtr<OwnJSONPatternFormatter> pFormatterJSON_ = nullptr, Poco::AutoPtr<Poco::Channel> pChannel_ = nullptr)
+        : pFormatterJSON(std::move(pFormatterJSON_)), pChannel(std::move(pChannel_)), priority(Poco::Message::PRIO_TRACE)
     {
     }
 
@@ -45,6 +52,7 @@ public:
 
 private:
     Poco::AutoPtr<OwnPatternFormatter> pFormatter;
+    Poco::AutoPtr<OwnJSONPatternFormatter> pFormatterJSON;
     Poco::AutoPtr<Poco::Channel> pChannel;
     std::atomic<Poco::Message::Priority> priority;
 };
