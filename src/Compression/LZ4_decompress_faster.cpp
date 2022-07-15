@@ -4,7 +4,7 @@
 #include <iostream>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
-#include <Common/CpuId.h>
+#include <Common/TargetSpecific.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -16,7 +16,7 @@
 #include <tmmintrin.h>
 #endif
 
-#if defined(__AVX512VBMI__)
+#if USE_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -408,9 +408,9 @@ inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift4[offset];
 }
 
+DECLARE_AVX512VBMI_SPECIFIC_CODE(
 inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
-#if defined(__AVX512VBMI__) && !defined(MEMORY_SANITIZER)
     static constexpr UInt8 __attribute__((__aligned__(32))) masks[] =
     {
         0,  1,  2,  2,  4,  2,  2,  4,  8,  5,  2, 10,  8,  6,  4,  2, 16, 15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  /* offset=0, shift amount index. */
@@ -447,28 +447,25 @@ inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
         0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,  0,
     };
 
-    if (DB::Cpu::CpuFlagsCache::have_AVX512VBMI)
-    {
-        _mm256_storeu_si256(reinterpret_cast<__m256i *>(op),
-            _mm256_permutexvar_epi8(
-                _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
-                _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
-        match += masks[offset];
-    }
-    else
-    {
-        copyOverlap32(op, match, offset);
-    }
-#else
-    copyOverlap32(op, match, offset);
-#endif
+    _mm256_storeu_si256(reinterpret_cast<__m256i *>(op),
+        _mm256_permutexvar_epi8(
+            _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
+    match += masks[offset];
 }
+) /// DECLARE_AVX512VBMI_SPECIFIC_CODE
 
 
 template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
 template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
 template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
-template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32Shuffle(op, match, offset); }
+template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, const size_t offset) {
+#if USE_MULTITARGET_CODE
+    TargetSpecific::AVX512VBMI::copyOverlap32Shuffle(op, match, offset);
+#else
+    copyOverlap32(op, match, offset);
+#endif
+}
 
 
 /// See also https://stackoverflow.com/a/30669632
@@ -641,9 +638,9 @@ bool decompress(
     if (dest_size >= 32768)
     {
         size_t variant_size = 4;
-#if defined(__AVX512VBMI__) && !defined(MEMORY_SANITIZER)
+#if USE_MULTITARGET_CODE && !defined(MEMORY_SANITIZER)
         /// best_variant == 4 only valid when AVX512VBMI available
-        if (DB::Cpu::CpuFlagsCache::have_AVX512VBMI)
+        if (isArchSupported(DB::TargetArch::AVX512VBMI))
             variant_size = 5;
 #endif
         size_t best_variant = statistics.select(variant_size);
