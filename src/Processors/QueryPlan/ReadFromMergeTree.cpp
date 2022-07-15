@@ -141,7 +141,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         output_stream->sort_mode = DataStream::SortMode::Chunk;
 
         auto const& settings = context->getSettingsRef();
-        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order || settings.optimize_read_in_window_order) && getInputOrderInfo())
+        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && getInputOrderInfo(query_info))
             output_stream->sort_mode = DataStream::SortMode::Port;
     }
 }
@@ -966,10 +966,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.total_marks_pk = total_marks_pk;
     result.selected_rows = sum_rows;
 
-    const auto & input_order_info = query_info.input_order_info
-        ? query_info.input_order_info
-        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
-
+    const auto & input_order_info = getInputOrderInfo(query_info);
     if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
         result.read_type = (input_order_info->direction > 0) ? ReadType::InOrder
                                                              : ReadType::InReverseOrder;
@@ -989,10 +986,8 @@ void ReadFromMergeTree::setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOp
     }
 }
 
-void ReadFromMergeTree::setQueryInfoInputOrderInfo(const InputOrderInfoPtr & order_info)
+void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
 {
-    // todo? update sort mode
-
     if (query_info.projection)
     {
         query_info.projection->input_order_info = order_info;
@@ -1062,7 +1057,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     Pipe pipe;
 
     const auto & settings = context->getSettingsRef();
-    const auto & input_order_info = getInputOrderInfo();
+    const auto & input_order_info = getInputOrderInfo(query_info);
 
     if (select.final())
     {

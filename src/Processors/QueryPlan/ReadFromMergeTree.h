@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include "Storages/SelectQueryInfo.h"
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -135,17 +135,17 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
     void setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> read_in_order_optimizer);
-    void setQueryInfoInputOrderInfo(const InputOrderInfoPtr & order_info);
+    void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
 
 private:
-    InputOrderInfoPtr getInputOrderInfo() const
+    static InputOrderInfoPtr getInputOrderInfo(const SelectQueryInfo & query_info_)
     {
-        return query_info.input_order_info ? query_info.input_order_info
-                                           : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+        return query_info_.input_order_info ? query_info_.input_order_info
+                                            : (query_info_.projection ? query_info_.projection->input_order_info : nullptr);
     }
     int getSortDirection() const
     {
-        const InputOrderInfoPtr & order_info = getInputOrderInfo();
+        const InputOrderInfoPtr & order_info = getInputOrderInfo(query_info);
         if (order_info)
             return order_info->direction;
 
