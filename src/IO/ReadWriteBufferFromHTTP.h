@@ -551,6 +551,9 @@ namespace detail
                             }
                         }
 
+                        if (exception)
+                            break;
+
                         if (use_external_buffer)
                         {
                             setupExternalBuffer();
