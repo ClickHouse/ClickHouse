@@ -121,6 +121,7 @@ inline bool isCrossOrComma(ASTTableJoin::Kind kind) { return kind == ASTTableJoi
 inline bool isRightOrFull(ASTTableJoin::Kind kind)  { return kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full; }
 inline bool isLeftOrFull(ASTTableJoin::Kind kind)   { return kind == ASTTableJoin::Kind::Left  || kind == ASTTableJoin::Kind::Full; }
 inline bool isInnerOrRight(ASTTableJoin::Kind kind) { return kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right; }
+inline bool isInnerOrLeft(ASTTableJoin::Kind kind) { return kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Left; }
 
 
 /// Specification of ARRAY JOIN.

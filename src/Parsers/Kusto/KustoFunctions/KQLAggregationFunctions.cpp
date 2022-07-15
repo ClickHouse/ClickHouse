@@ -20,26 +20,26 @@ namespace DB
 
 bool ArgMax::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"argMax");
 }
 
 bool ArgMin::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
+
     return directMapping(out,pos,"argMin");
 }
 
 bool Avg::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
+
     return directMapping(out,pos,"avg");
 }
 
 bool AvgIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
+
     return directMapping(out,pos,"avgIf");
+
 }
 
 bool BinaryAllAnd::convertImpl(String &out,IParser::Pos &pos)
@@ -74,6 +74,7 @@ bool Count::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"count");
+
 }
 
 bool CountIf::convertImpl(String &out,IParser::Pos &pos)
@@ -84,6 +85,7 @@ bool CountIf::convertImpl(String &out,IParser::Pos &pos)
 
 bool DCount::convertImpl(String &out,IParser::Pos &pos)
 {
+
     String fn_name = getKQLFunctionName(pos);
 
     if (fn_name.empty())
@@ -93,10 +95,12 @@ bool DCount::convertImpl(String &out,IParser::Pos &pos)
     
     out = "count ( DISTINCT " + value + " ) ";
     return true;
+
 }
 
 bool DCountIf::convertImpl(String &out,IParser::Pos &pos)
 {
+
     String fn_name = getKQLFunctionName(pos);
 
     if (fn_name.empty())
@@ -107,6 +111,7 @@ bool DCountIf::convertImpl(String &out,IParser::Pos &pos)
     String condition = getConvertedArgument(fn_name,pos);
     out = "countIf ( DISTINCT " + value + " , " + condition + " ) ";
     return true;
+
 }
 
 bool MakeBag::convertImpl(String &out,IParser::Pos &pos)
@@ -162,17 +167,20 @@ bool Max::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"max");
+
 }
 
 bool MaxIf::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
+
     return directMapping(out,pos,"maxIf");
 }
 
 bool Min::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
+
     return directMapping(out,pos,"min");
 }
 
@@ -180,6 +188,7 @@ bool MinIf::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"minIf");
+
 }
 
 bool Percentiles::convertImpl(String &out,IParser::Pos &pos)
@@ -227,7 +236,9 @@ bool StdevIf::convertImpl(String &out,IParser::Pos &pos)
 bool Sum::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
+
     return directMapping(out,pos,"sum");
+
 }
 
 bool SumIf::convertImpl(String &out,IParser::Pos &pos)

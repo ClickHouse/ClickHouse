@@ -577,5 +577,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "Customers | project indexof('abcdefg','cde', 2) ",
             "SELECT position('abcdefg', 'cde', 3) - 1\nFROM Customers"
+
         }
 })));

@@ -86,7 +86,7 @@ def process_test_log(log_path):
                 test_end = True
 
     test_results = [
-        (test[0], test[1], test[2], "".join(test[3])) for test in test_results
+        (test[0], test[1], test[2], "".join(test[3]))[:4096] for test in test_results
     ]
 
     return (

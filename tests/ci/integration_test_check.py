@@ -225,7 +225,7 @@ if __name__ == "__main__":
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
-    run_command = f"sudo -E {runner_path} | tee {output_path_log}"
+    run_command = f"sudo -E {runner_path}"
     logging.info("Going to run command: `%s`", run_command)
     logging.info(
         "ENV parameters for runner:\n%s",

@@ -5,9 +5,9 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupCoordinationDistributed.h>
+#include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupCoordinationLocal.h>
-#include <Backups/RestoreCoordinationDistributed.h>
+#include <Backups/RestoreCoordinationRemote.h>
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
@@ -120,7 +120,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
             if (!backup_settings.coordination_zk_path.empty())
             {
-                backup_coordination = std::make_shared<BackupCoordinationDistributed>(
+                backup_coordination = std::make_shared<BackupCoordinationRemote>(
                     backup_settings.coordination_zk_path,
                     [global_context = context_in_use->getGlobalContext()] { return global_context->getZooKeeper(); });
             }
@@ -166,9 +166,8 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
                 BackupEntries backup_entries;
                 {
-                    auto timeout = std::chrono::seconds{context_in_use->getConfigRef().getInt("backups.backup_prepare_timeout", -1)};
-                    BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, context_in_use, timeout};
-                    backup_entries = backup_entries_collector.getBackupEntries();
+                    BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, context_in_use};
+                    backup_entries = backup_entries_collector.run();
                 }
 
                 writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
@@ -272,8 +271,8 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                     String addr_database = address->default_database.empty() ? current_database : address->default_database;
                     for (auto & element : restore_elements)
                         element.setCurrentDatabase(addr_database);
-                    RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context_in_use, {}};
-                    dummy_restorer.checkAccessOnly();
+                    RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context_in_use};
+                    dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
                 }
             }
 
@@ -292,7 +291,7 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
 
             if (!restore_settings.coordination_zk_path.empty())
             {
-                restore_coordination = std::make_shared<RestoreCoordinationDistributed>(
+                restore_coordination = std::make_shared<RestoreCoordinationRemote>(
                     restore_settings.coordination_zk_path,
                     [global_context = context_in_use->getGlobalContext()] { return global_context->getZooKeeper(); });
             }
@@ -325,11 +324,9 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
 
                 DataRestoreTasks data_restore_tasks;
                 {
-                    auto timeout = std::chrono::seconds{context_in_use->getConfigRef().getInt("backups.restore_metadata_timeout", -1)};
                     RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                                backup, context_in_use, timeout};
-                    restorer.restoreMetadata();
-                    data_restore_tasks = restorer.getDataRestoreTasks();
+                                                backup, context_in_use};
+                    data_restore_tasks = restorer.run(RestorerFromBackup::RESTORE);
                 }
 
                 restoreTablesData(std::move(data_restore_tasks), restores_thread_pool);

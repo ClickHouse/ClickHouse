@@ -318,10 +318,10 @@ String DiskRestartProxy::getCacheBasePath() const
     return DiskDecorator::getCacheBasePath();
 }
 
-std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
+PathsWithSize DiskRestartProxy::getObjectStoragePaths(const String & path) const
 {
     ReadLock lock (mutex);
-    return DiskDecorator::getRemotePaths(path);
+    return DiskDecorator::getObjectStoragePaths(path);
 }
 
 void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)

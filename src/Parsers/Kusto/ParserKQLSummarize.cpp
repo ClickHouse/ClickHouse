@@ -185,7 +185,6 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
                     {
                         expr_aggregation = expr_aggregation + String(pos->begin, pos->end) + " ";
                     }
-                
             }
         }
         ++pos;
@@ -217,7 +216,6 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         Tokens token_groupby(expr_groupby.c_str(), expr_groupby.c_str() + expr_groupby.size());
         IParser::Pos postoken_groupby(token_groupby, pos.max_depth);
-
         String converted_groupby =  getExprFromToken(postoken_groupby);
 
         Tokens token_converted_groupby(converted_groupby.c_str(), converted_groupby.c_str() + converted_groupby.size());

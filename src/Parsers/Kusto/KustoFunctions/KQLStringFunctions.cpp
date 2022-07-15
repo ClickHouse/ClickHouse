@@ -2,6 +2,7 @@
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
+
 #include <cstdlib>
 #include <Parsers/CommonParsers.h>
 
@@ -359,6 +360,7 @@ bool ParseVersion::convertImpl(String & out,IParser::Pos & pos)
     return false;
 }
 
+
 bool ReplaceRegex::convertImpl(String & out,IParser::Pos & pos)
 {
     String res = String(pos->begin,pos->end);
@@ -478,6 +480,7 @@ bool StrRep::convertImpl(String & out,IParser::Pos & pos)
     auto begin = pos;
 
     ++pos;
+
     String value = getConvertedArgument(fn_name, pos);
     if (pos->type != TokenType::Comma)
         return false;
@@ -526,7 +529,6 @@ bool SubString::convertImpl(String & out,IParser::Pos & pos)
 
     ++pos;
     String startingIndex = getConvertedArgument(fn_name, pos);
-
     String length;
     if (pos->type == TokenType::Comma)
     {

@@ -12,6 +12,7 @@ MergingSortedTransform::MergingSortedTransform(
     size_t num_inputs,
     SortDescription  description_,
     size_t max_block_size,
+    SortingQueueStrategy sorting_queue_strategy,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
     bool quiet_,
@@ -23,6 +24,7 @@ MergingSortedTransform::MergingSortedTransform(
         num_inputs,
         std::move(description_),
         max_block_size,
+        sorting_queue_strategy,
         limit_,
         out_row_sources_buf_,
         use_average_block_sizes)

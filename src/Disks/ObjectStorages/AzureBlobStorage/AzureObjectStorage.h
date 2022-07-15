@@ -59,8 +59,7 @@ public:
         std::optional<size_t> file_size = {}) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const std::string & common_path_prefix,
-        const BlobsPathToSize & blobs_to_read,
+        const PathsWithSize & blobs_to_read,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
@@ -74,15 +73,16 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listPrefix(const std::string & path, BlobsPathToSize & children) const override;
+    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const std::string & path) override;
 
-    void removeObjects(const std::vector<std::string> & paths) override;
+    void removeObjects(const PathsWithSize & paths) override;
 
     void removeObjectIfExists(const std::string & path) override;
 
-    void removeObjectsIfExist(const std::vector<std::string> & paths) override;
+    void removeObjectsIfExist(const PathsWithSize & paths) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -95,11 +95,19 @@ public:
 
     void startup() override {}
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
 
     String getObjectsNamespace() const override { return ""; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
+    std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
 
 private:
     const String name;

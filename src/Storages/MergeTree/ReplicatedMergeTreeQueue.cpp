@@ -1103,7 +1103,9 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
             continue;
 
         /// Parts are not disjoint, so new_part_name either contains or covers future_part.
-        chassert(future_part.contains(result_part) || result_part.contains(future_part));
+        if (!(future_part.contains(result_part) || result_part.contains(future_part)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected non-disjoint parts: {} and {}", future_part_elem.first, new_part_name);
+
         /// We cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
         /// while any covered or covering parts are processed.
         /// But we also cannot simply return true and postpone entry processing, because it may lead to kind of livelock.

@@ -347,6 +347,18 @@ struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
     OpNum getOpNum() const override { return OpNum::SimpleList; }
 };
 
+struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
+{
+    ListRequestType list_request_type{ListRequestType::ALL};
+
+    OpNum getOpNum() const override { return OpNum::FilteredList; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl() const override;
+
+    size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
+};
+
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;

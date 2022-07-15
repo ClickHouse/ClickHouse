@@ -1,12 +1,10 @@
 #include "filesystemHelpers.h"
 
 #if defined(OS_LINUX)
-#    include <cstdio>
 #    include <mntent.h>
 #    include <sys/sysmacros.h>
 #endif
 #include <cerrno>
-#include <Poco/Version.h>
 #include <Poco/Timestamp.h>
 #include <filesystem>
 #include <fcntl.h>

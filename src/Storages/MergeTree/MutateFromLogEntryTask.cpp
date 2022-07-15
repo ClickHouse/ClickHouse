@@ -170,8 +170,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
+    auto builder = mutate_task->getBuilder();
 
-    storage.renameTempPartAndReplace(new_part, NO_TRANSACTION_RAW, nullptr, transaction_ptr.get());
+    if (!builder)
+        builder = new_part->data_part_storage->getBuilder();
+
+    storage.renameTempPartAndReplace(new_part, *transaction_ptr, builder);
 
     try
     {

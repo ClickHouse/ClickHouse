@@ -110,7 +110,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     )
 
     node1.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
-    node2.query("SYSTEM SYNC REPLICA s3_test")
+    node2.query("SYSTEM SYNC REPLICA s3_test", timeout=30)
     assert (
         node1.query("SELECT * FROM s3_test order by id FORMAT Values")
         == "(0,'data'),(1,'data')"
@@ -124,7 +124,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert get_large_objects_count(cluster) == 1
 
     node2.query("INSERT INTO s3_test VALUES (2,'data'),(3,'data')")
-    node1.query("SYSTEM SYNC REPLICA s3_test")
+    node1.query("SYSTEM SYNC REPLICA s3_test", timeout=30)
 
     assert (
         node2.query("SELECT * FROM s3_test order by id FORMAT Values")
@@ -166,7 +166,7 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
     )
 
     node1.query("INSERT INTO hybrid_test VALUES (0,'data'),(1,'data')")
-    node2.query("SYSTEM SYNC REPLICA hybrid_test")
+    node2.query("SYSTEM SYNC REPLICA hybrid_test", timeout=30)
 
     assert (
         node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values")
@@ -292,7 +292,7 @@ def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data, iterati
             node1.query("INSERT INTO ttl_move_test VALUES (11, now() - INTERVAL 1 DAY)")
 
         node1.query("OPTIMIZE TABLE ttl_move_test FINAL")
-        node2.query("SYSTEM SYNC REPLICA ttl_move_test")
+        node2.query("SYSTEM SYNC REPLICA ttl_move_test", timeout=30)
 
         if large_data:
             assert (
@@ -362,8 +362,8 @@ def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
 
         node1.query("OPTIMIZE TABLE ttl_delete_test FINAL")
 
-        node1.query("SYSTEM SYNC REPLICA ttl_delete_test")
-        node2.query("SYSTEM SYNC REPLICA ttl_delete_test")
+        node1.query("SYSTEM SYNC REPLICA ttl_delete_test", timeout=30)
+        node2.query("SYSTEM SYNC REPLICA ttl_delete_test", timeout=30)
 
         if large_data:
             assert (
@@ -445,7 +445,7 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     check_objects_exisis(cluster, objects01)
 
     node1.query("TRUNCATE TABLE unfreeze_test")
-    node2.query("SYSTEM SYNC REPLICA unfreeze_test")
+    node2.query("SYSTEM SYNC REPLICA unfreeze_test", timeout=30)
 
     objects11 = node1.get_backuped_s3_objects("s31", "freeze_backup1")
     objects12 = node2.get_backuped_s3_objects("s31", "freeze_backup2")
@@ -499,7 +499,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     node1.query("ALTER TABLE drop_detached_test FREEZE WITH NAME 'detach_backup1'")
     node1.query("INSERT INTO drop_detached_test VALUES (1)")
     node1.query("ALTER TABLE drop_detached_test FREEZE WITH NAME 'detach_backup2'")
-    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test", timeout=30)
 
     objects1 = node1.get_backuped_s3_objects("s31", "detach_backup1")
     objects2 = node1.get_backuped_s3_objects("s31", "detach_backup2")
@@ -511,7 +511,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
 
     node1.query("ALTER TABLE drop_detached_test DETACH PARTITION '0'")
     node1.query("ALTER TABLE drop_detached_test DETACH PARTITION '1'")
-    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test", timeout=30)
 
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
@@ -523,7 +523,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
         "ALTER TABLE drop_detached_test DROP DETACHED PARTITION '1'",
         settings={"allow_drop_detached": 1},
     )
-    node1.query("SYSTEM SYNC REPLICA drop_detached_test")
+    node1.query("SYSTEM SYNC REPLICA drop_detached_test", timeout=30)
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 
@@ -534,7 +534,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
         "ALTER TABLE drop_detached_test DROP DETACHED PARTITION '1'",
         settings={"allow_drop_detached": 1},
     )
-    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test", timeout=30)
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 
@@ -545,7 +545,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
         "ALTER TABLE drop_detached_test DROP DETACHED PARTITION '0'",
         settings={"allow_drop_detached": 1},
     )
-    node2.query("SYSTEM SYNC REPLICA drop_detached_test")
+    node2.query("SYSTEM SYNC REPLICA drop_detached_test", timeout=30)
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 
@@ -555,7 +555,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
         "ALTER TABLE drop_detached_test DROP DETACHED PARTITION '0'",
         settings={"allow_drop_detached": 1},
     )
-    node1.query("SYSTEM SYNC REPLICA drop_detached_test")
+    node1.query("SYSTEM SYNC REPLICA drop_detached_test", timeout=30)
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 

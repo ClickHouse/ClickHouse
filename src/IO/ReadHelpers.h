@@ -1065,6 +1065,8 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
     return tryReadIntText(x, buf);
 }
 
+inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
+
 inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }

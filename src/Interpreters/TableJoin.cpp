@@ -190,14 +190,22 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
     columns_from_joined_table.swap(dedup_columns);
 }
 
+String TableJoin::getOriginalName(const String & column_name) const
+{
+    auto it = original_names.find(column_name);
+    if (it != original_names.end())
+        return it->second;
+    return column_name;
+}
+
 NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
     NamesWithAliases out;
-    for (const auto & column : required_columns)
+    out.reserve(required_columns.size());
+    for (const auto & name : required_columns)
     {
-        auto it = original_names.find(column);
-        if (it != original_names.end())
-            out.emplace_back(it->second, it->first); /// {original_name, name}
+        auto original_name = getOriginalName(name);
+        out.emplace_back(original_name, name);
     }
     return out;
 }
@@ -513,6 +521,7 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
         {
             if (dag)
             {
+                /// Just debug message
                 std::vector<std::string> input_cols;
                 for (const auto & col : dag->getRequiredColumns())
                     input_cols.push_back(col.name + ": " + col.type->getName());
@@ -591,15 +600,16 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         catch (DB::Exception & ex)
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right. {}",
+                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right ({})",
                 left_key_name, ltype->second->getName(),
                 right_key_name, rtype->second->getName(),
                 ex.message());
         }
-        if (!allow_right && !common_type->equals(*rtype->second))
+        bool right_side_changed = !common_type->equals(*rtype->second);
+        if (right_side_changed && !allow_right)
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                "Can't change type for right table: {}: {} -> {}.",
+                "Can't change type for right table: {}: {} -> {}",
                 right_key_name, rtype->second->getName(), common_type->getName());
         }
         left_type_map[left_key_name] = right_type_map[right_key_name] = common_type;
@@ -626,7 +636,7 @@ static ActionsDAGPtr changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
     bool has_some_to_do = false;
     for (auto & col : cols_dst)
     {
-        if (auto it = type_mapping.find(col.name); it != type_mapping.end())
+        if (auto it = type_mapping.find(col.name); it != type_mapping.end() && col.type != it->second)
         {
             col.type = it->second;
             col.column = nullptr;
@@ -635,6 +645,7 @@ static ActionsDAGPtr changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
     }
     if (!has_some_to_do)
         return nullptr;
+
     return ActionsDAG::makeConvertingActions(cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, add_new_cols, &key_column_rename);
 }
 
@@ -683,6 +694,11 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
             return dag_stage2;
     }
     return dag_stage1;
+}
+
+void TableJoin::setStorageJoin(std::shared_ptr<IKeyValueStorage> storage)
+{
+    right_kv_storage = storage;
 }
 
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
@@ -784,7 +800,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (dictionary_reader || join_algorithm != JoinAlgorithm::PARALLEL_HASH)
+    if (dictionary_reader || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
     if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
         return false;

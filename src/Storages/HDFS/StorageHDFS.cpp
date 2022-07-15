@@ -28,6 +28,7 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -664,13 +665,13 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
-        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
 
         String format_name = "auto";
         if (engine_args.size() > 1)
         {
             engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
-            format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            format_name = checkAndGetLiteralArgument<String>(engine_args[1], "format_name");
         }
 
         if (format_name == "auto")
@@ -680,7 +681,7 @@ void registerStorageHDFS(StorageFactory & factory)
         if (engine_args.size() == 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
-            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[2], "compression_method");
         } else compression_method = "auto";
 
         ASTPtr partition_by;

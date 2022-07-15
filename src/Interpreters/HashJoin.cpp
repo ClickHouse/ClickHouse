@@ -22,9 +22,10 @@
 #include <Interpreters/DictionaryReader.h>
 
 #include <Storages/StorageDictionary.h>
-
+#include <Storages/IStorage.h>
 
 #include <Core/ColumnNumbers.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 

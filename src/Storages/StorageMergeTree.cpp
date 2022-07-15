@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <base/sort.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -1540,7 +1541,17 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         loaded_parts[i]->storeVersionMetadata();
 
         String old_name = renamed_parts.old_and_new_names[i].old_name;
-        renameTempPartAndAdd(loaded_parts[i], local_context->getCurrentTransaction().get(), &increment);
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
+        MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
+        {
+            auto lock = lockParts();
+            auto builder = loaded_parts[i]->data_part_storage->getBuilder();
+            fillNewPartName(loaded_parts[i], lock);
+            renameTempPartAndAdd(loaded_parts[i], transaction, builder, lock);
+            transaction.commit(&lock);
+        }
+
         renamed_parts.old_and_new_names[i].old_name.clear();
 
         results.push_back(PartitionCommandResultInfo{
@@ -1612,10 +1623,17 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             auto data_parts_lock = lockParts();
 
-            /// Populate transaction
-            for (MutableDataPartPtr & part : dst_parts)
-                renameTempPartAndReplace(part, local_context->getCurrentTransaction().get(), &increment, &transaction, data_parts_lock);
+            /** It is important that obtaining new block number and adding that block to parts set is done atomically.
+              * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
+              */
+            for (auto part : dst_parts)
+            {
+                fillNewPartName(part, data_parts_lock);
 
+                auto builder = part->data_part_storage->getBuilder();
+                renameTempPartAndReplaceUnlocked(part, transaction, builder, data_parts_lock);
+            }
+            /// Populate transaction
             transaction.commit(&data_parts_lock);
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
@@ -1688,14 +1706,16 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             auto src_data_parts_lock = lockParts();
             auto dest_data_parts_lock = dest_table_storage->lockParts();
 
-            std::mutex mutex;
-            DataPartsLock lock(mutex);
+            for (auto & part : dst_parts)
+            {
+                auto builder = part->data_part_storage->getBuilder();
+                dest_table_storage->fillNewPartName(part, dest_data_parts_lock);
+                dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, builder, dest_data_parts_lock);
+            }
 
-            for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, local_context->getCurrentTransaction().get(), &dest_table_storage->increment, &transaction, lock);
 
-            removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, lock);
-            transaction.commit(&lock);
+            removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, src_data_parts_lock);
+            transaction.commit(&src_data_parts_lock);
         }
 
         clearOldPartsFromFilesystem();
@@ -1782,10 +1802,51 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 }
 
 
+void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    auto local_context = backup_entries_collector.getContext();
+
+    DataPartsVector data_parts;
+    if (partitions)
+        data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
+    else
+        data_parts = getVisibleDataPartsVector(local_context);
+
+    Int64 min_data_version = std::numeric_limits<Int64>::max();
+    for (const auto & data_part : data_parts)
+        min_data_version = std::min(min_data_version, data_part->info.getDataVersion());
+
+    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup));
+    backup_entries_collector.addBackupEntries(backupMutations(min_data_version + 1, data_path_in_backup));
+}
+
+
+BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & data_path_in_backup) const
+{
+    fs::path mutations_path_in_backup = fs::path{data_path_in_backup} / "mutations";
+    BackupEntries backup_entries;
+    for (auto it = current_mutations_by_version.lower_bound(version); it != current_mutations_by_version.end(); ++it)
+        backup_entries.emplace_back(mutations_path_in_backup / fmt::format("{:010}.txt", it->first), it->second.backup());
+    return backup_entries;
+}
+
+
 void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
+
     for (auto part : parts)
-        renameTempPartAndAdd(part, NO_TRANSACTION_RAW, &increment);
+    {
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
+        MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
+        auto builder = part->data_part_storage->getBuilder();
+        {
+            auto lock = lockParts();
+            fillNewPartName(part, lock);
+            renameTempPartAndAdd(part, transaction, builder, lock);
+            transaction.commit(&lock);
+        }
+    }
 }
 
 
@@ -1808,6 +1869,13 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const
 {
     return std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+}
+
+void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
+{
+    part->info.min_block = part->info.max_block = increment.get();
+    part->info.mutation = 0;
+    part->name = part->getNewName(part->info);
 }
 
 }

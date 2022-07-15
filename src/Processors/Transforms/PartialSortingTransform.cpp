@@ -71,7 +71,7 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
     size_t raw_block_columns_size = raw_block_columns.size();
     for (size_t i = 0; i < raw_block_columns_size; ++i)
     {
-        int res = sort_description[i].direction * raw_block_columns[i]->compareAt(min_block_index, 0, *threshold_columns[0], sort_description[i].nulls_direction);
+        int res = sort_description[i].direction * raw_block_columns[i]->compareAt(min_block_index, 0, *threshold_columns[i], sort_description[i].nulls_direction);
 
         if (res < 0)
             return true;

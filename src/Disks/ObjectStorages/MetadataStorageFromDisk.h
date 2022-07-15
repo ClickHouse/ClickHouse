@@ -59,9 +59,7 @@ public:
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
-    BlobsPathToSize getBlobs(const std::string & path) const override;
-
-    std::vector<std::string> getRemotePaths(const std::string & path) const override;
+    PathsWithSize getObjectStoragePaths(const std::string & path) const override;
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 

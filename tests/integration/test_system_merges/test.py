@@ -26,9 +26,13 @@ def started_cluster():
     try:
         cluster.start()
         node1.query(
-            "CREATE DATABASE test ENGINE=Ordinary"
+            "CREATE DATABASE test ENGINE=Ordinary",
+            settings={"allow_deprecated_database_ordinary": 1},
         )  # Different paths with Atomic
-        node2.query("CREATE DATABASE test ENGINE=Ordinary")
+        node2.query(
+            "CREATE DATABASE test ENGINE=Ordinary",
+            settings={"allow_deprecated_database_ordinary": 1},
+        )
         yield cluster
 
     finally:

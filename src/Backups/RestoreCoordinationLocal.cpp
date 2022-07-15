@@ -7,12 +7,18 @@ namespace DB
 RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::syncStage(const String &, int, const Strings &, std::chrono::seconds)
+void RestoreCoordinationLocal::setStatus(const String &, const String &, const String &)
 {
 }
 
-void RestoreCoordinationLocal::syncStageError(const String &, const String &)
+Strings RestoreCoordinationLocal::setStatusAndWait(const String &, const String &, const String &, const Strings &)
 {
+    return {};
+}
+
+Strings RestoreCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const String &, const Strings &, UInt64)
+{
+    return {};
 }
 
 bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)

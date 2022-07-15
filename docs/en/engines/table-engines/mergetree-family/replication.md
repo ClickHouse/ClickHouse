@@ -120,11 +120,19 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
-**Replicated\*MergeTree parameters**
+### Replicated\*MergeTree parameters
 
--   `zoo_path` — The path to the table in ClickHouse Keeper.
--   `replica_name` — The replica name in ClickHouse Keeper.
--   `other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
+#### zoo_path
+
+`zoo_path` — The path to the table in ClickHouse Keeper.
+
+#### replica_name
+
+`replica_name` — The replica name in ClickHouse Keeper.
+
+#### other_parameters
+
+`other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
 
 Example:
 

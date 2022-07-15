@@ -13,6 +13,7 @@
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
@@ -37,6 +38,8 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+
 
 namespace DB
 {
@@ -766,8 +769,20 @@ Pipe StorageHive::read(
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
 
-    Block sample_block;
     const auto header_block = storage_snapshot->metadata->getSampleBlock();
+    bool support_subset_columns = supportsSubcolumns();
+
+    auto settings = context_->getSettingsRef();
+    auto case_insensitive_matching = [&]() -> bool
+    {
+        if (format_name == "Parquet")
+            return settings.input_format_parquet_case_insensitive_column_matching;
+        else if (format_name == "ORC")
+            return settings.input_format_orc_case_insensitive_column_matching;
+        return false;
+    };
+    Block sample_block;
+    NestedColumnExtractHelper nested_columns_extractor(header_block, case_insensitive_matching());
     for (const auto & column : column_names)
     {
         if (header_block.has(column))
@@ -775,7 +790,15 @@ Pipe StorageHive::read(
             sample_block.insert(header_block.getByName(column));
             continue;
         }
-
+        else if (support_subset_columns)
+        {
+            auto subset_column = nested_columns_extractor.extractColumn(column);
+            if (subset_column)
+            {
+                sample_block.insert(std::move(*subset_column));
+                continue;
+            }
+        }
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
@@ -938,9 +961,9 @@ void registerStorageHive(StorageFactory & factory)
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-            const String & hive_metastore_url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-            const String & hive_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            const String & hive_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & hive_metastore_url = checkAndGetLiteralArgument<String>(engine_args[0], "hive_metastore_url");
+            const String & hive_database = checkAndGetLiteralArgument<String>(engine_args[1], "hive_database");
+            const String & hive_table = checkAndGetLiteralArgument<String>(engine_args[2], "hive_table");
             return std::make_shared<StorageHive>(
                 hive_metastore_url,
                 hive_database,

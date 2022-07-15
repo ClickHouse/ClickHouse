@@ -3,6 +3,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/getRandomASCIIString.h>
 #include <ranges>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -65,7 +66,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     std::string path;
     bool delete_metadata_only;
     bool remove_from_cache{false};
-    std::vector<std::string> paths_to_remove;
+    PathsWithSize paths_to_remove;
     bool if_exists;
 
     RemoveObjectStorageOperation(
@@ -96,13 +97,13 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         try
         {
             uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
-            auto remote_objects = metadata_storage.getRemotePaths(path);
+            auto objects = metadata_storage.getObjectStoragePaths(path);
 
             tx->unlinkMetadata(path);
 
             if (hardlink_count == 0)
             {
-                paths_to_remove = remote_objects;
+                paths_to_remove = objects;
                 remove_from_cache = true;
             }
         }
@@ -134,7 +135,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         if (remove_from_cache)
         {
             for (const auto & path_to_remove : paths_to_remove)
-                object_storage.removeFromCache(path_to_remove);
+                object_storage.removeFromCache(path_to_remove.path);
         }
 
     }
@@ -143,10 +144,10 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
-    std::unordered_map<std::string, std::vector<std::string>> paths_to_remove;
+    std::unordered_map<std::string, PathsWithSize> paths_to_remove;
     bool keep_all_batch_data;
     NameSet file_names_remove_metadata_only;
-    std::vector<std::string> path_to_remove_from_cache;
+    PathsWithSize path_to_remove_from_cache;
 
     RemoveRecursiveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -169,14 +170,14 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             try
             {
                 uint32_t hardlink_count = metadata_storage.getHardlinkCount(path_to_remove);
-                auto remote_objects = metadata_storage.getRemotePaths(path_to_remove);
+                auto objects_paths = metadata_storage.getObjectStoragePaths(path_to_remove);
 
                 tx->unlinkMetadata(path_to_remove);
 
                 if (hardlink_count == 0)
                 {
-                    paths_to_remove[path_to_remove] = remote_objects;
-                    path_to_remove_from_cache.insert(path_to_remove_from_cache.end(), remote_objects.begin(), remote_objects.end());
+                    paths_to_remove[path_to_remove] = objects_paths;
+                    path_to_remove_from_cache.insert(path_to_remove_from_cache.end(), objects_paths.begin(), objects_paths.end());
                 }
 
             }
@@ -217,7 +218,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     {
         if (!keep_all_batch_data)
         {
-            std::vector<std::string> remove_from_remote;
+            PathsWithSize remove_from_remote;
             for (auto && [local_path, remote_paths] : paths_to_remove)
             {
                 if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
@@ -228,7 +229,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             object_storage.removeObjects(remove_from_remote);
         }
 
-        for (const auto & path_to_remove : path_to_remove_from_cache)
+        for (const auto & [path_to_remove, _] : path_to_remove_from_cache)
             object_storage.removeFromCache(path_to_remove);
     }
 };
@@ -238,7 +239,7 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 {
     std::string path_from;
     std::string path_to;
-    std::vector<std::string> blobs_to_remove;
+    PathsWithSize blobs_to_remove;
 
     ReplaceFileObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -254,7 +255,7 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
     {
         if (metadata_storage.exists(path_to))
         {
-            blobs_to_remove = metadata_storage.getRemotePaths(path_to);
+            blobs_to_remove = metadata_storage.getObjectStoragePaths(path_to);
             tx->replaceFile(path_from, path_to);
         }
         else
@@ -277,6 +278,8 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 {
     std::string path;
     std::string blob_path;
+    size_t size;
+    std::function<void(MetadataTransactionPtr)> on_execute;
 
     WriteFileObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -288,9 +291,15 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         , blob_path(blob_path_)
     {}
 
-    void execute(MetadataTransactionPtr) override
+    void setOnExecute(std::function<void(MetadataTransactionPtr)> && on_execute_)
     {
+        on_execute = on_execute_;
+    }
 
+    void execute(MetadataTransactionPtr tx) override
+    {
+        if (on_execute)
+            on_execute(tx);
     }
 
     void undo() override
@@ -328,14 +337,15 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     void execute(MetadataTransactionPtr tx) override
     {
         tx->createEmptyMetadataFile(to_path);
-        auto source_blobs = metadata_storage.getBlobs(from_path);
+        auto source_blobs = metadata_storage.getObjectStoragePaths(from_path); /// Full paths
+
         for (const auto & [blob_from, size] : source_blobs)
         {
             auto blob_name = getRandomASCIIString();
 
             auto blob_to = fs::path(remote_fs_root_path) / blob_name;
 
-            object_storage.copyObject(fs::path(remote_fs_root_path) / blob_from, blob_to);
+            object_storage.copyObject(blob_from, blob_to);
 
             tx->addBlobToMetadata(to_path, blob_name, size);
 
@@ -367,6 +377,7 @@ void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 
 void DiskObjectStorageTransaction::createDirectories(const std::string & path)
 {
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "CREATE DIRECTORIES TRANSACTION FOR PATH {}", path);
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
@@ -498,19 +509,47 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     auto blob_path = fs::path(remote_fs_root_path) / blob_name;
 
+    auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, path, blob_path);
+    std::function<void(size_t count)> create_metadata_callback;
 
-    auto create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name, autocommit] (size_t count)
+    if  (autocommit)
     {
-        if (mode == WriteMode::Rewrite)
-            tx->metadata_transaction->createMetadataFile(path, blob_name, count);
-        else
-            tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
+        create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
+        {
+            if (mode == WriteMode::Rewrite)
+                tx->metadata_transaction->createMetadataFile(path, blob_name, count);
+            else
+                tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
 
-        if (autocommit)
             tx->metadata_transaction->commit();
-    };
+        };
+    }
+    else
+    {
+        create_metadata_callback = [write_op = write_operation.get(), mode, path, blob_name] (size_t count)
+        {
+            /// This callback called in WriteBuffer finalize method -- only there we actually know
+            /// how many bytes were written. We don't control when this finalize method will be called
+            /// so here we just modify operation itself, but don't execute anything (and don't modify metadata transaction).
+            /// Otherwise it's possible to get reorder of operations, like:
+            /// tx->createDirectory(xxx) -- will add metadata operation in execute
+            /// buf1 = tx->writeFile(xxx/yyy.bin)
+            /// buf2 = tx->writeFile(xxx/zzz.bin)
+            /// ...
+            /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
+            /// tx->commit()
+            write_op->setOnExecute([mode, path, blob_name, count](MetadataTransactionPtr tx)
+            {
+                if (mode == WriteMode::Rewrite)
+                    tx->createMetadataFile(path, blob_name, count);
+                else
+                    tx->addBlobToMetadata(path, blob_name, count);
+            });
+        };
 
-    operations_to_execute.emplace_back(std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, path, blob_path));
+    }
+
+    operations_to_execute.emplace_back(std::move(write_operation));
 
     /// We always use mode Rewrite because we simulate append using metadata and different files
     return object_storage.writeObject(
@@ -568,7 +607,6 @@ void DiskObjectStorageTransaction::commit()
         try
         {
             operations_to_execute[i]->execute(metadata_transaction);
-
         }
         catch (Exception & ex)
         {

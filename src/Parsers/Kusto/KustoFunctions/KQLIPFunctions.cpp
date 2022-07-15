@@ -37,12 +37,14 @@ String trimQuotes(const String & str)
 }
 }
 
+
 namespace DB
 {
 
 bool Ipv4Compare::convertImpl(String & out, IParser::Pos & pos)
 {
     String res = String(pos->begin, pos->end);
+
     out = res;
     return false;
 }
@@ -171,4 +173,5 @@ bool FormatIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
     out = res;
     return false;
 }
+
 }

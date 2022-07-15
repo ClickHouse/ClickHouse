@@ -68,11 +68,11 @@ Pipe StorageSystemRemoteDataPaths::read(
                     col_base_path->insert(disk->getPath());
                     col_cache_base_path->insert(cache_base_path);
                     col_local_path->insert(local_path);
-                    col_remote_path->insert(remote_path);
+                    col_remote_path->insert(remote_path.path);
 
                     if (cache)
                     {
-                        auto cache_paths = cache->tryGetCachePaths(cache->hash(remote_path));
+                        auto cache_paths = cache->tryGetCachePaths(cache->hash(remote_path.path));
                         col_cache_paths->insert(Array(cache_paths.begin(), cache_paths.end()));
                     }
                     else

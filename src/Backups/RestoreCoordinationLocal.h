@@ -11,17 +11,17 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+/// Implementation of the IRestoreCoordination interface performing coordination in memory.
 class RestoreCoordinationLocal : public IRestoreCoordination
 {
 public:
     RestoreCoordinationLocal();
     ~RestoreCoordinationLocal() override;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) override;
-
-    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
-    void syncStageError(const String & current_host, const String & error_message) override;
+    /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
+    void setStatus(const String & current_host, const String & new_status, const String & message) override;
+    Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts) override;
+    Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;

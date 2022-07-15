@@ -25,23 +25,23 @@ class WriteBufferFromFileBase;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
-/// Path to blob with it's size
-struct BlobPathWithSize
+/// Path to a file (always absolute) and its size.
+struct PathWithSize
 {
-    std::string relative_path;
+    std::string path;
     uint64_t bytes_size;
 
-    BlobPathWithSize() = default;
-    BlobPathWithSize(const BlobPathWithSize & other) = default;
+    PathWithSize() = default;
 
-    BlobPathWithSize(const std::string & relative_path_, uint64_t bytes_size_)
-        : relative_path(relative_path_)
+    PathWithSize(const std::string & path_, uint64_t bytes_size_)
+        : path(path_)
         , bytes_size(bytes_size_)
     {}
 };
 
-/// List of blobs with their sizes
-using BlobsPathToSize = std::vector<BlobPathWithSize>;
+/// List of paths with their sizes
+using PathsWithSize = std::vector<PathWithSize>;
+using RelativePathsWithSize = PathsWithSize;
 
 struct ObjectMetadata
 {
@@ -65,8 +65,8 @@ public:
     /// Path exists or not
     virtual bool exists(const std::string & path) const = 0;
 
-    /// List on prefix, return children with their sizes.
-    virtual void listPrefix(const std::string & path, BlobsPathToSize & children) const = 0;
+    /// List on prefix, return children (relative paths) with their sizes.
+    virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const = 0;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
@@ -81,8 +81,7 @@ public:
 
     /// Read multiple objects with common prefix
     virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const std::string & common_path_prefix,
-        const BlobsPathToSize & blobs_to_read,
+        const PathsWithSize & paths_to_read,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
@@ -101,13 +100,13 @@ public:
 
     /// Remove multiple objects. Some object storages can do batch remove in a more
     /// optimal way.
-    virtual void removeObjects(const std::vector<std::string> & paths) = 0;
+    virtual void removeObjects(const PathsWithSize & paths) = 0;
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const std::string & path) = 0;
 
     /// Remove objects on path if exists
-    virtual void removeObjectsIfExist(const std::vector<std::string> & paths) = 0;
+    virtual void removeObjectsIfExist(const PathsWithSize & paths) = 0;
 
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
@@ -140,7 +139,10 @@ public:
     void removeFromCache(const std::string & path);
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
+    virtual void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) = 0;
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
@@ -148,7 +150,10 @@ public:
 
     /// FIXME: confusing function required for a very specific case. Create new instance of object storage
     /// in different namespace.
-    virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
+    virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix, ContextPtr context) = 0;
 
 protected:
     FileCachePtr cache;

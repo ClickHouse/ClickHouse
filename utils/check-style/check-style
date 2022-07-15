@@ -314,6 +314,12 @@ for test_case in "${tests_with_event_time_date[@]}"; do
     }
 done
 
+expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
+for test_case in "${expect_tests[@]}"; do
+    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
+    grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+done
+
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"

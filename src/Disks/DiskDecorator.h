@@ -12,6 +12,8 @@ class DiskDecorator : public IDisk
 {
 public:
     explicit DiskDecorator(const DiskPtr & delegate_);
+
+    DiskTransactionPtr createTransaction() override;
     const String & getName() const override;
     ReservationPtr reserve(UInt64 bytes) override;
     ~DiskDecorator() override = default;
@@ -75,7 +77,7 @@ public:
     void startup(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
     String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
-    std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
+    PathsWithSize getObjectStoragePaths(const String & path) const override { return delegate->getObjectStoragePaths(path); }
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }

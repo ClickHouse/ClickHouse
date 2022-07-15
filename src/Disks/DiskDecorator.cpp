@@ -8,6 +8,11 @@ DiskDecorator::DiskDecorator(const DiskPtr & delegate_) : delegate(delegate_)
 {
 }
 
+DiskTransactionPtr DiskDecorator::createTransaction()
+{
+    return delegate->createTransaction();
+}
+
 const String & DiskDecorator::getName() const
 {
     return delegate->getName();
