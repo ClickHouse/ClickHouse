@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <profiles>
+        <default>
+            <log_queries>1</log_queries>
+            <!-- Just to test settings_pull -->
+            <max_rows_in_distinct>5</max_rows_in_distinct>
+        </default>
+    </profiles>
+    <users>
+        <john>
+            <ssl_certificates>
+                <common_name>client1</common_name>
+            </ssl_certificates>
+            <profile>default</profile>
+            <quota>default</quota>
+        </john>
+    </users>
+</clickhouse>
