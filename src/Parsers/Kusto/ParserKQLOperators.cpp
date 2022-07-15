@@ -14,6 +14,46 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
+String KQLOperators::genHasAnyAllOpExpr(std::vector<String> &tokens,IParser::Pos &token_pos,String kql_op, String ch_op)
+{
+    String new_expr;
+    Expected expected;
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+
+    ++token_pos;
+    if (!s_lparen.ignore(token_pos, expected))
+        throw Exception("Syntax error near " + kql_op, ErrorCodes::SYNTAX_ERROR);
+
+    auto haystack = tokens.back();
+
+    String logic_op = (kql_op == "has_all") ? " and " : " or ";
+
+    while (!token_pos->isEnd() && token_pos->type != TokenType::PipeMark && token_pos->type != TokenType::Semicolon)
+    {
+        String tmp_arg = String(token_pos->begin, token_pos->end);
+        if (token_pos->type == TokenType::BareWord )
+        {
+            String new_arg;
+            auto fun = KQLFunctionFactory::get(tmp_arg);
+            if (fun && fun->convert(new_arg,token_pos))
+                tmp_arg = new_arg;
+        }
+
+        if (token_pos->type == TokenType::Comma )
+            new_expr = new_expr + logic_op;
+        else
+            new_expr = new_expr + ch_op + "(" + haystack + "," + tmp_arg + ")";
+
+        ++token_pos;
+        if (token_pos->type == TokenType::ClosingRoundBracket)
+            break;
+
+    }
+
+    tokens.pop_back();
+    return new_expr;
+}
+
 String KQLOperators::genInOpExpr(IParser::Pos &token_pos,String kql_op, String ch_op)
 {
     ParserKQLTaleFunction kqlfun_p;
@@ -235,9 +275,11 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
                 break;
 
             case KQLOperatorValue::has_all:
+                new_expr = genHasAnyAllOpExpr(tokens,pos,"has_all", "hasTokenCaseInsensitive");
                 break;
 
             case KQLOperatorValue::has_any:
+                new_expr = genHasAnyAllOpExpr(tokens,pos,"has_any", "hasTokenCaseInsensitive");
                 break;
 
             case KQLOperatorValue::has_cs:
