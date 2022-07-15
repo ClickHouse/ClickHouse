@@ -72,11 +72,14 @@ UUID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutable
 
 UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & context)
 {
-    UUID backup_uuid = UUIDHelpers::generateV4();
     auto backup_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto backup_settings = BackupSettings::fromBackupQuery(*backup_query);
     auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
     bool on_cluster = !backup_query->cluster.empty();
+
+    if (!backup_settings.backup_uuid)
+        backup_settings.backup_uuid = UUIDHelpers::generateV4();
+    UUID backup_uuid = *backup_settings.backup_uuid;
 
     /// Prepare context to use.
     ContextPtr context_in_use = context;
@@ -151,9 +154,9 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
             backup_create_params.compression_method = backup_settings.compression_method;
             backup_create_params.compression_level = backup_settings.compression_level;
             backup_create_params.password = backup_settings.password;
-            backup_create_params.backup_uuid = backup_uuid;
             backup_create_params.is_internal_backup = backup_settings.internal;
             backup_create_params.backup_coordination = backup_coordination;
+            backup_create_params.backup_uuid = backup_uuid;
             BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
             /// Write the backup.

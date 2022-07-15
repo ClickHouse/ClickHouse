@@ -423,6 +423,63 @@ def test_replicated_database_async():
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
 
 
+@pytest.mark.parametrize(
+    "interface, on_cluster", [("native", True), ("http", True), ("http", False)]
+)
+def test_async_backups_to_same_destination(interface, on_cluster):
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (1)")
+
+    backup_name = new_backup_name()
+
+    ids = []
+    nodes = [node1, node2]
+    on_cluster_part = "ON CLUSTER 'cluster'" if on_cluster else ""
+    for node in nodes:
+        if interface == "http":
+            res = node.http_query(
+                f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
+            )
+        else:
+            res = node.query(
+                f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
+            )
+        ids.append(res.split("\t")[0])
+
+    [id1, id2] = ids
+
+    for i in range(len(nodes)):
+        assert_eq_with_retry(
+            nodes[i],
+            f"SELECT count() FROM system.backups WHERE uuid='{ids[i]}' AND status != 'BACKUP_COMPLETE' AND status != 'FAILED_TO_BACKUP'",
+            "0\n",
+        )
+
+    num_completed_backups = sum(
+        [
+            int(
+                nodes[i]
+                .query(
+                    f"SELECT count() FROM system.backups WHERE uuid='{ids[i]}' AND status == 'BACKUP_COMPLETE'"
+                )
+                .strip()
+            )
+            for i in range(len(nodes))
+        ]
+    )
+
+    assert num_completed_backups == 1
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query(f"RESTORE TABLE tbl FROM {backup_name}")
+    assert node1.query("SELECT * FROM tbl") == "1\n"
+
+
 def test_required_privileges():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("

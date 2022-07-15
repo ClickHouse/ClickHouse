@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 import re
 import os.path
 from helpers.cluster import ClickHouseCluster
@@ -320,6 +321,42 @@ def test_async():
         instance, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
     )
 
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+@pytest.mark.parametrize("interface", ["native", "http"])
+def test_async_backups_to_same_destination(interface):
+    create_and_fill_table()
+    backup_name = new_backup_name()
+
+    ids = []
+    for _ in range(2):
+        if interface == "http":
+            res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+        else:
+            res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+        ids.append(res.split("\t")[0])
+
+    [id1, id2] = ids
+
+    assert_eq_with_retry(
+        instance,
+        f"SELECT count() FROM system.backups WHERE uuid IN ['{id1}', '{id2}'] AND status != 'BACKUP_COMPLETE' AND status != 'FAILED_TO_BACKUP'",
+        "0\n",
+    )
+
+    assert (
+        instance.query(f"SELECT status FROM system.backups WHERE uuid='{id1}'")
+        == "BACKUP_COMPLETE\n"
+    )
+
+    assert (
+        instance.query(f"SELECT status FROM system.backups WHERE uuid='{id2}'")
+        == "FAILED_TO_BACKUP\n"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
