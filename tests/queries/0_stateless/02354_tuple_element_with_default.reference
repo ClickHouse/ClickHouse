@@ -7,15 +7,20 @@ FROM t_tuple_element_default
 z
 SELECT tupleElement(t2, \'z\', \'z\')
 FROM t_tuple_element_default
+--------------------
 [(3,4)]
 SELECT tupleElement([(1, 2)], \'a\', [(3, 4)])
-[[1,2,3]]
-SELECT tupleElement([[tuple(1)]], \'a\', [[1, 2, 3]])
+--------------------
 SELECT tupleElement(t1, \'a\', [tuple(1)])
 FROM t_tuple_element_default
+--------------------
 [(0)]
 SELECT tupleElement(t1, \'a\', [tuple(0)])
 FROM t_tuple_element_default
-[(0)]
-SELECT tupleElement(t1, \'a\', [tuple(0)])
+[0]
+SELECT tupleElement(t1, \'a\', [0])
+FROM t_tuple_element_default
+[0]
+[0]
+SELECT tupleElement(t1, \'a\', [0])
 FROM t_tuple_element_default
