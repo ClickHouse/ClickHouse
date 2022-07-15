@@ -4,7 +4,7 @@ import re
 import os.path
 from multiprocessing.dummy import Pool
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import assert_eq_with_retry
 import time
 
 cluster = ClickHouseCluster(__file__)
@@ -43,13 +43,5 @@ def test_concurrent_backups(start_cluster):
 
     p.map(create_backup, range(40))
 
-    for _ in range(100):
-        result = node.query(
-            "SELECT count() FROM system.backups WHERE status != 'BACKUP_COMPLETE' and status != 'FAILED_TO_BACKUP'"
-        ).strip()
-        if result == "0":
-            break
-
-        time.sleep(0.1)
-
+    assert_eq_with_retry(node, "SELECT count() FROM system.backups WHERE status != 'BACKUP_COMPLETE' and status != 'FAILED_TO_BACKUP'", "0", retry_count=100)
     assert node.query("SELECT count() FROM s3_test where not ignore(*)") == "10000\n"
