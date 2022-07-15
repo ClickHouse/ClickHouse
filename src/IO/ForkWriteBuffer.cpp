@@ -36,7 +36,7 @@ void ForkWriteBuffer::nextImpl()
 
     try
     {
-        for (auto write_buffer :sources | std::views::reverse)
+        for (const WriteBufferPtr & write_buffer : sources | std::views::reverse)
         {
             if (write_buffer.get() != first_buffer)
             {
