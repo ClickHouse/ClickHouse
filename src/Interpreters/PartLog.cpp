@@ -25,15 +25,30 @@ PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType mer
 {
     switch (merge_type)
     {
-    case MergeType::Regular:
-        return REGULAR_MERGE;
-    case MergeType::TTLDelete:
-        return TTL_DELETE_MERGE;
-    case MergeType::TTLRecompress:
-        return TTL_RECOMPRESS_MERGE;
+        case MergeType::Regular:
+            return REGULAR_MERGE;
+        case MergeType::TTLDelete:
+            return TTL_DELETE_MERGE;
+        case MergeType::TTLRecompress:
+            return TTL_RECOMPRESS_MERGE;
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
+}
+
+PartLogElement::PartMergeAlgorithm PartLogElement::getMergeAlgorithm(MergeAlgorithm merge_algorithm_)
+{
+    switch (merge_algorithm_)
+    {
+        case MergeAlgorithm::Undecided:
+            return UNDECIDED;
+        case MergeAlgorithm::Horizontal:
+            return HORIZONTAL;
+        case MergeAlgorithm::Vertical:
+            return VERTICAL;
+    }
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeAlgorithm {}", static_cast<UInt64>(merge_algorithm_));
 }
 
 NamesAndTypesList PartLogElement::getNamesAndTypes()
@@ -60,12 +75,22 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
         }
     );
 
+    auto merge_algorithm_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Undecided",  static_cast<Int8>(UNDECIDED)},
+            {"Horizontal", static_cast<Int8>(HORIZONTAL)},
+            {"Vertical",   static_cast<Int8>(VERTICAL)},
+        }
+    );
+
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return {
         {"query_id", std::make_shared<DataTypeString>()},
         {"event_type", std::move(event_type_datatype)},
         {"merge_reason", std::move(merge_reason_datatype)},
+        {"merge_algorithm", std::move(merge_algorithm_datatype)},
         {"event_date", std::make_shared<DataTypeDate>()},
 
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -104,6 +129,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
     columns[i++]->insert(merge_reason);
+    columns[i++]->insert(merge_algorithm);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

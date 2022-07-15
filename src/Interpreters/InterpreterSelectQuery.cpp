@@ -1350,7 +1350,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names)
+                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, bool is_right)
                     {
                         SortDescription order_descr;
                         order_descr.reserve(key_names.size());
@@ -1368,15 +1368,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             settings.max_bytes_before_external_sort,
                             this->context->getTemporaryVolume(),
                             settings.min_free_disk_space_for_temporary_data);
-                        sorting_step->setStepDescription("Sort before JOIN");
+                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", is_right ? "right" : "left"));
                         plan.addStep(std::move(sorting_step));
                     };
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
                     {
                         const auto & join_clause = expressions.join->getTableJoin().getOnlyClause();
-                        add_sorting(query_plan, join_clause.key_names_left);
-                        add_sorting(*joined_plan, join_clause.key_names_right);
+                        add_sorting(query_plan, join_clause.key_names_left, false);
+                        add_sorting(*joined_plan, join_clause.key_names_right, true);
                     }
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
@@ -1933,6 +1933,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         syntax_analyzer_result->optimize_trivial_count
         && (settings.max_parallel_replicas <= 1)
         && !settings.allow_experimental_query_deduplication
+        && !settings.empty_result_for_aggregation_by_empty_set
         && storage
         && storage->getName() != "MaterializedMySQL"
         && !row_policy_filter
