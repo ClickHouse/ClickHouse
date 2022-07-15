@@ -92,12 +92,12 @@ namespace DB
         fd_set write_fds;
         int nfds;
 
-        for(;;)
+        for (;;)
         {
             FD_ZERO(&read_fds);
             FD_ZERO(&write_fds);
             nfds = ares_fds(channel, &read_fds,&write_fds);
-            if(nfds == 0)
+            if (nfds == 0)
             {
                 break;
             }
