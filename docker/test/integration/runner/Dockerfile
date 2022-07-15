@@ -63,6 +63,7 @@ RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
     avro==1.10.2 \
+    asyncio \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \
@@ -75,6 +76,7 @@ RUN python3 -m pip install \
     kazoo \
     lz4 \
     minio \
+    nats-py \
     protobuf \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
@@ -90,7 +92,7 @@ RUN python3 -m pip install \
     requests-kerberos \
     pyhdfs \
     azure-storage-blob \
-    meilisearch 
+    meilisearch==0.18.3 
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

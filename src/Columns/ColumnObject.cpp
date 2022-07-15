@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
-    extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
+    extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -298,7 +298,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         value_dim = column_dim;
 
     if (value_dim != column_dim)
-        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
+        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATCHED,
             "Dimension of types mismatched between inserted value and column. "
             "Dimension of value: {}. Dimension of column: {}",
              value_dim, column_dim);
