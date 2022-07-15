@@ -118,7 +118,7 @@ public:
     /// Is function node resolved
     bool isResolved() const
     {
-        return function != nullptr || aggregate_function != nullptr;
+        return result_type != nullptr && (function != nullptr || aggregate_function != nullptr);
     }
 
     /// Is function node resolved as aggregate function
@@ -162,6 +162,8 @@ public:
     String getName() const override;
 
 protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+
     void updateTreeHashImpl(HashState & hash_state) const override;
 
     ASTPtr toASTImpl() const override;

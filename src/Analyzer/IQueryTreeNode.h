@@ -92,10 +92,21 @@ public:
     /// Dump query tree to buffer starting with indent
     virtual void dumpTree(WriteBuffer & buffer, size_t indent) const = 0;
 
+    /** Is tree equal to other tree with node root.
+      *
+      * Aliases of query tree nodes are compared during isEqual call.
+      * Original ASTs of query tree nodes are not compared during isEqual call.
+      */
+    bool isEqual(const IQueryTreeNode & rhs) const;
+
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;
 
-    /// Get tree hash identifying current tree
+    /** Get tree hash identifying current tree
+      *
+      * Alias of query tree node is part of query tree hash.
+      * Original AST is not part of query tree hash.
+      */
     Hash getTreeHash() const;
 
     /// Update tree hash
@@ -183,7 +194,15 @@ public:
         return children;
     }
 
-    /** Subclass must update tree hash of its internal state and do not update tree hash for children.
+    /** Subclass must compare its internal state with rhs node and do not compare its children with rhs node children.
+      * Caller must compare node and rhs node children.
+      *
+      * This method is not protected because if subclass node has weak pointers to other query tree nodes it must use it
+      * as part of its isEqualImpl method. In child classes this method should be protected.
+      */
+    virtual bool isEqualImpl(const IQueryTreeNode & rhs) const = 0;
+
+    /** Subclass must update tree hash with its internal state and do not update tree hash for children.
       * Caller must update tree hash for node children.
       *
       * This method is not protected because if subclass node has weak pointers to other query tree nodes it must use it

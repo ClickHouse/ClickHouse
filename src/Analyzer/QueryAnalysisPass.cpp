@@ -1894,8 +1894,13 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
 {
     String node_alias = node->getAlias();
 
-    /// Do not update node from alias table if we resolve it for duplicate alias
-    if (!node_alias.empty() && scope.nodes_with_duplicated_aliases.contains(node))
+    /** Do not use alias table if node has alias same as some other node.
+      * Example: WITH x -> x + 1 AS lambda SELECT 1 AS lambda;
+      * During 1 AS lambda resolve if we use alias table we replace node with x -> x + 1 AS lambda.
+      */
+    bool use_alias_table = !scope.nodes_with_duplicated_aliases.contains(node);
+
+    if (!node_alias.empty() && use_alias_table)
     {
         /** Node could be potentially resolved by resolving other nodes.
           * SELECT b, a as b FROM test_table;
@@ -1999,7 +2004,7 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
     /** Update aliases after expression node was resolved.
       * Do not update node in alias table if we resolve it for duplicate alias.
       */
-    if (!node_alias.empty() && scope.nodes_with_duplicated_aliases.contains(node))
+    if (!node_alias.empty() && use_alias_table)
     {
         auto it = scope.alias_name_to_expression_node.find(node_alias);
         if (it != scope.alias_name_to_expression_node.end())
@@ -2119,13 +2124,12 @@ void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_tree_node, IdentifierR
       * After scope nodes are resolved, we can compare node with duplicate alias with
       * node from scope alias table.
       */
-    for (const auto & node : scope.nodes_with_duplicated_aliases)
+    for (const auto & node_with_duplicated_alias : scope.nodes_with_duplicated_aliases)
     {
-        auto node_copy = node;
-        auto node_alias = node_copy->getAlias();
-        resolveExpressionNode(node_copy, scope, true /*allow_lambda_expression*/);
+        auto node = node_with_duplicated_alias;
+        auto node_alias = node->getAlias();
+        resolveExpressionNode(node, scope, true /*allow_lambda_expression*/);
 
-        auto node_tree_hash = node->getTreeHash();
         bool has_node_in_alias_table = false;
 
         auto it = scope.alias_name_to_expression_node.find(node_alias);
@@ -2133,11 +2137,11 @@ void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_tree_node, IdentifierR
         {
             has_node_in_alias_table = true;
 
-            if (it->second->getTreeHash() != node_tree_hash)
+            if (!it->second->isEqual(*node))
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
-                    node_copy->formatASTForErrorMessage(),
-                    it->second->formatASTForErrorMessage(),
+                    node->dumpTree(),
+                    it->second->dumpTree(),
                     node_alias,
                     scope.scope_node->formatASTForErrorMessage());
         }
@@ -2147,10 +2151,10 @@ void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_tree_node, IdentifierR
         {
             has_node_in_alias_table = true;
 
-            if (it->second->getTreeHash() != node_tree_hash)
+            if (!it->second->isEqual(*node))
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
-                    node_copy->formatASTForErrorMessage(),
+                    node->formatASTForErrorMessage(),
                     it->second->formatASTForErrorMessage(),
                     node_alias,
                     scope.scope_node->formatASTForErrorMessage());
@@ -2159,7 +2163,7 @@ void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_tree_node, IdentifierR
         if (!has_node_in_alias_table)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Node {} with duplicate alias {} does not exists in alias table. In scope {}",
-                node_copy->formatASTForErrorMessage(),
+                node->formatASTForErrorMessage(),
                 node_alias,
                 scope.scope_node->formatASTForErrorMessage());
     }
