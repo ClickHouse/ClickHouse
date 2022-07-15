@@ -113,7 +113,6 @@ struct MergeListElement : boost::noncopyable
     /// Updated only for Vertical algorithm
     std::atomic<UInt64> columns_written{};
 
-    MemoryTracker memory_tracker{VariableContext::Process};
     /// Used to adjust ThreadStatus::untracked_memory_limit
     UInt64 max_untracked_memory;
     /// Used to avoid losing any allocation context
@@ -126,8 +125,10 @@ struct MergeListElement : boost::noncopyable
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    // Description used for logging
+    /// Description used for logging
+    /// Needs to outlive memory_tracker since it's used in its destructor
     const String description{"Mutate/Merge"};
+    MemoryTracker memory_tracker{VariableContext::Process};
 
     MergeListElement(
         const StorageID & table_id_,
