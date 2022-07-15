@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 """
 A plan:
-    - Receive GH objects cache from S3, ignore if fails
-    - Get all open release PRs
+    - TODO: consider receiving GH objects cache from S3, but it's really a few
+    of requests to API currently
+    - Get all open release PRs (20.10, 21.8, 22.5, etc.)
     - Get all pull-requests between the date of the merge-base for the oldest PR with
     labels pr-must-backport and version-specific v21.8-must-backport, but without
     pr-backported
     - Iterate over gotten PRs:
         - for pr-must-backport:
             - check if all backport-PRs are created. If yes,
-            set pr-backported label
+            set pr-backported label and finish
             - If not, create either cherrypick PRs or merge cherrypick (in the same
-            stage, if mergable?) and create backport-PRs
+            stage, if mergable) and create backport-PRs
             - If successfull, set pr-backported label on the PR
 
         - for version-specific labels:
-            - the same, check, cherry-pick, backport
+            - the same, check, cherry-pick, backport, pr-backported
 
 Cherry-pick stage:
     - From time to time the cherry-pick fails, if it was done manually. In the
-    case we should check if it's even needed, and mark the release as done somehow.
+    case we check if it's even needed, and mark the release as done somehow.
 """
 
 import argparse
@@ -39,13 +40,10 @@ from github_helper import (
     PullRequests,
     Repository,
 )
-from github.Label import Label
 from ssh import SSHKey
 
-Labels = List[Label]
 
-
-class labels:
+class Labels:
     LABEL_MUST_BACKPORT = "pr-must-backport"
     LABEL_BACKPORT = "pr-backport"
     LABEL_BACKPORTED = "pr-backported"
@@ -161,7 +159,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         # Create or reset backport branch
         git_runner(f"{self.git_prefix} checkout -B {self.backport_branch}")
         # Merge all changes from PR's the first parent commit w/o applying anything
-        # It will produce the commit like cherry-pick
+        # It will allow to create a merge commit like it would be a cherry-pick
         first_parent = git_runner(f"git rev-parse {self.pr.merge_commit_sha}^1")
         git_runner(f"{self.git_prefix} merge -s ours --no-edit {first_parent}")
 
@@ -172,12 +170,13 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         )
 
         # Check if there actually any changes between branches. If no, then no
-        # other actions are required.
+        # other actions are required. It's possible when changes are backported
+        # manually to the release branch already
         try:
             output = git_runner(
                 f"{self.git_prefix} merge --no-commit --no-ff {self.cherrypick_branch}"
             )
-            # 'up-to-date', 'up to date', who knows what else
+            # 'up-to-date', 'up to date', who knows what else (╯°v°)╯ ^┻━┻
             if output.startswith("Already up") and output.endswith("date."):
                 # The changes are already in the release branch, we are done here
                 logging.info(
@@ -191,9 +190,10 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             # There are most probably conflicts, they'll be resolved in PR
             git_runner(f"{self.git_prefix} reset --merge")
         else:
-            # There are changes able to apply, so continue
+            # There are changes to apply, so continue
             git_runner(f"{self.git_prefix} reset --merge")
 
+        # Push, create the cherrypick PR, lable and assign it
         for branch in [self.cherrypick_branch, self.backport_branch]:
             git_runner(f"{self.git_prefix} push -f {self.REMOTE} {branch}:{branch}")
 
@@ -204,12 +204,14 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
-        self.cherrypick_pr.add_to_labels(labels.LABEL_CHERRYPICK)
-        self.cherrypick_pr.add_to_labels(labels.LABEL_DO_NOT_TEST)
+        self.cherrypick_pr.add_to_labels(Labels.LABEL_CHERRYPICK)
+        self.cherrypick_pr.add_to_labels(Labels.LABEL_DO_NOT_TEST)
         self.cherrypick_pr.add_to_assignees(self.pr.assignee)
         self.cherrypick_pr.add_to_assignees(self.pr.user)
 
     def create_backport(self):
+        # Checkout the backport branch from the remote and make all changes to
+        # apply like they are only one cherry-pick commit on top of release
         git_runner(f"{self.git_prefix} checkout -f {self.backport_branch}")
         git_runner(
             f"{self.git_prefix} pull --ff-only {self.REMOTE} {self.backport_branch}"
@@ -221,6 +223,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         git_runner(f"{self.git_prefix} reset --soft {merge_base}")
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
         git_runner(f"{self.git_prefix} commit -a --allow-empty -F -", input=title)
+
+        # Push with force, create the backport PR, lable and assign it
         git_runner(
             f"{self.git_prefix} push -f {self.REMOTE} "
             f"{self.backport_branch}:{self.backport_branch}"
@@ -233,7 +237,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             base=self.name,
             head=self.backport_branch,
         )
-        self.backport_pr.add_to_labels(labels.LABEL_BACKPORT)
+        self.backport_pr.add_to_labels(Labels.LABEL_BACKPORT)
         self.backport_pr.add_to_assignees(self.pr.assignee)
         self.backport_pr.add_to_assignees(self.pr.user)
 
@@ -252,9 +256,10 @@ class Backport:
         self.gh = gh
         self._repo_name = repo
         self.dry_run = dry_run
-        self._repo = None  # type: Optional[Repository]
-        self._remote = ""
+
         self._query = f"type:pr repo:{repo}"
+        self._remote = ""
+        self._repo = None  # type: Optional[Repository]
         self.release_prs = []  # type: PullRequests
         self.release_branches = []  # type: List[str]
         self.labels_to_backport = []  # type: List[str]
@@ -270,8 +275,8 @@ class Backport:
             self._remote = tuple(
                 remote.split(maxsplit=1)[0]
                 for remote in remotes
-                if f"github.com/{self._repo_name}" in remote  # ssh
-                or f"github.com:{self._repo_name}" in remote  # https
+                if f"github.com/{self._repo_name}" in remote  # https
+                or f"github.com:{self._repo_name}" in remote  # ssh
             )[0]
             git_runner(f"git fetch {self._remote}")
             ReleaseBranch.REMOTE = self._remote
@@ -283,7 +288,6 @@ class Backport:
             query=f"{self._query} is:open",
             sort="created",
             order="asc",
-            type="pr",
             label="release",
         )
         self.release_branches = [pr.head.ref for pr in self.release_prs]
@@ -293,6 +297,7 @@ class Backport:
         logging.info("Active releases: %s", ", ".join(self.release_branches))
 
     def receive_prs_for_backport(self):
+        # The commit is the oldest open release branch's merge-base
         since_commit = git_runner(
             f"git merge-base {self.remote}/{self.release_branches[0]} "
             f"{self.remote}/{self.default_branch}"
@@ -300,11 +305,12 @@ class Backport:
         since_date = date.fromisoformat(
             git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
         )
+        # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
         self.prs_for_backport = self.gh.get_pulls_from_search(
             query=f"{self._query} -label:pr-backported",
-            label=",".join(self.labels_to_backport + [labels.LABEL_MUST_BACKPORT]),
+            label=",".join(self.labels_to_backport + [Labels.LABEL_MUST_BACKPORT]),
             merged=[since_date, tomorrow],
         )
         logging.info(
@@ -324,7 +330,7 @@ class Backport:
 
     def process_pr(self, pr: PullRequest):
         pr_labels = [label.name for label in pr.labels]
-        if labels.LABEL_MUST_BACKPORT in pr_labels:
+        if Labels.LABEL_MUST_BACKPORT in pr_labels:
             branches = [
                 ReleaseBranch(br, pr) for br in self.release_branches
             ]  # type: List[ReleaseBranch]
@@ -389,16 +395,12 @@ class Backport:
         if self.dry_run:
             logging.info("DRY RUN: would mark PR #%s as done", pr.number)
             return
-        pr.add_to_labels(labels.LABEL_BACKPORTED)
+        pr.add_to_labels(Labels.LABEL_BACKPORTED)
         logging.info(
             "PR #%s is successfully labeled with `%s`",
             pr.number,
-            labels.LABEL_BACKPORTED,
+            Labels.LABEL_BACKPORTED,
         )
-
-    @staticmethod
-    def pr_labels(pr: PullRequest) -> List[str]:
-        return [label.name for label in pr.labels]
 
     @property
     def repo(self) -> Repository:
