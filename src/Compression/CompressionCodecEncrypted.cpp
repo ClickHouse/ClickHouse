@@ -131,7 +131,7 @@ std::string lastErrorString()
 /// This function get key and nonce and encrypt text with their help.
 /// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
-size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
+size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
 {
     /// Init context for encryption, using key.
     EVP_AEAD_CTX encrypt_ctx;
@@ -160,7 +160,7 @@ size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, En
 /// This function get key and nonce and encrypt text with their help.
 /// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
-size_t decrypt(const std::string_view & ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
+size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
 {
     /// Init context for decryption with given key.
     EVP_AEAD_CTX decrypt_ctx;
