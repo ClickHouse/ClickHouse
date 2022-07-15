@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 
 namespace DB
 {
@@ -269,8 +270,8 @@ private:
     bool last_reader_in_chain = false;
     bool is_initialized = false;
     Names non_const_virtual_column_names;
-    bool need_read_deleted_mask = false;
-    ColumnUInt8::Ptr deleted_rows;
+    bool need_apply_deleted_mask = false;
+    MergeTreeDataPartDeletedMask deleted_mask;
 };
 
 }

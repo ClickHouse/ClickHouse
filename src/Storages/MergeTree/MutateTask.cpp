@@ -1496,13 +1496,18 @@ private:
         /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
         if (ctx->source_part->hasLightweightDelete())
         {
-            const auto & deleted_rows_col = ctx->source_part->getDeletedMask();
-            const auto & source_data = deleted_rows_col->getData();
-            data.insert(source_data.begin(), source_data.begin() + ctx->source_part->rows_count);
+            MergeTreeDataPartDeletedMask deleted_mask {};
+            if (ctx->source_part->getDeletedMask(deleted_mask))
+            {
+                const auto & deleted_rows_col = deleted_mask.getDeletedRows();
+                const auto & source_data = deleted_rows_col.getData();
+                data.insert(source_data.begin(), source_data.begin() + ctx->source_part->rows_count);
 
-            has_deleted_rows = true;
+                has_deleted_rows = true;
+            }
         }
-        else
+
+        if (!has_deleted_rows)
             new_deleted_rows->insertManyDefaults(ctx->source_part->rows_count);
 
         /// Mark the data corresponding to the offset in the as deleted.

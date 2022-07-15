@@ -117,7 +117,7 @@ void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
     assertEOF(*data_read_buffer);
 
     // we probably don't want to check column hash here, since codec verifies data integrity.
-    deleted_rows = res_column;
+    deleted_rows = std::move(res_column);
 }
 
 void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const

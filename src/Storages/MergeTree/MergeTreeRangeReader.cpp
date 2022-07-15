@@ -674,9 +674,8 @@ MergeTreeRangeReader::MergeTreeRangeReader(
             sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
     }
 
-    need_read_deleted_mask = merge_tree_reader->needReadDeletedMask();
-    if (need_read_deleted_mask)
-       deleted_rows = merge_tree_reader->data_part->getDeletedMask();
+    if (merge_tree_reader->needReadDeletedMask())
+       need_apply_deleted_mask = merge_tree_reader->data_part->getDeletedMask(deleted_mask);
 
     if (prewhere_info)
     {
@@ -959,7 +958,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     }
 
     /// Do similar as part_offset for deleted mask.
-    if (need_read_deleted_mask)
+    if (need_apply_deleted_mask)
         fillDeletedRowMaskColumn(result, leading_begin_part_offset, leading_end_part_offset);
 
     return result;
@@ -1002,7 +1001,8 @@ void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 
     UInt8 * pos = vec.data();
     UInt8 * end = &vec[num_rows];
 
-    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows->getData();
+    const auto & deleted_rows_col = deleted_mask.getDeletedRows();
+    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col.getData();
 
     while (pos < end && leading_begin_part_offset < leading_end_part_offset)
     {
@@ -1151,7 +1151,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
 /// If prewhere_info exists, only apply to the first prewhere filter.
 void MergeTreeRangeReader::executeDeletedRowMaskFilterColumns(ReadResult & result)
 {
-    if (prewhere_info || !need_read_deleted_mask || !result.deleted_mask_filter_holder)
+    if (prewhere_info || !need_apply_deleted_mask || !result.deleted_mask_filter_holder)
         return;
 
     const ColumnUInt8 * mask_filter = typeid_cast<const ColumnUInt8 *>(result.deleted_mask_filter_holder.get());

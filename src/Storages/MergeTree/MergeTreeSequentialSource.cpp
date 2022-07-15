@@ -68,6 +68,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     reader = data_part->getReader(columns_for_reader, storage_snapshot->metadata,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings, {}, {});
+
+    if (data_part->hasLightweightDelete())
+        need_apply_deleted_mask = data_part->getDeletedMask(deleted_mask);
 }
 
 Chunk MergeTreeSequentialSource::generate()
@@ -76,11 +79,6 @@ try
     const auto & header = getPort().getHeader();
 
     /// The chunk after deleted mask applied maybe empty. But the empty chunk means done of read rows.
-    bool need_read_deleted_mask = data_part->hasLightweightDelete();
-    ColumnUInt8::Ptr deleted_rows_col;
-    if (need_read_deleted_mask)
-        deleted_rows_col = data_part->getDeletedMask();
-
     do
     {
         if (!isCancelled() && current_row < data_part->rows_count)
@@ -97,9 +95,10 @@ try
                 current_row += rows_read;
                 current_mark += (rows_to_read == rows_read);
 
-                if (need_read_deleted_mask)
+                if (need_apply_deleted_mask)
                 {
-                    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col->getData();
+                    const auto & deleted_rows_col = deleted_mask.getDeletedRows();
+                    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col.getData();
 
                     size_t pos = current_row - rows_read;
 
