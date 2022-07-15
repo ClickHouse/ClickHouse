@@ -322,7 +322,11 @@ else
     clickhouse-client --query="SELECT 'Server version: ', version()"
 
     # Install new package before running stress test because we should use new clickhouse-client and new clickhouse-test
+    # But we should leave old binary in /usr/bin/ for gdb (so it will print sane stacktarces)
+    mv /usr/bin/clickhouse previous_release_package_folder/
     install_packages package_folder
+    mv /usr/bin/clickhouse package_folder/
+    mv previous_release_package_folder/clickhouse /usr/bin/
 
     mkdir tmp_stress_output
 
@@ -337,6 +341,7 @@ else
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
 
     # Start new server
+    mv package_folder/clickhouse /usr/bin/
     configure
     start 500
     clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
