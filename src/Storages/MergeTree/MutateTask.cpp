@@ -644,7 +644,7 @@ struct MutationContext
 
     QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor{nullptr};
     ProgressCallback progress_callback;
     Block updated_header;
 
@@ -1511,7 +1511,7 @@ private:
             new_deleted_rows->insertManyDefaults(ctx->source_part->rows_count);
 
         /// Mark the data corresponding to the offset in the as deleted.
-        while (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(block))
+        while (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor && ctx->mutating_executor->pull(block))
         {
             size_t block_rows = block.rows();
 
@@ -1592,6 +1592,10 @@ MutateTask::MutateTask(
 
     /// part is checked for lightweight delete in selectPartsToMutate().
     ctx->is_lightweight_mutation = ctx->future_part->mutation_type == MutationType::Lightweight;
+
+    /// Empty mutation commands mean that the mutation is killed. Just work as ordinary, clone the part.
+    if (ctx->commands->empty())
+        ctx->is_lightweight_mutation = false;
 
     auto storage_snapshot = ctx->storage_from_source_part->getStorageSnapshot(ctx->metadata_snapshot, context_);
     extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
