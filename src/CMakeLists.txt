@@ -376,7 +376,7 @@ if (TARGET ch_contrib::rdkafka)
 endif()
 
 if (TARGET ch_contrib::cassandra)
-    dbms_target_link_libraries(PRIVATE ch_contrib::cassandra)
+    dbms_target_link_libraries(PUBLIC ch_contrib::cassandra)
 endif()
 
 if (TARGET ch_contrib::nats_io)
