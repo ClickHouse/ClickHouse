@@ -107,7 +107,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         {
             if (async)
             {
-                query_scope.emplace(context_in_use);
+                query_scope.emplace(mutable_context);
                 setThreadName("BackupWorker");
             }
 
