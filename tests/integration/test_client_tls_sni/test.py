@@ -8,7 +8,8 @@ import os.path
 import time
 
 HTTPS_PORT = 8443
-NODE_IP = "10.5.172.77"  # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
+# It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
+NODE_IP = "10.5.172.77"
 NODE_IP_WITH_HTTPS_PORT = NODE_IP + ":" + str(HTTPS_PORT)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -50,7 +51,7 @@ def get_ssl_context(cert_name):
 
 
 def execute_query_https(
-        query, user, enable_ssl_auth=True, cert_name=None, password=None
+    query, user, enable_ssl_auth=True, cert_name=None, password=None
 ):
     headers = {"X-ClickHouse-User": user}
     if enable_ssl_auth:
@@ -60,11 +61,12 @@ def execute_query_https(
         headers["X-ClickHouse-Key"] = password
 
     headers["Host"] = "clickhouse.com"
-    ctx = get_ssl_context(cert_name)
 
     url = f"{NODE_IP_WITH_HTTPS_PORT}"
     # source_address should be a bindable address - just binding to localhost and a random port
-    c = http.client.HTTPSConnection(host=url, source_address=('10.5.1.1', 12345), context=ctx)
+    c = http.client.HTTPSConnection(
+        host=url, source_address=("10.5.1.1", 12345), context=get_ssl_context(cert_name)
+    )
     path = f"/?query={urllib.parse.quote(query)}"
     c.request("POST", path, headers=headers)
     response = c.getresponse().read()
@@ -72,11 +74,21 @@ def execute_query_https(
 
 
 def test_tls_sni():
-    execute_query_https("SELECT 1 settings log_queries=1;", user="john", cert_name="client1")
+    execute_query_https(
+        "SELECT 1 settings log_queries=1;", user="john", cert_name="client1"
+    )
     execute_query_https("SYSTEM FLUSH LOGS;", user="john", cert_name="client1")
     time.sleep(1)
-    res = execute_query_https("SELECT tls_sni from system.query_log LIMIT 1;", user="john", cert_name="client1")
-    assert (res == "10.5.1.1:12345\n")
+    res = execute_query_https(
+        "SELECT tls_sni from system.query_log LIMIT 1;",
+        user="john",
+        cert_name="client1",
+    )
+    assert res == "10.5.1.1:12345\n"
     # also just check the http_host field too
-    res = execute_query_https("SELECT http_host from system.query_log LIMIT 1;", user="john", cert_name="client1")
-    assert (res == "clickhouse.com\n")
+    res = execute_query_https(
+        "SELECT http_host from system.query_log LIMIT 1;",
+        user="john",
+        cert_name="client1",
+    )
+    assert res == "clickhouse.com\n"
