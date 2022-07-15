@@ -401,7 +401,8 @@ public:
         typename SmallMapTable::iterator it;
         bool inserted;
         this->emplace(x, it, inserted);
-        new (&it->getMapped()) mapped_type();
+        if (inserted)
+            new (&it->getMapped()) mapped_type();
         return it->getMapped();
     }
 };
