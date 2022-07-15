@@ -12,6 +12,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
 #include <base/getThreadId.h>
+#include <IO/ReadHelpers.h>
 
 #include <Common/config.h>
 
@@ -354,11 +355,36 @@ ZooKeeper::ZooKeeper(
     send_thread = ThreadFromGlobalPool([this] { sendThread(); });
     receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-    initApiVersion();
-
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
 
+
+Poco::Net::StreamSocket ZooKeeper::connectToNode(const Poco::Net::SocketAddress & node_address, Poco::Timespan connection_timeout, bool is_secure)
+{
+    Poco::Net::StreamSocket result;
+    /// Reset the state of previous attempt.
+    if (is_secure)
+    {
+#if USE_SSL
+        result = Poco::Net::SecureStreamSocket();
+#else
+        throw Poco::Exception(
+            "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
+#endif
+    }
+    else
+    {
+        result = Poco::Net::StreamSocket();
+    }
+
+    result.connect(node_address, connection_timeout);
+
+    result.setReceiveTimeout(operation_timeout);
+    result.setSendTimeout(operation_timeout);
+    result.setNoDelay(true);
+
+    return result;
+}
 
 void ZooKeeper::connect(
     const Nodes & nodes,
@@ -377,27 +403,8 @@ void ZooKeeper::connect(
         {
             try
             {
-                /// Reset the state of previous attempt.
-                if (node.secure)
-                {
-#if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
-#else
-                    throw Poco::Exception(
-                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
-#endif
-                }
-                else
-                {
-                    socket = Poco::Net::StreamSocket();
-                }
-
-                socket.connect(node.address, connection_timeout);
+                socket = connectToNode(node.address, connection_timeout, node.secure);
                 socket_address = socket.peerAddress();
-
-                socket.setReceiveTimeout(operation_timeout);
-                socket.setSendTimeout(operation_timeout);
-                socket.setNoDelay(true);
 
                 in.emplace(socket);
                 out.emplace(socket);
@@ -423,6 +430,9 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
+
+                initApiVersion(node.address, connection_timeout, node.secure);
+
                 break;
             }
             catch (...)
@@ -1066,29 +1076,29 @@ Coordination::KeeperApiVersion ZooKeeper::getApiVersion()
     return keeper_api_version;
 }
 
-void ZooKeeper::initApiVersion()
+void ZooKeeper::initApiVersion(const Poco::Net::SocketAddress & node_address, Poco::Timespan connection_timeout, bool is_secure)
 {
-    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::GetResponse & response) mutable
+    try
     {
-        promise->set_value(response);
-    };
+        auto command_socket = connectToNode(node_address, connection_timeout, is_secure);
 
-    get(Coordination::keeper_api_version_path, std::move(callback), {});
-    if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
-        return;
+        auto apiv_code = Coordination::fourLetterCommandNameToCode("apiv");
 
-    auto response = future.get();
+        WriteBufferFromPocoSocket command_out(command_socket);
+        Coordination::write(apiv_code, command_out);
+        command_out.next();
 
-    if (response.error != Coordination::Error::ZOK)
-        return;
+        ReadBufferFromPocoSocket command_in(command_socket);
+        std::string result;
+        readStringUntilEOF(result, command_in);
 
-    uint8_t keeper_version{0};
-    DB::ReadBufferFromOwnString buf(response.data);
-    DB::readIntText(keeper_version, buf);
-    keeper_api_version = static_cast<Coordination::KeeperApiVersion>(keeper_version);
+        auto read_version = parseFromString<uint8_t>(result);
+        keeper_api_version = static_cast<KeeperApiVersion>(read_version);
+    }
+    catch (const DB::Exception & e)
+    {
+        LOG_ERROR(&Poco::Logger::get("ZooKeeper"), "Failed to get version: {}", e.message());
+    }
 }
 
 
