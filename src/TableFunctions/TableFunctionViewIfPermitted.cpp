@@ -85,7 +85,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::ACCESS_DENIED)
-            return {};
+            return false;
         throw;
     }
 
