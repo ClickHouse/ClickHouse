@@ -302,18 +302,34 @@ Default value: `ALL`.
 
 Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
 
+Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
+
 Possible values:
 
-- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
-- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
-- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
-- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+- `default` — `hash` or `direct`, if possible (same as `direct,hash`)
 
-Default value: `hash`.
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
-When using `hash` algorithm the right part of `JOIN` is uploaded into RAM.
+- `parallel_hash` - a variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
-When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
+When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+
+- `partial_merge` — a variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
+
+The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
+
+When using `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
+
+- `direct` - can be applied when the right storage supports key-value requests.
+
+The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](../../engines/table-engines/special/dictionary.md#dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
+
+- `auto` — try `hash` join and switch on the fly to another algorithm if the memory limit is violated.
+
+- `full_sorting_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+
+- `prefer_partial_merge` — ClickHouse always tries to use `partial_merge` join if possible, otherwise uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
