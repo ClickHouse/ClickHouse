@@ -403,10 +403,11 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    NOEXCEPT_SCOPE;
-    UUID db_uuid = database->getUUID();
-    if (db_uuid != UUIDHelpers::Nil)
-        addUUIDMapping(db_uuid, database, nullptr);
+    NOEXCEPT_SCOPE({
+        UUID db_uuid = database->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            addUUIDMapping(db_uuid, database, nullptr);
+    });
 }
 
 

@@ -147,9 +147,10 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         checkIsNotCancelled();
 
         part_to_remove->version.lockRemovalTID(tid, context);
-        NOEXCEPT_SCOPE;
-        storages.insert(storage);
-        removing_parts.push_back(part_to_remove);
+        NOEXCEPT_SCOPE({
+            storages.insert(storage);
+            removing_parts.push_back(part_to_remove);
+        });
     }
 
     part_to_remove->appendRemovalTIDToVersionMetadata();
