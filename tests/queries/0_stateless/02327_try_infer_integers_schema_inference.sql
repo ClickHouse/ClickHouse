@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 set input_format_try_infer_integers=1;
 
 select 'JSONEachRow';
