@@ -20,7 +20,7 @@ public:
 
     ~DeflateQplJobHWPool();
 
-    qpl_job * acquireJob(UInt32 * job_id);
+    qpl_job * acquireJob(UInt32 &job_id);
 
     static void releaseJob(UInt32 job_id);
 
