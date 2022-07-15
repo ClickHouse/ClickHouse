@@ -1,13 +1,14 @@
 #ifdef HAS_RESERVED_IDENTIFIER
-#pragma clang diagnostic ignored "-Wreserved-identifier"
+#    pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 
+#include <sys/resource.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 #if defined(OS_LINUX)
@@ -18,51 +19,52 @@
 #include <csignal>
 #include <unistd.h>
 
-#include <typeinfo>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <memory>
+#include <typeinfo>
 #include <base/scope_guard.h>
 
+#include <Poco/ErrorHandler.h>
+#include <Poco/Exception.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
-#include <Poco/Exception.h>
-#include <Poco/ErrorHandler.h>
 
-#include <Common/ErrorHandlers.h>
 #include <base/argsToConfig.h>
-#include <base/getThreadId.h>
 #include <base/coverage.h>
+#include <base/getThreadId.h>
 #include <base/sleep.h>
+#include <Common/ErrorHandlers.h>
 
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
+#include <filesystem>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ClickHouseRevision.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Elf.h>
 #include <Common/Exception.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/Config/ConfigProcessor.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/Elf.h>
-#include <Common/setThreadName.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/logger_useful.h>
-#include <filesystem>
+#include <Common/setThreadName.h>
 
 #include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
 
 #include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
-#   pragma GCC diagnostic ignored "-Wunused-macros"
+#    pragma GCC diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
-#   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
+#    define _XOPEN_SOURCE 700 // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
 
@@ -92,19 +94,14 @@ static void call_default_signal_handler(int sig)
         DB::throwFromErrno("Cannot send signal.", DB::ErrorCodes::CANNOT_SEND_SIGNAL);
 }
 
-static const size_t signal_pipe_buf_size =
-    sizeof(int)
-    + sizeof(siginfo_t)
-    + sizeof(ucontext_t*)
-    + sizeof(StackTrace)
-    + sizeof(UInt32)
-    + sizeof(void*);
+static const size_t signal_pipe_buf_size
+    = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t *) + sizeof(StackTrace) + sizeof(UInt32) + sizeof(void *);
 
-using signal_function = void(int, siginfo_t*, void*);
+using signal_function = void(int, siginfo_t *, void *);
 
 static void writeSignalIDtoSignalPipe(int sig)
 {
-    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+    auto saved_errno = errno; /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
@@ -133,7 +130,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+    auto saved_errno = errno; /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
@@ -153,7 +150,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
+        sleepForSeconds(20); /// FIXME: use some feedback from threads that process stacktrace
         call_default_signal_handler(sig);
     }
 
@@ -162,8 +159,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
 
 /// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
-__attribute__((__weak__)) void collectCrashLog(
-    Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
+__attribute__((__weak__)) void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 
 
 /** The thread that read info about signal or std::terminate from pipe.
@@ -181,16 +177,14 @@ public:
         SanitizerTrap = -3,
     };
 
-    explicit SignalListener(BaseDaemon & daemon_)
-        : log(&Poco::Logger::get("BaseDaemon"))
-        , daemon(daemon_)
-    {
-    }
+    explicit SignalListener(BaseDaemon & daemon_) : log(&Poco::Logger::get("BaseDaemon")), daemon(daemon_) { }
 
     void run() override
     {
         static_assert(PIPE_BUF >= 512);
-        static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
+        static_assert(
+            signal_pipe_buf_size <= PIPE_BUF,
+            "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
         char buf[signal_pipe_buf_size];
         DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
 
@@ -225,9 +219,7 @@ public:
 
                 onTerminate(message, thread_num);
             }
-            else if (sig == SIGINT ||
-                sig == SIGQUIT ||
-                sig == SIGTERM)
+            else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
             {
                 daemon.handleSignal(sig);
             }
@@ -264,8 +256,14 @@ private:
     {
         size_t pos = message.find('\n');
 
-        LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
+        LOG_FATAL(
+            log,
+            "(version {}{}, {}) (from thread {}) {}",
+            VERSION_STRING,
+            VERSION_OFFICIAL,
+            daemon.build_id_info,
+            thread_num,
+            message.substr(0, pos));
 
         /// Print trace from std::terminate exception line-by-line to make it easy for grep.
         while (pos != std::string_view::npos)
@@ -313,15 +311,29 @@ private:
 
         if (query_id.empty())
         {
-            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, strsignal(sig), sig);
+            LOG_FATAL(
+                log,
+                "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
+                VERSION_STRING,
+                VERSION_OFFICIAL,
+                daemon.build_id_info,
+                thread_num,
+                strsignal(sig),
+                sig);
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, query, strsignal(sig), sig);
+            LOG_FATAL(
+                log,
+                "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
+                VERSION_STRING,
+                VERSION_OFFICIAL,
+                daemon.build_id_info,
+                thread_num,
+                query_id,
+                query,
+                strsignal(sig),
+                sig);
         }
 
         String error_message;
@@ -395,12 +407,7 @@ private:
 #if defined(SANITIZER)
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
-/// Sanitizers may not expect some function calls from death callback.
-/// Let's try to disable instrumentation to avoid possible issues.
-/// However, this callback may call other functions that are still instrumented.
-/// We can try [[clang::always_inline]] attribute for statements in future (available in clang-15)
-/// See https://github.com/google/sanitizers/issues/1543 and https://github.com/google/sanitizers/issues/1549.
-static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
+static void sanitizerDeathCallback()
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     /// Also need to send data via pipe. Otherwise it may lead to deadlocks or failures in printing diagnostic info.
@@ -608,7 +615,9 @@ void debugIncreaseOOMScore()
     LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
 }
 #else
-void debugIncreaseOOMScore() {}
+void debugIncreaseOOMScore()
+{
+}
 #endif
 }
 
@@ -731,14 +740,12 @@ void BaseDaemon::initialize(Application & self)
     if (!log_path.empty())
     {
         std::string path = createDirectory(log_path);
-        if (is_daemon
-            && chdir(path.c_str()) != 0)
+        if (is_daemon && chdir(path.c_str()) != 0)
             throw Poco::Exception("Cannot change directory to " + path);
     }
     else
     {
-        if (is_daemon
-            && chdir("/tmp") != 0)
+        if (is_daemon && chdir("/tmp") != 0)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
@@ -885,50 +892,40 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
-        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", " + build_id_info
-        + ", PID " + std::to_string(getpid()));
+    Poco::Logger::root().information(
+        "Starting " + std::string{VERSION_FULL} + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision()) + ", "
+        + build_id_info + ", PID " + std::to_string(getpid()));
 }
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
 {
-    new_options.addOption(
-        Poco::Util::Option("config-file", "C", "load configuration from a given file")
-            .required(false)
-            .repeatable(false)
-            .argument("<file>")
-            .binding("config-file"));
+    new_options.addOption(Poco::Util::Option("config-file", "C", "load configuration from a given file")
+                              .required(false)
+                              .repeatable(false)
+                              .argument("<file>")
+                              .binding("config-file"));
+
+    new_options.addOption(Poco::Util::Option("log-file", "L", "use given log file")
+                              .required(false)
+                              .repeatable(false)
+                              .argument("<file>")
+                              .binding("logger.log"));
+
+    new_options.addOption(Poco::Util::Option("errorlog-file", "E", "use given log file for errors only")
+                              .required(false)
+                              .repeatable(false)
+                              .argument("<file>")
+                              .binding("logger.errorlog"));
 
     new_options.addOption(
-        Poco::Util::Option("log-file", "L", "use given log file")
-            .required(false)
-            .repeatable(false)
-            .argument("<file>")
-            .binding("logger.log"));
-
-    new_options.addOption(
-        Poco::Util::Option("errorlog-file", "E", "use given log file for errors only")
-            .required(false)
-            .repeatable(false)
-            .argument("<file>")
-            .binding("logger.errorlog"));
-
-    new_options.addOption(
-        Poco::Util::Option("pid-file", "P", "use given pidfile")
-            .required(false)
-            .repeatable(false)
-            .argument("<file>")
-            .binding("pid"));
+        Poco::Util::Option("pid-file", "P", "use given pidfile").required(false).repeatable(false).argument("<file>").binding("pid"));
 
     Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
 void BaseDaemon::handleSignal(int signal_id)
 {
-    if (signal_id == SIGINT ||
-        signal_id == SIGQUIT ||
-        signal_id == SIGTERM)
+    if (signal_id == SIGINT || signal_id == SIGQUIT || signal_id == SIGTERM)
     {
         std::lock_guard lock(signal_handler_mutex);
         {
@@ -962,7 +959,7 @@ void BaseDaemon::waitForTerminationRequest()
 {
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
-    signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
+    signal_event.wait(lock, [this]() { return terminate_signals_counter > 0; });
 }
 
 
@@ -1001,7 +998,7 @@ void BaseDaemon::setupWatchdog()
         }
 
         /// Change short thread name and process name.
-        setThreadName("clckhouse-watch");   /// 15 characters
+        setThreadName("clckhouse-watch"); /// 15 characters
 
         if (argv0)
         {
@@ -1013,9 +1010,18 @@ void BaseDaemon::setupWatchdog()
         /// If streaming compression of logs is used then we write watchdog logs to cerr
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
-            logger().setChannel(log);
+            if (config().has("logger.json"))
+            {
+                Poco::AutoPtr<OwnJSONPatternFormatter> pf = new OwnJSONPatternFormatter;
+                Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+                logger().setChannel(log);
+            }
+            else
+            {
+                Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+                Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+                logger().setChannel(log);
+            }
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
@@ -1073,9 +1079,11 @@ void BaseDaemon::setupWatchdog()
 
             if (sig == SIGKILL)
             {
-                logger().fatal(fmt::format("Child process was terminated by signal {} (KILL)."
+                logger().fatal(fmt::format(
+                    "Child process was terminated by signal {} (KILL)."
                     " If it is not done by 'forcestop' command or manually,"
-                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).", sig));
+                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).",
+                    sig));
             }
             else
             {

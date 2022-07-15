@@ -60,6 +60,15 @@
           </logger>
         </levels>
         -->
+        <!-- Structured log formatting:
+        You can specify log format (for now, JSON only). In that case, the console log will be printed
+        in JSON format.
+        For example, like this below:
+        {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        To enable JSON logging support, just uncomment <json> tag. 
+        Having the <json> tag will make it work. For better understanding/visibility, you can add "true" or "1".
+        -->
+        <json>true</json>
     </logger>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
