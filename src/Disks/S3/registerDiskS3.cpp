@@ -9,6 +9,8 @@
 #if USE_AWS_S3
 
 #include <aws/core/client/DefaultRetryStrategy.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
@@ -20,6 +22,7 @@
 #include "Disks/DiskLocal.h"
 #include "Disks/RemoteDisksCommon.h"
 #include <Common/FileCacheFactory.h>
+
 
 namespace DB
 {
@@ -46,7 +49,79 @@ void checkReadAccess(const String & disk_name, IDisk & disk)
         throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
 }
 
-void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
+void checkRemoveAccess(IDisk & disk)
+{
+    disk.removeFile("test_acl");
+}
+
+bool checkBatchRemoveIsMissing(DiskS3 & disk, std::unique_ptr<DiskS3Settings> settings, const String & bucket)
+{
+    const String path = "_test_remove_objects_capability";
+    try
+    {
+        auto file = disk.writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        file->write("test", 4);
+        file->finalize();
+    }
+    catch (...)
+    {
+        try
+        {
+            disk.removeFile(path);
+        }
+        catch (...)
+        {
+        }
+        return false; /// We don't have write access, therefore no information about batch remove.
+    }
+
+    /// See `IDiskRemote::removeSharedFile`.
+    auto fs_paths_keeper = std::dynamic_pointer_cast<S3PathKeeper>(disk.createFSPathKeeper());
+    disk.removeMetadata(path, fs_paths_keeper);
+
+    auto fs_paths_keeper_copy = std::dynamic_pointer_cast<S3PathKeeper>(disk.createFSPathKeeper());
+    for (const auto & chunk : fs_paths_keeper->getChunks())
+        for (const auto & obj : chunk)
+            fs_paths_keeper_copy->addPath(obj.GetKey());
+
+    try
+    {
+        /// See `DiskS3::removeFromRemoteFS`.
+        fs_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
+        {
+            String keys = S3PathKeeper::getChunkKeys(chunk);
+            LOG_TRACE(&Poco::Logger::get("registerDiskS3"), "Remove AWS keys {}", keys);
+            Aws::S3::Model::Delete delkeys;
+            delkeys.SetObjects(chunk);
+            Aws::S3::Model::DeleteObjectsRequest request;
+            request.SetBucket(bucket);
+            request.SetDelete(delkeys);
+            auto outcome = settings->client->DeleteObjects(request);
+            if (!outcome.IsSuccess())
+            {
+                const auto & err = outcome.GetError();
+                throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
+            }
+        });
+        return false;
+    }
+    catch (const Exception &)
+    {
+        fs_paths_keeper_copy->removePaths([&](S3PathKeeper::Chunk && chunk)
+        {
+            String keys = S3PathKeeper::getChunkKeys(chunk);
+            LOG_TRACE(&Poco::Logger::get("registerDiskS3"), "Remove AWS keys {} one by one", keys);
+            for (const auto & obj : chunk)
+            {
+                Aws::S3::Model::DeleteObjectRequest request;
+                request.SetBucket(bucket);
+                request.SetKey(obj.GetKey());
+                settings->client->DeleteObject(request);
+            }
+        });
+        return true;
+    }
+}
 
 std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
     const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config)
@@ -187,6 +262,7 @@ void registerDiskS3(DiskFactory & factory)
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
+        S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
@@ -195,11 +271,30 @@ void registerDiskS3(DiskFactory & factory)
             metadata_disk,
             std::move(cache),
             context,
+            s3_capabilities,
             getSettings(config, config_prefix, context),
             getSettings);
 
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
+
+        if (!skip_access_check)
+        {
+            /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
+            if (s3_capabilities.support_batch_delete && checkBatchRemoveIsMissing(*std::dynamic_pointer_cast<DiskS3>(s3disk), getSettings(config, config_prefix, context), uri.bucket))
+            {
+                LOG_WARNING(
+                    &Poco::Logger::get("registerDiskS3"),
+                    "Storage for disk {} does not support batch delete operations, "
+                    "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
+                    "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
+                    name
+                );
+                std::dynamic_pointer_cast<DiskS3>(s3disk)->setCapabilitiesSupportBatchDelete(false);
+            }
+        }
+
         /// This code is used only to check access to the corresponding disk.
-        if (!config.getBool(config_prefix + ".skip_access_check", false))
+        if (!skip_access_check)
         {
             checkWriteAccess(*s3disk);
             checkReadAccess(name, *s3disk);

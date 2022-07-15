@@ -7,12 +7,15 @@
 #include <atomic>
 #include <optional>
 #include <base/logger_useful.h>
+#include <base/FnTraits.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
+#include <Disks/S3/S3Capabilities.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/HeadObjectResult.h>
 #include <aws/s3/model/ListObjectsV2Result.h>
+#include <aws/s3/model/ObjectIdentifier.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <re2/re2.h>
@@ -76,6 +79,7 @@ public:
         DiskPtr metadata_disk_,
         FileCachePtr cache_,
         ContextPtr context_,
+        const S3Capabilities & s3_capabilities_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
@@ -118,6 +122,8 @@ public:
     void onFreeze(const String & path) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
+
+    void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
 
 private:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
@@ -166,6 +172,7 @@ private:
     MultiVersion<DiskS3Settings> current_settings;
     /// Gets disk settings from context.
     GetDiskSettings settings_getter;
+    S3Capabilities s3_capabilities;
 
     std::atomic<UInt64> revision_counter = 0;
     static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();
@@ -185,6 +192,57 @@ private:
     const std::vector<String> data_roots {"data", "store"};
 
     ContextPtr context;
+};
+
+/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
+/// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+class S3PathKeeper : public RemoteFSPathKeeper
+{
+public:
+    using Chunk = Aws::Vector<Aws::S3::Model::ObjectIdentifier>;
+    using Chunks = std::list<Chunk>;
+
+    explicit S3PathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
+
+    void addPath(const String & path) override
+    {
+        if (chunks.empty() || chunks.back().size() >= chunk_limit)
+        {
+            /// add one more chunk
+            chunks.push_back(Chunks::value_type());
+            chunks.back().reserve(chunk_limit);
+        }
+        Aws::S3::Model::ObjectIdentifier obj;
+        obj.SetKey(path);
+        chunks.back().push_back(obj);
+    }
+
+    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
+    {
+        for (auto & chunk : chunks)
+            remove_chunk_func(std::move(chunk));
+    }
+
+    Chunks getChunks() const
+    {
+        return chunks;
+    }
+
+    static String getChunkKeys(const Chunk & chunk)
+    {
+        String res;
+        for (const auto & obj : chunk)
+        {
+            const auto & key = obj.GetKey();
+            if (!res.empty())
+                res.append(", ");
+            res.append(key.c_str(), key.size());
+        }
+        return res;
+    }
+
+private:
+    Chunks chunks;
 };
 
 }

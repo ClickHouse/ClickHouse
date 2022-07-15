@@ -106,6 +106,9 @@ public:
 
     Names getRequiredColumns() { return required_columns; }
 
+    static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context);
+    static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context);
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
