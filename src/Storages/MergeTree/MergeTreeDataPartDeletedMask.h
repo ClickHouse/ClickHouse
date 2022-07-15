@@ -17,7 +17,7 @@ struct MergeTreeDataPartDeletedMask
     explicit MergeTreeDataPartDeletedMask();
     using DeletedRows = ColumnUInt8::Ptr;
 
-    const std::string name = "deleted_rows_mask.bin";
+    static constexpr std::string_view name = "deleted_rows_mask.bin";
 
     const ColumnUInt8 & getDeletedRows() const;
     const DeletedRows & getDeletedRowsPtr() const { return deleted_rows; }

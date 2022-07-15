@@ -1217,12 +1217,12 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
     return part_type == MergeTreeDataPartType::Wide && parent_part == nullptr && projection_parts.empty();
 }
 
-MergeTreeDataPartDeletedMask::DeletedRows IMergeTreeDataPart::getDeletedMask() const
+bool IMergeTreeDataPart::getDeletedMask(MergeTreeDataPartDeletedMask & deleted_mask) const
 {
-    MergeTreeDataPartDeletedMask deleted_mask {};
+    bool found = false;
 
     /// Check if deleted mask file exists.
-    if (data_part_storage->exists(deleted_mask.name))
+    if (data_part_storage->exists(String(deleted_mask.name)))
     {
         data_part_storage->loadDeletedRowsMask(deleted_mask);
 
@@ -1232,9 +1232,11 @@ MergeTreeDataPartDeletedMask::DeletedRows IMergeTreeDataPart::getDeletedMask() c
                     "for part {}"
                     "(loaded {} rows, expected {} rows).",
                     data_part_storage->getDiskPath(), deleted_mask.name, name, deleted_mask.getDeletedRows().size(), rows_count);
+
+        found = true;
     }
 
-    return deleted_mask.getDeletedRowsPtr();
+    return found;
 }
 
 void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask) const

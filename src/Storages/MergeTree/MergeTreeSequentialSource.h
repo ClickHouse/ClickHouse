@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 #include <memory>
 
 namespace DB
@@ -57,6 +58,9 @@ private:
 
     /// current row at which we stop reading
     size_t current_row = 0;
+
+    bool need_apply_deleted_mask = false;
+    MergeTreeDataPartDeletedMask deleted_mask {};
 
     /// Closes readers and unlock part locks
     void finish();
