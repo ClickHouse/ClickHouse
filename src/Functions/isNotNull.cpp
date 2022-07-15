@@ -51,6 +51,7 @@ public:
             const size_t null_index = low_cardinality_column->getDictionary().getNullValueIndex();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
+            data.reserve(low_cardinality_column->size());
             for (size_t i = 0; i != low_cardinality_column->size(); ++i)
                 data.push_back(low_cardinality_column->getIndexAt(i) != null_index);
             return res;
