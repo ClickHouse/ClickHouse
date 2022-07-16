@@ -459,7 +459,8 @@ inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
 template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
 template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
 template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
-template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, const size_t offset) {
+template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
 #if USE_MULTITARGET_CODE
     TargetSpecific::AVX512VBMI::copyOverlap32Shuffle(op, match, offset);
 #else
