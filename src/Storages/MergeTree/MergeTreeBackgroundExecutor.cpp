@@ -124,7 +124,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
     /// All operations with queues are considered no to do any allocations
 
-    auto erase_from_active = [this, item]
+    auto erase_from_active = [this, item]() TSA_REQUIRES(mutex)
     {
         active.erase(std::remove(active.begin(), active.end(), item), active.end());
     };
@@ -249,7 +249,7 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
             TaskRuntimeDataPtr item;
             {
                 std::unique_lock lock(mutex);
-                has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown; });
+                has_tasks.wait(lock, [this]() TSA_REQUIRES(mutex) { return !pending.empty() || shutdown; });
 
                 if (shutdown)
                     break;
