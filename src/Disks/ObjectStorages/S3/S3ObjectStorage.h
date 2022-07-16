@@ -134,6 +134,8 @@ public:
         ContextPtr context) override;
 
 private:
+    ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
     void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);

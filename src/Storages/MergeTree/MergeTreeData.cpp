@@ -4966,78 +4966,78 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             }
         }
 
-        NOEXCEPT_SCOPE;
+        NOEXCEPT_SCOPE({
+            auto current_time = time(nullptr);
 
-        auto current_time = time(nullptr);
+            size_t add_bytes = 0;
+            size_t add_rows = 0;
+            size_t add_parts = 0;
 
-        size_t add_bytes = 0;
-        size_t add_rows = 0;
-        size_t add_parts = 0;
+            size_t reduce_bytes = 0;
+            size_t reduce_rows = 0;
+            size_t reduce_parts = 0;
 
-        size_t reduce_bytes = 0;
-        size_t reduce_rows = 0;
-        size_t reduce_parts = 0;
-
-        for (const DataPartPtr & part : precommitted_parts)
-        {
-            auto part_in_memory = asInMemoryPart(part);
-            if (part_in_memory && settings->in_memory_parts_enable_wal)
+            for (const DataPartPtr & part : precommitted_parts)
             {
-                if (!wal)
-                    wal = data.getWriteAheadLog();
-
-                wal->addPart(part_in_memory);
-            }
-
-            DataPartPtr covering_part;
-            DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
-            if (covering_part)
-            {
-                LOG_WARNING(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
-
-                part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
-                data.modifyPartState(part, DataPartState::Outdated);
-            }
-            else
-            {
-                if (!txn)
-                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, NO_TRANSACTION_RAW);
-
-                total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
-                for (const auto & covered_part : covered_parts)
+                auto part_in_memory = asInMemoryPart(part);
+                if (part_in_memory && settings->in_memory_parts_enable_wal)
                 {
-                    covered_part->remove_time.store(current_time, std::memory_order_relaxed);
+                    if (!wal)
+                        wal = data.getWriteAheadLog();
 
-                    reduce_bytes += covered_part->getBytesOnDisk();
-                    reduce_rows += covered_part->rows_count;
-
-                    data.modifyPartState(covered_part, DataPartState::Outdated);
-                    data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
+                    wal->addPart(part_in_memory);
                 }
 
-                reduce_parts += covered_parts.size();
+                DataPartPtr covering_part;
+                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
+                if (covering_part)
+                {
+                    LOG_WARNING(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
 
-                add_bytes += part->getBytesOnDisk();
-                add_rows += part->rows_count;
-                ++add_parts;
+                    part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
+                    data.modifyPartState(part, DataPartState::Outdated);
+                }
+                else
+                {
+                    if (!txn)
+                        MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, NO_TRANSACTION_RAW);
 
-                data.modifyPartState(part, DataPartState::Active);
-                data.addPartContributionToColumnAndSecondaryIndexSizes(part);
+                    total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
+                    for (const auto & covered_part : covered_parts)
+                    {
+                        covered_part->remove_time.store(current_time, std::memory_order_relaxed);
+
+                        reduce_bytes += covered_part->getBytesOnDisk();
+                        reduce_rows += covered_part->rows_count;
+
+                        data.modifyPartState(covered_part, DataPartState::Outdated);
+                        data.removePartContributionToColumnAndSecondaryIndexSizes(covered_part);
+                    }
+
+                    reduce_parts += covered_parts.size();
+
+                    add_bytes += part->getBytesOnDisk();
+                    add_rows += part->rows_count;
+                    ++add_parts;
+
+                    data.modifyPartState(part, DataPartState::Active);
+                    data.addPartContributionToColumnAndSecondaryIndexSizes(part);
+                }
             }
-        }
 
-        if (reduce_parts == 0)
-        {
-            for (const auto & part : precommitted_parts)
-                data.updateObjectColumns(part, parts_lock);
-        }
-        else
-            data.resetObjectColumnsFromActiveParts(parts_lock);
+            if (reduce_parts == 0)
+            {
+                for (const auto & part : precommitted_parts)
+                    data.updateObjectColumns(part, parts_lock);
+            }
+            else
+                data.resetObjectColumnsFromActiveParts(parts_lock);
 
-        ssize_t diff_bytes = add_bytes - reduce_bytes;
-        ssize_t diff_rows = add_rows - reduce_rows;
-        ssize_t diff_parts  = add_parts - reduce_parts;
-        data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
+            ssize_t diff_bytes = add_bytes - reduce_bytes;
+            ssize_t diff_rows = add_rows - reduce_rows;
+            ssize_t diff_parts  = add_parts - reduce_parts;
+            data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
+        });
     }
 
     clear();
@@ -6253,8 +6253,13 @@ try
     part_log_elem.event_type = type;
 
     if (part_log_elem.event_type == PartLogElement::MERGE_PARTS)
+    {
         if (merge_entry)
+        {
             part_log_elem.merge_reason = PartLogElement::getMergeReasonType((*merge_entry)->merge_type);
+            part_log_elem.merge_algorithm = PartLogElement::getMergeAlgorithm((*merge_entry)->merge_algorithm);
+        }
+    }
 
     part_log_elem.error = static_cast<UInt16>(execution_status.code);
     part_log_elem.exception = execution_status.message;
