@@ -28,6 +28,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/RewriteOrderByVisitor.hpp>
+#include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
@@ -1235,6 +1236,25 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
         result.analyzed_join->deduplicateAndQualifyColumnNames(
             source_columns_set, right_table.table.getQualifiedNamePrefix());
+    }
+
+    if (getContext()->getSettingsRef().enable_positional_arguments)
+    {
+        if (select_query->groupBy())
+        {
+            for (auto & expr : select_query->groupBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::GROUP_BY);
+        }
+        if (select_query->orderBy())
+        {
+            for (auto & expr : select_query->orderBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::ORDER_BY);
+        }
+        if (select_query->limitBy())
+        {
+            for (auto & expr : select_query->limitBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
+        }
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
