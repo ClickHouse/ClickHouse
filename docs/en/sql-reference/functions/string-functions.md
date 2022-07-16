@@ -494,22 +494,21 @@ If the ‘s’ string is non-empty and does not contain the ‘c’ character at
 
 Returns the string ‘s’ that was converted from the encoding in ‘from’ to the encoding in ‘to’.
 
-## Base58Encode(plaintext[, alphabet_name]), Base58Decode(encoded_text[, alphabet_name])
+## Base58Encode(plaintext), Base58Decode(encoded_text)
 
-Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using specified alphabet.
+Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
 
 **Syntax**
 
 ```sql
-base58Encode(decoded[, alphabet_name])
-base58Decode(encoded[, alphabet_name])
+encodeBase58(decoded)
+decodeBase58(encoded)
 ```
 
 **Arguments**
 
 - `decoded` — [String](../../sql-reference/data-types/string.md) column or constant.
 - `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
-- `alphabet_name` — String constant. Specifies alphabet used for encoding. Possible values: `gmp`, `bitcoin`, `ripple`, `flickr`. Default: `bitcoin`.
 
 **Returned value**
 
@@ -522,16 +521,16 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
-SELECT base58Encode('encode', 'flickr');
-SELECT base58Decode('izCFiDUY', 'ripple');
+SELECT encodeBase58('encode');
+SELECT decodeBase58('izCFiDUY');
 ```
 
 Result:
 ```text
-┌─base58Encode('encode', 'flickr')─┐
+┌─encodeBase58('encode', 'flickr')─┐
 │ SvyTHb1D                         │
 └──────────────────────────────────┘
-┌─base58Decode('izCFiDUY', 'ripple')─┐
+┌─decodeBase58('izCFiDUY', 'ripple')─┐
 │ decode                             │
 └────────────────────────────────────┘
 ```

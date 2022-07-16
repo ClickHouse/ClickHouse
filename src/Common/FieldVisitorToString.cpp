@@ -68,6 +68,7 @@ String FieldVisitorToString::operator() (const UUID & x) const { return formatQu
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
 
+
 String FieldVisitorToString::operator() (const Array & x) const
 {
     WriteBufferFromOwnString wb;
