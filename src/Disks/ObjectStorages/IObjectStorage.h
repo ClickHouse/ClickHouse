@@ -173,8 +173,8 @@ protected:
     void applyRemoteThrottlingSettings(ContextPtr context);
 
     /// Should be used by implementation of read* and write* methods
-    ReadSettings patchSettings(const ReadSettings & read_settings) const;
-    WriteSettings patchSettings(const WriteSettings & write_settings) const;
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
 private:
     mutable std::mutex throttlers_mutex;

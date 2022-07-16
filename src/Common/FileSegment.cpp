@@ -415,7 +415,7 @@ void FileSegment::completeBatchAndResetDownloader()
     cv.notify_all();
 }
 
-void FileSegment::complete(State state, bool auto_resize)
+void FileSegment::completeWithState(State state, bool auto_resize)
 {
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
@@ -444,6 +444,7 @@ void FileSegment::complete(State state, bool auto_resize)
         if (auto_resize && downloaded_size != range().size())
         {
             LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
+            assert(downloaded_size <= range().size());
             segment_range = Range(segment_range.left, segment_range.left + downloaded_size - 1);
         }
 
@@ -475,7 +476,7 @@ void FileSegment::complete(State state, bool auto_resize)
     cv.notify_all();
 }
 
-void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
+void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock)
 {
     std::lock_guard segment_lock(mutex);
 
@@ -484,10 +485,11 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 
     assertNotDetached(segment_lock);
 
-    completeUnlocked(cache_lock, segment_lock);
+    completeBasedOnCurrentStateUnlocked(cache_lock, segment_lock);
 }
 
-void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+void FileSegment::completeBasedOnCurrentStateUnlocked(
+    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
 {
     bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
 
@@ -776,7 +778,7 @@ FileSegmentsHolder::~FileSegmentsHolder()
             /// under the same mutex, because complete() checks for segment pointers.
             std::lock_guard cache_lock(cache->mutex);
 
-            file_segment->complete(cache_lock);
+            file_segment->completeBasedOnCurrentState(cache_lock);
 
             file_segment_it = file_segments.erase(current_file_segment_it);
         }
@@ -802,7 +804,7 @@ String FileSegmentsHolder::toString()
 FileSegmentRangeWriter::FileSegmentRangeWriter(
     IFileCache * cache_,
     const FileSegment::Key & key_,
-    std::function<void(const FileSegmentPtr & file_segment)> on_complete_file_segment_func_)
+    std::function<void(const FileSegment & file_segment)> on_complete_file_segment_func_)
     : cache(cache_)
     , key(key_)
     , current_file_segment_it(file_segments_holder.file_segments.end())
@@ -825,33 +827,33 @@ FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset
     return file_segments_holder.add(std::move(file_segment));
 }
 
-void FileSegmentRangeWriter::completeFileSegment(const FileSegmentPtr & file_segment)
+void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
 {
     /**
      * Complete file segment based on downaloaded size.
      */
 
     /// File segment can be detached if space reservation failed.
-    if (file_segment->isDetached())
+    if (file_segment.isDetached())
         return;
 
-    if (file_segment->getDownloadedSize() > 0)
+    if (file_segment.getDownloadedSize() > 0)
     {
         /// file_segment->complete(DOWNLOADED) is not enough, because file segment capacity
         /// was initially set with a margin as `max_file_segment_size`. => We need to always
         /// resize to actual size after download finished.
-        file_segment->getOrSetDownloader();
-        file_segment->complete(FileSegment::State::DOWNLOADED, /* auto_resize */true);
+        file_segment.getOrSetDownloader();
+        file_segment.completeWithState(FileSegment::State::DOWNLOADED, /* auto_resize */true);
         on_complete_file_segment_func(file_segment);
     }
     else
     {
         std::lock_guard cache_lock(cache->mutex);
-        file_segment->complete(cache_lock);
+        file_segment.completeBasedOnCurrentState(cache_lock);
     }
 }
 
-bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool is_persistent)
+bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, bool is_persistent)
 {
     /**
      * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
@@ -879,7 +881,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool
 
         if ((*current_file_segment_it)->getRemainingSizeToDownload() == 0)
         {
-            completeFileSegment(*current_file_segment_it);
+            completeFileSegment(**current_file_segment_it);
             current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
         }
         else if ((*current_file_segment_it)->getDownloadOffset() != offset)
@@ -891,34 +893,28 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool
         }
     }
 
-    (*current_file_segment_it)->getOrSetDownloader();
+    auto & file_segment = *current_file_segment_it;
+    file_segment->getOrSetDownloader();
+    SCOPE_EXIT({
+        file_segment->resetDownloader();
+    });
 
-    try
+    bool reserved = file_segment->reserve(size);
+    if (!reserved)
     {
-        bool reserved = (*current_file_segment_it)->reserve(size);
-        if (!reserved)
-        {
-            (*current_file_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-            on_complete_file_segment_func(*current_file_segment_it);
+        file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        on_complete_file_segment_func(*file_segment);
 
-            LOG_DEBUG(
-                &Poco::Logger::get("FileSegmentRangeWriter"),
-                "Unsuccessful space reservation attempt (size: {}, file segment info: {}",
-                size, (*current_file_segment_it)->getInfoForLog());
+        LOG_DEBUG(
+            &Poco::Logger::get("FileSegmentRangeWriter"),
+            "Unsuccessful space reservation attempt (size: {}, file segment info: {}",
+            size, file_segment->getInfoForLog());
 
-            return false;
-        }
-
-        (*current_file_segment_it)->write(data, size, offset);
-        current_file_segment_write_offset += size;
-    }
-    catch (...)
-    {
-        (*current_file_segment_it)->resetDownloader();
-        throw;
+        return false;
     }
 
-    (*current_file_segment_it)->resetDownloader();
+    (*current_file_segment_it)->write(data, size, offset);
+    current_file_segment_write_offset += size;
 
     return true;
 }
@@ -932,7 +928,7 @@ void FileSegmentRangeWriter::finalize()
     if (file_segments.empty() || current_file_segment_it == file_segments.end())
         return;
 
-    completeFileSegment(*current_file_segment_it);
+    completeFileSegment(**current_file_segment_it);
     finalized = true;
 }
 

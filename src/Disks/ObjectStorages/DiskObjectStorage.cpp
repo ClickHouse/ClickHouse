@@ -447,15 +447,7 @@ bool DiskObjectStorage::isReadOnly() const
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
-    return std::make_shared<DiskObjectStorage>(
-        getName(),
-        object_storage_root_path,
-        getName(),
-        metadata_storage,
-        object_storage,
-        disk_type,
-        send_metadata,
-        threadpool_size);
+    return std::static_pointer_cast<DiskObjectStorage>(shared_from_this());
 }
 
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const String & layer_name)
