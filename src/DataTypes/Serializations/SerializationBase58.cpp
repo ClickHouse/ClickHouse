@@ -1,11 +1,11 @@
 #include <DataTypes/Serializations/SerializationBase58.h>
 
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Formats/FormatSettings.h>
+#include <Common/base58.h>
 
 
 namespace DB
@@ -17,47 +17,56 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-SerializationBase58::SerializationBase58(const SerializationPtr & nested_)
-    : SerializationCustomSimpleText(nested_)
+SerializationBase58::SerializationBase58(const SerializationPtr & nested_) : SerializationCustomSimpleText(nested_)
 {
 }
 
 void SerializationBase58::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const auto * col = checkAndGetColumn<ColumnUInt32>(&column);
+    const ColumnString * col = checkAndGetColumn<ColumnString>(&column);
     if (!col)
     {
-        throw Exception("IPv4 type can only serialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Base58 type can only serialize columns of type String." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    auto
-    char buffer[IPV4_MAX_TEXT_LENGTH + 1] = {'\0'};
+    auto value = col->getDataAtWithTerminatingZero(row_num);
+    char buffer[value.size * 2 + 1];
     char * ptr = buffer;
-    formatIPv4(reinterpret_cast<const unsigned char *>(&col->getData()[row_num]), ptr);
-
+    encodeBase58(reinterpret_cast<const char8_t *>(value.data), reinterpret_cast<char8_t *>(ptr));
     ostr.write(buffer, strlen(buffer));
 }
 
 void SerializationBase58::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    ColumnUInt32 * col = typeid_cast<ColumnUInt32 *>(&column);
+    ColumnString * col = typeid_cast<ColumnString *>(&column);
     if (!col)
     {
-        throw Exception("IPv4 type can only deserialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Base58 type can only deserialize columns of type String." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    char buffer[IPV4_MAX_TEXT_LENGTH + 1] = {'\0'};
-    istr.read(buffer, sizeof(buffer) - 1);
-    UInt32 ipv4_value = 0;
+    size_t allocated = 32;
+    std::string encoded(allocated, '\0');
 
-    bool parse_result = parseIPv4(buffer, reinterpret_cast<unsigned char *>(&ipv4_value));
-    if (!parse_result && !settings.input_format_ipv4_default_on_conversion_error)
+    size_t read_position = 0;
+    while (istr.read(encoded[read_position]))
     {
-        throw Exception("Invalid IPv4 value", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+        ++read_position;
+        if (read_position == allocated)
+        {
+            allocated *= 2;
+            encoded.resize(allocated, '\0');
+        }
     }
 
-    col->insert(ipv4_value);
+    char buffer[read_position + 1];
+    if (!decodeBase58(reinterpret_cast<const char8_t *>(encoded.c_str()), reinterpret_cast<char8_t *>(buffer)))
+    {
+        throw Exception("Invalid Base58 encoded value, cannot parse." + column.getName(), ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+    }
+
+    col->insertDataWithTerminatingZero(buffer, read_position+1);
 
     if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "IPv4");
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Base58");
+}
 }

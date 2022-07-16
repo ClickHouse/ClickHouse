@@ -18,7 +18,6 @@ The list of third-party libraries:
 | aws-c-common | [Apache](https://github.com/ClickHouse-Extras/aws-c-common/blob/736a82d1697c108b04a277e66438a7f4e19b6857/LICENSE) |
 | aws-c-event-stream | [Apache](https://github.com/ClickHouse-Extras/aws-c-event-stream/blob/3bc33662f9ccff4f4cbcf9509cc78c26e022fde0/LICENSE) |
 | aws-checksums | [Apache](https://github.com/ClickHouse-Extras/aws-checksums/blob/519d6d9093819b6cf89ffff589a27ef8f83d0f65/LICENSE) |
-| base58 | [MIT](https://github.com/ClickHouse/base-x/blob/3e58874643c087f57e82b0ff03825c933fab945a/LICENSE) |
 | base64 | [BSD 2-clause](https://github.com/ClickHouse-Extras/Turbo-Base64/blob/af9b331f2b4f30b41c70f3a571ff904a8251c1d3/LICENSE) |
 | boost | [Boost](https://github.com/ClickHouse-Extras/boost/blob/9cf09dbfd55a5c6202dedbdf40781a51b02c2675/LICENSE_1_0.txt) |
 | boringssl | [BSD](https://github.com/ClickHouse-Extras/boringssl/blob/a6a2e2ab3e44d97ce98e51c558e989f211de7eb3/LICENSE) |
