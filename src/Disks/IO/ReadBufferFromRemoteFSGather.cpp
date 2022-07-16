@@ -100,7 +100,6 @@ ReadBufferFromAzureBlobStorageGather::createImplementationBufferImpl(const Strin
         settings,
         max_single_read_retries,
         max_single_download_retries,
-        settings.remote_fs_buffer_size,
         /* use_external_buffer */true,
         read_until_position);
 }

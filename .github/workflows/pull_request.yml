@@ -3118,7 +3118,7 @@ jobs:
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
-  PerformanceComparison0:
+  PerformanceComparisonX86-0:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3156,7 +3156,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison1:
+  PerformanceComparisonX86-1:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3194,7 +3194,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison2:
+  PerformanceComparisonX86-2:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3232,7 +3232,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison3:
+  PerformanceComparisonX86-3:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3270,7 +3270,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparisonAarch0:
+  PerformanceComparisonAarch-0:
     needs: [BuilderDebAarch64]
     runs-on: [self-hosted, func-tester-aarch64]
     steps:
@@ -3308,7 +3308,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparisonAarch1:
+  PerformanceComparisonAarch-1:
     needs: [BuilderDebAarch64]
     runs-on: [self-hosted, func-tester-aarch64]
     steps:
@@ -3346,7 +3346,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparisonAarch2:
+  PerformanceComparisonAarch-2:
     needs: [BuilderDebAarch64]
     runs-on: [self-hosted, func-tester-aarch64]
     steps:
@@ -3384,7 +3384,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparisonAarch3:
+  PerformanceComparisonAarch-3:
     needs: [BuilderDebAarch64]
     runs-on: [self-hosted, func-tester-aarch64]
     steps:
@@ -3481,14 +3481,14 @@ jobs:
       - IntegrationTestsTsan1
       - IntegrationTestsTsan2
       - IntegrationTestsTsan3
-      - PerformanceComparison0
-      - PerformanceComparison1
-      - PerformanceComparison2
-      - PerformanceComparison3
-      - PerformanceComparisonAarch0
-      - PerformanceComparisonAarch1
-      - PerformanceComparisonAarch2
-      - PerformanceComparisonAarch3
+      - PerformanceComparisonX86-0
+      - PerformanceComparisonX86-1
+      - PerformanceComparisonX86-2
+      - PerformanceComparisonX86-3
+      - PerformanceComparisonAarch-0
+      - PerformanceComparisonAarch-1
+      - PerformanceComparisonAarch-2
+      - PerformanceComparisonAarch-3
       - UnitTestsAsan
       - UnitTestsTsan
       - UnitTestsMsan

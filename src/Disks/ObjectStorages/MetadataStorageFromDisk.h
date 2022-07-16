@@ -55,9 +55,9 @@ public:
 
     std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
 
-private:
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
 };
 
