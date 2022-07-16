@@ -411,7 +411,7 @@ HashJoin::Type HashJoin::chooseMethod(ASTTableJoin::Kind kind, const ColumnRawPt
     return Type::hashed;
 }
 
-template<typename KeyGetter, bool is_asof_join>
+template <typename KeyGetter, bool is_asof_join>
 static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
 {
     if constexpr (is_asof_join)
