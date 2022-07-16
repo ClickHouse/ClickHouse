@@ -116,8 +116,7 @@ struct TimeSlotsImpl
         result_values.reserve(size);
 
         /// Modify all units to have same scale
-        UInt16 max_scale = (dt_scale > duration_scale) ? dt_scale : duration_scale;
-        max_scale = (time_slot_scale > max_scale) ? time_slot_scale : max_scale;
+        UInt16 max_scale = std::max({dt_scale, duration_scale, time_slot_scale});
 
         Int64 dt_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - dt_scale);
         Int64 dur_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - duration_scale);
@@ -146,8 +145,7 @@ struct TimeSlotsImpl
         result_values.reserve(size);
 
         /// Modify all units to have same scale
-        UInt16 max_scale = (dt_scale > duration_scale) ? dt_scale : duration_scale;
-        max_scale = (time_slot_scale > max_scale) ? time_slot_scale : max_scale;
+        UInt16 max_scale = std::max({dt_scale, duration_scale, time_slot_scale});
 
         Int64 dt_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - dt_scale);
         Int64 dur_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - duration_scale);
@@ -177,8 +175,7 @@ struct TimeSlotsImpl
         result_values.reserve(size);
 
         /// Modify all units to have same scale
-        UInt16 max_scale = (dt_scale > duration_scale) ? dt_scale : duration_scale;
-        max_scale = (time_slot_scale > max_scale) ? time_slot_scale : max_scale;
+        UInt16 max_scale = std::max({dt_scale, duration_scale, time_slot_scale});
 
         Int64 dt_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - dt_scale);
         Int64 dur_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - duration_scale);
@@ -224,7 +221,7 @@ public:
                             + toString(arguments.size()) + ", should be 2 or 3",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (isDateTime(arguments[0].type))
+        if (WhichDataType(arguments[0].type).isDateTime())
         {
             if (!WhichDataType(arguments[1].type).isUInt32())
                 throw Exception(
@@ -236,7 +233,7 @@ public:
                     "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() + ". Must be UInt32 when first argument is DateTime.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
-        else if (isDateTime64(arguments[0].type))
+        else if (WhichDataType(arguments[0].type).isDateTime64())
         {
             if (!WhichDataType(arguments[1].type).isDecimal64())
                 throw Exception(
@@ -260,17 +257,17 @@ public:
         }
         else
         {
-            auto dt64_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
+            auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
             auto duration_scale = assert_cast<const DataTypeDecimalBase<Decimal64> &>(*arguments[1].type).getScale();
             return std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeDateTime64>(std::max(dt64_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
+                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
         }
 
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        if (isDateTime(arguments[0].type))
+        if (WhichDataType(arguments[0].type).isDateTime())
         {
             UInt32 time_slot_size = 1800;
             if (arguments.size() == 3)
@@ -308,8 +305,9 @@ public:
                 return res;
             }
         }
-        else if (isDateTime64(arguments[0].type))
+        else
         {
+            assert(WhichDataType(arguments[0].type).isDateTime64());
             Decimal64 time_slot_size = Decimal64(1800);
             UInt16 time_slot_scale = 0;
             if (arguments.size() == 3)
@@ -323,33 +321,36 @@ public:
                 time_slot_scale = assert_cast<const DataTypeDecimalBase<Decimal64> *>(arguments[2].type.get())->getScale();
             }
 
-            const auto * dt64_starts = checkAndGetColumn<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
-            const auto * dt64_const_starts = checkAndGetColumnConst<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
+            const auto * starts = checkAndGetColumn<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
+            const auto * const_starts = checkAndGetColumnConst<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
 
             const auto * durations = checkAndGetColumn<ColumnDecimal<Decimal64>>(arguments[1].column.get());
             const auto * const_durations = checkAndGetColumnConst<ColumnDecimal<Decimal64>>(arguments[1].column.get());
 
-            const auto dt64_scale = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get())->getScale();
+            const auto start_time_scale = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get())->getScale();
             const auto duration_scale = assert_cast<const DataTypeDecimalBase<Decimal64> *>(arguments[1].type.get())->getScale();
 
-            auto res = ColumnArray::create(DataTypeDateTime64(dt64_scale).createColumn());
+            auto res = ColumnArray::create(DataTypeDateTime64(start_time_scale).createColumn());
             DataTypeDateTime64::ColumnType::Container & res_values = typeid_cast<DataTypeDateTime64::ColumnType &>(res->getData()).getData();
 
-            if (dt64_starts && durations)
+            if (starts && durations)
             {
-                TimeSlotsImpl::vectorVector(dt64_starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(), dt64_scale, duration_scale, time_slot_scale);
+                TimeSlotsImpl::vectorVector(starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(),
+                    start_time_scale, duration_scale, time_slot_scale);
                 return res;
             }
-            else if (dt64_starts && const_durations)
+            else if (starts && const_durations)
             {
                 TimeSlotsImpl::vectorConstant(
-                    dt64_starts->getData(), const_durations->getValue<Decimal64>(), time_slot_size, res_values, res->getOffsets(), dt64_scale, duration_scale, time_slot_scale);
+                    starts->getData(), const_durations->getValue<Decimal64>(), time_slot_size, res_values, res->getOffsets(),
+                    start_time_scale, duration_scale, time_slot_scale);
                 return res;
             }
-            else if (dt64_const_starts && durations)
+            else if (const_starts && durations)
             {
                 TimeSlotsImpl::constantVector(
-                    dt64_const_starts->getValue<DateTime64>(), durations->getData(), time_slot_size, res_values, res->getOffsets(), dt64_scale, duration_scale, time_slot_scale);
+                    const_starts->getValue<DateTime64>(), durations->getData(), time_slot_size, res_values, res->getOffsets(),
+                    start_time_scale, duration_scale, time_slot_scale);
                 return res;
             }
         }
