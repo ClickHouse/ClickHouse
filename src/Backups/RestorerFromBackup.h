@@ -15,9 +15,12 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IRestoreCoordination;
 struct StorageID;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 class AccessRestorerFromBackup;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
+
 
 /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
 class RestorerFromBackup : private boost::noncopyable
@@ -87,7 +90,13 @@ private:
     void checkAccessForObjectsFoundInBackup() const;
 
     void createDatabases();
+    void createDatabase(const String & database_name) const;
+    void checkDatabase(const String & database_name);
+
     void createTables();
+    void createTable(const QualifiedTableName & table_name);
+    void checkTable(const QualifiedTableName & table_name);
+    void insertDataToTable(const QualifiedTableName & table_name);
 
     DataRestoreTasks getDataRestoreTasks();
 
@@ -97,6 +106,7 @@ private:
     {
         ASTPtr create_database_query;
         bool is_predefined_database = false;
+        DatabasePtr database;
     };
 
     struct TableInfo
@@ -107,7 +117,7 @@ private:
         bool has_data = false;
         std::filesystem::path data_path_in_backup;
         std::optional<ASTs> partitions;
-        bool created = false;
+        DatabasePtr database;
         StoragePtr storage;
         TableLockHolder table_lock;
     };

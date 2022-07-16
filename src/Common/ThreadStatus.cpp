@@ -148,10 +148,7 @@ ThreadStatus::ThreadStatus()
 
 ThreadStatus::~ThreadStatus()
 {
-    if (untracked_memory > 0)
-        memory_tracker.allocNoThrow(untracked_memory);
-    else
-        memory_tracker.free(-untracked_memory);
+    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
 
     if (thread_group)
     {

@@ -55,6 +55,8 @@ using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 struct RemoveRequest;
 using RemoveBatchRequest = std::vector<RemoveRequest>;
 
+class DiskObjectStorage;
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 /**
  * Provide interface for reservation.
@@ -215,19 +217,22 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-    virtual String getCacheBasePath() const { return ""; }
+    virtual String getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
-    /// Returns a list of paths because for Log family engines there might be
-    /// multiple files in remote fs for single clickhouse file.
-    virtual PathsWithSize getObjectStoragePaths(const String &) const
+    virtual bool supportsCache() const { return false; }
+
+    /// Returns a list of storage objects (contains path, size, ...).
+    /// (A list is returned because for Log family engines there might
+    /// be multiple files in remote fs for single clickhouse file.
+    virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getObjectStoragePaths() not implemented for disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getType());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    using LocalPathWithRemotePaths = std::pair<String, PathsWithSize>;
+    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
 
-    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &)
+    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
     }
@@ -335,6 +340,13 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
+    virtual DiskObjectStoragePtr createDiskObjectStorage(const String &)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method createDiskObjectStorage() is not implemented for disk type: {}",
+            getType());
+    }
 
 protected:
     friend class DiskDecorator;

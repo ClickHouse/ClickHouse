@@ -69,6 +69,15 @@ def new_session_id():
     return "Session #" + str(session_id_counter)
 
 
+def has_mutation_in_backup(mutation_id, backup_name, database, table):
+    return os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/{database}/{table}/mutations/{mutation_id}.txt",
+        )
+    )
+
+
 @pytest.mark.parametrize(
     "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
 )
@@ -829,3 +838,31 @@ def test_restore_partition():
     assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
         [[2, "2"], [3, "3"], [12, "12"], [13, "13"], [22, "22"], [23, "23"]]
     )
+
+
+def test_mutation():
+    create_and_fill_table(engine="MergeTree ORDER BY tuple()", n=5)
+
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(5, 5)"
+    )
+
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(10, 5)"
+    )
+
+    instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(1) WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(2) WHERE 1")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert not has_mutation_in_backup("0000000004", backup_name, "test", "table")
+    assert has_mutation_in_backup("0000000005", backup_name, "test", "table")
+    assert has_mutation_in_backup("0000000006", backup_name, "test", "table")
+    assert not has_mutation_in_backup("0000000007", backup_name, "test", "table")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")

@@ -22,9 +22,10 @@
 #include <Interpreters/DictionaryReader.h>
 
 #include <Storages/StorageDictionary.h>
-
+#include <Storages/IStorage.h>
 
 #include <Core/ColumnNumbers.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -410,7 +411,7 @@ HashJoin::Type HashJoin::chooseMethod(ASTTableJoin::Kind kind, const ColumnRawPt
     return Type::hashed;
 }
 
-template<typename KeyGetter, bool is_asof_join>
+template <typename KeyGetter, bool is_asof_join>
 static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
 {
     if constexpr (is_asof_join)
