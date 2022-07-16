@@ -501,8 +501,8 @@ Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id
 **Syntax**
 
 ```sql
-encodeBase58(decoded)
-decodeBase58(encoded)
+base58Encode(decoded)
+base58Decode(encoded)
 ```
 
 **Arguments**
@@ -521,17 +521,17 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
-SELECT encodeBase58('encode');
-SELECT decodeBase58('izCFiDUY');
+SELECT base58Encode('Encoded');
+SELECT base58Encode('3dc8KtHrwM');
 ```
 
 Result:
 ```text
-┌─encodeBase58('encode', 'flickr')─┐
-│ SvyTHb1D                         │
+┌─encodeBase58('Encoded')─┐
+│ 3dc8KtHrwM                         │
 └──────────────────────────────────┘
-┌─decodeBase58('izCFiDUY', 'ripple')─┐
-│ decode                             │
+┌─decodeBase58('3dc8KtHrwM')─┐
+│ Encoded                             │
 └────────────────────────────────────┘
 ```
 
