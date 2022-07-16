@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void registerDataTypeBase58(DataTypeFactory & factory)
+void registerDataTypeDomainBase58(DataTypeFactory & factory)
 {
     factory.registerSimpleDataTypeCustom("Base58", []
          {
