@@ -1,8 +1,10 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <algorithm>
 #include <cmath>
+#include <cassert>
 
 namespace DB
 {
@@ -20,12 +22,14 @@ public:
     /// Previous events that are older than `period` from `now` will be forgotten
     /// in a way to keep average event rate the same, using exponential smoothing.
     /// NOTE: Adding events into distant past (further than `period`) must be avoided.
-    void add(UInt64 now, UInt64 count)
+    void add(UInt64 now, UInt64 count = 1)
     {
         if (unlikely(end == 0))
         {
             // Initialization during the first call
-            end = now + period;
+            if (start == 0)
+                start = now;
+            end = start + period;
         }
         else if (now > end)
         {
@@ -47,15 +51,20 @@ public:
     }
 
     /// Compute average event rate thoughout `[now - period, now]` period.
+    /// If measurements are just started (`now - period < start`), then average
+    /// is computed based on shorter `[start; now]` period to avoid initial linear growth.
     double rate(UInt64 now)
     {
         add(now, 0);
-        return double(events) / period;
+        if (unlikely(now <= start))
+            return 0;
+        return double(events) / std::min(period, now - start);
     }
 
-    void reset()
+    void reset(UInt64 now)
     {
         events = 0;
+        start = now;
         end = 0;
     }
 
@@ -63,8 +72,9 @@ private:
     const UInt64 period;
     const UInt64 step;
     const double decay;
-    double events = 0; // Estimated number of events in [now - period, now] range
-    UInt64 end = 0;
+    double events = 0; // Estimated number of events in [end - period, end] range
+    UInt64 start = 0; // Instant in past without events before it; when measurement started or reset
+    UInt64 end = 0; // Instant in future to start decay; moving in steps
 };
 
 }

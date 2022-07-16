@@ -56,7 +56,7 @@ void ProgressIndication::resetProgress()
     write_progress_on_update = false;
     {
         std::lock_guard lock(profile_events_mutex);
-        cpu_usage_meter.reset();
+        cpu_usage_meter.reset(clock_gettime_ns());
         thread_data.clear();
     }
 }
