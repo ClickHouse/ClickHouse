@@ -28,7 +28,7 @@ public:
 
 private:
     void cacheData(char * data, size_t size);
-    void appendFilesystemCacheLog(const FileSegmentPtr & file_segment);
+    void appendFilesystemCacheLog(const FileSegment & file_segment);
 
     FileCachePtr cache;
     String source_path;

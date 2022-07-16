@@ -49,15 +49,15 @@ std::string CachedObjectStorage::generateBlobNameForPath(const std::string & pat
     return object_storage->generateBlobNameForPath(path);
 }
 
-ReadSettings CachedObjectStorage::getReadSettingsForCache(const ReadSettings & read_settings) const
+ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    ReadSettings result_settings{read_settings};
-    result_settings.remote_fs_cache = cache;
+    ReadSettings modified_settings{read_settings};
+    modified_settings.remote_fs_cache = cache;
 
     if (IFileCache::isReadOnly())
-        result_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+        modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
-    return result_settings;
+    return IObjectStorage::patchSettings(modified_settings);
 }
 
 void CachedObjectStorage::startup()
@@ -83,7 +83,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
 {
     assert(!objects[0].getPathKeyForCache().empty());
 
-    auto modified_read_settings = getReadSettingsForCache(read_settings);
+    auto modified_read_settings = patchSettings(read_settings);
     auto impl = object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
@@ -129,7 +129,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    auto modified_read_settings = getReadSettingsForCache(read_settings);
+    auto modified_read_settings = patchSettings(read_settings);
     auto impl = object_storage->readObject(object, read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
@@ -174,10 +174,11 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     size_t buf_size,
     const WriteSettings & write_settings)
 {
-    auto impl = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, write_settings);
+    auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
+    auto impl = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
 
     bool cache_on_write = fs::path(object.absolute_path).extension() != ".tmp"
-        && write_settings.enable_filesystem_cache_on_write_operations
+        && modified_write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations;
 
     auto cache_hint = object.getPathKeyForCache();
@@ -193,9 +194,9 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             cache,
             impl->getFileName(),
             key,
-            write_settings.is_file_cache_persistent,
+            modified_write_settings.is_file_cache_persistent,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "",
-            write_settings);
+            modified_write_settings);
     }
 
     return impl;

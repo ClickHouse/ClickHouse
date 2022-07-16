@@ -139,7 +139,7 @@ public:
 
     void completeBatchAndResetDownloader();
 
-    void complete(State state, bool auto_resize = false);
+    void completeWithState(State state, bool auto_resize = false);
 
     String getInfoForLog() const;
 
@@ -192,8 +192,8 @@ private:
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void complete(std::lock_guard<std::mutex> & cache_lock);
-    void completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock);
+    void completeBasedOnCurrentStateUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
 
     void completeImpl(
         std::lock_guard<std::mutex> & cache_lock,
@@ -279,17 +279,19 @@ public:
     FileSegmentRangeWriter(
         IFileCache * cache_,
         const FileSegment::Key & key_,
-        std::function<void(const FileSegmentPtr & file_segment)> on_complete_file_segment_func_);
+        /// A callback which is called right after each file segment is completed.
+        /// It is used to write into filesystem cache log.
+        std::function<void(const FileSegment & file_segment)> on_complete_file_segment_func_);
 
     ~FileSegmentRangeWriter();
 
-    bool write(char * data, size_t size, size_t offset, bool is_persistent);
+    bool write(const char * data, size_t size, size_t offset, bool is_persistent);
 
     void finalize();
 
 private:
     FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
-    void completeFileSegment(const FileSegmentPtr & file_segment);
+    void completeFileSegment(FileSegment & file_segment);
 
     IFileCache * cache;
     FileSegment::Key key;
@@ -300,7 +302,8 @@ private:
     size_t current_file_segment_write_offset = 0;
 
     bool finalized = false;
-    std::function<void(const FileSegmentPtr & file_segment)> on_complete_file_segment_func;
+
+    std::function<void(const FileSegment & file_segment)> on_complete_file_segment_func;
 };
 
 }

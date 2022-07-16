@@ -621,7 +621,7 @@ void CachedReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 else
                 {
                     read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                    file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                    file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                     continue_predownload = false;
                 }
@@ -645,7 +645,7 @@ void CachedReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 /// TODO: allow seek more than once with seek avoiding.
 
                 bytes_to_predownload = 0;
-                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
@@ -975,7 +975,7 @@ bool CachedReadBufferFromFile::nextImplStep()
             else
             {
                 LOG_DEBUG(log, "No space left in cache, will continue without cache download");
-                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
 
             if (!success)

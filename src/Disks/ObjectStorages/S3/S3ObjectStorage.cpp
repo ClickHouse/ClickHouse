@@ -166,7 +166,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
     size_t buf_size,
-    const WriteSettings & /* write_settings */)
+    const WriteSettings & write_settings)
 {
     WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
 

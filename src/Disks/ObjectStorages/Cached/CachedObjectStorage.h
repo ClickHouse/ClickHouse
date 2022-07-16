@@ -101,8 +101,10 @@ public:
 
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;
+
     String getCachePath(const std::string & path) const;
-    ReadSettings getReadSettingsForCache(const ReadSettings & read_settings) const;
+
+    ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;

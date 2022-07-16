@@ -67,7 +67,7 @@ void CachedWriteBufferFromFile::cacheData(char * data, size_t size)
     if (!cache_writer)
     {
         cache_writer = std::make_unique<FileSegmentRangeWriter>(
-            cache.get(), key, [this](const FileSegmentPtr & file_segment) { appendFilesystemCacheLog(file_segment); });
+            cache.get(), key, [this](const FileSegment & file_segment) { appendFilesystemCacheLog(file_segment); });
     }
 
     Stopwatch watch(CLOCK_MONOTONIC);
@@ -91,9 +91,9 @@ void CachedWriteBufferFromFile::cacheData(char * data, size_t size)
     ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());
 }
 
-void CachedWriteBufferFromFile::appendFilesystemCacheLog(const FileSegmentPtr & file_segment)
+void CachedWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment & file_segment)
 {
-    auto file_segment_range = file_segment->range();
+    auto file_segment_range = file_segment.range();
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
