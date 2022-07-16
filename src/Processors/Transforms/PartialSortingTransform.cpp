@@ -93,7 +93,7 @@ PartialSortingTransform::PartialSortingTransform(
     // Sorting by no columns doesn't make sense.
     assert(!description_.empty());
 
-    for (auto const & column_sort_desc : description)
+    for (const auto & column_sort_desc : description)
         description_with_positions.emplace_back(column_sort_desc, header_.getPositionByName(column_sort_desc.column_name));
 }
 
