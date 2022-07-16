@@ -75,12 +75,15 @@ private:
         const std::set<DatabaseAndTableName> & except_table_names);
 
     void gatherTablesMetadata();
+    std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
     void lockTablesForReading();
     bool compareWithPrevious(std::optional<Exception> & inconsistency_error);
 
     void makeBackupEntriesForDatabasesDefs();
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
+    void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
+
     void runPostTasks();
 
     Strings setStatus(const String & new_status, const String & message = "");

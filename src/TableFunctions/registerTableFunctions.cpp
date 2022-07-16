@@ -19,6 +19,7 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionMongoDB(factory);
 
     registerTableFunctionMeiliSearch(factory);
 

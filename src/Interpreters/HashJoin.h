@@ -17,6 +17,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Storages/TableLockHolder.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -24,6 +25,9 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Core/Block.h>
+
+#include <Storages/IStorage_fwd.h>
+#include <Storages/IKVStorage.h>
 
 namespace DB
 {
@@ -167,12 +171,18 @@ public:
     /// Used by joinGet function that turns StorageJoin into a dictionary.
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
-    /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
-      */
-    void setTotals(const Block & block) override { totals = block; }
-    const Block & getTotals() const override { return totals; }
-
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
+
+    JoinPipelineType pipelineType() const override
+    {
+        /// No need to process anything in the right stream if it's a dictionary will just join the left stream with it.
+        bool is_filled = from_storage_join || data->type == Type::DICT;
+        if (is_filled)
+            return JoinPipelineType::FilledRight;
+
+        /// Default pipeline processes right stream at first and then left.
+        return JoinPipelineType::FillRightFirst;
+    }
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
@@ -389,8 +399,6 @@ private:
     std::vector<String> required_right_keys_sources;
 
     Poco::Logger * log;
-
-    Block totals;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
