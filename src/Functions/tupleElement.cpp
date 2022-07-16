@@ -93,7 +93,8 @@ public:
                 out_return_type = std::make_shared<DataTypeArray>(out_return_type);
 
             return out_return_type;
-        } else
+        }
+        else
         {
             const IDataType * default_col = arguments[2].type.get();
             size_t default_argument_count_arrays = 0;
@@ -180,10 +181,12 @@ private:
         if (isColumnConst(*col_x))
         {
             checkArrayOffsetsWithFirstArgConst(col_x, col_y);
-        } else if (isColumnConst(*col_y))
+        }
+        else if (isColumnConst(*col_y))
         {
             checkArrayOffsetsWithFirstArgConst(col_y, col_x);
-        } else
+        }
+        else
         {
             const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
             const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
