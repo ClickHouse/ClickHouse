@@ -1,4 +1,4 @@
-#include "CachedReadBufferFromFile.h"
+#include "CachedOnDiskReadBufferFromFile.h"
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFile.h>
@@ -35,7 +35,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-CachedReadBufferFromFile::CachedReadBufferFromFile(
+CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const String & source_file_path_,
     const IFileCache::Key & cache_key_,
     FileCachePtr cache_,
@@ -48,9 +48,9 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     std::optional<size_t> read_until_position_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
-    , log(&Poco::Logger::get("CachedReadBufferFromFile(" + source_file_path_ + ")"))
+    , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
 #else
-    , log(&Poco::Logger::get("CachedReadBufferFromFile"))
+    , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile"))
 #endif
     , cache_key(cache_key_)
     , source_file_path(source_file_path_)
@@ -68,8 +68,8 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
 {
 }
 
-void CachedReadBufferFromFile::appendFilesystemCacheLog(
-    const FileSegment::Range & file_segment_range, CachedReadBufferFromFile::ReadType type)
+void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
+    const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type)
 {
     FilesystemCacheLogElement elem
     {
@@ -89,13 +89,13 @@ void CachedReadBufferFromFile::appendFilesystemCacheLog(
 
     switch (type)
     {
-        case CachedReadBufferFromFile::ReadType::CACHED:
+        case CachedOnDiskReadBufferFromFile::ReadType::CACHED:
             elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_CACHE;
             break;
-        case CachedReadBufferFromFile::ReadType::REMOTE_FS_READ_BYPASS_CACHE:
+        case CachedOnDiskReadBufferFromFile::ReadType::REMOTE_FS_READ_BYPASS_CACHE:
             elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE;
             break;
-        case CachedReadBufferFromFile::ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
+        case CachedOnDiskReadBufferFromFile::ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
             elem.read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE;
             break;
     }
@@ -104,7 +104,7 @@ void CachedReadBufferFromFile::appendFilesystemCacheLog(
         cache_log->add(elem);
 }
 
-void CachedReadBufferFromFile::initialize(size_t offset, size_t size)
+void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
 {
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Caching buffer already initialized");
@@ -137,8 +137,8 @@ void CachedReadBufferFromFile::initialize(size_t offset, size_t size)
     initialized = true;
 }
 
-CachedReadBufferFromFile::ImplementationBufferPtr
-CachedReadBufferFromFile::getCacheReadBuffer(size_t offset) const
+CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
+CachedOnDiskReadBufferFromFile::getCacheReadBuffer(size_t offset) const
 {
     auto path = cache->getPathInLocalCache(cache_key, offset, is_persistent);
 
@@ -154,8 +154,8 @@ CachedReadBufferFromFile::getCacheReadBuffer(size_t offset) const
     return buf;
 }
 
-CachedReadBufferFromFile::ImplementationBufferPtr
-CachedReadBufferFromFile::getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_)
+CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
+CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_)
 {
     switch (read_type_)
     {
@@ -211,8 +211,8 @@ CachedReadBufferFromFile::getRemoteFSReadBuffer(FileSegmentPtr & file_segment, R
     }
 }
 
-CachedReadBufferFromFile::ImplementationBufferPtr
-CachedReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & file_segment)
+CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
+CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & file_segment)
 {
     auto range = file_segment->range();
 
@@ -370,8 +370,8 @@ CachedReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & file_segm
     }
 }
 
-CachedReadBufferFromFile::ImplementationBufferPtr
-CachedReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_segment)
+CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
+CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_segment)
 {
     assert(!file_segment->isDownloader());
     assert(file_offset_of_buffer_end >= file_segment->range().left);
@@ -476,7 +476,7 @@ CachedReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_segment)
     return read_buffer_for_file_segment;
 }
 
-bool CachedReadBufferFromFile::completeFileSegmentAndGetNext()
+bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 {
     LOG_TEST(log, "Completed segment: {}", (*current_file_segment_it)->range().toString());
 
@@ -515,7 +515,7 @@ bool CachedReadBufferFromFile::completeFileSegmentAndGetNext()
     return true;
 }
 
-CachedReadBufferFromFile::~CachedReadBufferFromFile()
+CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 {
     if (enable_logging
         && file_segments_holder
@@ -525,7 +525,7 @@ CachedReadBufferFromFile::~CachedReadBufferFromFile()
     }
 }
 
-void CachedReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
+void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
 {
     Stopwatch predownload_watch(CLOCK_MONOTONIC);
     SCOPE_EXIT({
@@ -671,7 +671,7 @@ void CachedReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
     }
 }
 
-bool CachedReadBufferFromFile::updateImplementationBufferIfNeeded()
+bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 {
     auto & file_segment = *current_file_segment_it;
     auto current_read_range = file_segment->range();
@@ -753,7 +753,7 @@ bool CachedReadBufferFromFile::updateImplementationBufferIfNeeded()
     return true;
 }
 
-bool CachedReadBufferFromFile::writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment)
+bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment)
 {
     Stopwatch watch(CLOCK_MONOTONIC);
 
@@ -781,7 +781,7 @@ bool CachedReadBufferFromFile::writeCache(char * data, size_t size, size_t offse
     return true;
 }
 
-bool CachedReadBufferFromFile::nextImpl()
+bool CachedOnDiskReadBufferFromFile::nextImpl()
 {
     try
     {
@@ -794,7 +794,7 @@ bool CachedReadBufferFromFile::nextImpl()
     }
 }
 
-bool CachedReadBufferFromFile::nextImplStep()
+bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
@@ -1056,7 +1056,7 @@ bool CachedReadBufferFromFile::nextImplStep()
     return result;
 }
 
-off_t CachedReadBufferFromFile::seek(off_t offset, int whence)
+off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 {
     if (initialized && !allow_seeks)
     {
@@ -1143,7 +1143,7 @@ off_t CachedReadBufferFromFile::seek(off_t offset, int whence)
     return new_pos;
 }
 
-size_t CachedReadBufferFromFile::getTotalSizeToRead()
+size_t CachedOnDiskReadBufferFromFile::getTotalSizeToRead()
 {
     /// Last position should be guaranteed to be set, as at least we always know file size.
     if (!read_until_position)
@@ -1159,7 +1159,7 @@ size_t CachedReadBufferFromFile::getTotalSizeToRead()
     return read_until_position - file_offset_of_buffer_end;
 }
 
-void CachedReadBufferFromFile::setReadUntilPosition(size_t position)
+void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 {
     if (!allow_seeks)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
@@ -1169,17 +1169,17 @@ void CachedReadBufferFromFile::setReadUntilPosition(size_t position)
     implementation_buffer.reset();
 }
 
-void CachedReadBufferFromFile::setReadUntilEnd()
+void CachedOnDiskReadBufferFromFile::setReadUntilEnd()
 {
     setReadUntilPosition(getFileSize());
 }
 
-off_t CachedReadBufferFromFile::getPosition()
+off_t CachedOnDiskReadBufferFromFile::getPosition()
 {
     return file_offset_of_buffer_end - available();
 }
 
-std::optional<size_t> CachedReadBufferFromFile::getLastNonDownloadedOffset() const
+std::optional<size_t> CachedOnDiskReadBufferFromFile::getLastNonDownloadedOffset() const
 {
     if (!file_segments_holder)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segments holder not initialized");
@@ -1195,14 +1195,14 @@ std::optional<size_t> CachedReadBufferFromFile::getLastNonDownloadedOffset() con
     return std::nullopt;
 }
 
-void CachedReadBufferFromFile::assertCorrectness() const
+void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
     if (IFileCache::isReadOnly()
         && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed");
 }
 
-String CachedReadBufferFromFile::getInfoForLog()
+String CachedOnDiskReadBufferFromFile::getInfoForLog()
 {
     String implementation_buffer_read_range_str;
     if (implementation_buffer)

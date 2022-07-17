@@ -129,7 +129,13 @@ protected:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock) = 0;
 
-    virtual FileSegmentPtr setDownloading(
+    /**
+     * Create a file segment of exactly requested size with EMPTY state.
+     * Throw exception if requested size exceeds max allowed file segment size.
+     * This method is for protected usage: file segment range writer uses it
+     * to dynamically allocate file segments.
+     */
+    virtual FileSegmentPtr createFileSegmentForDownload(
         const Key & key,
         size_t offset,
         size_t size,

@@ -18,13 +18,13 @@ extern const Metric FilesystemCacheReadBuffers;
 namespace DB
 {
 
-class CachedReadBufferFromFile : public ReadBufferFromFileBase
+class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
     using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
 
-    CachedReadBufferFromFile(
+    CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,
         const IFileCache::Key & cache_key_,
         FileCachePtr cache_,
@@ -36,7 +36,7 @@ public:
         bool use_external_buffer_,
         std::optional<size_t> read_until_position_ = std::nullopt);
 
-    ~CachedReadBufferFromFile() override;
+    ~CachedOnDiskReadBufferFromFile() override;
 
     bool nextImpl() override;
 

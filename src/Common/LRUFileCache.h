@@ -128,9 +128,19 @@ private:
     String dumpStructureUnlocked(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
 
     void fillHolesWithEmptyFileSegments(
-        FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, bool is_persistent, std::lock_guard<std::mutex> & cache_lock);
+        FileSegments & file_segments,
+        const Key & key,
+        const FileSegment::Range & range,
+        bool fill_with_detached_file_segments,
+        bool is_persistent,
+        std::lock_guard<std::mutex> & cache_lock);
 
-    FileSegmentPtr setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent, std::lock_guard<std::mutex> & cache_lock) override;
+    FileSegmentPtr createFileSegmentForDownload(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        bool is_persistent,
+        std::lock_guard<std::mutex> & cache_lock) override;
 
     size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 

@@ -2,8 +2,8 @@
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <IO/BoundedReadBuffer.h>
-#include <Disks/IO/CachedWriteBufferFromFile.h>
-#include <Disks/IO/CachedReadBufferFromFile.h>
+#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Common/IFileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/CurrentThread.h>
@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
 }
 
-CachedObjectStorage:: CachedObjectStorage(
+CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
     FileCachePtr cache_,
     const std::string & cache_config_name_)
@@ -84,24 +84,23 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     assert(!objects[0].getPathKeyForCache().empty());
 
     auto modified_read_settings = patchSettings(read_settings);
-    auto impl = object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
+    auto implementation_buffer = object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
-    if (impl->isIntegratedWithFilesystemCache()
+    if (implementation_buffer->isIntegratedWithFilesystemCache()
         && modified_read_settings.enable_filesystem_cache_on_lower_level)
     {
-        return impl;
+        return implementation_buffer;
     }
     else
     {
         if (!file_size)
-            file_size = impl->getFileSize();
+            file_size = implementation_buffer->getFileSize();
 
-        auto implementation_buffer_creator = [=, this]()
+        auto implementation_buffer_creator = [objects, modified_read_settings, read_hint, file_size, this]()
         {
-            auto implementation_buffer =
-                object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
-            return std::make_unique<BoundedReadBuffer>(std::move(implementation_buffer));
+            return std::make_unique<BoundedReadBuffer>(
+                object_storage->readObjects(objects, modified_read_settings, read_hint, file_size));
         };
 
         if (objects.size() != 1)
@@ -110,7 +109,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
         std::string path = objects[0].absolute_path;
         IFileCache::Key key = getCacheKey(objects[0].getPathKeyForCache());
 
-        return std::make_unique<CachedReadBufferFromFile>(
+        return std::make_unique<CachedOnDiskReadBufferFromFile>(
             path,
             key,
             cache,
@@ -130,29 +129,27 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     std::optional<size_t> file_size) const
 {
     auto modified_read_settings = patchSettings(read_settings);
-    auto impl = object_storage->readObject(object, read_settings, read_hint, file_size);
+    auto implementation_buffer = object_storage->readObject(object, read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
-    if (impl->isIntegratedWithFilesystemCache()
+    if (implementation_buffer->isIntegratedWithFilesystemCache()
         && modified_read_settings.enable_filesystem_cache_on_lower_level)
     {
-        return impl;
+        return implementation_buffer;
     }
     else
     {
         if (!file_size)
-            file_size = impl->getFileSize();
+            file_size = implementation_buffer->getFileSize();
 
-        auto implementation_buffer_creator = [=, this]()
+        auto implementation_buffer_creator = [object, read_settings, read_hint, file_size, this]()
         {
-            auto implementation_buffer =
-                object_storage->readObject(object, read_settings, read_hint, file_size);
-            return std::make_unique<BoundedReadBuffer>(std::move(implementation_buffer));
+            return std::make_unique<BoundedReadBuffer>(object_storage->readObject(object, read_settings, read_hint, file_size));
         };
 
         IFileCache::Key key = getCacheKey(object.getPathKeyForCache());
         LOG_TEST(log, "Reading from file `{}` with cache key `{}`", object.absolute_path, key.toString());
-        return std::make_unique<CachedReadBufferFromFile>(
+        return std::make_unique<CachedOnDiskReadBufferFromFile>(
             object.absolute_path,
             key,
             cache,
@@ -175,50 +172,40 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     const WriteSettings & write_settings)
 {
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
-    auto impl = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
+    auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
 
     bool cache_on_write = fs::path(object.absolute_path).extension() != ".tmp"
         && modified_write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations;
 
-    auto cache_hint = object.getPathKeyForCache();
-    removeCacheIfExists(cache_hint);
+    auto path_key_for_cache = object.getPathKeyForCache();
+    /// Need to remove even if cache_on_write == false.
+    removeCacheIfExists(path_key_for_cache);
 
     if (cache_on_write)
     {
-        auto key = getCacheKey(cache_hint);
-        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(cache_hint), key.toString());
+        auto key = getCacheKey(path_key_for_cache);
+        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(path_key_for_cache), key.toString());
 
-        return std::make_unique<CachedWriteBufferFromFile>(
-            std::move(impl),
+        return std::make_unique<CachedOnDiskWriteBufferFromFile>(
+            std::move(implementation_buffer),
             cache,
-            impl->getFileName(),
+            implementation_buffer->getFileName(),
             key,
             modified_write_settings.is_file_cache_persistent,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "",
             modified_write_settings);
     }
 
-    return impl;
+    return implementation_buffer;
 }
 
-void CachedObjectStorage::removeCacheIfExists(const std::string & cache_hint)
+void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_cache)
 {
-    if (cache_hint.empty())
+    if (path_key_for_cache.empty())
         return;
 
-    IFileCache::Key key;
-    try
-    {
-        key = getCacheKey(cache_hint);
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::CANNOT_STAT)
-            return;
-        throw;
-    }
-    cache->removeIfExists(key);
+    cache->removeIfExists(getCacheKey(path_key_for_cache));
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
