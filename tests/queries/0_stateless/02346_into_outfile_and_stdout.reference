@@ -14,3 +14,8 @@ performing test: bad_query_misplaced_compression
 1
 performing test: bad_query_misplaced_format
 1
+performing test: union_all
+1	2
+3	4
+1	2
+3	4
