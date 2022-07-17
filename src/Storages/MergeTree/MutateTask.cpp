@@ -170,6 +170,15 @@ getColumnsForNewDataPart(
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
     ColumnsDescription part_columns(source_part->getColumns());
+    const auto all_virtual_columns = source_part->storage.getVirtuals();
+
+    /// Preserve virtual columns that have persisted values in the source_part
+/// TODO: only allow LWD mask to be overriden!!!!!
+    for (const auto & virtual_column : all_virtual_columns)
+    {
+        if (part_columns.has(virtual_column.name) && !storage_columns.contains(virtual_column.name))
+            storage_columns.emplace_back(virtual_column);
+    }
 
     /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
@@ -178,8 +187,11 @@ getColumnsForNewDataPart(
         {
             for (const auto & [column_name, _] : command.column_to_update_expression)
             {
-                if (column_name == "__row_exists" && !storage_columns.contains(column_name))
-                    storage_columns.emplace_back("__row_exists", std::make_shared<DataTypeUInt8>());
+                /// Allow to update and persist values of virtual column
+/// TODO: only allow LWD mask to be overriden!!!!!
+                auto virtual_column = all_virtual_columns.tryGetByName(column_name);
+                if (virtual_column && !storage_columns.contains(column_name))
+                    storage_columns.emplace_back(column_name, virtual_column->type);
             }
         }
 

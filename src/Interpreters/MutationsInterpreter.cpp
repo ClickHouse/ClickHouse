@@ -29,7 +29,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
 
-
 namespace DB
 {
 
@@ -297,9 +296,7 @@ MutationsInterpreter::MutationsInterpreter(
     , is_lightweight(is_lightweight_)
 {
     if (is_lightweight)
-    {
         mutation_ast = prepareLightweightDelete(!can_execute);
-    }
     else
         mutation_ast = prepare(!can_execute);
 }
@@ -356,7 +353,11 @@ static void validateUpdateColumns(
             }
         }
 
-        if (!found && column_name != "__row_exists") /// TODO: properly handle updating __row_exists column for LWD
+        /// Allow to override values of virtual columns
+        if (!found && column_name == metadata_snapshot->lightweight_delete_description.filter_column.name)
+            found = true;
+
+        if (!found)
         {
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
             {
@@ -509,7 +510,14 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 ///
                 /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
 
-                const auto type = (column == "__row_exists" ?  std::make_shared<DataTypeUInt8>() : columns_desc.getPhysical(column).type);
+                DataTypePtr type;
+                if (auto physical_column = columns_desc.tryGetPhysical(column))
+                    type = physical_column->type;
+                else if (column == metadata_snapshot->lightweight_delete_description.filter_column.name)
+                    type = metadata_snapshot->lightweight_delete_description.filter_column.type;
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
+
                 auto type_literal = std::make_shared<ASTLiteral>(type->getName());
 
                 const auto & update_expr = kv.second;

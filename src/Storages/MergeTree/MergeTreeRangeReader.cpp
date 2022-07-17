@@ -1002,6 +1002,7 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     result.columns.emplace_back(std::move(column));
     result.extra_columns_filled.push_back("_part_offset");
 }
+
 /// Fill deleted_row_mask column, referenced from fillPartOffsetColumn().
 void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {

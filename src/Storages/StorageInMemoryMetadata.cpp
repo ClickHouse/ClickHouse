@@ -38,6 +38,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sampling_key(other.sampling_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
+    , lightweight_delete_description(other.lightweight_delete_description)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
     , comment(other.comment)
@@ -63,6 +64,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sampling_key = other.sampling_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
+    lightweight_delete_description = other.lightweight_delete_description;
     if (other.settings_changes)
         settings_changes = other.settings_changes->clone();
     else
