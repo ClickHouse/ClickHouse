@@ -10,9 +10,9 @@ function perform()
     local query=$2
 
     echo "performing test: ${test_id}"
-    ${CLICKHOUSE_CLIENT} --query "${query}"
+    ${CLICKHOUSE_CLIENT} --query "${query}" | sort --numeric-sort
     if [ "$?" -eq 0 ]; then
-        cat "${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_${test_id}.out"
+        cat "${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_${test_id}.out" | sort --numeric-sort
     else
         echo "query failed"
     fi
@@ -73,3 +73,5 @@ performCompression "compression" "SELECT * FROM (SELECT 'Hello, World! From clic
 performBadQuery "bad_query_misplaced_compression" "SELECT 1, 2, 3 INTO OUTFILE 'test.gz' COMPRESSION 'GZ' AND STDOUT'" "SYNTAX_ERROR"
 
 performBadQuery "bad_query_misplaced_format" "SELECT 1, 2, 3 INTO OUTFILE 'test.gz' FORMAT TabSeparated AND STDOUT'" "SYNTAX_ERROR"
+
+perform "union_all" "SELECT 3, 4 UNION ALL SELECT 1, 2 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_and_stdout_union_all.out' AND STDOUT"
