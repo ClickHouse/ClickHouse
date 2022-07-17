@@ -40,7 +40,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     if (schemas.size() <= 1)
     {
         std::string query = fmt::format(
-            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname = {}",
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
             postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
@@ -55,7 +55,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     for (const auto & schema : schemas)
     {
         std::string query = fmt::format(
-            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname = {}",
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
             quoteString(schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
