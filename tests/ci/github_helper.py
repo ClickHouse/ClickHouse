@@ -27,6 +27,7 @@ class GitHub(github.Github):
         self._cache_path = Path(CACHE_PATH)
         # And set Path
         super().__init__(*args, **kwargs)
+        self._retries = 0
 
     # pylint: disable=signature-differs
     def search_issues(self, *args, **kwargs) -> Issues:  # type: ignore
@@ -36,25 +37,23 @@ class GitHub(github.Github):
         splittable = False
         for arg, value in kwargs.items():
             if arg in ["closed", "created", "merged", "updated"]:
-                if (
-                    hasattr(value, "__iter__")
-                    and not isinstance(value, str)
-                    and not splittable
-                ):
+                if hasattr(value, "__iter__") and not isinstance(value, str):
                     assert [True for v in value if isinstance(v, (date, datetime))]
                     assert len(value) == 2
-                    preserved_arg = arg
-                    preserved_value = value
-                    middle_value = value[0] + (value[1] - value[0]) / 2
-                    splittable = middle_value not in value
                     kwargs[arg] = f"{value[0].isoformat()}..{value[1].isoformat()}"
+                    if not splittable:
+                        # We split only by the first met splittable argument
+                        preserved_arg = arg
+                        preserved_value = value
+                        middle_value = value[0] + (value[1] - value[0]) / 2
+                        splittable = middle_value not in value
                     continue
                 assert isinstance(value, (date, datetime, str))
 
         inter_result = []  # type: Issues
-        for i in range(3):
+        for i in range(self.retries):
             try:
-                logger.debug("Search issues, args=%s, kwards=%s", args, kwargs)
+                logger.debug("Search issues, args=%s, kwargs=%s", args, kwargs)
                 result = super().search_issues(*args, **kwargs)
                 if result.totalCount == 1000 and splittable:
                     # The hard limit is 1000. If it's splittable, then we make
@@ -83,7 +82,7 @@ class GitHub(github.Github):
                 inter_result.extend(result)
                 return inter_result
             except RateLimitExceededException as e:
-                if i == 2:
+                if i == self.retries - 1:
                     exception = e
                 self.sleep_on_rate_limit()
 
@@ -136,12 +135,12 @@ class GitHub(github.Github):
             if updated_at <= cached_pr.updated_at:
                 logger.debug("Getting PR #%s from cache", number)
                 return cached_pr
-        for i in range(3):
+        for i in range(self.retries):
             try:
                 pr = repo.get_pull(number)
                 break
             except RateLimitExceededException:
-                if i == 2:
+                if i == self.retries - 1:
                     raise
                 self.sleep_on_rate_limit()
         logger.debug("Getting PR #%s from API", number)
@@ -160,3 +159,13 @@ class GitHub(github.Github):
             assert self._cache_path.is_dir()
         else:
             self._cache_path.mkdir(parents=True)
+
+    @property
+    def retries(self):
+        if self._retries == 0:
+            self._retries = 3
+        return self._retries
+
+    @retries.setter
+    def retries(self, value: int):
+        self._retries = value
