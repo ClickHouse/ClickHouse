@@ -43,6 +43,8 @@ struct StorageInMemoryMetadata
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
+    /// Lightweight delete filter column if the storage supports it.
+    LightweightDeleteDescription lightweight_delete_description;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).

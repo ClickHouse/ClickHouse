@@ -813,25 +813,25 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         auto columns = global_ctx->merging_column_names;
 
-        if (part->getColumns().contains("__row_exists"))
-            columns.emplace_back("__row_exists");
-
+        /// The part might have some rows masked by lightweight deletes
+        const auto lwd_filter_column = global_ctx->metadata_snapshot->lightweight_delete_description.filter_column.name;
+        const bool need_to_filter_deleted_rows = !lwd_filter_column.empty() && part->getColumns().contains(lwd_filter_column);
+        if (need_to_filter_deleted_rows)
+            columns.emplace_back(lwd_filter_column);
 
         auto input = std::make_unique<MergeTreeSequentialSource>(
             *global_ctx->data, global_ctx->storage_snapshot, part, columns, ctx->read_with_direct_io, true);
 
         Pipe pipe(std::move(input));
 
-
-/////////////
-        if (part->getColumns().contains("__row_exists"))
+        /// Add filtering step that discards deleted rows
+        if (need_to_filter_deleted_rows)
         {
-            pipe.addSimpleTransform([](const Block & header)
+            pipe.addSimpleTransform([lwd_filter_column](const Block & header)
             {
-                return std::make_shared<FilterTransform>(header, nullptr, "__row_exists", "__row_exists");
+                return std::make_shared<FilterTransform>(header, nullptr, lwd_filter_column, true);
             });
         }
-/////////////
 
         if (global_ctx->metadata_snapshot->hasSortingKey())
         {

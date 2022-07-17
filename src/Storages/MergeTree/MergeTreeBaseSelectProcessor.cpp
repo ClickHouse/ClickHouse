@@ -208,16 +208,58 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 
         auto res = readFromPart();
 
-        if (res.hasRows())
+        if (res.row_count)
         {
-            injectVirtualColumns(res, task.get(), partition_value_type, virt_column_names);
-            return res;
+            injectVirtualColumns(res.block, res.row_count, task.get(), partition_value_type, virt_column_names);
+
+            /// Reorder the columns according to output header
+            const auto & output_header = output.getHeader();
+            Columns ordered_columns;
+            ordered_columns.reserve(output_header.columns());
+            for (size_t i = 0; i < output_header.columns(); ++i)
+            {
+                auto name = output_header.getByPosition(i).name;
+                ordered_columns.push_back(res.block.getByName(name).column);
+            }
+
+            return Chunk(ordered_columns, res.row_count);
         }
     }
 
     return {};
 }
 
+void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForPart(
+    MergeTreeData::DataPartPtr & data_part,
+    const MergeTreeReadTaskColumns & task_columns, const StorageMetadataPtr & metadata_snapshot,
+    const MarkRanges & mark_ranges, const IMergeTreeReader::ValueSizeMap & value_size_map,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+{
+    reader = data_part->getReader(task_columns.columns, metadata_snapshot, mark_ranges,
+        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+        value_size_map, profile_callback);
+
+    pre_reader_for_step.clear();
+
+    /// Add lightweight delete filtering step
+    const auto & lightweigth_delete_info = metadata_snapshot->lightweight_delete_description;
+    if (!reader_settings.skip_deleted_mask && data_part->getColumns().contains(lightweigth_delete_info.filter_column.name))
+    {
+        pre_reader_for_step.push_back(data_part->getReader({lightweigth_delete_info.filter_column}, metadata_snapshot, mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                value_size_map, profile_callback));
+    }
+
+    if (prewhere_info)
+    {
+        for (const auto & pre_columns_per_step : task_columns.pre_columns)
+        {
+            pre_reader_for_step.push_back(data_part->getReader(pre_columns_per_step, metadata_snapshot, mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                value_size_map, profile_callback));
+        }
+    }
+}
 
 void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
@@ -225,9 +267,10 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     bool last_reader = false;
     size_t pre_readers_shift = 0;
 
-    if (!reader_settings.skip_deleted_mask && current_task.data_part->getColumns().contains("__row_exists"))
+    /// Add filtering step with lightweight delete mask
+    const auto & lightweigth_delete_info = storage_snapshot->metadata->lightweight_delete_description;
+    if (!reader_settings.skip_deleted_mask && current_task.data_part->getColumns().contains(lightweigth_delete_info.filter_column.name))
     {
-//        last_reader = !prewhere_actions || prewhere_actions->steps.empty();
         current_task.pre_range_readers.push_back(
             MergeTreeRangeReader(pre_reader_for_step[0].get(), prev_reader, &lwd_filter_step, last_reader, non_const_virtual_column_names));
         prev_reader = &current_task.pre_range_readers.back();
@@ -240,7 +283,6 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "PREWHERE steps count mismatch, actions: {}, readers: {}",
                             prewhere_actions->steps.size(), pre_reader_for_step.size());
-
 
         for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
         {
@@ -304,7 +346,7 @@ static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 cur
 }
 
 
-Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
+MergeTreeBaseSelectProcessor::BlockAndRowCount MergeTreeBaseSelectProcessor::readFromPartImpl()
 {
     if (task->size_predictor)
         task->size_predictor->startBlock();
@@ -347,24 +389,13 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     if (read_result.num_rows == 0)
         return {};
 
-    Columns ordered_columns;
-    ordered_columns.reserve(header_without_virtual_columns.columns());
+    BlockAndRowCount res = { sample_block.cloneWithColumns(read_result.columns), read_result.num_rows };
 
-    /// Reorder columns. TODO: maybe skip for default case.
-    for (size_t ps = 0; ps < header_without_virtual_columns.columns(); ++ps)
-    {
-        const auto & name = header_without_virtual_columns.getByPosition(ps).name;
-        if (name == "__row_exists" && !sample_block.has(name))
-            continue; /// TODO: properly deal with cases when __row_exists is not read and is filled later 
-        auto pos_in_sample_block = sample_block.getPositionByName(name);
-        ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
-    }
-
-    return Chunk(std::move(ordered_columns), read_result.num_rows);
+    return res;
 }
 
 
-Chunk MergeTreeBaseSelectProcessor::readFromPart()
+MergeTreeBaseSelectProcessor::BlockAndRowCount MergeTreeBaseSelectProcessor::readFromPart()
 {
     if (!task->range_reader.isInitialized())
         initializeRangeReaders(*task);
@@ -375,22 +406,46 @@ Chunk MergeTreeBaseSelectProcessor::readFromPart()
 
 namespace
 {
-    /// Simple interfaces to insert virtual columns.
     struct VirtualColumnsInserter
     {
-        virtual ~VirtualColumnsInserter() = default;
+        explicit VirtualColumnsInserter(Block & block_) : block(block_) {}
 
-        virtual void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) = 0;
-        virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
-        virtual void insertUInt8Column(const ColumnPtr & column, const String & name) = 0;
-        virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
-        virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
+        bool columnExists(const String & name) const { return block.has(name); }
 
-        virtual void insertPartitionValueColumn(
-            size_t rows,
-            const Row & partition_value,
-            const DataTypePtr & partition_value_type,
-            const String & name) = 0;
+        void insertStringColumn(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeString>(), name});
+        }
+
+        void insertUInt8Column(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeUInt8>(), name});
+        }
+
+        void insertUInt64Column(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeUInt64>(), name});
+        }
+
+        void insertUUIDColumn(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeUUID>(), name});
+        }
+
+        void insertPartitionValueColumn(
+            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name)
+        {
+            ColumnPtr column;
+            if (rows)
+                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
+                             ->convertToFullColumnIfConst();
+            else
+                column = partition_value_type->createColumn();
+
+            block.insert({column, partition_value_type, name});
+        }
+
+        Block & block;
     };
 }
 
@@ -400,16 +455,34 @@ static void injectNonConstVirtualColumns(
     VirtualColumnsInserter & inserter,
     const Names & virtual_columns)
 {
-    if (unlikely(rows))
-        throw Exception("Cannot insert non-constant virtual column to non-empty chunk.",
-                        ErrorCodes::LOGICAL_ERROR);
-
     for (const auto & virtual_column_name : virtual_columns)
     {
         if (virtual_column_name == "_part_offset")
-            inserter.insertUInt64Column(DataTypeUInt64().createColumn(), virtual_column_name);
+        {
+            if (!rows)
+            {
+                inserter.insertUInt64Column(DataTypeUInt64().createColumn(), virtual_column_name);
+            }
+            else
+            {
+                if (!inserter.columnExists(virtual_column_name))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Column {} must have been filled part reader",
+                        virtual_column_name);
+            }
+        }
+
         if (virtual_column_name == "__row_exists")
-            inserter.insertUInt8Column(DataTypeUInt8().createColumn(), virtual_column_name);
+        {
+                /// If __row_exists column isn't present in the part then fill it here with 1s
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUInt8().createColumnConst(rows, 1)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUInt8().createColumn();
+
+                inserter.insertUInt8Column(column, virtual_column_name);
+        }
     }
 }
 
@@ -489,148 +562,15 @@ static void injectPartConstVirtualColumns(
     }
 }
 
-namespace
-{
-    struct VirtualColumnsInserterIntoBlock : public VirtualColumnsInserter
-    {
-        explicit VirtualColumnsInserterIntoBlock(Block & block_) : block(block_) {}
-
-        void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) final
-        {
-            block.insert({column, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), name});
-        }
-
-        void insertStringColumn(const ColumnPtr & column, const String & name) final
-        {
-            block.insert({column, std::make_shared<DataTypeString>(), name});
-        }
-
-        void insertUInt8Column(const ColumnPtr & column, const String & name) final
-        {
-            block.insert({column, std::make_shared<DataTypeUInt8>(), name});
-        }
-
-        void insertUInt64Column(const ColumnPtr & column, const String & name) final
-        {
-            block.insert({column, std::make_shared<DataTypeUInt64>(), name});
-        }
-
-        void insertUUIDColumn(const ColumnPtr & column, const String & name) final
-        {
-            block.insert({column, std::make_shared<DataTypeUUID>(), name});
-        }
-
-        void insertPartitionValueColumn(
-            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name) final
-        {
-            ColumnPtr column;
-            if (rows)
-                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
-                             ->convertToFullColumnIfConst();
-            else
-                column = partition_value_type->createColumn();
-
-            block.insert({column, partition_value_type, name});
-        }
-
-        Block & block;
-    };
-
-    struct VirtualColumnsInserterIntoColumns : public VirtualColumnsInserter
-    {
-        explicit VirtualColumnsInserterIntoColumns(Columns & columns_) : columns(columns_) {}
-
-        void insertArrayOfStringsColumn(const ColumnPtr & column, const String &) final
-        {
-            columns.push_back(column);
-        }
-
-        void insertStringColumn(const ColumnPtr & column, const String &) final
-        {
-            columns.push_back(column);
-        }
-
-        void insertUInt8Column(const ColumnPtr & column, const String &) final
-        {
-            columns.push_back(column);
-        }
-
-        void insertUInt64Column(const ColumnPtr & column, const String &) final
-        {
-            columns.push_back(column);
-        }
-
-        void insertUUIDColumn(const ColumnPtr & column, const String &) final
-        {
-            columns.push_back(column);
-        }
-
-        void insertPartitionValueColumn(
-            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String &) final
-        {
-            ColumnPtr column;
-            if (rows)
-                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
-                             ->convertToFullColumnIfConst();
-            else
-                column = partition_value_type->createColumn();
-            columns.push_back(column);
-        }
-
-        Columns & columns;
-    };
-}
-
 void MergeTreeBaseSelectProcessor::injectVirtualColumns(
-    Block & block, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
+    Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
-    VirtualColumnsInserterIntoBlock inserter{block};
+    VirtualColumnsInserter inserter{block};
 
     /// First add non-const columns that are filled by the range reader and then const columns that we will fill ourselves.
     /// Note that the order is important: virtual columns filled by the range reader must go first
-    injectNonConstVirtualColumns(block.rows(), inserter, virtual_columns);
-    injectPartConstVirtualColumns(block.rows(), inserter, task, partition_value_type, virtual_columns);
-}
-
-void MergeTreeBaseSelectProcessor::injectVirtualColumns(
-    Chunk & chunk, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
-{
-    UInt64 num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
-    VirtualColumnsInserterIntoColumns inserter{columns};
-
-/////////////////////////
-// TODO: implement properly
-    for (const auto & virtual_column_name : virtual_columns)
-    {
-
-            if (virtual_column_name == "__row_exists")
-            {
-                if (task->data_part->getColumns().contains(virtual_column_name))
-                {
-                    /// If this column is present in the part it must be read from the data
-                    assert(task->task_columns.columns.contains(virtual_column_name));
-                }
-                else
-                {
-                    /// If __row_exists column isn't present in the part then  
-                    ColumnPtr column;
-                    if (num_rows)
-                        column = DataTypeUInt8().createColumnConst(num_rows, 1)->convertToFullColumnIfConst();
-                    else
-                        column = DataTypeUInt8().createColumn();
-
-                    inserter.insertUInt8Column(column, virtual_column_name);
-                }
-            }
-    }
-///////////////////////////    
-
-    /// Only add const virtual columns because non-const ones have already been added
-    injectPartConstVirtualColumns(num_rows, inserter, task, partition_value_type, virtual_columns);
-
-    chunk.setColumns(columns, num_rows);
+    injectNonConstVirtualColumns(row_count, inserter, virtual_columns);
+    injectPartConstVirtualColumns(row_count, inserter, task, partition_value_type, virtual_columns);
 }
 
 Block MergeTreeBaseSelectProcessor::transformHeader(
@@ -676,7 +616,7 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
         }
     }
 
-    injectVirtualColumns(block, nullptr, partition_value_type, virtual_columns);
+    injectVirtualColumns(block, 0, nullptr, partition_value_type, virtual_columns);
     return block;
 }
 

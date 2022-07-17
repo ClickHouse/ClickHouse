@@ -6,6 +6,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Storages/TTLMode.h>
+#include "Core/NamesAndTypes.h"
+#include "DataTypes/Serializations/ISerialization.h"
 
 namespace DB
 {
@@ -125,6 +127,11 @@ struct TTLTableDescription
 
     /// Parse description from string
     static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
+};
+
+struct LightweightDeleteDescription
+{
+    NameAndTypePair filter_column;
 };
 
 }

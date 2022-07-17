@@ -33,8 +33,11 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete && !getContext()->getSettingsRef().allow_experimental_lwd2)
+    if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete &&
+        !getContext()->getSettingsRef().allow_experimental_lightweight_delete_with_row_exists)
+    {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight delete mutate is experimental. Set `allow_experimental_lightweight_delete` setting to enable it");
+    }
 
     FunctionNameNormalizer().visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
@@ -70,9 +73,9 @@ BlockIO InterpreterDeleteQuery::execute()
     MutationCommands mutation_commands;
     MutationCommand mut_command;
 
-    if (getContext()->getSettingsRef().allow_experimental_lwd2)
+    if (getContext()->getSettingsRef().allow_experimental_lightweight_delete_with_row_exists)
     {
-        /// UPDATE __row_exists = 0 WHERE predicate
+        /// Build "UPDATE __row_exists = 0 WHERE predicate" query
         mut_command.type = MutationCommand::Type::UPDATE;
         mut_command.predicate = delete_query.predicate;
 
@@ -80,14 +83,14 @@ BlockIO InterpreterDeleteQuery::execute()
         command->type = ASTAlterCommand::UPDATE;
         command->predicate = delete_query.predicate;
         command->update_assignments = std::make_shared<ASTExpressionList>();
-        auto set_row_exists = std::make_shared<ASTAssignment>();
-        set_row_exists->column_name = "__row_exists";
+        auto set_row_does_not_exist = std::make_shared<ASTAssignment>();
+        set_row_does_not_exist->column_name = metadata_snapshot->lightweight_delete_description.filter_column.name;
         auto zero_value = std::make_shared<ASTLiteral>(DB::Field(UInt8(0)));
-        set_row_exists->children.push_back(zero_value);
-        command->update_assignments->children.push_back(set_row_exists);
+        set_row_does_not_exist->children.push_back(zero_value);
+        command->update_assignments->children.push_back(set_row_does_not_exist);
         command->children.push_back(command->predicate);
         command->children.push_back(command->update_assignments);
-        mut_command.column_to_update_expression[set_row_exists->column_name] = zero_value;
+        mut_command.column_to_update_expression[set_row_does_not_exist->column_name] = zero_value;
         mut_command.ast = command->ptr();
 
         mutation_commands.emplace_back(mut_command);

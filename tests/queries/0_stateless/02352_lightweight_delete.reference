@@ -13,3 +13,11 @@ Delete 3M more rows using light weight DELETE
 Rows in parts	7000000
 Count	4000000
 First row	6000000	10
+Do UPDATE mutation
+Rows in parts	7000000
+Count	4000000
+First row	6000000	1
+Force merge to cleanup deleted rows
+Rows in parts	4000000
+Count	4000000
+First row	6000000	1

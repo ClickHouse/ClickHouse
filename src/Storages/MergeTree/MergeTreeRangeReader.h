@@ -161,9 +161,6 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
 
-        /// Similar as filter that you need to apply to newly-read columns
-        ColumnPtr deleted_mask_filter_holder;
-
     private:
         /// Only MergeTreeRangeReader is supposed to access ReadResult internals.
         friend class MergeTreeRangeReader;
@@ -244,6 +241,9 @@ public:
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         std::map<const IColumn::Filter *, size_t> filter_bytes_map;
+
+        /// Similar as filter that you need to apply to newly-read columns
+        ColumnPtr deleted_mask_filter_holder;
 
         Names extra_columns_filled;
     };

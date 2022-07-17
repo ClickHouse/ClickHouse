@@ -10,6 +10,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include "DataTypes/DataTypesNumber.h"
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -676,6 +677,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
+
+    metadata.lightweight_delete_description.filter_column = { "__row_exists", std::make_shared<DataTypeUInt8>() };
 
     if (replicated)
     {
