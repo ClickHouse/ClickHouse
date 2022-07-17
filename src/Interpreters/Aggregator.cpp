@@ -282,6 +282,12 @@ DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Agg
         keys_positions[i] = header.getPositionByName(params.keys[i]);
     return keys_positions;
 }
+
+template <typename HashTable, typename KeyHolder>
+concept HasPrefetchMemberFunc = requires
+{
+    {std::declval<HashTable>().prefetch(std::declval<KeyHolder>())} -> std::same_as<void>;
+};
 }
 
 namespace DB
@@ -997,6 +1003,9 @@ void NO_INLINE Aggregator::executeImplBatch(
     AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr overflow_row) const
 {
+    // During processing of row #i will also prefetch row number #(row + prefetch_indent).
+    static constexpr uint8_t prefetch_indent = 8;
+
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
     {
@@ -1006,7 +1015,18 @@ void NO_INLINE Aggregator::executeImplBatch(
         /// For all rows.
         AggregateDataPtr place = aggregates_pool->alloc(0);
         for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
+            {
+                if (i + prefetch_indent < row_end)
+                {
+                    auto key_holder = state.getKeyHolder(i + prefetch_indent, *aggregates_pool);
+                    method.data.prefetch(key_holder);
+                }
+            }
+
             state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+        }
         return;
     }
 
@@ -1059,6 +1079,15 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         if constexpr (!no_more_keys)
         {
+            if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
+            {
+                if (i + prefetch_indent < row_end)
+                {
+                    auto key_holder = state.getKeyHolder(i + prefetch_indent, *aggregates_pool);
+                    method.data.prefetch(key_holder);
+                }
+            }
+
             auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.

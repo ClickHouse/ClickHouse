@@ -192,6 +192,8 @@ public:
 
     using Base::Base;
 
+    using Base::prefetch;
+
     /// Merge every cell's value of current map into the destination map via emplace.
     ///  Func should have signature void(Mapped & dst, Mapped & src, bool emplaced).
     ///  Each filled cell in current map will invoke func once. If that map doesn't

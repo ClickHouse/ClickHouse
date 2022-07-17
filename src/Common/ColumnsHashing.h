@@ -659,7 +659,6 @@ struct HashMethodSerialized
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size()) {}
 
-protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const

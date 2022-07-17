@@ -227,6 +227,15 @@ public:
         return res;
     }
 
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
+    {
+        const auto & key = keyHolderGetKey(key_holder);
+        const auto hash_key = hash(key);
+        size_t buck = getBucketFromHash(hash_key);
+        impls[buck].prefetchByHash(hash_key);
+    }
+
 
     /** Insert the key,
       * return an iterator to a position that can be used for `placement new` of value,

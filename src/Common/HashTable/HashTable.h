@@ -5,6 +5,7 @@
 #include <math.h>
 
 #include <new>
+#include <type_traits>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
@@ -911,10 +912,10 @@ protected:
     bool ALWAYS_INLINE emplaceIfZero(const Key & x, LookupResult & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
-        if (!Cell::need_zero_value_storage)
+        if constexpr (!Cell::need_zero_value_storage)
             return false;
 
-        if (Cell::isZero(x, *this))
+        if unlikely (Cell::isZero(x, *this))
         {
             it = this->zeroValue();
 
@@ -1025,6 +1026,19 @@ public:
                 Cell::move(it.getPtr(), &buf[place_value]);
     }
 
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
+    {
+        const auto & key = keyHolderGetKey(key_holder);
+        const auto hash_key = hash(key);
+        prefetchByHash(hash_key);
+    }
+
+    void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
+    {
+        size_t place_value = grower.place(hash_key);
+        __builtin_prefetch(&buf[place_value]);
+    }
 
     /** Insert the key.
       * Return values:
