@@ -58,8 +58,23 @@ bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) c
 
 void MetadataStorageFromStaticFilesWebServer::assertExists(const std::string & path) const
 {
+    initializeIfNeeded(path);
+
     if (!exists(path))
+#ifdef NDEBUG
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no path {}", path);
+#else
+    {
+        std::string all_files;
+        for (const auto & [file, _] : object_storage.files)
+        {
+            if (!all_files.empty())
+                all_files += ", ";
+            all_files += file;
+        }
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no path {} (available files: {})", path, all_files);
+    }
+#endif
 }
 
 bool MetadataStorageFromStaticFilesWebServer::isFile(const std::string & path) const
@@ -97,9 +112,8 @@ std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(
     return result;
 }
 
-DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(const std::string & path) const
+bool MetadataStorageFromStaticFilesWebServer::initializeIfNeeded(const std::string & path) const
 {
-    std::vector<fs::path> dir_file_paths;
     if (object_storage.files.find(path) == object_storage.files.end())
     {
         try
@@ -114,9 +128,19 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
                 throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
 
             LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
-            return std::make_unique<DiskWebServerDirectoryIterator>(std::move(dir_file_paths));
+            return false;
         }
     }
+
+    return true;
+}
+
+DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(const std::string & path) const
+{
+    std::vector<fs::path> dir_file_paths;
+
+    if (!initializeIfNeeded(path))
+        return std::make_unique<DiskWebServerDirectoryIterator>(std::move(dir_file_paths));
 
     assertExists(path);
 

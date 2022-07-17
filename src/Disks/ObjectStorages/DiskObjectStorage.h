@@ -183,10 +183,12 @@ public:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
-    String getStructure() const { return "DiskObjectStorage(" + object_storage->getName() + ")"; }
+    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+
+    static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
 
 private:
 

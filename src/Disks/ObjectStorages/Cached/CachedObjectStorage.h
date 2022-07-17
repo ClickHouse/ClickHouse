@@ -16,7 +16,7 @@ class CachedObjectStorage : public IObjectStorage
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const String & cache_config_name_);
 
-    std::string getName() const override { return "CachedObjectStorage(" + object_storage->getName() + ")"; }
+    std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
     bool exists(const StoredObject & object) const override;
 

@@ -93,6 +93,12 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
         send_metadata ? metadata_helper.get() : nullptr);
 }
 
+std::shared_ptr<Executor> DiskObjectStorage::getAsyncExecutor(const std::string & log_name, size_t size)
+{
+    static auto reader = std::make_shared<AsyncThreadPoolExecutor>(log_name, size);
+    return reader;
+}
+
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
     const String & object_storage_root_path_,
@@ -102,7 +108,7 @@ DiskObjectStorage::DiskObjectStorage(
     DiskType disk_type_,
     bool send_metadata_,
     uint64_t thread_pool_size_)
-    : IDisk(std::make_unique<AsyncThreadPoolExecutor>(log_name, thread_pool_size_))
+    : IDisk(getAsyncExecutor(log_name, thread_pool_size_))
     , name(name_)
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
@@ -447,7 +453,15 @@ bool DiskObjectStorage::isReadOnly() const
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
-    return std::static_pointer_cast<DiskObjectStorage>(shared_from_this());
+    return std::make_shared<DiskObjectStorage>(
+        getName(),
+        object_storage_root_path,
+        getName(),
+        metadata_storage,
+        object_storage,
+        disk_type,
+        send_metadata,
+        threadpool_size);
 }
 
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const String & layer_name)
@@ -583,6 +597,5 @@ DiskObjectStorageReservation::~DiskObjectStorageReservation()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
 
 }

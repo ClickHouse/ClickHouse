@@ -32,10 +32,9 @@ void registerDiskCache(DiskFactory & factory)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "There is not disk with name `{}`, disk name should be initialized before cache disk",
-                disk_name);
+                "Cannot wrap disk `{}` with cache layer `{}`: there is no such disk (it should be initialized before cache disk)",
+                disk_name, name);
         }
-        /// TODO: Add a check that there underlying storage is unique among cached storages.
 
         FileCacheSettings file_cache_settings;
         file_cache_settings.loadFromConfig(config, config_prefix);
@@ -53,8 +52,8 @@ void registerDiskCache(DiskFactory & factory)
 
         LOG_TEST(
             &Poco::Logger::get("DiskCache"),
-            "Registered disk cached disk with structure: {}",
-            assert_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
+            "Registered disk cached disk (`{}`) with structure: {}",
+            name, assert_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
 
         return disk_object_storage;
     };

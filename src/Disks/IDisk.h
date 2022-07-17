@@ -99,8 +99,8 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>())
-        : executor(std::move(executor_))
+    explicit IDisk(std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
+        : executor(executor_)
     {
     }
 
@@ -366,7 +366,7 @@ protected:
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
 private:
-    std::unique_ptr<Executor> executor;
+    std::shared_ptr<Executor> executor;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
