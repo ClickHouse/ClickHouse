@@ -87,7 +87,10 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 #if defined(OS_LINUX)
     try
     {
-        ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/rotational");
+        const auto path{std::filesystem::path("/sys/dev/block/") / device_id / "queue/rotational"};
+        if (!std::filesystem::exists(path))
+            return BlockDeviceType::UNKNOWN;
+        ReadBufferFromFile in(path);
         int rotational;
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
@@ -109,7 +112,8 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 #if defined(OS_LINUX)
     try
     {
-        ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/read_ahead_kb");
+        const auto path{std::filesystem::path("/sys/dev/block/") / device_id / "queue/read_ahead_kb"};
+        ReadBufferFromFile in(path);
         int read_ahead_kb;
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
