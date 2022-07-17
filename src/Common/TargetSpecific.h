@@ -89,6 +89,10 @@ bool isArchSupported(TargetArch arch);
 
 String toString(TargetArch arch);
 
+#ifndef ENABLE_MULTITARGET_CODE
+#   define ENABLE_MULTITARGET_CODE 0
+#endif
+
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
 /// NOLINTNEXTLINE
