@@ -18,6 +18,8 @@ private:
 
     void assertExists(const std::string & path) const;
 
+    bool initializeIfNeeded(const std::string & path) const;
+
 public:
     explicit MetadataStorageFromStaticFilesWebServer(const WebObjectStorage & object_storage_);
 
