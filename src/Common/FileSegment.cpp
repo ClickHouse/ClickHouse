@@ -804,7 +804,7 @@ String FileSegmentsHolder::toString()
 FileSegmentRangeWriter::FileSegmentRangeWriter(
     IFileCache * cache_,
     const FileSegment::Key & key_,
-    std::function<void(const FileSegment & file_segment)> on_complete_file_segment_func_)
+    onCompleteFileSegmentCallback && on_complete_file_segment_func_)
     : cache(cache_)
     , key(key_)
     , current_file_segment_it(file_segments_holder.file_segments.end())
@@ -823,7 +823,8 @@ FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
-    auto file_segment = cache->setDownloading(key, offset, cache->max_file_segment_size, is_persistent, cache_lock);
+    auto file_segment = cache->createFileSegmentForDownload(
+        key, offset, cache->max_file_segment_size, is_persistent, cache_lock);
     return file_segments_holder.add(std::move(file_segment));
 }
 

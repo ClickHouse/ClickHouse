@@ -11,7 +11,7 @@ class Logger;
 namespace DB
 {
 
-class CachedObjectStorage : public IObjectStorage
+class CachedObjectStorage final : public IObjectStorage
 {
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const String & cache_config_name_);
@@ -87,7 +87,7 @@ public:
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
-    void removeCacheIfExists(const std::string & cache_hint) override;
+    void removeCacheIfExists(const std::string & path_key_for_cache) override;
 
     bool supportsCache() const override { return true; }
 

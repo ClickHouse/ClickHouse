@@ -346,6 +346,9 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
+    /// Create disk object storage according to disk type.
+    /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
+    /// for DiskObjectStorage create just a copy.
     virtual DiskObjectStoragePtr createDiskObjectStorage()
     {
         throw Exception(

@@ -103,10 +103,7 @@ StoredObjects FakeMetadataStorageFromDisk::getStorageObjects(const std::string &
 
 uint32_t FakeMetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
 {
-    size_t ref_count = disk->getRefCount(path);
-    // assert(ref_count > 0);
-    // return ref_count - 1;
-    return ref_count;
+    return disk->getRefCount(path);
 }
 
 const IMetadataStorage & FakeMetadataStorageFromDiskTransaction::getStorageForNonTransactionalReads() const

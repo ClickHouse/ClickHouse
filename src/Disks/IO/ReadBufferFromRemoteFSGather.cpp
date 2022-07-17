@@ -15,7 +15,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #endif
 
-#include <Disks/IO/CachedReadBufferFromFile.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
 #include <iostream>
@@ -53,7 +53,7 @@ ReadBufferFromRemoteFSGather::createImplementationBuffer(const String & path, si
         };
 
         auto cache_key = settings.remote_fs_cache->hash(path);
-        return std::make_shared<CachedReadBufferFromFile>(
+        return std::make_shared<CachedOnDiskReadBufferFromFile>(
             path,
             cache_key,
             settings.remote_fs_cache,

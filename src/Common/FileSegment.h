@@ -276,12 +276,14 @@ struct FileSegmentsHolder : private boost::noncopyable
 class FileSegmentRangeWriter
 {
 public:
+    using onCompleteFileSegmentCallback = std::function<void(const FileSegment & file_segment)>;
+
     FileSegmentRangeWriter(
         IFileCache * cache_,
         const FileSegment::Key & key_,
         /// A callback which is called right after each file segment is completed.
         /// It is used to write into filesystem cache log.
-        std::function<void(const FileSegment & file_segment)> on_complete_file_segment_func_);
+        onCompleteFileSegmentCallback && on_complete_file_segment_func_);
 
     ~FileSegmentRangeWriter();
 
@@ -303,7 +305,7 @@ private:
 
     bool finalized = false;
 
-    std::function<void(const FileSegment & file_segment)> on_complete_file_segment_func;
+    onCompleteFileSegmentCallback on_complete_file_segment_func;
 };
 
 }

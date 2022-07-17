@@ -50,9 +50,9 @@ void registerDiskCache(DiskFactory & factory)
 
         disk_object_storage->wrapWithCache(cache, name);
 
-        LOG_TEST(
+        LOG_INFO(
             &Poco::Logger::get("DiskCache"),
-            "Registered disk cached disk (`{}`) with structure: {}",
+            "Registered cached disk (`{}`) with structure: {}",
             name, assert_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
 
         return disk_object_storage;

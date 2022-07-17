@@ -5,6 +5,8 @@
 namespace DB
 {
 
+/// A buffer which allows to make an underlying buffer as right bounded,
+/// e.g. the buffer cannot return data beyond offset specified in `setReadUntilPosition`.
 class BoundedReadBuffer : public ReadBufferFromFileDecorator
 {
 public:

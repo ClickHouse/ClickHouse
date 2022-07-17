@@ -83,7 +83,10 @@ struct ReadSettings
     size_t filesystem_cache_max_wait_sec = 1;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
-    bool is_file_cache_persistent = false;
+    bool is_file_cache_persistent = false; /// Some files can be made non-evictable.
+    /// Some buffers which read via thread pool can also do caching in threadpool
+    /// (instead of caching the result outside of threadpool). By default, if they support it,
+    /// they will do it. But this behaviour can be changed with this setting.
     bool enable_filesystem_cache_on_lower_level = true;
 
     size_t max_query_cache_size = (128UL * 1024 * 1024 * 1024);

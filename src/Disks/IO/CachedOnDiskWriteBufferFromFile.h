@@ -3,17 +3,22 @@
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteSettings.h>
 #include <Common/IFileCache.h>
+#include <Interpreters/FilesystemCacheLog.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
 
 class FileSegmentRangeWriter;
 
-class CachedWriteBufferFromFile final : public WriteBufferFromFileDecorator
+class CachedOnDiskWriteBufferFromFile final : public WriteBufferFromFileDecorator
 {
 public:
-    CachedWriteBufferFromFile(
+    CachedOnDiskWriteBufferFromFile(
         std::unique_ptr<WriteBuffer> impl_,
         FileCachePtr cache_,
         const String & source_path_,
@@ -43,6 +48,9 @@ private:
 
     ProfileEvents::Counters current_file_segment_counters;
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
+
+    Poco::Logger * log;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }
