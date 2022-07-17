@@ -3,23 +3,29 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/Throttler.h>
 
 
 namespace DB
 {
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t max_single_part_upload_size_,
-    size_t buf_size_) :
-    BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0),
-    blob_container_client(blob_container_client_),
-    max_single_part_upload_size(max_single_part_upload_size_),
-    blob_path(blob_path_) {}
+    size_t buf_size_,
+    const WriteSettings & write_settings_,
+    std::optional<std::map<std::string, std::string>> attributes_)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0)
+    , blob_container_client(blob_container_client_)
+    , max_single_part_upload_size(max_single_part_upload_size_)
+    , blob_path(blob_path_)
+    , write_settings(write_settings_)
+    , attributes(attributes_)
+{
+}
 
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
@@ -29,6 +35,15 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
+    if (attributes.has_value())
+    {
+        auto blob_client = blob_container_client->GetBlobClient(blob_path);
+        Azure::Storage::Metadata metadata;
+        for (const auto & [key, value] : *attributes)
+            metadata[key] = value;
+        blob_client.SetMetadata(metadata);
+    }
+
     const size_t max_tries = 3;
     for (size_t i = 0; i < max_tries; ++i)
     {
@@ -72,6 +87,9 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     }
 
     block_blob_client.CommitBlockList(block_ids);
+
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(read);
 }
 
 }

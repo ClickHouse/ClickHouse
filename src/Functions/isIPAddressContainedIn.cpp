@@ -27,7 +27,7 @@ class IPAddressVariant
 {
 public:
 
-    explicit IPAddressVariant(const StringRef & address_str)
+    explicit IPAddressVariant(StringRef address_str)
     {
         /// IP address parser functions require that the input is
         /// NULL-terminated so we need to copy it.
@@ -75,7 +75,7 @@ struct IPAddressCIDR
     UInt8 prefix;
 };
 
-IPAddressCIDR parseIPWithCIDR(const StringRef cidr_str)
+IPAddressCIDR parseIPWithCIDR(StringRef cidr_str)
 {
     std::string_view cidr_str_view(cidr_str);
     size_t pos_slash = cidr_str_view.find('/');
@@ -149,7 +149,7 @@ namespace DB
             }
         }
 
-        virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (arguments.size() != 2)
                 throw Exception(
@@ -166,7 +166,7 @@ namespace DB
             return std::make_shared<DataTypeUInt8>();
         }
 
-        virtual size_t getNumberOfArguments() const override { return 2; }
+        size_t getNumberOfArguments() const override { return 2; }
         bool useDefaultImplementationForNulls() const override { return false; }
 
     private:

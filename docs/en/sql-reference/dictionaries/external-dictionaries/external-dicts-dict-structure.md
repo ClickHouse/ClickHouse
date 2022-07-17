@@ -47,7 +47,7 @@ Attributes are described in the query body:
 -   `PRIMARY KEY` — [Key column](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-key)
 -   `AttrName AttrType` — [Data column](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
 
-## Key {#ext_dict_structure-key}
+## Key
 
 ClickHouse supports the following types of keys:
 
@@ -60,7 +60,7 @@ An xml structure can contain either `<id>` or `<key>`. DDL-query must contain si
 You must not describe key as an attribute.
 :::
 
-### Numeric Key {#numeric-key}
+### Numeric Key
 
 Type: `UInt64`.
 
@@ -89,7 +89,7 @@ PRIMARY KEY Id
 
 -   `PRIMARY KEY` – The name of the column with keys.
 
-### Composite Key {#composite-key}
+### Composite Key
 
 The key can be a `tuple` from any types of fields. The [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
@@ -129,7 +129,7 @@ PRIMARY KEY field1, field2
 
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-## Attributes {#ext_dict_structure-attributes}
+## Attributes
 
 Configuration example:
 

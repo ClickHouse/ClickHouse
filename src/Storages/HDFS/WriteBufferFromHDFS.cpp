@@ -4,8 +4,8 @@
 
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Common/Throttler.h>
 #include <hdfs/hdfs.h>
-
 
 namespace DB
 {
@@ -24,15 +24,18 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     hdfsFile fout;
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
+    WriteSettings write_settings;
 
     WriteBufferFromHDFSImpl(
             const std::string & hdfs_uri_,
             const Poco::Util::AbstractConfiguration & config_,
             int replication_,
+            const WriteSettings & write_settings_,
             int flags)
         : hdfs_uri(hdfs_uri_)
         , builder(createHDFSBuilder(hdfs_uri, config_))
         , fs(createHDFSFS(builder.get()))
+        , write_settings(write_settings_)
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const String path = hdfs_uri.substr(begin_of_path);
@@ -44,7 +47,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
             throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
                 ErrorCodes::CANNOT_OPEN_FILE);
         }
-
     }
 
     ~WriteBufferFromHDFSImpl()
@@ -56,6 +58,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     int write(const char * start, size_t size) const
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, size);
+        if (write_settings.remote_throttler)
+            write_settings.remote_throttler->add(bytes_written);
 
         if (bytes_written < 0)
             throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
@@ -77,10 +81,11 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         const std::string & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_,
         int replication_,
+        const WriteSettings & write_settings_,
         size_t buf_size_,
         int flags_)
     : BufferWithOwnMemory<WriteBuffer>(buf_size_)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, flags_))
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, write_settings_, flags_))
 {
 }
 

@@ -64,12 +64,18 @@ void MergeTreeSelectProcessor::initializeReaders()
     owned_mark_cache = storage.getContext()->getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, storage_snapshot->getMetadataForQuery(),
-        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+        all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
+
+    pre_reader_for_step.clear();
 
     if (prewhere_info)
-        pre_reader = data_part->getReader(task_columns.pre_columns, storage_snapshot->getMetadataForQuery(),
-            all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
-
+    {
+        for (const auto & pre_columns_for_step : task_columns.pre_columns)
+        {
+            pre_reader_for_step.push_back(data_part->getReader(pre_columns_for_step, storage_snapshot->getMetadataForQuery(),
+                all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {}));
+        }
+    }
 }
 
 
@@ -80,7 +86,7 @@ void MergeTreeSelectProcessor::finish()
     * buffers don't waste memory.
     */
     reader.reset();
-    pre_reader.reset();
+    pre_reader_for_step.clear();
     data_part.reset();
 }
 

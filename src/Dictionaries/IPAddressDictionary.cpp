@@ -261,7 +261,7 @@ ColumnPtr IPAddressDictionary::getColumn(
             getItemsImpl<ValueType>(
                 attribute,
                 key_columns,
-                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
                 default_value_extractor);
         }
         else
@@ -697,7 +697,6 @@ void IPAddressDictionary::getItemsImpl(
     const auto & first_column = key_columns.front();
     const size_t rows = first_column->size();
 
-    // special case for getBlockInputStream
     if (unlikely(key_columns.size() == 2))
     {
         getItemsByTwoKeyColumnsImpl<AttributeType>(

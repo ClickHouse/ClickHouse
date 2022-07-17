@@ -12,6 +12,7 @@
 
 namespace DB
 {
+class IBackupCoordination;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -32,7 +33,7 @@ public:
         String password;
         ContextPtr context;
         bool is_internal_backup = false;
-        String coordination_zk_path;
+        std::shared_ptr<IBackupCoordination> backup_coordination;
     };
 
     static BackupFactory & instance();

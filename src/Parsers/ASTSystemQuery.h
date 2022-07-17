@@ -37,6 +37,7 @@ public:
         DROP_REPLICA,
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
+        SYNC_TRANSACTION_LOG,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
@@ -65,6 +66,7 @@ public:
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
+        UNFREEZE,
         END
     };
 
@@ -91,9 +93,8 @@ public:
     String disk;
     UInt64 seconds{};
 
-    /// Values for `drop filesystem cache` system query.
     String filesystem_cache_path;
-    bool force_removal = false;
+    String backup_name;
 
     String getID(char) const override { return "SYSTEM query"; }
 
@@ -113,7 +114,7 @@ public:
         return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::System; }
+    QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
 

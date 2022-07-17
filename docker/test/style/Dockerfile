@@ -8,15 +8,16 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+    aspell \
     curl \
     git \
     libxml2-utils \
     moreutils \
-    pylint \
+    python3-fuzzywuzzy \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff
+    && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff pylint==2.6.2
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

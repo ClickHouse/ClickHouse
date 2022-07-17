@@ -34,9 +34,9 @@ try
         : getSizePredictor(data_part, task_columns, sample_block);
 
     task = std::make_unique<MergeTreeReadTask>(
-        data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set, task_columns.columns,
-        task_columns.pre_columns, prewhere_info && prewhere_info->remove_prewhere_column,
-        task_columns.should_reorder, std::move(size_predictor));
+        data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set, task_columns,
+        prewhere_info && prewhere_info->remove_prewhere_column,
+        std::move(size_predictor));
 
     return true;
 }

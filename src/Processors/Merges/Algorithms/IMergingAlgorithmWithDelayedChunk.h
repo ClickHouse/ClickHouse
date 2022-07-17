@@ -13,7 +13,7 @@ public:
     IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_);
 
 protected:
-    SortingHeap<SortCursor> queue;
+    SortingQueue<SortCursor> queue;
     SortDescription description;
 
     /// Previous row. May refer to last_chunk_sort_columns or row from source_chunks.

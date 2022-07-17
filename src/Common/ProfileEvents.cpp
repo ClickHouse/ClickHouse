@@ -92,6 +92,7 @@
     M(ZooKeeperSet, "") \
     M(ZooKeeperMulti, "") \
     M(ZooKeeperCheck, "") \
+    M(ZooKeeperSync, "") \
     M(ZooKeeperClose, "") \
     M(ZooKeeperWatchResponse, "") \
     M(ZooKeeperUserExceptions, "") \
@@ -144,6 +145,13 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.") \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.") \
     \
+    M(InsertedWideParts, "Number of parts inserted in Wide format.") \
+    M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
+    M(InsertedInMemoryParts, "Number of parts inserted in InMemory format.") \
+    M(MergedIntoWideParts, "Number of parts merged into Wide format.") \
+    M(MergedIntoCompactParts, "Number of parts merged into Compact format.") \
+    M(MergedIntoInMemoryParts, "Number of parts in merged into InMemory format.") \
+    \
     M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.") \
     M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.") \
     M(MergeTreeDataProjectionWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables projection.") \
@@ -192,6 +200,7 @@
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
+    M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.") \
     M(SoftPageFaults, "") \
     M(HardPageFaults, "") \
     \
@@ -260,10 +269,12 @@
     \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
-    M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
-    M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
-    M(RemoteFSCacheReadBytes, "Read bytes from cache of remote filesystem.") \
-    M(RemoteFSCacheDownloadBytes, "Bytes downloaded to cache from remote filesystem.") \
+    M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
+    M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
+    M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
+    M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
+    M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
+    M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -274,6 +285,15 @@
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    \
+    M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
+    M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
+    \
+    M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
+    M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
+    M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
+    M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
+    M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \
@@ -324,7 +344,20 @@
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely") \
+    M(KeeperPacketsSent, "Packets sent by keeper server") \
+    M(KeeperPacketsReceived, "Packets received by keeper server") \
+    M(KeeperRequestTotal, "Total requests number on keeper server") \
+    M(KeeperLatency, "Keeper latency") \
+    M(KeeperCommits, "Number of successful commits") \
+    M(KeeperCommitsFailed, "Number of failed commits") \
+    M(KeeperSnapshotCreations, "Number of snapshots creations")\
+    M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations")\
+    M(KeeperSnapshotApplys, "Number of snapshot applying")\
+    M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
+    M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
+    M(KeeperSaveSnapshot, "Number of snapshot save")\
+
 
 namespace ProfileEvents
 {

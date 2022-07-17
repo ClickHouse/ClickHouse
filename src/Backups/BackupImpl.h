@@ -49,7 +49,7 @@ public:
         const ContextPtr & context_,
         const std::optional<UUID> & backup_uuid_ = {},
         bool is_internal_backup_ = false,
-        const String & coordination_zk_path_ = {});
+        const std::shared_ptr<IBackupCoordination> & coordination_ = {});
 
     ~BackupImpl() override;
 
@@ -57,7 +57,8 @@ public:
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override;
     UUID getUUID() const override { return *uuid; }
-    Strings listFiles(const String & prefix, const String & terminator) const override;
+    Strings listFiles(const String & directory, bool recursive) const override;
+    bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
     bool fileExists(const SizeAndChecksum & size_and_checksum) const override;
     UInt64 getFileSize(const String & file_name) const override;
@@ -73,7 +74,7 @@ private:
     using FileInfo = IBackupCoordination::FileInfo;
     class BackupEntryFromBackupImpl;
 
-    void open();
+    void open(const ContextPtr & context);
     void close();
     void writeBackupMetadata();
     void readBackupMetadata();
@@ -90,7 +91,6 @@ private:
     std::shared_ptr<IBackupReader> reader;
     const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
-    ContextPtr context;
 
     mutable std::mutex mutex;
     std::optional<UUID> uuid;
@@ -103,6 +103,7 @@ private:
     std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
     bool writing_finalized = false;
+    const Poco::Logger * log;
 };
 
 }

@@ -21,4 +21,4 @@ UserDefinedExecutableFunction::UserDefinedExecutableFunction(
 {
 }
 
-};
+}

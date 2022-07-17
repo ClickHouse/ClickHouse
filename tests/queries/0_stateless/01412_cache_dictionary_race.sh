@@ -26,41 +26,45 @@ LAYOUT(CACHE(SIZE_IN_CELLS 3));
 
 function dict_get_thread()
 {
-    $CLICKHOUSE_CLIENT --query "SELECT dictGetString('ordinary_db.dict1', 'third_column', toUInt64(rand() % 1000)) from numbers(2)" &>/dev/null
+    while true; do
+        $CLICKHOUSE_CLIENT --query "SELECT dictGetString('ordinary_db.dict1', 'third_column', toUInt64(rand() % 1000)) from numbers(2)" &>/dev/null
+    done
 }
 
 
 function drop_create_table_thread()
 {
-    $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ordinary_db.table_for_dict_real (
-        key_column UInt64,
-        second_column UInt8,
-        third_column String
-    )
-    ENGINE MergeTree() ORDER BY tuple();
-    INSERT INTO ordinary_db.table_for_dict_real SELECT number, number, toString(number) from numbers(2);
-    CREATE VIEW ordinary_db.view_for_dict AS SELECT key_column, second_column, third_column from ordinary_db.table_for_dict_real WHERE sleepEachRow(1) == 0 SETTINGS max_block_size=1;
+    while true; do
+        $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ordinary_db.table_for_dict_real (
+            key_column UInt64,
+            second_column UInt8,
+            third_column String
+        )
+        ENGINE MergeTree() ORDER BY tuple();
+        INSERT INTO ordinary_db.table_for_dict_real SELECT number, number, toString(number) from numbers(2);
+        CREATE VIEW ordinary_db.view_for_dict AS SELECT key_column, second_column, third_column from ordinary_db.table_for_dict_real WHERE sleepEachRow(1) == 0 SETTINGS max_block_size=1;
 "
-    sleep 10
+        sleep 10
 
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ordinary_db.table_for_dict_real"
-    sleep 10
+        $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ordinary_db.table_for_dict_real"
+        sleep 10
+    done
 }
 
-export -f dict_get_thread
-export -f drop_create_table_thread
+export -f dict_get_thread;
+export -f drop_create_table_thread;
 
 TIMEOUT=30
 
-clickhouse_client_loop_timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
 
 
-clickhouse_client_loop_timeout $TIMEOUT bash -c drop_create_table_thread 2> /dev/null &
+timeout $TIMEOUT bash -c drop_create_table_thread 2> /dev/null &
 
 wait
 

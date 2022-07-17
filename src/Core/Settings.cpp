@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
-#include <string.h>
+#include <cstring>
 #include <boost/program_options/options_description.hpp>
 
 namespace DB

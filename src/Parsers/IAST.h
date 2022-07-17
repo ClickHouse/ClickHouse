@@ -224,6 +224,7 @@ public:
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
+        bool surround_each_list_element_with_parens = false;
         const IAST * current_select = nullptr;
     };
 

@@ -23,9 +23,9 @@ public:
     explicit TLDList(size_t size);
 
     /// Return true if the tld_container does not contains such element.
-    bool insert(const StringRef & host);
+    bool insert(StringRef host);
     /// Check is there such TLD
-    bool has(const StringRef & host) const;
+    bool has(StringRef host) const;
     size_t size() const { return tld_container.size(); }
 
 private:
@@ -59,7 +59,7 @@ protected:
     TLDListsHolder();
 
     std::mutex tld_lists_map_mutex;
-    Map tld_lists_map;
+    Map tld_lists_map TSA_GUARDED_BY(tld_lists_map_mutex);
 };
 
 }

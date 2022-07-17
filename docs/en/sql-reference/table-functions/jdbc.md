@@ -3,7 +3,7 @@ sidebar_position: 43
 sidebar_label: jdbc
 ---
 
-# jdbc {#table-function-jdbc}
+# jdbc
 
 `jdbc(datasource, schema, table)` - returns table that is connected via JDBC driver.
 

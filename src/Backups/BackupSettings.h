@@ -11,7 +11,8 @@ class ASTBackupQuery;
 /// Settings specified in the "SETTINGS" clause of a BACKUP query.
 struct BackupSettings
 {
-    /// Base backup, if it's set an incremental backup will be built.
+    /// Base backup, if it's set an incremental backup will be built. That means only differences made after the base backup will be put
+    /// into a new backup.
     std::optional<BackupInfo> base_backup_info;
 
     /// Compression method and level for writing the backup (when applicable).
@@ -35,9 +36,6 @@ struct BackupSettings
     /// 1-based replica index to store in the backup. 0 means all replicas (see also allow_storing_multiple_replicas).
     /// Can only be used with BACKUP ON CLUSTER.
     size_t replica_num = 0;
-
-    /// Allows storing in the backup of multiple replicas.
-    bool allow_storing_multiple_replicas = false;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

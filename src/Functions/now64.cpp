@@ -8,7 +8,7 @@
 
 #include <Common/assert_cast.h>
 
-#include <time.h>
+#include <ctime>
 
 
 namespace DB
