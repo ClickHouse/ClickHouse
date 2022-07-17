@@ -3,6 +3,8 @@
 
     <!-- FIXME this should have been an EXPLAIN test, no point in measuring performance to deduce that the query was rewritten -->
     <query>SELECT * FROM (SELECT CounterID, EventDate FROM hits_10m_single ORDER BY CounterID DESC) ORDER BY EventDate, CounterID  FORMAT Null</query>
+    <query>SELECT * FROM (SELECT CounterID, EventDate FROM hits_10m_single ORDER BY CounterID, EventDate) ORDER BY CounterID FORMAT Null</query>
+    <query>SELECT * FROM (SELECT CounterID, EventDate FROM hits_10m_single ORDER BY CounterID) ORDER BY CounterID, EventDate FORMAT Null</query>
     <query>SELECT DISTINCT * FROM (SELECT DISTINCT CounterID, EventDate FROM hits_10m_single) FORMAT Null</query>
     <query>SELECT DISTINCT * FROM (SELECT DISTINCT CounterID, EventDate FROM hits_10m_single ORDER BY CounterID DESC) ORDER BY toStartOfWeek(EventDate) FORMAT Null</query>
 </test>
