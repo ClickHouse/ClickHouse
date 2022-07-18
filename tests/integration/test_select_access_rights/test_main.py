@@ -3,7 +3,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", name="main")
+instance = cluster.add_instance("instance")
 
 
 @pytest.fixture(scope="module", autouse=True)
