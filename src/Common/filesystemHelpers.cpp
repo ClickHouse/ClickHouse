@@ -229,6 +229,35 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     return buf.st_size;
 }
 
+int getINodeNumberFromPath(const String & path)
+{
+    struct stat file_stat;
+    if (stat(path.data(), &file_stat))
+    {
+        throwFromErrnoWithPath(
+            "Cannot execute stat for file " + path,
+            path,
+            ErrorCodes::CANNOT_STAT);
+    }
+    return file_stat.st_ino;
+}
+
+std::optional<size_t> tryGetSizeFromFilePath(const String & path)
+{
+    std::error_code ec;
+
+    size_t size = fs::file_size(path, ec);
+    if (!ec)
+        return size;
+
+    if (ec == std::errc::no_such_file_or_directory)
+        return std::nullopt;
+    if (ec == std::errc::operation_not_supported)
+        return std::nullopt;
+
+    throw fs::filesystem_error("Got unexpected error while getting file size", path, ec);
+}
+
 }
 
 

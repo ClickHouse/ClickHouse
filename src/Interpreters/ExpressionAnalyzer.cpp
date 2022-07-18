@@ -1497,6 +1497,25 @@ void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(Expres
     }
 }
 
+void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node)
+{
+    if (auto * function = node->as<ASTFunction>())
+    {
+        // Skip window function columns here -- they are calculated after
+        // other SELECT expressions by a special step.
+        // Also skipping lambda functions because they can't be explicitly evaluated.
+        if (function->is_window_function || function->name == "lambda")
+            return;
+        if (function->compute_after_window_functions)
+        {
+            for (auto & arg : function->arguments->children)
+                appendSelectSkipWindowExpressions(step, arg);
+            return;
+        }
+    }
+    step.addRequiredOutput(node->getColumnName());
+}
+
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -1521,18 +1540,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
     getRootActions(select_query->select(), only_types, step.actions());
 
     for (const auto & child : select_query->select()->children)
-    {
-        if (const auto * function = typeid_cast<const ASTFunction *>(child.get());
-            function
-            && (function->is_window_function || function->compute_after_window_functions))
-        {
-            // Skip window function columns here -- they are calculated after
-            // other SELECT expressions by a special step.
-            continue;
-        }
-
-        step.addRequiredOutput(child->getColumnName());
-    }
+        appendSelectSkipWindowExpressions(step, child);
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,

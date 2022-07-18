@@ -26,6 +26,18 @@ def cluster():
             ],
             with_minio=True,
         )
+
+        cluster.add_instance(
+            "node_with_limited_disk",
+            main_configs=[
+                "configs/config.d/storage_conf.xml",
+                "configs/config.d/bg_processing_pool_conf.xml",
+            ],
+            with_minio=True,
+            tmpfs=[
+                "/jbod1:size=2M",
+            ],
+        )
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -678,3 +690,22 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
     minio = cluster.minio_client
     for obj in list(minio.list_objects(cluster.minio_bucket, "data/")):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
+
+
+@pytest.mark.parametrize("node_name", ["node_with_limited_disk"])
+def test_cache_with_full_disk_space(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query(
+        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_with_cache_and_jbod';"
+    )
+    node.query(
+        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500000"
+    )
+    node.query(
+        "SELECT * FROM s3_test WHERE value LIKE '%abc%' ORDER BY value FORMAT Null"
+    )
+    assert node.contains_in_log(
+        "Insert into cache is skipped due to insufficient disk space"
+    )
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")

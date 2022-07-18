@@ -29,7 +29,6 @@ if (COMPILER_CLANG)
     no_warning(c99-extensions)
     no_warning(conversion)
     no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
-    no_warning(deprecated-dynamic-exception-spec)
     no_warning(disabled-macro-expansion)
     no_warning(documentation-unknown-command)
     no_warning(double-promotion)
