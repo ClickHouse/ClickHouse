@@ -202,18 +202,17 @@ private:
     bool shouldExecuteLogEntry(
         const LogEntry & entry, String & out_postpone_reason,
         MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
-        std::unique_lock<std::mutex> & state_lock) const;
+        std::lock_guard<std::mutex> & state_lock) const;
 
     Int64 getCurrentMutationVersionImpl(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under state_mutex.
       */
-    bool isCoveredByFuturePartsImpl(
+    bool isNotCoveredByFuturePartsImpl(
         const LogEntry & entry,
         const String & new_part_name, String & out_reason,
-        std::unique_lock<std::mutex> & state_lock,
-        std::vector<LogEntryPtr> * covered_entries_to_wait) const;
+        std::lock_guard<std::mutex> & state_lock) const;
 
     /// After removing the queue element, update the insertion times in the RAM. Running under state_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
@@ -255,15 +254,14 @@ private:
         CurrentlyExecuting(
             const ReplicatedMergeTreeQueue::LogEntryPtr & entry_,
             ReplicatedMergeTreeQueue & queue_,
-            std::unique_lock<std::mutex> & state_lock);
+            std::lock_guard<std::mutex> & state_lock);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
         static void setActualPartName(
             ReplicatedMergeTreeQueue::LogEntry & entry,
             const String & actual_part_name,
             ReplicatedMergeTreeQueue & queue,
-            std::unique_lock<std::mutex> & state_lock,
-            std::vector<LogEntryPtr> & covered_entries_to_wait);
+            std::lock_guard<std::mutex> & state_lock);
 
     public:
         ~CurrentlyExecuting();

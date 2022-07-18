@@ -261,7 +261,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
                     key.getPath(), subtypes[0]->getName(), subtypes[i]->getName());
 
         tuple_paths.emplace_back(key);
-        tuple_types.emplace_back(getLeastSupertypeOrString(subtypes));
+        tuple_types.emplace_back(getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
     }
 
     if (tuple_paths.empty())

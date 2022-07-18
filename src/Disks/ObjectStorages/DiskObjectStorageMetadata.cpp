@@ -4,8 +4,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -13,7 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
-    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
@@ -29,33 +26,32 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 
     assertChar('\n', buf);
 
-    UInt32 storage_objects_count;
-    readIntText(storage_objects_count, buf);
+    UInt32 remote_fs_objects_count;
+    readIntText(remote_fs_objects_count, buf);
     assertChar('\t', buf);
     readIntText(total_size, buf);
     assertChar('\n', buf);
-    storage_objects.resize(storage_objects_count);
+    remote_fs_objects.resize(remote_fs_objects_count);
 
-    for (size_t i = 0; i < storage_objects_count; ++i)
+    for (size_t i = 0; i < remote_fs_objects_count; ++i)
     {
-        String object_relative_path;
-        size_t object_size;
-        readIntText(object_size, buf);
+        String remote_fs_object_path;
+        size_t remote_fs_object_size;
+        readIntText(remote_fs_object_size, buf);
         assertChar('\t', buf);
-        readEscapedString(object_relative_path, buf);
+        readEscapedString(remote_fs_object_path, buf);
         if (version == VERSION_ABSOLUTE_PATHS)
         {
-            if (!object_relative_path.starts_with(object_storage_root_path))
+            if (!remote_fs_object_path.starts_with(remote_fs_root_path))
                 throw Exception(ErrorCodes::UNKNOWN_FORMAT,
                     "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
-                    object_relative_path, object_storage_root_path, common_metadata_path);
+                    remote_fs_object_path, remote_fs_root_path, common_metadata_path);
 
-            object_relative_path = object_relative_path.substr(object_storage_root_path.size());
+            remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
         }
         assertChar('\n', buf);
-
-        storage_objects[i].relative_path = object_relative_path;
-        storage_objects[i].bytes_size = object_size;
+        remote_fs_objects[i].relative_path = remote_fs_object_path;
+        remote_fs_objects[i].bytes_size = remote_fs_object_size;
     }
 
     readIntText(ref_count, buf);
@@ -79,16 +75,16 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeIntText(VERSION_READ_ONLY_FLAG, buf);
     writeChar('\n', buf);
 
-    writeIntText(storage_objects.size(), buf);
+    writeIntText(remote_fs_objects.size(), buf);
     writeChar('\t', buf);
     writeIntText(total_size, buf);
     writeChar('\n', buf);
 
-    for (const auto & [object_relative_path, object_size] : storage_objects)
+    for (const auto & [remote_fs_object_path, remote_fs_object_size] : remote_fs_objects)
     {
-        writeIntText(object_size, buf);
+        writeIntText(remote_fs_object_size, buf);
         writeChar('\t', buf);
-        writeEscapedString(object_relative_path, buf);
+        writeEscapedString(remote_fs_object_path, buf);
         writeChar('\n', buf);
     }
 
@@ -113,21 +109,18 @@ std::string DiskObjectStorageMetadata::serializeToString() const
 /// Load metadata by path or create empty if `create` flag is set.
 DiskObjectStorageMetadata::DiskObjectStorageMetadata(
         const std::string & common_metadata_path_,
-        const String & object_storage_root_path_,
+        const String & remote_fs_root_path_,
         const String & metadata_file_path_)
     : common_metadata_path(common_metadata_path_)
-    , object_storage_root_path(object_storage_root_path_)
+    , remote_fs_root_path(remote_fs_root_path_)
     , metadata_file_path(metadata_file_path_)
 {
 }
 
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
-    if (!object_storage_root_path.empty() && path.starts_with(object_storage_root_path))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected relative path");
-
     total_size += size;
-    storage_objects.emplace_back(path, size);
+    remote_fs_objects.emplace_back(path, size);
 }
 
 

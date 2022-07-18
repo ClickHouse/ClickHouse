@@ -13,3 +13,4 @@ The following external authenticators and directories are supported:
 - Kerberos [Authenticator](./kerberos.md#external-authenticators-kerberos)
 - [SSL X.509 authentication](./ssl-x509.md#ssl-external-authentication)
 
+[Original article](https://clickhouse.com/docs/en/operations/external-authenticators/index/) <!--hide-->

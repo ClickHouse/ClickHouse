@@ -67,7 +67,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     reader = data_part->getReader(columns_for_reader, storage_snapshot->metadata,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
-        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings, {}, {});
+        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }
 
 Chunk MergeTreeSequentialSource::generate()

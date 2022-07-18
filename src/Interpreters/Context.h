@@ -474,13 +474,13 @@ public:
     /// Checks access rights.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
-    void checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const;
     void checkAccess(const AccessRightsElement & element) const;
@@ -607,8 +607,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(StringRef name, const String & value);
-    void setSetting(StringRef name, const Field & value);
+    void setSetting(const StringRef & name, const String & value);
+    void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -757,7 +757,6 @@ public:
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
-    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -820,8 +819,6 @@ public:
 
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;

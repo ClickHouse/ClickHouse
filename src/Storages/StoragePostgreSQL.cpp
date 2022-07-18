@@ -11,6 +11,8 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -29,6 +31,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/getInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
@@ -37,7 +40,6 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -398,7 +400,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "on_conflict")
-                configuration.on_conflict = checkAndGetLiteralArgument<String>(arg_value, "on_conflict");
+                configuration.on_conflict = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
@@ -416,7 +418,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        const auto & host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
@@ -425,15 +427,15 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
             configuration.host = configuration.addresses[0].first;
             configuration.port = configuration.addresses[0].second;
         }
-        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "host:port");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
-        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
+        configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
         if (engine_args.size() >= 6)
-            configuration.schema = checkAndGetLiteralArgument<String>(engine_args[5], "schema");
+            configuration.schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
         if (engine_args.size() >= 7)
-            configuration.on_conflict = checkAndGetLiteralArgument<String>(engine_args[6], "on_conflict");
+            configuration.on_conflict = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
     }
     for (const auto & address : configuration.addresses)
         context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
@@ -447,12 +449,9 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
-        const auto & settings = args.getContext()->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+            args.getContext()->getSettingsRef().postgresql_connection_pool_size,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,

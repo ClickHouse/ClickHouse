@@ -15,8 +15,6 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 #include <boost/math/special_functions/fpclassify.hpp>
 
-// NOLINTBEGIN(*)
-
 /// Use same extended double for all platforms
 #if (LDBL_MANT_DIG == 64)
 #define CONSTEXPR_FROM_DOUBLE constexpr
@@ -1480,5 +1478,3 @@ struct hash<wide::integer<Bits, Signed>>
 };
 
 }
-
-// NOLINTEND(*)

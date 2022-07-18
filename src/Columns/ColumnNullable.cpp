@@ -715,35 +715,27 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullMapImpl(const NullMap & map)
+void ColumnNullable::applyNullMapImpl(const ColumnUInt8 & map)
 {
-    NullMap & arr = getNullMapData();
+    NullMap & arr1 = getNullMapData();
+    const NullMap & arr2 = map.getData();
 
-    if (arr.size() != map.size())
+    if (arr1.size() != arr2.size())
         throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
-    for (size_t i = 0, size = arr.size(); i < size; ++i)
-        arr[i] |= negative ^ map[i];
+    for (size_t i = 0, size = arr1.size(); i < size; ++i)
+        arr1[i] |= negative ^ arr2[i];
 }
 
-void ColumnNullable::applyNullMap(const NullMap & map)
+
+void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
 {
     applyNullMapImpl<false>(map);
 }
 
-void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
-{
-    applyNullMapImpl<false>(map.getData());
-}
-
-void ColumnNullable::applyNegatedNullMap(const NullMap & map)
-{
-    applyNullMapImpl<true>(map);
-}
-
 void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
 {
-    applyNullMapImpl<true>(map.getData());
+    applyNullMapImpl<true>(map);
 }
 
 

@@ -367,7 +367,7 @@ class ClickhouseIntegrationTestsRunner:
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
         out_file = "all_tests.txt"
-        out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
+        out_file_full = "all_tests_full.txt"
         cmd = (
             "cd {repo_path}/tests/integration && "
             "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
@@ -393,16 +393,21 @@ class ClickhouseIntegrationTestsRunner:
             not os.path.isfile(all_tests_file_path)
             or os.path.getsize(all_tests_file_path) == 0
         ):
-            if os.path.isfile(out_file_full):
+            all_tests_full_file_path = (
+                "{repo_path}/tests/integration/{out_file}".format(
+                    repo_path=repo_path, out_file=out_file_full
+                )
+            )
+            if os.path.isfile(all_tests_full_file_path):
                 # log runner output
                 logging.info("runner output:")
-                with open(out_file_full, "r") as all_tests_full_file:
+                with open(all_tests_full_file_path, "r") as all_tests_full_file:
                     for line in all_tests_full_file:
                         line = line.rstrip()
                         if line:
                             logging.info("runner output: %s", line)
             else:
-                logging.info("runner output '%s' is empty", out_file_full)
+                logging.info("runner output '%s' is empty", all_tests_full_file_path)
 
             raise Exception(
                 "There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(

@@ -1,19 +1,18 @@
 #include <Storages/IStorage.h>
 
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/IBackup.h>
 
 
 namespace DB
@@ -23,7 +22,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
-    extern const int CANNOT_RESTORE_TABLE;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -248,32 +246,20 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
+BackupEntries IStorage::backupData(ContextPtr, const ASTs &)
 {
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
+RestoreTaskPtr IStorage::restoreData(ContextMutablePtr, const ASTs &, const BackupPtr &, const String &, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
-}
-
-void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
-{
-    /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
-    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
-    if (!filenames.empty())
-        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
-                        getStorageID().getFullTableName(), data_path_in_backup);
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
-
-    if (row_level_filter)
-    {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
-    }
 
     if (prewhere_actions)
     {

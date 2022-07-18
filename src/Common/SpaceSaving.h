@@ -49,12 +49,12 @@ struct SpaceSavingArena
 template <>
 struct SpaceSavingArena<StringRef>
 {
-    StringRef emplace(StringRef key)
+    StringRef emplace(const StringRef & key)
     {
         return copyStringInArena(arena, key);
     }
 
-    void free(StringRef key)
+    void free(const StringRef & key)
     {
         if (key.data)
             arena.free(const_cast<char *>(key.data), key.size);

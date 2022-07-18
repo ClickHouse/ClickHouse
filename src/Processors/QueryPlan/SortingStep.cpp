@@ -89,11 +89,18 @@ SortingStep::SortingStep(
     output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
-void SortingStep::updateOutputStream()
+void SortingStep::updateInputStream(DataStream input_stream)
 {
-    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    input_streams.clear();
+    input_streams.emplace_back(std::move(input_stream));
+}
+
+void SortingStep::updateOutputStream(Block result_header)
+{
+    output_stream = createOutputStream(input_streams.at(0), std::move(result_header), getDataStreamTraits());
     output_stream->sort_description = result_description;
     output_stream->sort_mode = DataStream::SortMode::Stream;
+    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -103,12 +110,6 @@ void SortingStep::updateLimit(size_t limit_)
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;
     }
-}
-
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
-{
-    type = Type::FinishSorting;
-    prefix_description = std::move(prefix_description_);
 }
 
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -124,7 +125,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                     pipeline.getNumStreams(),
                     prefix_description,
                     max_block_size,
-                    SortingQueueStrategy::Batch,
                     limit_for_merging);
 
             pipeline.addTransform(std::move(transform));
@@ -213,7 +213,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                     pipeline.getNumStreams(),
                     result_description,
                     max_block_size,
-                    SortingQueueStrategy::Batch,
                     limit);
 
             pipeline.addTransform(std::move(transform));
@@ -228,7 +227,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                     pipeline.getNumStreams(),
                     result_description,
                     max_block_size,
-                    SortingQueueStrategy::Batch,
                     limit);
 
             pipeline.addTransform(std::move(transform));

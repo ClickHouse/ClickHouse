@@ -36,8 +36,9 @@ FinishSortingTransform::FinishSortingTransform(
 
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
-    for (const auto & column_sort_desc : description_sorted_)
-        description_with_positions.emplace_back(column_sort_desc, header_without_constants.getPositionByName(column_sort_desc.column_name));
+    size_t prefix_size = description_sorted_.size();
+    for (size_t i = 0; i < prefix_size; ++i)
+        description_with_positions.emplace_back(description[i], header_without_constants.getPositionByName(description[i].column_name));
 }
 
 void FinishSortingTransform::consume(Chunk chunk)

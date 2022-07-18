@@ -4,7 +4,6 @@
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -34,6 +33,9 @@ class MergeTreeData;
 struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
+
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
@@ -68,14 +70,16 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const VolumePtr & volume,
+        const std::optional<String> & relative_path,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
+        const VolumePtr & volume,
+        const std::optional<String> & relative_path,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
@@ -86,17 +90,16 @@ public:
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
+        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{}) const = 0;
 
     virtual MergeTreeWriterPtr getWriter(
-        DataPartStorageBuilderPtr data_part_storage_builder,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) const = 0;
+        const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
 
     virtual bool isStoredOnDisk() const = 0;
 
@@ -147,6 +150,8 @@ public:
 
     void remove() const;
 
+    void projectionRemove(const String & parent_to, bool keep_shared_data = false) const;
+
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
@@ -194,10 +199,12 @@ public:
     /// processed by multiple shards.
     UUID uuid = UUIDHelpers::Nil;
 
-    /// This is an object which encapsulates all the operations with disk.
-    /// Contains a path to stored data.
-    DataPartStoragePtr data_part_storage;
+    VolumePtr volume;
 
+    /// A directory path (relative to storage's path) where part data is actually stored
+    /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    /// NOTE: Cannot have trailing slash.
+    mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
@@ -306,8 +313,8 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -337,18 +344,24 @@ public:
 
     size_t getFileSizeOrZero(const String & file_name) const;
 
+    /// Returns path to part dir relatively to disk mount point
+    String getFullRelativePath() const;
+
+    /// Returns full path to part dir
+    String getFullPath() const;
+
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const;
+    void renameToDetached(const String & prefix) const;
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    DataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -360,6 +373,9 @@ public:
     /// Returns true if this part shall participate in merges according to
     /// settings of given storage policy.
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
+
+    /// Calculate the total size of the entire directory with all the files
+    static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
 
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
@@ -451,7 +467,7 @@ public:
     UInt32 getNumberOfRefereneces() const;
 
     /// Get checksums of metadata file in part directory
-    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_name) const;
+    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
 
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;

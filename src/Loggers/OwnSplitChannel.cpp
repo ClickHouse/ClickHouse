@@ -24,7 +24,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 #ifdef WITH_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
-    if (channels.empty() && (logs_queue == nullptr || !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
+    if (channels.empty() && (logs_queue == nullptr || msg.getPriority() > logs_queue->max_priority))
         return;
 #endif
 
@@ -93,7 +93,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     /// Log to "TCP queue" if message is not too noisy
-    if (logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
+    if (logs_queue && msg.getPriority() <= logs_queue->max_priority)
     {
         MutableColumns columns = InternalTextLogsQueue::getSampleColumns();
 

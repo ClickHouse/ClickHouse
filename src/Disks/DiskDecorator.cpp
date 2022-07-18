@@ -8,11 +8,6 @@ DiskDecorator::DiskDecorator(const DiskPtr & delegate_) : delegate(delegate_)
 {
 }
 
-DiskTransactionPtr DiskDecorator::createTransaction()
-{
-    return delegate->createTransaction();
-}
-
 const String & DiskDecorator::getName() const
 {
     return delegate->getName();
@@ -161,11 +156,6 @@ void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
     delegate->removeSharedFile(path, keep_s3);
 }
 
-void DiskDecorator::removeSharedFileIfExists(const String & path, bool keep_s3)
-{
-    delegate->removeSharedFileIfExists(path, keep_s3);
-}
-
 void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     delegate->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
@@ -234,11 +224,6 @@ void DiskDecorator::startup(ContextPtr context)
 void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
 {
     delegate->applyNewSettings(config, context, config_prefix, map);
-}
-
-DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage(const String & name)
-{
-    return delegate->createDiskObjectStorage(name);
 }
 
 }

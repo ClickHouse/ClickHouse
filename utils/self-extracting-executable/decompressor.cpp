@@ -8,11 +8,10 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <iostream>
-#include <endian.h>
 
 #include "types.h"
 
@@ -72,18 +71,13 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         {
             perror(nullptr);
             /// If fork failed just decompress data in main process.
-            if (0 != doDecompress(input, output, in_pointer, out_pointer, size, decompressed_size, dctx))
-            {
-                error_happened = true;
+            if (0 != doDecompress(input, output, in_pointer, out_pointer, size, max_block_size, dctx))
                 break;
-            }
-            in_pointer += size;
-            out_pointer += decompressed_size;
         }
         else if (pid == 0)
         {
             /// Decompress data in child process.
-            if (0 != doDecompress(input, output, in_pointer, out_pointer, size, decompressed_size, dctx))
+            if (0 != doDecompress(input, output, in_pointer, out_pointer, size, max_block_size, dctx))
                 exit(1);
             exit(0);
         }
@@ -116,23 +110,6 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         /// Wait any fork
         int status;
         waitpid(0, &status, 0);
-
-        if (WIFEXITED(status))
-        {
-            if (WEXITSTATUS(status) != 0)
-                error_happened = true;
-        }
-        else
-        {
-            error_happened = true;
-            if (WIFSIGNALED(status))
-            {
-                if (WCOREDUMP(status))
-                    std::cerr << "Error: child process core dumped with signal " << WTERMSIG(status) << std::endl;
-                else
-                    std::cerr << "Error: child process was terminated with signal " << WTERMSIG(status) << std::endl;
-            }
-        }
 
         if (WEXITSTATUS(status) != 0)
             error_happened = true;
@@ -172,16 +149,16 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     MetaData metadata = *reinterpret_cast<MetaData*>(input + info_in.st_size - sizeof(MetaData));
 
     /// Prepare to read information about files and decompress them
-    off_t files_pointer = le64toh(metadata.start_of_files_data);
+    off_t files_pointer = metadata.start_of_files_data;
     size_t decompressed_full_size = 0;
 
     /// Read files metadata and check if decompression is possible
-    off_t check_pointer = le64toh(metadata.start_of_files_data);
-    for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
+    off_t check_pointer = metadata.start_of_files_data;
+    for (size_t i = 0; i < metadata.number_of_files; ++i)
     {
         FileData data = *reinterpret_cast<FileData*>(input + check_pointer);
-        decompressed_full_size += le64toh(data.uncompressed_size);
-        check_pointer += sizeof(FileData) + le64toh(data.name_length);
+        decompressed_full_size += data.uncompressed_size;
+        check_pointer += sizeof(FileData) + data.name_length;
     }
 
     /// Check free space
@@ -201,14 +178,14 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
     FileData file_info;
     /// Decompress files with appropriate file names
-    for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
+    for (size_t i = 0; i < metadata.number_of_files; ++i)
     {
         /// Read information about file
         file_info = *reinterpret_cast<FileData*>(input + files_pointer);
         files_pointer += sizeof(FileData);
 
         size_t file_name_len =
-            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13);
+            (strcmp(input + files_pointer, name) ? file_info.name_length : file_info.name_length + 13);
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
@@ -220,14 +197,14 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             strcat(file_name, "/");
         }
         strcat(file_name, input + files_pointer);
-        files_pointer += le64toh(file_info.name_length);
-        if (file_name_len != le64toh(file_info.name_length))
+        files_pointer += file_info.name_length;
+        if (file_name_len != file_info.name_length)
         {
             strcat(file_name, ".decompressed");
             have_compressed_analoge = true;
         }
 
-        int output_fd = open(file_name, O_RDWR | O_CREAT, le64toh(file_info.umask));
+        int output_fd = open(file_name, O_RDWR | O_CREAT, file_info.umask);
 
         if (output_fd == -1)
         {
@@ -238,7 +215,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         }
 
         /// Prepare output file
-        if (0 != ftruncate(output_fd, le64toh(file_info.uncompressed_size)))
+        if (0 != ftruncate(output_fd, file_info.uncompressed_size))
         {
             perror(nullptr);
             if (0 != munmap(input, info_in.st_size))
@@ -248,7 +225,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
         char * output = static_cast<char*>(
             mmap(nullptr,
-                le64toh(file_info.uncompressed_size),
+                file_info.uncompressed_size,
                 PROT_READ | PROT_WRITE, MAP_SHARED,
                 output_fd,
                 0)
@@ -262,11 +239,11 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         }
 
         /// Decompress data into file
-        if (0 != decompress(input, output, le64toh(file_info.start), le64toh(file_info.end)))
+        if (0 != decompress(input, output, file_info.start, file_info.end))
         {
             if (0 != munmap(input, info_in.st_size))
                 perror(nullptr);
-            if (0 != munmap(output, le64toh(file_info.uncompressed_size)))
+            if (0 != munmap(output, file_info.uncompressed_size))
                 perror(nullptr);
             return 1;
         }

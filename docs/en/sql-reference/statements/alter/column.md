@@ -18,13 +18,13 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
--   [ADD COLUMN](#add-column) — Adds a new column to the table.
--   [DROP COLUMN](#drop-column) — Deletes the column.
--   [RENAME COLUMN](#rename-column) — Renames an existing column.
--   [CLEAR COLUMN](#clear-column) — Resets column values.
--   [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
--   [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
+-   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
+-   [DROP COLUMN](#alter_drop-column) — Deletes the column.
+-   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
+-   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
+-   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
+-   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
 -   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.

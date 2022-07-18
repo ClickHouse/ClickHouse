@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/IAccessStorage.h>
-#include <base/defines.h>
 #include <Common/LRUCache.h>
 #include <mutex>
 
@@ -43,16 +42,11 @@ public:
 
     bool exists(const UUID & id) const override;
 
-    bool isBackupAllowed() const override;
-    bool isRestoreAllowed() const override;
-    void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
-
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
@@ -62,8 +56,8 @@ private:
     using Storages = std::vector<StoragePtr>;
     std::shared_ptr<const Storages> getStoragesInternal() const;
 
-    std::shared_ptr<const Storages> nested_storages TSA_GUARDED_BY(mutex);
-    mutable LRUCache<UUID, Storage> ids_cache TSA_GUARDED_BY(mutex);
+    std::shared_ptr<const Storages> nested_storages;
+    mutable LRUCache<UUID, Storage> ids_cache;
     mutable std::mutex mutex;
 };
 

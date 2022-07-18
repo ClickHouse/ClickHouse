@@ -1786,9 +1786,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
             actions->inputs.push_back(input);
         }
 
-        /// We should not add result_predicate into the index for the second time.
-        if (input->result_name != result_predicate->result_name)
-            actions->index.push_back(input);
+        actions->index.push_back(input);
     }
 
     return actions;
@@ -1842,14 +1840,13 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         if (can_remove_filter)
         {
             /// If filter column is not needed, remove it from index.
-            std::erase_if(index, [&](const Node * node) { return node == predicate; });
-
-            /// At the very end of this method we'll call removeUnusedActions() with allow_remove_inputs=false,
-            /// so we need to manually remove predicate if it is an input node.
-            if (predicate->type == ActionType::INPUT)
+            for (auto i = index.begin(); i != index.end(); ++i)
             {
-                std::erase_if(inputs, [&](const Node * node) { return node == predicate; });
-                nodes.remove_if([&](const Node & node) { return &node == predicate; });
+                if (*i == predicate)
+                {
+                    index.erase(i);
+                    break;
+                }
             }
         }
         else

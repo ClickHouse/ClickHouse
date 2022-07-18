@@ -7,18 +7,18 @@ sidebar_label: PARTITION
 
 The following operations with [partitions](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 
--   [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
--   [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
--   [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
--   [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
--   [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
--   [MOVE PARTITION TO TABLE](#move-partition-to-table) — Moves the data partition from one table to another.
--   [CLEAR COLUMN IN PARTITION](#clear-column-in-partition) — Resets the value of a specified column in a partition.
--   [CLEAR INDEX IN PARTITION](#clear-index-in-partition) — Resets the specified secondary index in a partition.
--   [FREEZE PARTITION](#freeze-partition) — Creates a backup of a partition.
--   [UNFREEZE PARTITION](#unfreeze-partition) — Removes a backup of a partition.
--   [FETCH PARTITION\|PART](#fetch-partitionpart) — Downloads a part or partition from another server.
--   [MOVE PARTITION\|PART](#move-partitionpart) — Move partition/data part to another disk or volume.
+-   [DETACH PARTITION](#alter_detach-partition) — Moves a partition to the `detached` directory and forget it.
+-   [DROP PARTITION](#alter_drop-partition) — Deletes a partition.
+-   [ATTACH PART\|PARTITION](#alter_attach-partition) — Adds a part or partition from the `detached` directory to the table.
+-   [ATTACH PARTITION FROM](#alter_attach-partition-from) — Copies the data partition from one table to another and adds.
+-   [REPLACE PARTITION](#alter_replace-partition) — Copies the data partition from one table to another and replaces.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) — Moves the data partition from one table to another.
+-   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
+-   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
+-   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
+-   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
+-   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
+-   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 -   [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
 -   [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 
@@ -27,7 +27,7 @@ The following operations with [partitions](../../../engines/table-engines/merget
 ## DETACH PARTITION\|PART
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
+ALTER TABLE table_name DETACH PARTITION|PART partition_expr
 ```
 
 Moves all data for the specified partition to the `detached` directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
@@ -48,7 +48,7 @@ This query is replicated – it moves the data to the `detached` directory on al
 ## DROP PARTITION\|PART
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+ALTER TABLE table_name DROP PARTITION|PART partition_expr
 ```
 
 Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
@@ -67,7 +67,7 @@ ALTER TABLE mt DROP PART 'all_4_4_0';
 ## DROP DETACHED PARTITION\|PART
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partition_expr
+ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 ```
 
 Removes the specified part or all parts of the specified partition from `detached`.
@@ -76,7 +76,7 @@ Read more about setting the partition expression in a section [How to specify th
 ## ATTACH PARTITION\|PART
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
+ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
 ```
 
 Adds data to the table from the `detached` directory. It is possible to add data for an entire partition or for a separate part. Examples:
@@ -99,7 +99,7 @@ You can put data to the `detached` directory on one replica and use the `ALTER .
 ## ATTACH PARTITION FROM
 
 ``` sql
-ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
+ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
 This query copies the data partition from `table1` to `table2`.
@@ -113,7 +113,7 @@ For the query to run successfully, the following conditions must be met:
 ## REPLACE PARTITION
 
 ``` sql
-ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
+ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
 This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`. Note that data won’t be deleted from `table1`.
@@ -126,7 +126,7 @@ For the query to run successfully, the following conditions must be met:
 ## MOVE PARTITION TO TABLE
 
 ``` sql
-ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
+ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
 This query moves the data partition from the `table_source` to `table_dest` with deleting the data from `table_source`.
@@ -141,7 +141,7 @@ For the query to run successfully, the following conditions must be met:
 ## CLEAR COLUMN IN PARTITION
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
+ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ```
 
 Resets all values in the specified column in a partition. If the `DEFAULT` clause was determined when creating a table, this query sets the column value to a specified default value.
@@ -155,7 +155,7 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ## FREEZE PARTITION
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
 ```
 
 This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
@@ -197,7 +197,7 @@ For more information about backups and restoring data, see the [Data Backup](../
 ## UNFREEZE PARTITION
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
 ```
 
 Removes `freezed` partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
@@ -205,7 +205,7 @@ Removes `freezed` partitions with the specified name from the disk. If the `PART
 ## CLEAR INDEX IN PARTITION
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
+ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ```
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
@@ -213,7 +213,7 @@ The query works similar to `CLEAR COLUMN`, but it resets an index instead of a c
 ## FETCH PARTITION|PART
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
 Downloads a partition from another server. This query only works for the replicated tables.
@@ -250,7 +250,7 @@ Although the query is called `ALTER TABLE`, it does not change the table structu
 Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes).
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
 ```
 
 The `ALTER TABLE t MOVE` query:
@@ -273,7 +273,7 @@ Manipulates data in the specifies partition matching the specified filtering exp
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 ```
 
 ### Example
@@ -293,7 +293,7 @@ Deletes data in the specifies partition matching the specified filtering express
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table DELETE [IN PARTITION partition_id] WHERE filter_expr
 ```
 
 ### Example

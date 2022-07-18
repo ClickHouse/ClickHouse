@@ -131,7 +131,7 @@ Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data typ
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behavior of functions for negative arguments and for the [NaN and Inf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric conversions issues](#numeric-conversion-issues), when using the functions.
+The behavior of functions for negative agruments and for the [NaN and Inf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric conversions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -300,80 +300,6 @@ Result:
 │                                              1930-01-01 │                                                2020-01-01 │
 └─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
-
-## toDateTime64
-
-Converts the argument to the [DateTime64](../../sql-reference/data-types/datetime64.md) data type.
-
-**Syntax**
-
-``` sql
-toDateTime64(expr, scale, [timezone])
-```
-
-**Arguments**
-
--   `expr` — The value. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [DateTime](../../sql-reference/data-types/datetime.md).
--   `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
--   `timezone` - Time zone of the specified datetime64 object.
-
-**Returned value**
-
--   A calendar date and time of day, with sub-second precision.
-
-Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-1. The value is within the range:
-
-``` sql
-SELECT toDateTime64('1955-01-01 00:00:00.000', 3) AS value, toTypeName(value);
-```
-
-``` text
-┌───────────────────value─┬─toTypeName(toDateTime64('1955-01-01 00:00:00.000', 3))─┐
-│ 1955-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
-```
-
-2. As decimal with precision:
-
-``` sql
-SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
-```
-
-``` text
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800., 3))─┐
-│ 2019-01-01 00:00:00.000 │ DateTime64(3)                            │
-└─────────────────────────┴──────────────────────────────────────────┘
-```
-
-Without the decimal point the value is still treated as Unix Timestamp in seconds:
-
-``` sql
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
-```
-
-``` text
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
-```
-
-
-3. With `timezone`:
-
-``` sql
-SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
-```
-
-``` text
-┌───────────────────value─┬─toTypeName(toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2019-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
-```
-
 
 ## toDecimal(32\|64\|128\|256)
 

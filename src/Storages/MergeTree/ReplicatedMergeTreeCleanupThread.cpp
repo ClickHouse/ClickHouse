@@ -248,17 +248,17 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
 
-            Coordination::Responses responses;
-            Coordination::Error e = zookeeper->tryMulti(ops, responses);
-
-            if (e == Coordination::Error::ZNONODE)
+            try
+            {
+                zookeeper->multi(ops);
+            }
+            catch (const zkutil::KeeperMultiException & e)
             {
                 /// Another replica already deleted the same node concurrently.
-                break;
-            }
-            else
-            {
-                zkutil::KeeperMultiException::check(e, ops, responses);
+                if (e.code == Coordination::Error::ZNONODE)
+                    break;
+
+                throw;
             }
             ops.clear();
         }

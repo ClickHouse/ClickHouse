@@ -6,14 +6,14 @@ namespace DB
 {
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    DataPartStorageBuilderPtr data_part_storage_builder_,
     const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage_builder(std::move(data_part_storage_builder_))
+    , volume(data_part->volume)
+    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
     , reset_columns(reset_columns_)
 {
     if (reset_columns)

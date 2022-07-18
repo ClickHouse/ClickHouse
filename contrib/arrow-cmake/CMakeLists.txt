@@ -462,7 +462,5 @@ foreach (TOOL ${PARQUET_TOOLS})
 endforeach ()
 
 # The library is large - avoid bloat.
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_arrow PRIVATE -g0)
-    target_compile_options (_parquet PRIVATE -g0)
-endif()
+target_compile_options (_arrow PRIVATE -g0)
+target_compile_options (_parquet PRIVATE -g0)

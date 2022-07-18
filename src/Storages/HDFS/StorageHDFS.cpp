@@ -16,7 +16,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/CompressionMethod.h>
-#include <IO/WriteSettings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -29,7 +28,6 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -199,9 +197,8 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         if (it == paths.end())
             return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
-        auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
-        const auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
-        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression);
     };
     return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 }
@@ -330,10 +327,7 @@ bool HDFSSource::initialize()
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    auto impl = std::make_unique<ReadBufferFromHDFS>(
-        uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-    const auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
+    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression);
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -413,13 +407,7 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(
-            std::make_unique<WriteBufferFromHDFS>(
-                uri,
-                context->getGlobalContext()->getConfigRef(),
-                context->getSettingsRef().hdfs_replication,
-                context->getWriteSettings()),
-            compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication), compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
@@ -674,13 +662,13 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
-        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         String format_name = "auto";
         if (engine_args.size() > 1)
         {
             engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
-            format_name = checkAndGetLiteralArgument<String>(engine_args[1], "format_name");
+            format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         if (format_name == "auto")
@@ -690,7 +678,7 @@ void registerStorageHDFS(StorageFactory & factory)
         if (engine_args.size() == 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[2], "compression_method");
+            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
         ASTPtr partition_by;

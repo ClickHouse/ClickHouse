@@ -228,10 +228,8 @@ struct ContextSharedPart
     mutable std::unique_ptr<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::unique_ptr<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
 
-    mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
-    mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
-    mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
-    mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
+    mutable ThrottlerPtr replicated_fetches_throttler; /// A server-wide throttler for replicated fetches
+    mutable ThrottlerPtr replicated_sends_throttler; /// A server-wide throttler for replicated sends
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -856,13 +854,13 @@ void Context::checkAccessImpl(const Args &... args) const
 }
 
 void Context::checkAccess(const AccessFlags & flags) const { return checkAccessImpl(flags); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database) const { return checkAccessImpl(flags, database); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const { return checkAccessImpl(flags, database, table); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { return checkAccessImpl(flags, database, table, column); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(flags, database, table, columns); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database) const { return checkAccessImpl(flags, database); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl(flags, database, table); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl(flags, database, table, column); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl(flags, database, table, columns); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName()); }
-void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), column); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), column); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
 void Context::checkAccess(const AccessRightsElement & element) const { return checkAccessImpl(element); }
@@ -1191,7 +1189,7 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(StringRef name, const String & value)
+void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
     if (name == "profile")
@@ -1206,7 +1204,7 @@ void Context::setSetting(StringRef name, const String & value)
 }
 
 
-void Context::setSetting(StringRef name, const Field & value)
+void Context::setSetting(const StringRef & name, const Field & value)
 {
     auto lock = getLock();
     if (name == "profile")
@@ -1932,26 +1930,6 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
-ThrottlerPtr Context::getRemoteReadThrottler() const
-{
-    auto lock = getLock();
-    if (!shared->remote_read_throttler)
-        shared->remote_read_throttler = std::make_shared<Throttler>(
-            settings.max_remote_read_network_bandwidth_for_server);
-
-    return shared->remote_read_throttler;
-}
-
-ThrottlerPtr Context::getRemoteWriteThrottler() const
-{
-    auto lock = getLock();
-    if (!shared->remote_write_throttler)
-        shared->remote_write_throttler = std::make_shared<Throttler>(
-            settings.max_remote_write_network_bandwidth_for_server);
-
-    return shared->remote_write_throttler;
-}
-
 bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
@@ -2121,12 +2099,6 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
     if (!shared->keeper_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->keeper_dispatcher;
-}
-
-std::shared_ptr<KeeperDispatcher> & Context::tryGetKeeperDispatcher() const
-{
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
     return shared->keeper_dispatcher;
 }
 #endif
@@ -3458,8 +3430,6 @@ ReadSettings Context::getReadSettings() const
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;
 
-    res.remote_throttler = getRemoteReadThrottler();
-
     res.http_max_tries = settings.http_max_tries;
     res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
     res.http_retry_max_backoff_ms = settings.http_retry_max_backoff_ms;
@@ -3475,8 +3445,6 @@ WriteSettings Context::getWriteSettings() const
     WriteSettings res;
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
-
-    res.remote_throttler = getRemoteWriteThrottler();
 
     return res;
 }

@@ -199,7 +199,7 @@ namespace detail
             }
         }
 
-        size_t getFileSize() override
+        std::optional<size_t> getFileSize() override
         {
             if (read_range.end)
                 return *read_range.end - getRangeBegin();
@@ -221,7 +221,7 @@ namespace detail
             if (response.hasContentLength())
                 read_range.end = getRangeBegin() + response.getContentLength();
 
-            return *read_range.end;
+            return read_range.end;
         }
 
         String getFileName() const override { return uri.toString(); }
@@ -749,7 +749,7 @@ public:
         return off;
     }
 
-    size_t getFileSize() override { return total_object_size; }
+    std::optional<size_t> getFileSize() override { return total_object_size; }
 
     String getFileName() const override { return uri.toString(); }
 

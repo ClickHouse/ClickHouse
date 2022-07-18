@@ -30,7 +30,7 @@ public:
     String getEngineName() const override { return "Replicated"; }
 
     /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current ZooKeeperMetadataTransaction.
-    void dropTable(ContextPtr, const String & table_name, bool sync) override;
+    void dropTable(ContextPtr, const String & table_name, bool no_delay) override;
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -71,9 +71,6 @@ public:
     void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
 
     void shutdown() override;
-
-    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
-    void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;

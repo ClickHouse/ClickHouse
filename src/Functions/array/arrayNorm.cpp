@@ -32,12 +32,6 @@ struct L1Norm
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
-    {
-        return result + other_result;
-    }
-
-    template <typename ResultType>
     inline static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
@@ -57,26 +51,9 @@ struct L2Norm
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
-    {
-        return result + other_result;
-    }
-
-    template <typename ResultType>
     inline static ResultType finalize(ResultType result, const ConstParams &)
     {
         return sqrt(result);
-    }
-};
-
-struct L2SquaredNorm : L2Norm
-{
-    static inline String name = "L2Squared";
-
-    template <typename ResultType>
-    inline static ResultType finalize(ResultType result, const ConstParams &)
-    {
-        return result;
     }
 };
 
@@ -98,12 +75,6 @@ struct LpNorm
     }
 
     template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
-    {
-        return result + other_result;
-    }
-
-    template <typename ResultType>
     inline static ResultType finalize(ResultType result, const ConstParams & params)
     {
         return std::pow(result, params.inverted_power);
@@ -120,12 +91,6 @@ struct LinfNorm
     inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return fmax(result, fabs(value));
-    }
-
-    template <typename ResultType>
-    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
-    {
-        return fmax(result, other_result);
     }
 
     template <typename ResultType>
@@ -162,12 +127,11 @@ public:
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
+            case TypeIndex::Float32:
             case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -186,9 +150,6 @@ public:
 
         switch (result_type->getTypeId())
         {
-            case TypeIndex::Float32:
-                return executeWithResultType<Float32>(*arr, type, input_rows_count, arguments);
-                break;
             case TypeIndex::Float64:
                 return executeWithResultType<Float64>(*arr, type, input_rows_count, arguments);
                 break;
@@ -249,23 +210,10 @@ private:
         size_t row = 0;
         for (auto off : offsets)
         {
-            /// Process chunks in vectorized manner
-            static constexpr size_t VEC_SIZE = 4;
-            ResultType results[VEC_SIZE] = {0};
-            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
-            {
-                for (size_t s = 0; s < VEC_SIZE; ++s)
-                    results[s] = Kernel::template accumulate<ResultType>(results[s], data[prev+s], kernel_params);
-            }
-
-            ResultType result = 0;
-            for (const auto & other_state : results)
-                result = Kernel::template combine<ResultType>(result, other_state, kernel_params);
-
-            /// Process the tail
+            Float64 result = 0;
             for (; prev < off; ++prev)
             {
-                result = Kernel::template accumulate<ResultType>(result, data[prev], kernel_params);
+                result = Kernel::template accumulate<Float64>(result, data[prev], kernel_params);
             }
             result_data[row] = Kernel::finalize(result, kernel_params);
             row++;
@@ -317,7 +265,6 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
 /// These functions are used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL1Norm(ContextPtr context_) { return FunctionArrayNorm<L1Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2Norm(ContextPtr context_) { return FunctionArrayNorm<L2Norm>::create(context_); }
-FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_) { return FunctionArrayNorm<L2SquaredNorm>::create(context_); }
 FunctionPtr createFunctionArrayLpNorm(ContextPtr context_) { return FunctionArrayNorm<LpNorm>::create(context_); }
 FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_) { return FunctionArrayNorm<LinfNorm>::create(context_); }
 

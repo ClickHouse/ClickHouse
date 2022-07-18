@@ -173,15 +173,15 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
 {
     String name_with_dot = name_without_dot + ".";
 
-    /// First we need to check if we have column with name name_without_dot
-    /// and if not - check if we have names that start with name_with_dot
-    for (auto it = columns.begin(); it != columns.end(); ++it)
+    auto begin = columns.begin();
+    for (; begin != columns.end(); ++begin)
     {
-        if (it->name == name_without_dot)
-            return std::make_pair(it, std::next(it));
-    }
+        if (begin->name == name_without_dot)
+            return std::make_pair(begin, std::next(begin));
 
-    auto begin = std::find_if(columns.begin(), columns.end(), [&](const auto & column){ return startsWith(column.name, name_with_dot); });
+        if (startsWith(begin->name, name_with_dot))
+            break;
+    }
 
     if (begin == columns.end())
         return std::make_pair(begin, begin);

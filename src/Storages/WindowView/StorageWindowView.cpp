@@ -459,6 +459,7 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
+    input_header.clear();
     output_header.clear();
 
     InterpreterDropQuery::executeDropQuery(
@@ -1017,7 +1018,7 @@ void StorageWindowView::threadFuncFireProc()
     if (shutdown_called)
         return;
 
-    std::lock_guard lock(fire_signal_mutex);
+    std::unique_lock lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
     while (next_fire_signal <= timestamp_now)
@@ -1049,7 +1050,7 @@ void StorageWindowView::threadFuncFireProc()
 
 void StorageWindowView::threadFuncFireEvent()
 {
-    std::lock_guard lock(fire_signal_mutex);
+    std::unique_lock lock(fire_signal_mutex);
 
     LOG_TRACE(log, "Fire events: {}", fire_signal.size());
 
@@ -1229,6 +1230,7 @@ StorageWindowView::StorageWindowView(
 ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_)
 {
     select_query = query.clone();
+    input_header.clear();
     output_header.clear();
 
     String select_database_name = getContext()->getCurrentDatabase();
@@ -1606,7 +1608,7 @@ void StorageWindowView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
+void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
 {
     if (!std::exchange(has_inner_table, false))
         return;
@@ -1614,10 +1616,10 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
     try
     {
         InterpreterDropQuery::executeDropQuery(
-            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
+            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
     }
     catch (...)
     {
@@ -1625,10 +1627,15 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
     }
 }
 
-Block StorageWindowView::getInputHeader() const
+const Block & StorageWindowView::getInputHeader() const
 {
-    auto metadata = getSourceTable()->getInMemoryMetadataPtr();
-    return metadata->getSampleBlockNonMaterialized();
+    std::lock_guard lock(sample_block_lock);
+    if (!input_header)
+    {
+        auto metadata = getSourceTable()->getInMemoryMetadataPtr();
+        input_header = metadata->getSampleBlockNonMaterialized();
+    }
+    return input_header;
 }
 
 const Block & StorageWindowView::getOutputHeader() const

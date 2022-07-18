@@ -67,7 +67,7 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
     return impl->getInfoForLog();
 }
 
-size_t AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
+std::optional<size_t> AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -185,11 +185,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         }
 
         prefetch_buffer.swap(memory);
-
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-        pos = working_buffer.begin();
+        setWithBytesToIgnore(memory.data(), size, offset);
     }
     else
     {
@@ -205,9 +202,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-            pos = working_buffer.begin();
+            setWithBytesToIgnore(memory.data(), size, offset);
         }
     }
 

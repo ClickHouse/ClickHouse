@@ -45,9 +45,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#if USE_KRB5
-#include <Access/KerberosInit.h>
-#endif // USE_KRB5
+
 
 namespace CurrentMetrics
 {
@@ -518,33 +516,6 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     auto config_prefix = getConfigPrefix();
     if (config.has(config_prefix))
         loadFromConfig(conf, config, config_prefix);
-
-    #if USE_KRB5
-    if (conf.has_property("sasl.kerberos.kinit.cmd"))
-        LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
-
-    conf.set("sasl.kerberos.kinit.cmd","");
-    conf.set("sasl.kerberos.min.time.before.relogin","0");
-
-    if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
-    {
-        String keytab = conf.get("sasl.kerberos.keytab");
-        String principal = conf.get("sasl.kerberos.principal");
-        LOG_DEBUG(log, "Running KerberosInit");
-        try
-        {
-            kerberosInit(keytab,principal);
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(log, "KerberosInit failure: {}", getExceptionMessage(e, false));
-        }
-        LOG_DEBUG(log, "Finished KerberosInit");
-    }
-    #else // USE_KRB5
-    if (conf.has_property("sasl.kerberos.keytab") || conf.has_property("sasl.kerberos.principal"))
-        LOG_WARNING(log, "Kerberos-related parameters are ignored because ClickHouse was built without support of krb5 library.");
-    #endif // USE_KRB5
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)

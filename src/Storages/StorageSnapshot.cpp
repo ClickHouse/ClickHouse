@@ -2,6 +2,7 @@
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
+#include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 
 namespace DB

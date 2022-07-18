@@ -26,30 +26,14 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `user` — MySQL user.
 -   `password` — User password.
 
-## Engine Settings
+**Engine Settings**
 
-### max_rows_in_buffer
-
-`max_rows_in_buffer` — Maximum number of rows that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
-
-### max_bytes_in_buffer
-
-`max_bytes_in_buffer` —  Maximum number of bytes that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
-
-### max_flush_data_time
-
-`max_flush_data_time` — Maximum number of milliseconds that data is allowed to cache in memory (for database and the cache data unable to query). When this time is exceeded, the data will be materialized. Default: `1000`.
-
-### max_wait_time_when_mysql_unavailable
-
-`max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disables retry. Default: `1000`.
-
-### allows_query_when_mysql_lost
-`allows_query_when_mysql_lost` — Allows to query a materialized table when MySQL is lost. Default: `0` (`false`).
-
-### materialized_mysql_tables_list
-
-`materialized_mysql_tables_list` — a comma-separated list of mysql database tables, which will be replicated by MaterializedMySQL database engine. Default value: empty list — means whole tables will be replicated.
+-   `max_rows_in_buffer` — Maximum number of rows that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
+-   `max_bytes_in_buffer` —  Maximum number of bytes that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
+-   `max_flush_data_time` — Maximum number of milliseconds that data is allowed to cache in memory (for database and the cache data unable to query). When this time is exceeded, the data will be materialized. Default: `1000`.
+-   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disables retry. Default: `1000`.
+-   `allows_query_when_mysql_lost` — Allows to query a materialized table when MySQL is lost. Default: `0` (`false`).
+-   `materialized_mysql_tables_list` — a comma-separated list of mysql database tables, which will be replicated by MaterializedMySQL database engine. Default value: empty list — means whole tables will be replicated.
 
 ```sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
@@ -58,17 +42,12 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
         max_wait_time_when_mysql_unavailable=10000;
 ```
 
-## Settings on MySQL-server Side
+**Settings on MySQL-server Side**
 
 For the correct work of `MaterializedMySQL`, there are few mandatory `MySQL`-side configuration settings that must be set:
 
-### default_authentication_plugin 
-
-`default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
-
-### gtid_mode
-
-`gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializedMySQL` replication.
+- `default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
+- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializedMySQL` replication.
 
 :::note 
 While turning on `gtid_mode` you should also specify `enforce_gtid_consistency = on`.
@@ -78,13 +57,8 @@ While turning on `gtid_mode` you should also specify `enforce_gtid_consistency =
 
 When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
 
-### \_version
-
-`_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
-
-### \_sign
-
-`_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
+- `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
+- `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
     - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 

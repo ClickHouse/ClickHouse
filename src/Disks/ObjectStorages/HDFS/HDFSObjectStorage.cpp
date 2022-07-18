@@ -11,7 +11,6 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Common/getRandomASCIIString.h>
 
 
 #if USE_HDFS
@@ -33,62 +32,55 @@ void HDFSObjectStorage::startup()
 {
 }
 
-std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+bool HDFSObjectStorage::exists(const std::string & hdfs_uri) const
 {
-    return getRandomASCIIString();
-}
-
-bool HDFSObjectStorage::exists(const StoredObject & object) const
-{
-    const auto & path = object.absolute_path;
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
-    const String remote_fs_object_path = path.substr(begin_of_path);
+    const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+    const String remote_fs_object_path = hdfs_uri.substr(begin_of_path);
     return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
-    const StoredObject & object,
+std::unique_ptr<SeekableReadBuffer> HDFSObjectStorage::readObject( /// NOLINT
+    const std::string & path,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(object.absolute_path, object.absolute_path, config, patchSettings(read_settings));
+    return std::make_unique<ReadBufferFromHDFS>(path, path, config, read_settings.remote_fs_buffer_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
+    const std::string & common_path_prefix,
+    const BlobsPathToSize & blobs_to_read,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, objects, patchSettings(read_settings));
+    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, common_path_prefix, common_path_prefix, blobs_to_read, read_settings);
     auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
-    const StoredObject & object,
+    const std::string & path,
     WriteMode mode,
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
     size_t buf_size,
-    const WriteSettings & write_settings)
+    const WriteSettings &)
 {
     if (attributes.has_value())
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD,
-            "HDFS API doesn't support custom attributes/metadata for stored objects");
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(
-        object.absolute_path, config, settings->replication, patchSettings(write_settings), buf_size,
+        path, config, settings->replication, buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(finalize_callback), object.absolute_path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(finalize_callback), path);
 }
 
 
-void HDFSObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+void HDFSObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
 {
     const size_t begin_of_path = path.find('/', path.find("//") + 2);
     int32_t num_entries;
@@ -101,9 +93,8 @@ void HDFSObjectStorage::listPrefix(const std::string & path, RelativePathsWithSi
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
-void HDFSObjectStorage::removeObject(const StoredObject & object)
+void HDFSObjectStorage::removeObject(const std::string & path)
 {
-    const auto & path = object.absolute_path;
     const size_t begin_of_path = path.find('/', path.find("//") + 2);
 
     /// Add path from root to file name
@@ -113,40 +104,36 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
 
 }
 
-void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
+void HDFSObjectStorage::removeObjects(const std::vector<std::string> & paths)
 {
-    for (const auto & object : objects)
-        removeObject(object);
+    for (const auto & hdfs_path : paths)
+        removeObject(hdfs_path);
 }
 
-void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
+void HDFSObjectStorage::removeObjectIfExists(const std::string & path)
 {
-    if (exists(object))
-        removeObject(object);
+    if (exists(path))
+        removeObject(path);
 }
 
-void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void HDFSObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
 {
-    for (const auto & object : objects)
-        removeObjectIfExists(object);
+    for (const auto & hdfs_path : paths)
+        removeObjectIfExists(hdfs_path);
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string &) const
 {
-    throw Exception(
-        ErrorCodes::UNSUPPORTED_METHOD,
-        "HDFS API doesn't support custom attributes/metadata for stored objects");
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT
-    const StoredObject & object_from,
-    const StoredObject & object_to,
+    const std::string & object_from,
+    const std::string & object_to,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (object_to_attributes.has_value())
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD,
-            "HDFS API doesn't support custom attributes/metadata for stored objects");
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     auto in = readObject(object_from);
     auto out = writeObject(object_to, WriteMode::Rewrite);
@@ -155,9 +142,8 @@ void HDFSObjectStorage::copyObject( /// NOLINT
 }
 
 
-void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr context)
+void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
 {
-    applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
