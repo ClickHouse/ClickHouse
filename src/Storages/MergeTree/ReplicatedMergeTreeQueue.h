@@ -521,6 +521,8 @@ public:
 
     bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
 
+    String getCoveringVirtualPart(const String & part_name) const;
+
 private:
     const ReplicatedMergeTreeQueue & queue;
 
