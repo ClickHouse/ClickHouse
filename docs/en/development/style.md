@@ -745,7 +745,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `clang`. At this time (April 2021), the code is compiled using clang version 11. (It can also be compiled using `gcc` version 10, but it's untested and not suitable for production usage).
+**3.** Compiler: `clang`. At the time of writing (July 2022), the code is compiled using clang version >= 12. (It can also be compiled using `gcc`, but it's untested and not suitable for production usage).
 
 The standard library is used (`libc++`).
 
