@@ -124,8 +124,6 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
-
 ## C++ Compiler {#c-compiler}
 
 Compilers Clang starting from version 11 is supported for building ClickHouse.
