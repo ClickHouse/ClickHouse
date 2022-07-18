@@ -117,6 +117,7 @@ enum KeeperApiVersion : uint8_t
 };
 
 inline constexpr auto current_keeper_api_version = KeeperApiVersion::V1;
+inline constexpr auto * keeper_api_version_path = "/keeper-api-version";
 
 struct Request;
 using RequestPtr = std::shared_ptr<Request>;

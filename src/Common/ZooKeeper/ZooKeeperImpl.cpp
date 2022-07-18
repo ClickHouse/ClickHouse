@@ -1,3 +1,4 @@
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
@@ -6,6 +7,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
@@ -346,22 +348,17 @@ ZooKeeper::ZooKeeper(
 
     connect(nodes, connection_timeout);
 
-    if (!initApiVersion())
-    {
-        // We failed to get the version, let's reconnect in case
-        // the connection became faulty
-        socket.close();
-        connect(nodes, connection_timeout);
-    }
-
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
 
     send_thread = ThreadFromGlobalPool([this] { sendThread(); });
     receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
+    initApiVersion();
+
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
+
 
 void ZooKeeper::connect(
     const Nodes & nodes,
@@ -1069,40 +1066,29 @@ Coordination::KeeperApiVersion ZooKeeper::getApiVersion()
     return keeper_api_version;
 }
 
-bool ZooKeeper::initApiVersion()
+void ZooKeeper::initApiVersion()
 {
-    try
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
     {
-        ZooKeeperApiVersionRequest request;
-        request.write(*out);
+        promise->set_value(response);
+    };
 
-        if (!in->poll(operation_timeout.totalMilliseconds()))
-        {
-            LOG_ERROR(&Poco::Logger::get("ZooKeeper"), "Failed to get version: timeout");
-            return false;
-        }
+    get(Coordination::keeper_api_version_path, std::move(callback), {});
+    if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
+        return;
 
-        ZooKeeperApiVersionResponse response;
+    auto response = future.get();
 
-        int32_t length;
-        XID xid;
-        int64_t zxid;
-        Error err;
-        read(length);
-        read(xid);
-        read(zxid);
-        read(err);
+    if (response.error != Coordination::Error::ZOK)
+        return;
 
-        response.readImpl(*in);
-
-        keeper_api_version = static_cast<KeeperApiVersion>(response.api_version);
-        return true;
-    }
-    catch (const DB::Exception & e)
-    {
-        LOG_ERROR(&Poco::Logger::get("ZooKeeper"), "Failed to get version: {}", e.message());
-        return false;
-    }
+    uint8_t keeper_version{0};
+    DB::ReadBufferFromOwnString buf(response.data);
+    DB::readIntText(keeper_version, buf);
+    keeper_api_version = static_cast<Coordination::KeeperApiVersion>(keeper_version);
 }
 
 

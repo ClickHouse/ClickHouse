@@ -661,20 +661,6 @@ void ZooKeeperSessionIDResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(server_id, out);
 }
 
-Coordination::ZooKeeperResponsePtr ZooKeeperApiVersionRequest::makeResponse() const
-{
-    return std::make_shared<ZooKeeperApiVersionResponse>();
-}
-
-void ZooKeeperApiVersionResponse::readImpl(ReadBuffer & in)
-{
-    Coordination::read(api_version, in);
-}
-
-void ZooKeeperApiVersionResponse::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(api_version, out);
-}
 
 void ZooKeeperRequest::createLogElements(LogElements & elems) const
 {
@@ -910,7 +896,6 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
-    registerZooKeeperRequest<OpNum::ApiVersion, ZooKeeperApiVersionRequest>(*this);
 }
 
 }
