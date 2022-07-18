@@ -410,6 +410,7 @@ private:
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);

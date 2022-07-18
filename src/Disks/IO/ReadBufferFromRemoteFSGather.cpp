@@ -87,6 +87,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         blob_container_client,
         path,
+        settings,
         max_single_read_retries,
         max_single_download_retries,
         settings.remote_fs_buffer_size,
@@ -115,13 +116,13 @@ SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBufferImpl(c
     auto hdfs_uri = path.substr(0, begin_of_path);
     LOG_TEST(log, "HDFS uri: {}, path: {}", hdfs_path, hdfs_uri);
 
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_path, config, settings);
 }
 #endif
 
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
-    const PathsWithSize & blobs_to_read_,
+    const StoredObjects & blobs_to_read_,
     const ReadSettings & settings_)
     : ReadBuffer(nullptr, 0)
     , blobs_to_read(blobs_to_read_)
@@ -130,6 +131,9 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
     , enable_cache_log(!query_id.empty() && settings.enable_filesystem_cache_log)
 {
+    if (blobs_to_read.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read zero number of objects");
+
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
         && (!IFileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
@@ -182,22 +186,22 @@ void ReadBufferFromRemoteFSGather::initialize()
     auto current_buf_offset = file_offset_of_buffer_end;
     for (size_t i = 0; i < blobs_to_read.size(); ++i)
     {
-        const auto & [file_path, size] = blobs_to_read[i];
+        const auto & object = blobs_to_read[i];
 
-        if (size > current_buf_offset)
+        if (object.bytes_size > current_buf_offset)
         {
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || current_buf_idx != i)
             {
                 current_buf_idx = i;
-                current_buf = createImplementationBuffer(file_path, size);
+                current_buf = createImplementationBuffer(object.absolute_path, object.bytes_size);
             }
 
             current_buf->seek(current_buf_offset, SEEK_SET);
             return;
         }
 
-        current_buf_offset -= size;
+        current_buf_offset -= object.bytes_size;
     }
     current_buf_idx = blobs_to_read.size();
     current_buf = nullptr;
@@ -217,10 +221,14 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
             return true;
     }
     else
+    {
         return false;
+    }
 
     if (!moveToNextBuffer())
+    {
         return false;
+    }
 
     return readImpl();
 }
@@ -234,8 +242,8 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 
     ++current_buf_idx;
 
-    const auto & [path, size] = blobs_to_read[current_buf_idx];
-    current_buf = createImplementationBuffer(path, size);
+    const auto & object = blobs_to_read[current_buf_idx];
+    current_buf = createImplementationBuffer(object.absolute_path, object.bytes_size);
 
     return true;
 }
