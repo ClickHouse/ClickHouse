@@ -87,6 +87,14 @@ DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const
     return metadata;
 }
 
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> &) const
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
+    auto str = readFileToString(path);
+    metadata->deserializeFromString(str);
+    return metadata;
+}
+
 DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadata(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
@@ -112,13 +120,7 @@ std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadat
 
 void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    auto metadata = metadata_storage.readMetadata(path_from);
-
-    metadata->incrementRefCount();
-
-    writeStringToFile(path_from, metadata->serializeToString());
-
-    addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *metadata_storage.getDisk()));
+    addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *metadata_storage.disk, metadata_storage));
 }
 
 MetadataTransactionPtr MetadataStorageFromDisk::createTransaction() const
@@ -177,12 +179,12 @@ void MetadataStorageFromDiskTransaction::commit()
             toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
 
     {
-        std::lock_guard lock(metadata_storage.metadata_mutex);
+        std::unique_lock lock(metadata_storage.metadata_mutex);
         for (size_t i = 0; i < operations.size(); ++i)
         {
             try
             {
-                operations[i]->execute();
+                operations[i]->execute(lock);
             }
             catch (Exception & ex)
             {
@@ -316,29 +318,12 @@ void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & 
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)
 {
-    DiskObjectStorageMetadataPtr metadata;
-    if (metadata_storage.exists(path))
-    {
-        metadata = metadata_storage.readMetadata(path);
-        metadata->addObject(blob_name, size_in_bytes);
-        writeStringToFile(path, metadata->serializeToString());
-    }
-    else
-    {
-        createMetadataFile(path, blob_name, size_in_bytes);
-    }
+    addOperation(std::make_unique<AddBlobOperation>(path, blob_name, metadata_storage.object_storage_root_path, size_in_bytes, *metadata_storage.disk, metadata_storage));
 }
 
 void MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
-    auto metadata = metadata_storage.readMetadata(path);
-    uint32_t ref_count = metadata->getRefCount();
-    if (ref_count != 0)
-    {
-        metadata->decrementRefCount();
-        writeStringToFile(path, metadata->serializeToString());
-    }
-    unlinkFile(path);
+    addOperation(std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.disk, metadata_storage));
 }
 
 }
