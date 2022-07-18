@@ -46,6 +46,7 @@ void ForkWriteBuffer::nextImpl()
 ForkWriteBuffer::~ForkWriteBuffer()
 {
     finalize();
+    set(nullptr, 0);
 }
 
 
