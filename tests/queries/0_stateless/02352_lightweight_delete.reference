@@ -1,23 +1,23 @@
-Rows in parts	10000000
-Count	10000000
+Rows in parts	1000000
+Count	1000000
 First row	0	10
-Delete 3M rows using lightweight DELETE
-Rows in parts	10000000
-Count	7000000
-First row	3000000	10
+Delete 300K rows using lightweight DELETE
+Rows in parts	1000000
+Count	700000
+First row	300000	10
 Force merge to cleanup deleted rows
-Rows in parts	7000000
-Count	7000000
-First row	3000000	10
-Delete 3M more rows using lightweight DELETE
-Rows in parts	7000000
-Count	4000000
-First row	6000000	10
+Rows in parts	700000
+Count	700000
+First row	300000	10
+Delete 300K more rows using lightweight DELETE
+Rows in parts	700000
+Count	400000
+First row	600000	10
 Do UPDATE mutation
-Rows in parts	7000000
-Count	4000000
-First row	6000000	1
+Rows in parts	700000
+Count	400000
+First row	600000	1
 Force merge to cleanup deleted rows
-Rows in parts	4000000
-Count	4000000
-First row	6000000	1
+Rows in parts	400000
+Count	400000
+First row	600000	1
