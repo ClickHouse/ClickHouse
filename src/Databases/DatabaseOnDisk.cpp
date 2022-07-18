@@ -66,7 +66,8 @@ std::pair<String, StoragePtr> createTableFromAST(
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.getTable(), std::move(columns));
+        StoragePtr storage
+            = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.getTable(), storage};
     }
@@ -164,7 +165,7 @@ void DatabaseOnDisk::createTable(
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.getTable());
 
-    /// Create a file with metadata if necessary - if the query is not ATTACH.
+    /// Create a file with metadata if the query is not ATTACH without schema.
     /// Write the query of `ATTACH table` to it.
 
     /** The code is based on the assumption that all threads share the same order of operations
@@ -225,7 +226,11 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage(
+            "while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be "
+            "reattached during server restart",
+            backQuote(getDatabaseName()),
+            backQuote(table_name));
         throw;
     }
 }
@@ -261,7 +266,10 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to set permanently detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage(
+            "while trying to set permanently detached flag. Table {}.{} may be reattached during server restart",
+            backQuote(getDatabaseName()),
+            backQuote(table_name));
         throw;
     }
 }
@@ -319,9 +327,17 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
         if (fs::exists(detached_permanently_flag))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)", backQuote(database_name), backQuote(to_table_name));
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists (detached permanently)",
+                backQuote(database_name),
+                backQuote(to_table_name));
         else
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists (detached)",
+                backQuote(database_name),
+                backQuote(to_table_name));
     }
 }
 
@@ -585,7 +601,8 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
             metadata_files.emplace(file_name, true);
         }
         else
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
+            throw Exception(
+                ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
     }
 
     /// Read and parse metadata in parallel
@@ -687,7 +704,11 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
+            throw Exception(
+                ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
+                "Cannot get metadata of {}.{}",
+                backQuote(getDatabaseName()),
+                backQuote(table_name));
         else
             return nullptr;
     }
