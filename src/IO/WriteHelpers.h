@@ -102,7 +102,7 @@ inline void writeStringBinary(const std::string & s, WriteBuffer & buf)
     buf.write(s.data(), s.size());
 }
 
-inline void writeStringBinary(const StringRef & s, WriteBuffer & buf)
+inline void writeStringBinary(StringRef s, WriteBuffer & buf)
 {
     writeVarUInt(s.size, buf);
     buf.write(s.data, s.size);
@@ -113,7 +113,7 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(StringRef{s}, buf);
 }
 
-inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
+inline void writeStringBinary(std::string_view s, WriteBuffer & buf)
 {
     writeStringBinary(StringRef{s}, buf);
 }
@@ -360,12 +360,12 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(const StringRef & s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(StringRef s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(s.data, s.data + s.size, buf, settings);
 }
 
-inline void writeJSONString(const std::string_view & s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(StringRef{s}, buf, settings);
 }
@@ -435,12 +435,12 @@ inline void writeEscapedString(const String & s, WriteBuffer & buf)
 }
 
 
-inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
+inline void writeEscapedString(StringRef ref, WriteBuffer & buf)
 {
     writeEscapedString(ref.data, ref.size, buf);
 }
 
-inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
+inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
 {
     writeEscapedString(ref.data(), ref.size(), buf);
 }
@@ -462,7 +462,7 @@ void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 
 
 template <char quote_character>
-void writeAnyQuotedString(const StringRef & ref, WriteBuffer & buf)
+void writeAnyQuotedString(StringRef ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<quote_character>(ref.data, ref.data + ref.size, buf);
 }
@@ -473,12 +473,12 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(s, buf);
 }
 
-inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
+inline void writeQuotedString(StringRef ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
+inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
 }
@@ -488,24 +488,24 @@ inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(StringRef s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(std::string_view s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
 
 /// Outputs a string in backquotes.
-inline void writeBackQuotedString(const StringRef & s, WriteBuffer & buf)
+inline void writeBackQuotedString(StringRef s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'`'>(s, buf);
 }
 
 /// Outputs a string in backquotes for MySQL.
-inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
+inline void writeBackQuotedStringMySQL(StringRef s, WriteBuffer & buf)
 {
     writeChar('`', buf);
     writeAnyEscapedString<'`', true>(s.data, s.data + s.size, buf);
@@ -514,9 +514,9 @@ inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 
 
 /// Write quoted if the string doesn't look like and identifier.
-void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf);
-void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf);
-void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf);
+void writeProbablyBackQuotedString(StringRef s, WriteBuffer & buf);
+void writeProbablyDoubleQuotedString(StringRef s, WriteBuffer & buf);
+void writeProbablyBackQuotedStringMySQL(StringRef s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.
@@ -559,7 +559,7 @@ void writeCSVString(const String & s, WriteBuffer & buf)
 }
 
 template <char quote = '"'>
-void writeCSVString(const StringRef & s, WriteBuffer & buf)
+void writeCSVString(StringRef s, WriteBuffer & buf)
 {
     writeCSVString<quote>(s.data, s.data + s.size, buf);
 }
@@ -616,7 +616,7 @@ inline void writeXMLStringForTextElementOrAttributeValue(const String & s, Write
     writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeXMLStringForTextElementOrAttributeValue(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElementOrAttributeValue(StringRef s, WriteBuffer & buf)
 {
     writeXMLStringForTextElementOrAttributeValue(s.data, s.data + s.size, buf);
 }
@@ -657,7 +657,7 @@ inline void writeXMLStringForTextElement(const String & s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(StringRef s, WriteBuffer & buf)
 {
     writeXMLStringForTextElement(s.data, s.data + s.size, buf);
 }
@@ -890,8 +890,8 @@ requires is_arithmetic_v<T>
 inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(StringRef x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -1015,9 +1015,9 @@ inline void writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
-inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+inline void writeQuoted(std::string_view x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
-inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+inline void writeQuoted(StringRef x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
 inline void writeQuoted(const LocalDate & x, WriteBuffer & buf)
 {
@@ -1048,9 +1048,9 @@ inline void writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
-inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+inline void writeDoubleQuoted(std::string_view x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
-inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+inline void writeDoubleQuoted(StringRef x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const LocalDate & x, WriteBuffer & buf)
 {

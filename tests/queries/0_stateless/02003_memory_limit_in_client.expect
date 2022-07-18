@@ -4,6 +4,10 @@
 # This is a test for system.warnings. Testing in interactive mode is necessary,
 # as we want to see certain warnings from client
 
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
 log_user 0
 set timeout 60
 match_max 100000
@@ -14,8 +18,6 @@ expect_after {
     # A default timeout action is to do nothing, change it to fail
     timeout { exit 1 }
 }
-
-set basedir [file dirname $argv0]
 
 #
 # Check that the query will fail in clickhouse-client

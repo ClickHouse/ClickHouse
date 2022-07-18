@@ -440,7 +440,7 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
         {
             throw DB::Exception(
                 ErrorCodes::TYPE_MISMATCH,
-                "Type mismatch of columns to JOIN by: {} {} at left, {} {} at right",
+                "Type mismatch of columns to JOIN by: {} :: {} at left, {} :: {} at right",
                 key_names_left[i], left_type->getName(),
                 key_names_right[i], right_type->getName());
         }
