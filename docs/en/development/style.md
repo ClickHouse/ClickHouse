@@ -755,7 +755,7 @@ The standard library is used (`libc++`).
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
-**6.** Use `-Wall -Wextra -Werror` compilation flags. Also `-Weverything` is used with few exceptions.
+**6.** Use `-Wall -Wextra -Werror -Weverything` compilation flags with a few exception.
 
 **7.** Use static linking with all libraries except those that are difficult to connect to statically (see the output of the `ldd` command).
 
