@@ -159,7 +159,7 @@ void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
         .query_id = query_id,
         .source_file_path = current_file_path,
         .file_segment_range = { 0, current_file_size },
-        .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE,
+        .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
         .file_segment_size = total_bytes_read_from_current_file,
         .cache_attempted = false,
     };

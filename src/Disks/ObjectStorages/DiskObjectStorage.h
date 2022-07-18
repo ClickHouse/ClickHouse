@@ -45,7 +45,7 @@ public:
 
     bool supportZeroCopyReplication() const override { return true; }
 
-    bool supportParallelWrite() const override { return true; }
+    bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
     const String & getName() const override { return name; }
 
