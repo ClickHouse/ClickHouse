@@ -546,8 +546,6 @@ struct ZooKeeperApiVersionRequest final : ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 };
 
-/// Fake internal coordination (keeper) response. Never received from client
-/// and never send to client.
 struct ZooKeeperApiVersionResponse final : ZooKeeperResponse
 {
     int64_t api_version;
@@ -577,7 +575,5 @@ private:
 
     ZooKeeperRequestFactory();
 };
-
-int32_t fourLetterCommandNameToCode(std::string_view name);
 
 }

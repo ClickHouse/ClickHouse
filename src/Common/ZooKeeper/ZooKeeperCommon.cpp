@@ -913,11 +913,4 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::ApiVersion, ZooKeeperApiVersionRequest>(*this);
 }
 
-int32_t fourLetterCommandNameToCode(std::string_view name)
-{
-    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
-    /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return __builtin_bswap32(res);
-}
-
 }

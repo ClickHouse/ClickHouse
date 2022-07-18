@@ -1,4 +1,3 @@
-#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
@@ -7,12 +6,10 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
 #include <base/getThreadId.h>
-#include <IO/ReadHelpers.h>
 
 #include <Common/config.h>
 
@@ -398,7 +395,6 @@ void ZooKeeper::connect(
                 }
 
                 socket.connect(node.address, connection_timeout);
-
                 socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(operation_timeout);
@@ -429,7 +425,6 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-
                 break;
             }
             catch (...)
