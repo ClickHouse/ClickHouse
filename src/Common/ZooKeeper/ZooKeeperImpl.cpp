@@ -349,6 +349,13 @@ ZooKeeper::ZooKeeper(
 
     connect(nodes, connection_timeout);
 
+    if (!initApiVersion())
+    {
+        // We failed to get the version, let's reconnect in case
+        // the connection became faulty
+        connect(nodes, connection_timeout);
+    }
+
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
 
@@ -356,34 +363,6 @@ ZooKeeper::ZooKeeper(
     receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
-}
-
-
-Poco::Net::StreamSocket ZooKeeper::connectToNode(const Poco::Net::SocketAddress & node_address, Poco::Timespan connection_timeout, bool is_secure)
-{
-    Poco::Net::StreamSocket result;
-    /// Reset the state of previous attempt.
-    if (is_secure)
-    {
-#if USE_SSL
-        result = Poco::Net::SecureStreamSocket();
-#else
-        throw Poco::Exception(
-            "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
-#endif
-    }
-    else
-    {
-        result = Poco::Net::StreamSocket();
-    }
-
-    result.connect(node_address, connection_timeout);
-
-    result.setReceiveTimeout(operation_timeout);
-    result.setSendTimeout(operation_timeout);
-    result.setNoDelay(true);
-
-    return result;
 }
 
 void ZooKeeper::connect(
@@ -403,8 +382,28 @@ void ZooKeeper::connect(
         {
             try
             {
-                socket = connectToNode(node.address, connection_timeout, node.secure);
+                /// Reset the state of previous attempt.
+                if (node.secure)
+                {
+#if USE_SSL
+                    socket = Poco::Net::SecureStreamSocket();
+#else
+                    throw Poco::Exception(
+                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
+#endif
+                }
+                else
+                {
+                    socket = Poco::Net::StreamSocket();
+                }
+
+                socket.connect(node.address, connection_timeout);
+
                 socket_address = socket.peerAddress();
+
+                socket.setReceiveTimeout(operation_timeout);
+                socket.setSendTimeout(operation_timeout);
+                socket.setNoDelay(true);
 
                 in.emplace(socket);
                 out.emplace(socket);
@@ -430,8 +429,6 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-
-                initApiVersion(node.address, connection_timeout, node.secure);
 
                 break;
             }
@@ -1076,28 +1073,39 @@ Coordination::KeeperApiVersion ZooKeeper::getApiVersion()
     return keeper_api_version;
 }
 
-void ZooKeeper::initApiVersion(const Poco::Net::SocketAddress & node_address, Poco::Timespan connection_timeout, bool is_secure)
+bool ZooKeeper::initApiVersion()
 {
     try
     {
-        auto command_socket = connectToNode(node_address, connection_timeout, is_secure);
+        ZooKeeperApiVersionRequest request;
+        request.write(*out);
 
-        auto apiv_code = Coordination::fourLetterCommandNameToCode("apiv");
+        if (!in->poll(operation_timeout.totalMilliseconds()))
+        {
+            LOG_ERROR(&Poco::Logger::get("ZooKeeper"), "Failed to get version: timeout");
+            return false;
+        }
 
-        WriteBufferFromPocoSocket command_out(command_socket);
-        Coordination::write(apiv_code, command_out);
-        command_out.next();
+        ZooKeeperApiVersionResponse response;
 
-        ReadBufferFromPocoSocket command_in(command_socket);
-        std::string result;
-        readStringUntilEOF(result, command_in);
+        int32_t length;
+        XID xid;
+        int64_t zxid;
+        Error err;
+        read(length);
+        read(xid);
+        read(zxid);
+        read(err);
 
-        auto read_version = parseFromString<uint8_t>(result);
-        keeper_api_version = static_cast<KeeperApiVersion>(read_version);
+        response.readImpl(*in);
+
+        keeper_api_version = static_cast<KeeperApiVersion>(response.api_version);
+        return true;
     }
     catch (const DB::Exception & e)
     {
         LOG_ERROR(&Poco::Logger::get("ZooKeeper"), "Failed to get version: {}", e.message());
+        return false;
     }
 }
 

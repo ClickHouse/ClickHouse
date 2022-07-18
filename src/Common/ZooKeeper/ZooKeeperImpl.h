@@ -254,8 +254,6 @@ private:
         const Nodes & node,
         Poco::Timespan connection_timeout);
 
-    Poco::Net::StreamSocket connectToNode(const Poco::Net::SocketAddress & node_address, Poco::Timespan connection_timeout, bool is_secure);
-
     void sendHandshake();
     void receiveHandshake();
 
@@ -279,7 +277,7 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
 
-    void initApiVersion(const Poco::Net::SocketAddress & node_address, Poco::Timespan connection_timeout, bool is_secure);
+    bool initApiVersion();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;

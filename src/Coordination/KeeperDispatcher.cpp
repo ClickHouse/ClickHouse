@@ -266,6 +266,20 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         if (!requests_queue->push(std::move(request_info)))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
+    else if (request->getOpNum() == Coordination::OpNum::ApiVersion)
+    {
+        auto response = std::make_shared<Coordination::ZooKeeperApiVersionResponse>();
+        response->api_version = Coordination::current_keeper_api_version;
+        LOG_DEBUG(log, "Returning api version {}", response->api_version);
+
+        KeeperStorage::ResponseForSession response_for_session;
+        response_for_session.session_id = session_id;
+        response_for_session.response = std::move(response);
+        {
+            if (!responses_queue.tryPush(std::move(response_for_session), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Could not push response with API version into responses queue");
+        }
+    }
     else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
