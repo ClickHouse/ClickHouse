@@ -1,6 +1,6 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#if defined __APPLE__
+#if defined OS_DARWIN
 #include <sys/mount.h>
 #else
 #include <sys/statfs.h>
@@ -12,7 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
-#if defined __APPLE__
+#if defined OS_DARWIN
 
 // dependencies
 #include <machine/endian.h>

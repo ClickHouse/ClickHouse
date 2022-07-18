@@ -9,7 +9,7 @@
 #include <cerrno>
 #include <memory>
 #include <iostream>
-#if defined __APPLE__
+#if defined OS_DARWIN
 
 // dependencies
 #include <machine/endian.h>
