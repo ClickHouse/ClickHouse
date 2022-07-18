@@ -18,7 +18,7 @@ namespace ApproximateNearestNeighbour
 {
 
 template<typename Dist>
-void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
+void AnnoyIndex<Dist>::serialize(WriteBuffer& ostr) const
 {
     assert(Base::_built);
     writeIntBinary(Base::_s, ostr);
@@ -32,8 +32,9 @@ void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
 }
 
 template<typename Dist>
-void AnnoyIndexSerialize<Dist>::deserialize(ReadBuffer& istr)
+void AnnoyIndex<Dist>::deserialize(ReadBuffer& istr)
 {
+    assert(!Base::_built);
     readIntBinary(Base::_s, istr);
     readIntBinary(Base::_n_items, istr);
     readIntBinary(Base::_n_nodes, istr);
@@ -53,7 +54,7 @@ void AnnoyIndexSerialize<Dist>::deserialize(ReadBuffer& istr)
 }
 
 template<typename Dist>
-uint64_t AnnoyIndexSerialize<Dist>::getNumOfDimensions() const
+uint64_t AnnoyIndex<Dist>::getNumOfDimensions() const
 {
     return Base::get_f();
 }
@@ -71,7 +72,7 @@ namespace ErrorCodes
 MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , index_base(nullptr)
+    , index(nullptr)
 {}
 
 MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(
@@ -80,48 +81,40 @@ MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(
     AnnoyIndexPtr index_base_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , index_base(std::move(index_base_))
+    , index(std::move(index_base_))
 {}
-
-bool MergeTreeIndexGranuleAnnoy::empty() const
-{
-    return !static_cast<bool>(index_base);
-}
 
 void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(index_base->getNumOfDimensions(), ostr); // write dimension
-    index_base->serialize(ostr);
+    /// number of dimensions is required in the constructor,
+    /// so it must be written and read separately from the other part
+    writeIntBinary(index->getNumOfDimensions(), ostr); // write dimension
+    index->serialize(ostr);
 }
 
 void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
     uint64_t dimension;
     readIntBinary(dimension, istr);
-    index_base = std::make_shared<AnnoyIndex>(dimension);
-    index_base->deserialize(istr);
+    index = std::make_shared<AnnoyIndex>(dimension);
+    index->deserialize(istr);
 }
 
 
 MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    uint64_t index_param_)
+    uint64_t number_of_trees_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , index_param(index_param_)
+    , number_of_trees(number_of_trees_)
 {}
-
-bool MergeTreeIndexAggregatorAnnoy::empty() const
-{
-    return !index_base || index_base->get_n_items() == 0;
-}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
 {
-    index_base->build(index_param);
-    auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
-    index_base = nullptr;
+    index->build(number_of_trees);
+    auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index);
+    index = nullptr;
     return granule;
 }
 
@@ -159,11 +152,11 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays should have same length");
             }
         }
-        index_base = std::make_shared<AnnoyIndex>(size);
+        index = std::make_shared<AnnoyIndex>(size);
 
         for (size_t current_row = 0; current_row < num_rows; ++current_row)
         {
-            index_base->add_item(index_base->get_n_items(), &array[offsets[current_row]]);
+            index->add_item(index->get_n_items(), &array[offsets[current_row]]);
         }
     }
     else
@@ -186,13 +179,13 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
             }
         }
         assert(!data.empty());
-        if (!index_base)
+        if (!index)
         {
-            index_base = std::make_shared<AnnoyIndex>(data[0].size());
+            index = std::make_shared<AnnoyIndex>(data[0].size());
         }
         for (const auto& item : data)
         {
-            index_base->add_item(index_base->get_n_items(), item.data());
+            index->add_item(index->get_n_items(), item.data());
         }
     }
 
@@ -220,10 +213,10 @@ bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    UInt64 limit = condition.getLimitCount();
+    UInt64 limit = condition.getLimit();
     UInt64 index_granularity = condition.getIndexGranularity();
-    std::optional<float> comp_dist
-        = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
+    std::optional<float> comp_dist = condition.getQueryType() == ANN::ANNQueryInformation::Type::Where ?
+     std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
 
     if (comp_dist && comp_dist.value() < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
@@ -235,7 +228,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
     {
         throw Exception("Granule has the wrong type", ErrorCodes::LOGICAL_ERROR);
     }
-    auto annoy = granule->index_base;
+    auto annoy = granule->index;
 
     if (condition.getNumOfDimensions() != annoy->getNumOfDimensions())
     {
@@ -243,40 +236,42 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
             + "does not match with the dimension in the index (" + toString(annoy->getNumOfDimensions()) + ")", ErrorCodes::INCORRECT_QUERY);
     }
 
-    std::vector<int32_t> items;
-    std::vector<float> dist;
-    items.reserve(limit);
-    dist.reserve(limit);
+    /// neighbors contain indexes of dots which were closest to target vector
+    std::vector<UInt64> neighbors;
+    std::vector<Float32> distances;
+    neighbors.reserve(limit);
+    distances.reserve(limit);
 
     int k_search = -1;
-    auto params_str = condition.getParamsStr();
+    String params_str = condition.getParamsStr();
     if (!params_str.empty())
     {
         try
         {
-            k_search = std::stoi(params_str);
+            /// k_search=... (algorithm will inspect up to search_k nodes which defaults to n_trees * n if not provided)
+            k_search = std::stoi(params_str.data() + 9);
         }
         catch (...)
         {
             throw Exception("Setting of the annoy index should be int", ErrorCodes::INCORRECT_QUERY);
         }
     }
-    annoy->get_nns_by_vector(target_vec.data(), 1, k_search, &items, &dist);
-    std::unordered_set<size_t> result;
-    for (size_t i = 0; i < items.size(); ++i)
+    annoy->get_nns_by_vector(target_vec.data(), limit, k_search, &neighbors, &distances);
+    std::unordered_set<size_t> granule_numbers;
+    for (size_t i = 0; i < neighbors.size(); ++i)
     {
-        if (comp_dist && dist[i] > comp_dist)
+        if (comp_dist && distances[i] > comp_dist)
         {
             continue;
         }
-        result.insert(items[i] / index_granularity);
+        granule_numbers.insert(neighbors[i] / index_granularity);
     }
 
     std::vector<size_t> result_vector;
-    result_vector.reserve(result.size());
-    for (auto range : result)
+    result_vector.reserve(granule_numbers.size());
+    for (auto granule_number : granule_numbers)
     {
-        result_vector.push_back(range);
+        result_vector.push_back(granule_number);
     }
 
     return result_vector;
@@ -290,7 +285,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorAnnoy>(index.name, index.sample_block, index_param);
+    return std::make_shared<MergeTreeIndexAggregatorAnnoy>(index.name, index.sample_block, number_of_trees);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
@@ -299,13 +294,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context);
 };
 
-MergeTreeIndexPtr AnnoyIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
     uint64_t param = index.arguments[0].get<uint64_t>();
     return std::make_shared<MergeTreeIndexAnnoy>(index, param);
 }
 
-void AnnoyIndexValidator(const IndexDescription & index, bool /* attach */)
+void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() != 1)
     {

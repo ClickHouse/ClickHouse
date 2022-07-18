@@ -1,3 +1,10 @@
+option(ENABLE_ANNOY "Enable Annoy index support" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_ANNOY)
+    message (STATUS "Not using annoy")
+    return()
+endif()
+
 set(ANNOY_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/annoy")
 set(ANNOY_SOURCE_DIR "${ANNOY_PROJECT_DIR}/src")
 
@@ -6,4 +13,4 @@ target_include_directories(_annoy SYSTEM PUBLIC ${ANNOY_SOURCE_DIR})
 set_target_properties(_annoy PROPERTIES LINKER_LANGUAGE CXX)
 
 add_library(ch_contrib::annoy ALIAS _annoy)
-
+target_compile_definitions(_annoy PUBLIC ENABLE_ANNOY)

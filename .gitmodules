@@ -261,7 +261,8 @@
 	url = https://github.com/zlib-ng/minizip-ng
 [submodule "contrib/annoy"]
 	path = contrib/annoy
-	url = https://github.com/Vector-Similarity-Search-for-ClickHouse/annoy.git
+	url = https://github.com/ClickHouse/annoy.git
+	branch = ClickHouse-master
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash.git

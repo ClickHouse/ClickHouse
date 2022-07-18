@@ -103,8 +103,8 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("hypothesis", hypothesisIndexValidator);
 
 #ifdef ENABLE_ANNOY
-    registerCreator("annoy", AnnoyIndexCreator);
-    registerValidator("annoy", AnnoyIndexValidator);
+    registerCreator("annoy", annoyIndexCreator);
+    registerValidator("annoy", annoyIndexValidator);
 #endif
 }
 

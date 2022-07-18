@@ -24,6 +24,8 @@ namespace ErrorCodes
 namespace
 {
 
+namespace ANN = ApproximateNearestNeighbour;
+
 template <typename Literal>
 void extractTargetVectorFromLiteral(ANN::ANNQueryInformation::Embedding & target, Literal literal)
 {
@@ -47,6 +49,15 @@ void extractTargetVectorFromLiteral(ANN::ANNQueryInformation::Embedding & target
     }
 }
 
+ANN::ANNQueryInformation::Metric castMetricFromStringToType(String metric_name)
+{
+    if (metric_name == "L2Distance")
+        return ANN::ANNQueryInformation::Metric::L2;
+    if (metric_name == "LpDistance")
+        return ANN::ANNQueryInformation::Metric::Lp;
+    return ANN::ANNQueryInformation::Metric::Unknown;
+}
+
 }
 
 namespace ApproximateNearestNeighbour
@@ -55,7 +66,7 @@ namespace ApproximateNearestNeighbour
 ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
                                  ContextPtr context) :
     block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-    ann_index_params{context->getSettings().get("ann_index_params").get<String>()},
+    ann_index_select_query_params{context->getSettings().get("ann_index_select_query_params").get<String>()},
     index_granularity{context->getMergeTreeSettings().get("index_granularity").get<UInt64>()},
     index_is_useful{checkQueryStructure(query_info)} {}
 
@@ -66,20 +77,20 @@ bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
         return true; // Query isn't supported
     }
     // If query is supported, check metrics for match
-    return !(metric_name == query_information->metric_name);
+    return !(castMetricFromStringToType(metric_name) == query_information->metric);
 }
 
 float ANNCondition::getComparisonDistanceForWhereQuery() const
 {
     if (index_is_useful && query_information.has_value()
-        && query_information->query_type == ANNQueryInformation::Type::WhereQuery)
+        && query_information->query_type == ANNQueryInformation::Type::Where)
     {
         return query_information->distance;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported method for this query type");
 }
 
-UInt64 ANNCondition::getLimitCount() const
+UInt64 ANNCondition::getLimit() const
 {
     if (index_is_useful && query_information.has_value())
     {
@@ -115,11 +126,11 @@ String ANNCondition::getColumnName() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
 }
 
-String ANNCondition::getMetricName() const
+ANNQueryInformation::Metric ANNCondition::getMetricType() const
 {
     if (index_is_useful && query_information.has_value())
     {
-        return query_information->metric_name;
+        return query_information->metric;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
 }
@@ -133,20 +144,11 @@ float ANNCondition::getPValueForLpDistance() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
 }
 
-bool ANNCondition::queryHasOrderByClause() const
+ANNQueryInformation::Type ANNCondition::getQueryType() const
 {
     if (index_is_useful && query_information.has_value())
     {
-        return query_information->query_type == ANNQueryInformation::Type::OrderByQuery;
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
-}
-
-bool ANNCondition::queryHasWhereClause() const
-{
-    if (index_is_useful && query_information.has_value())
-    {
-        return query_information->query_type == ANNQueryInformation::Type::WhereQuery;
+        return query_information->query_type;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
 }
@@ -465,10 +467,10 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & en
         return false;
     }
 
-    expr.metric_name = iter->func_name;
+    expr.metric = castMetricFromStringToType(iter->func_name);
     ++iter;
 
-    if (expr.metric_name == "LpDistance")
+    if (expr.metric == ANN::ANNQueryInformation::Metric::Lp)
     {
         if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
             iter->function != RPNElement::FUNCTION_INT_LITERAL)

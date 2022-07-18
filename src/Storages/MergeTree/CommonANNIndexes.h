@@ -31,15 +31,19 @@ struct ANNQueryInformation
 
     // Extracted data from valid query
     Embedding target;
-    String metric_name;
+    enum class Metric
+    {
+        Unknown,
+        L2,
+        Lp
+    } metric;
     String column_name;
     UInt64 limit;
 
     enum class Type
     {
-        Undefined,
-        OrderByQuery,
-        WhereQuery
+        OrderBy,
+        Where
     } query_type;
 
     float p_for_lp_dist = -1.0;
@@ -78,7 +82,7 @@ struct ANNQueryInformation
     * spaceDimension(which is targetVector's components count)
     * column
     * objects count from LIMIT clause(for both queries)
-    * settings str, if query has settings section with new 'ann_index_params' value,
+    * settings str, if query has settings section with new 'ann_index_select_query_params' value,
         than you can get the new value(empty by default) calling method getSettingsStr
     * queryHasOrderByClause and queryHasWhereClause return true if query matches the type
 
@@ -105,22 +109,20 @@ public:
 
     String getColumnName() const;
 
-    String getMetricName() const;
+    ANNQueryInformation::Metric getMetricType() const;
 
     // the P- value if the metric is 'LpDistance'
     float getPValueForLpDistance() const;
 
-    bool queryHasOrderByClause() const;
-
-    bool queryHasWhereClause() const;
+    ANNQueryInformation::Type getQueryType() const;
 
     UInt64 getIndexGranularity() const { return index_granularity; }
 
-    // length's value from LIMIT clause, nullopt if not any
-    UInt64 getLimitCount() const;
+    // length's value from LIMIT clause
+    UInt64 getLimit() const;
 
-    // value of 'ann_index_params' if have in SETTINGS clause, empty string otherwise
-    String getParamsStr() const { return ann_index_params; }
+    // value of 'ann_index_select_query_params' if have in SETTINGS clause, empty string otherwise
+    String getParamsStr() const { return ann_index_select_query_params; }
 
 private:
 
@@ -188,10 +190,6 @@ private:
     // Traverses the AST of ORDERBY section
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
-    // Checks that at least one rpn is matching for index
-    // New RPNs for other query types can be added here
-    bool matchAllRPNS();
-
     // Returns true and stores ANNExpr if the query has valid WHERE section
     static bool matchRPNWhere(RPN & rpn, ANNQueryInformation & expr);
 
@@ -213,7 +211,7 @@ private:
     std::optional<ANNQueryInformation> query_information;
 
     // Get from settings ANNIndex parameters
-    String ann_index_params;
+    String ann_index_select_query_params;
     UInt64 index_granularity;
     bool index_is_useful = false;
 };
@@ -226,7 +224,5 @@ public:
 };
 
 }
-
-namespace ANN = ApproximateNearestNeighbour;
 
 }
