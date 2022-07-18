@@ -431,7 +431,7 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
     second = std::move(types[1]);
 }
 
-void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings,  const std::unordered_set<const IDataType *> * numbers_parsed_from_json_strings)
+void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, const std::unordered_set<const IDataType *> * numbers_parsed_from_json_strings)
 {
     transformInferredTypesIfNeededImpl(types, settings, true, numbers_parsed_from_json_strings);
 }
