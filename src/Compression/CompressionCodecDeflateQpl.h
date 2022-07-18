@@ -69,7 +69,10 @@ public:
     ~HardwareCodecDeflateQpl();
     Int32 doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const;
 
-    ///Submit job request to the IAA hardware. IAA hardware will process decompression jobs automatically.
+    ///Submit job request to the IAA hardware and then busy waiting till it complete.
+    Int32 doDecompressDataSynchronous(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size);
+
+    ///Submit job request to the IAA hardware and return immediately. IAA hardware will process decompression jobs automatically.
     Int32 doDecompressDataAsynchronous(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size);
 
     /// Flush result for all previous requests which means busy waiting till all the jobs in "decomp_async_job_map" are finished.

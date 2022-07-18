@@ -171,6 +171,42 @@ Int32 HardwareCodecDeflateQpl::doCompressData(const char * source, UInt32 source
     }
 }
 
+Int32 HardwareCodecDeflateQpl::doDecompressDataSynchronous(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
+{
+    UInt32 job_id = 0;
+    qpl_job * job_ptr = nullptr;
+    UInt32 decompressed_size = 0;
+    if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(job_id)))
+    {
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataSynchronous->acquireJob fail, probably job pool exhausted)");
+        return RET_ERROR;
+    }
+
+    // Performing a decompression operation
+    job_ptr->op = qpl_op_decompress;
+    job_ptr->next_in_ptr = reinterpret_cast<uint8_t *>(const_cast<char *>(source));
+    job_ptr->next_out_ptr = reinterpret_cast<uint8_t *>(dest);
+    job_ptr->available_in = source_size;
+    job_ptr->available_out = uncompressed_size;
+    job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_LAST;
+
+    if (auto status = qpl_submit_job(job_ptr); status != QPL_STS_OK)
+    {
+        DeflateQplJobHWPool::instance().releaseJob(job_id);
+        LOG_WARNING(log, "DeflateQpl HW codec failed, falling back to SW codec.(Details: doDecompressDataSynchronous->qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
+        return RET_ERROR;
+    }
+    /// Busy waiting till job complete.
+    do
+    {
+        _tpause(1, __rdtsc() + 1000);
+    } while (qpl_check_job(job_ptr) == QPL_STS_BEING_PROCESSED);
+
+    decompressed_size = job_ptr->total_out;
+    DeflateQplJobHWPool::instance().releaseJob(job_id);
+    return decompressed_size;
+}
+
 Int32 HardwareCodecDeflateQpl::doDecompressDataAsynchronous(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
 {
     UInt32 job_id = 0;
@@ -337,10 +373,8 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
             Int32 res = HardwareCodecDeflateQpl::RET_ERROR;
             if (DeflateQplJobHWPool::instance().isJobPoolReady())
             {
-                res = hw_codec->doDecompressDataAsynchronous(source, source_size, dest, uncompressed_size);
-                if(res != HardwareCodecDeflateQpl::RET_ERROR)
-                    hw_codec->flushAsynchronousDecompressRequests();
-                else
+                res = hw_codec->doDecompressDataSynchronous(source, source_size, dest, uncompressed_size);
+                if(res == HardwareCodecDeflateQpl::RET_ERROR)
                     sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             }
             else
