@@ -2233,9 +2233,7 @@ Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variant
             *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows); \
     }
 
-    if (false)
-    {
-    } // NOLINT
+    if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
     else throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
