@@ -350,6 +350,7 @@ ZooKeeper::ZooKeeper(
     {
         // We failed to get the version, let's reconnect in case
         // the connection became faulty
+        socket.close();
         connect(nodes, connection_timeout);
     }
 
