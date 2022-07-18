@@ -5,6 +5,7 @@ import os
 import csv
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from ci_config import CI_CONFIG
+from pr_info import SKIP_SIMPLE_CHECK_LABEL
 
 RETRY = 5
 
@@ -75,7 +76,7 @@ def post_labels(gh, pr_info, labels_names):
         pull_request.add_to_labels(label)
 
 
-def fail_simple_check(gh, pr_info, description)
+def fail_simple_check(gh, pr_info, description):
     if SKIP_SIMPLE_CHECK_LABEL in pr_info.labels:
         return
     commit = get_commit(gh, pr_info.sha)
@@ -83,5 +84,18 @@ def fail_simple_check(gh, pr_info, description)
         context="Simple Check",
         description=description,
         state="failure",
+        target_url=GITHUB_RUN_URL,
+    )
+
+
+def create_simple_check(gh, pr_info):
+    commit = get_commit(gh, pr_info.sha)
+    for status in commit.get_statuses():
+        if "Simple Check" in status.context:
+            return
+    commit.create_status(
+        context="Simple Check",
+        description="Skipped",
+        state="success",
         target_url=GITHUB_RUN_URL,
     )
