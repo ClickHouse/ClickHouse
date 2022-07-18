@@ -119,11 +119,6 @@ On CentOS, RedHat run `sudo yum install cmake ninja-build`.
 
 If you use Arch or Gentoo, you probably know it yourself how to install CMake.
 
-For installing CMake and Ninja on Mac OS X first install Homebrew and then install everything else via brew:
-
-    /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-    brew install cmake ninja
-
 ## C++ Compiler {#c-compiler}
 
 Compilers Clang starting from version 11 is supported for building ClickHouse.
@@ -135,9 +130,6 @@ On Ubuntu/Debian you can use the automatic installation script (check [official 
 ```bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
-
-Mac OS X build is also supported. Just run `brew install llvm`
-
 
 ## The Building Process {#the-building-process}
 
