@@ -3,6 +3,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <Core/QueryProcessingStage.h>
 #include <Common/FieldVisitorToString.h>
@@ -439,38 +440,62 @@ public:
 
 using CollectSourceColumnsVisitor = CollectSourceColumnsMatcher::Visitor;
 
-InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(const ASTPtr & query_ptr_,
+InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
+    const ASTPtr & query_,
     const SelectQueryOptions & select_query_options_,
     ContextPtr context_)
     : WithContext(context_)
-    , query_ptr(query_ptr_)
+    , query(query_)
     , select_query_options(select_query_options_)
-    , query_tree_pass_manager(context_)
 {
-    addQueryTreePasses(query_tree_pass_manager);
-
-    if (auto * select_with_union_query_typed = query_ptr->as<ASTSelectWithUnionQuery>())
+    if (auto * select_with_union_query_typed = query->as<ASTSelectWithUnionQuery>())
     {
         auto & select_lists = select_with_union_query_typed->list_of_selects->as<ASTExpressionList &>();
 
         if (select_lists.children.size() == 1)
         {
-            query_ptr = select_lists.children[0];
+            query = select_lists.children[0];
         }
         else
         {
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "UNION is not supported");
         }
     }
-    else if (auto * select_query_typed = query_ptr->as<ASTSelectQuery>())
+    else if (auto * subquery = query->as<ASTSubquery>())
+    {
+        query = subquery->children[0];
+    }
+    else if (auto * select_query_typed = query_->as<ASTSelectQuery>())
     {
     }
     else
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Expected ASTSelectWithUnionQuery or ASTSelectQuery. Actual {}",
-            query_ptr_->formatForErrorMessage());
+            query->formatForErrorMessage());
     }
+
+    query_tree = buildQueryTree(query, context_);
+
+    QueryTreePassManager query_tree_pass_manager(context_);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.run(query_tree);
+}
+
+InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
+    const QueryTreeNodePtr & query_tree_,
+    const SelectQueryOptions & select_query_options_,
+    ContextPtr context_)
+    : WithContext(context_)
+    , query(query_tree_->toAST())
+    , query_tree(query_tree_)
+    , select_query_options(select_query_options_)
+{
+    if (query_tree_->getNodeType() != QueryTreeNodeType::QUERY)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Expected query node. Actual {}",
+            query_tree_->formatASTForErrorMessage());
+
 }
 
 Block InterpreterSelectQueryAnalyzer::getSampleBlock()
@@ -498,28 +523,22 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    auto query_tree_untyped = buildQueryTree(query_ptr, getContext());
-    auto query_tree = std::static_pointer_cast<QueryNode>(query_tree_untyped);
-
-    auto * table_node = query_tree->getFrom()->as<TableNode>();
-    if (!table_node)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only single table is supported");
-
-    query_tree_pass_manager.run(query_tree);
+    auto & query_tree_typed = query_tree->as<QueryNode &>();
 
     ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>();
     ColumnsWithTypeAndName inputs;
 
     CollectSourceColumnsVisitor::Data data;
     CollectSourceColumnsVisitor collect_source_columns_visitor(data);
-    collect_source_columns_visitor.visit(query_tree_untyped);
+    collect_source_columns_visitor.visit(query_tree);
+
     NameSet source_columns_set = std::move(data.source_columns_set);
 
     // std::cout << "DAG before " << action_dag.get() << " nodes " << action_dag->getNodes().size() << std::endl;
     // std::cout << action_dag->dumpDAG() << std::endl;
 
     QueryTreeActionsVisitor visitor(action_dag, getContext());
-    auto projection_action_dag_nodes = visitor.visit(query_tree->getProjectionNode());
+    auto projection_action_dag_nodes = visitor.visit(query_tree_typed.getProjectionNode());
     size_t projection_action_dag_nodes_size = projection_action_dag_nodes.size();
 
     // std::cout << "Projection action dag nodes size " << projection_action_dag_nodes_size << std::endl;
@@ -531,7 +550,7 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
     // std::cout << "DAG after " << action_dag.get() << " nodes " << action_dag->getNodes().size() << std::endl;
     // std::cout << action_dag->dumpDAG() << std::endl;
 
-    auto & projection_nodes = query_tree->getProjection().getNodes();
+    auto & projection_nodes = query_tree_typed.getProjection().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
 
     if (projection_nodes_size != projection_action_dag_nodes_size)
@@ -576,29 +595,42 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
     size_t max_streams = current_context->getSettingsRef().max_threads;
 
     SelectQueryInfo query_info;
-    query_info.original_query = query_ptr;
-    query_info.query = query_ptr;
+    query_info.original_query = query;
+    query_info.query = query;
 
-    auto from_stage = table_node->getStorage()->getQueryProcessingStage(
-        current_context, select_query_options.to_stage, table_node->getStorageSnapshot(), query_info);
-
-    Names column_names(source_columns_set.begin(), source_columns_set.end());
-
-    if (column_names.empty() && table_node->getStorage()->getName() == "SystemOne")
-        column_names.push_back("dummy");
-
-    if (!column_names.empty())
-        table_node->getStorage()->read(
-            query_plan, column_names, table_node->getStorageSnapshot(), query_info, getContext(), from_stage, max_block_size, max_streams);
-
-    /// Create step which reads from empty source if storage has no data.
-    if (!query_plan.isInitialized())
+    if (auto * table_node = query_tree_typed.getFrom()->as<TableNode>())
     {
-        auto source_header = table_node->getStorageSnapshot()->getSampleBlockForColumns(column_names);
-        Pipe pipe(std::make_shared<NullSource>(source_header));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource");
-        query_plan.addStep(std::move(read_from_pipe));
+        auto from_stage = table_node->getStorage()->getQueryProcessingStage(
+            current_context, select_query_options.to_stage, table_node->getStorageSnapshot(), query_info);
+
+        Names column_names(source_columns_set.begin(), source_columns_set.end());
+
+        if (column_names.empty() && table_node->getStorage()->getName() == "SystemOne")
+            column_names.push_back("dummy");
+
+        if (!column_names.empty())
+            table_node->getStorage()->read(
+                query_plan, column_names, table_node->getStorageSnapshot(), query_info, getContext(), from_stage, max_block_size, max_streams);
+
+        /// Create step which reads from empty source if storage has no data.
+        if (!query_plan.isInitialized())
+        {
+            auto source_header = table_node->getStorageSnapshot()->getSampleBlockForColumns(column_names);
+            Pipe pipe(std::make_shared<NullSource>(source_header));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_from_pipe));
+        }
+    }
+    else if (auto * query_node = query_tree_typed.getFrom()->as<QueryNode>())
+    {
+        InterpreterSelectQueryAnalyzer interpeter(query_tree_typed.getFrom(), select_query_options, getContext());
+        interpeter.initializeQueryPlanIfNeeded();
+        query_plan = std::move(interpeter.query_plan);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only single table or query in FROM section are supported");
     }
 
     auto projection_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), action_dag);

@@ -13,10 +13,17 @@ namespace DB
 class InterpreterSelectQueryAnalyzer : public IInterpreter, public WithContext
 {
 public:
+    /// Initialize interpreter with query AST
     InterpreterSelectQueryAnalyzer(
-        const ASTPtr & query_ptr_,
+        const ASTPtr & query_,
         const SelectQueryOptions & select_query_options_,
-        ContextPtr context);
+        ContextPtr context_);
+
+    /// Initialize interpreter with query tree after query analysis and others phases
+    InterpreterSelectQueryAnalyzer(
+        const QueryTreeNodePtr & query_tree_,
+        const SelectQueryOptions & select_query_options_,
+        ContextPtr context_);
 
     Block getSampleBlock();
 
@@ -27,10 +34,10 @@ public:
 private:
     void initializeQueryPlanIfNeeded();
 
-    ASTPtr query_ptr;
+    ASTPtr query;
+    QueryTreeNodePtr query_tree;
     QueryPlan query_plan;
     SelectQueryOptions select_query_options;
-    QueryTreePassManager query_tree_pass_manager;
 };
 
 }
