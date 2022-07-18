@@ -32,11 +32,6 @@ TEST(OperatorsManipTest, EscapingTest)
     checkString(sv1, escape, "Hello \\'world\\'");
     std::string_view sv2 = s2;
     checkString(sv2, escape, "Hello \\\\world\\\\"); // NOLINT
-
-    StringRef sr1 = s1;
-    checkString(sr1, escape, "Hello \\'world\\'");
-    StringRef sr2 = s2;
-    checkString(sr2, escape, "Hello \\\\world\\\\"); // NOLINT
 }
 
 TEST(OperatorsManipTest, QuouteTest)
