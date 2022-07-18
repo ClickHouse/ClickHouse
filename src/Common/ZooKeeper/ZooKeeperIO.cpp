@@ -49,12 +49,6 @@ void write(const std::string & s, WriteBuffer & out)
     out.write(s.data(), s.size());
 }
 
-void write(std::string_view s, WriteBuffer & out)
-{
-    write(static_cast<int32_t>(s.size()), out);
-    out.write(s.data(), s.size());
-}
-
 void write(const ACL & acl, WriteBuffer & out)
 {
     write(acl.permissions, out);

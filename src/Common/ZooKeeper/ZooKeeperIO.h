@@ -26,7 +26,6 @@ void write(uint8_t x, WriteBuffer & out);
 void write(OpNum x, WriteBuffer & out);
 void write(bool x, WriteBuffer & out);
 void write(const std::string & s, WriteBuffer & out);
-void write(std::string_view s, WriteBuffer & out);
 void write(const ACL & acl, WriteBuffer & out);
 void write(const Stat & stat, WriteBuffer & out);
 void write(const Error & x, WriteBuffer & out);

@@ -35,7 +35,6 @@ enum class OpNum : int32_t
 
     // CH Keeper specific operations
     FilteredList = 500,
-    ApiVersion = 501,
 
     SessionID = 997, /// Special internal request
 };

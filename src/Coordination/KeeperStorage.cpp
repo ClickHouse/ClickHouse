@@ -843,6 +843,9 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     {
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
+        if (request.path == Coordination::keeper_api_version_path)
+            return {};
+
         if (!storage.uncommitted_state.getNode(request.path))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
 
@@ -863,6 +866,16 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
                 response.error = result;
                 return response_ptr;
             }
+        }
+
+        // We cannot store the node because the result should be connected to the binary itself
+        // this way we avoid incorrect results when we read a snapshot from older Keeper that can have
+        // lower API version
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            response.data = std::to_string(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
         }
 
         auto & container = storage.container;
@@ -910,6 +923,12 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperRemoveRequest & request = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*zk_request);
 
         std::vector<KeeperStorage::Delta> new_deltas;
+
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to delete an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         const auto update_parent_pzxid = [&]()
         {
@@ -1056,6 +1075,12 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*zk_request);
 
         std::vector<KeeperStorage::Delta> new_deltas;
+
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         if (!storage.uncommitted_state.getNode(request.path))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
@@ -1317,6 +1342,12 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
     preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & digest) const override
     {
         Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
+
+        if (request.path == Coordination::keeper_api_version_path)
+        {
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         auto & uncommitted_state = storage.uncommitted_state;
         if (!uncommitted_state.getNode(request.path))

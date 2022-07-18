@@ -535,28 +535,6 @@ struct ZooKeeperSessionIDResponse final : ZooKeeperResponse
     Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
 };
 
-struct ZooKeeperApiVersionRequest final : ZooKeeperRequest
-{
-    Coordination::OpNum getOpNum() const override { return OpNum::ApiVersion; }
-    String getPath() const override { return {}; }
-    void writeImpl(WriteBuffer &) const override {}
-    void readImpl(ReadBuffer &) override {}
-
-    Coordination::ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return false; }
-};
-
-struct ZooKeeperApiVersionResponse final : ZooKeeperResponse
-{
-    int64_t api_version;
-
-    void readImpl(ReadBuffer & in) override;
-
-    void writeImpl(WriteBuffer & out) const override;
-
-    Coordination::OpNum getOpNum() const override { return OpNum::ApiVersion; }
-};
-
 class ZooKeeperRequestFactory final : private boost::noncopyable
 {
 
