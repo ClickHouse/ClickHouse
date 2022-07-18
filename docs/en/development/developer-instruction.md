@@ -121,7 +121,7 @@ If you use Arch or Gentoo, you probably know it yourself how to install CMake.
 
 ## C++ Compiler {#c-compiler}
 
-Compilers Clang starting from version 11 is supported for building ClickHouse.
+Compilers Clang starting from version 12 is supported for building ClickHouse.
 
 Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
