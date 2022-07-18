@@ -174,6 +174,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             std::sregex_token_iterator());
 
         if (data_settings->allow_remote_fs_zero_copy_replication &&
+            /// In memory data part does not have metadata yet.
+            !isInMemoryPart(part) &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk_type = part->data_part_storage->getDiskType();
@@ -347,7 +349,7 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
     /// Serialized metadatadatas with zero ref counts.
     auto metadatas = data_part_storage_on_disk->getSerializedMetadata(paths);
 
-    String part_id = part->getUniqueId();
+    String part_id = data_part_storage_on_disk->getUniqueId();
     writeStringBinary(part_id, out);
 
     writeBinary(checksums.files.size(), out);
@@ -796,7 +798,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getPartDirectory());
+        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getRelativePath());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
@@ -869,12 +871,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
         part_relative_path,
         part_dir);
 
-    if (data_part_storage_builder->exists())
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists.", data_part_storage_builder->getFullPath());
+    if (data_part_storage->exists())
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists.", data_part_storage->getFullPath());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
-    data_part_storage_builder->createDirectories();
+    volume->getDisk()->createDirectories(data_part_storage->getFullPath());
 
     size_t files;
     readBinary(files, in);
@@ -887,7 +889,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        String metadata_file = fs::path(data_part_storage_builder->getFullPath()) / file_name;
+        String metadata_file = fs::path(data_part_storage->getFullPath()) / file_name;
 
         {
             auto file_out = std::make_unique<WriteBufferFromFile>(metadata_file, DBMS_DEFAULT_BUFFER_SIZE, -1, 0666, nullptr, 0);
@@ -902,6 +904,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
                 /// performing a poll with a not very large timeout.
                 /// And now we check it only between read chunks (in the `copyData` function).
                 data_part_storage_builder->removeSharedRecursive(true);
+                data_part_storage_builder->commit();
                 throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
             }
 
@@ -918,6 +921,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     }
 
     assertEOF(in);
+
+    data_part_storage_builder->commit();
 
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, data_part_storage);
     new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);

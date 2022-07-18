@@ -5,19 +5,24 @@
 
 namespace DB
 {
-using DatabaseAndTableName = std::pair<String, String>;
+class Exception;
 
-/// Keeps information about files contained in a backup.
+/// Replicas use this class to coordinate what they're reading from a backup while executing RESTORE ON CLUSTER.
+/// There are two implementation of this interface: RestoreCoordinationLocal and RestoreCoordinationRemote.
+/// RestoreCoordinationLocal is used while executing RESTORE without ON CLUSTER and performs coordination in memory.
+/// RestoreCoordinationRemote is used while executing RESTORE with ON CLUSTER and performs coordination via ZooKeeper.
 class IRestoreCoordination
 {
 public:
     virtual ~IRestoreCoordination() = default;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) = 0;
+    /// Sets the current status and waits for other hosts to come to this status too.
+    virtual void setStatus(const String & current_host, const String & new_status, const String & message) = 0;
+    virtual void setErrorStatus(const String & current_host, const Exception & exception) = 0;
+    virtual Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) = 0;
+    virtual Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) = 0;
 
-    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
-    virtual void syncStageError(const String & current_host, const String & error_message) = 0;
+    static constexpr const char * kErrorStatus = "error";
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;

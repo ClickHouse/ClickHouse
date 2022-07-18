@@ -7,7 +7,7 @@
 #include <array>
 #include <optional>
 #include <functional>
-#include <signal.h>
+#include <csignal>
 
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE

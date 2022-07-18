@@ -29,12 +29,6 @@ $CLICKHOUSE_CLIENT -nm -q "
     INSERT INTO in_order_agg_01710 SELECT 1, number%2, number%4, number FROM numbers(100000);
 "
 
-function random_str()
-{
-    local n=$1 && shift
-    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
-}
-
 function run_query()
 {
     local query=$1 && shift
