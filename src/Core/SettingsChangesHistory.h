@@ -76,7 +76,7 @@ namespace SettingsChangesHistory
 /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
 /// in this version. Settings changes is a vector of structs {setting_name, previous_value, new_value}
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
-std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
+static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
         {"22.7", {{"cross_to_inner_join_rewrite", 1, 2, "Force rewrite comma join to inner"},
                   {"enable_positional_arguments", false, true, "Enable positional arguments feature by default"}}},
