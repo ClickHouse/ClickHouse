@@ -9,7 +9,7 @@ SET allow_experimental_lightweight_delete_with_row_exists = 1;
 SET allow_experimental_lightweight_delete = 0;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;
-SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
+SELECT 'Count', count() FROM lwd_test;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
@@ -18,7 +18,7 @@ SELECT 'Delete 300K rows using lightweight DELETE';
 DELETE FROM lwd_test WHERE id < 300000;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;
-SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
+SELECT 'Count', count() FROM lwd_test;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
@@ -26,7 +26,7 @@ SELECT 'Force merge to cleanup deleted rows';
 OPTIMIZE TABLE lwd_test FINAL;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;
-SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
+SELECT 'Count', count() FROM lwd_test;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
@@ -34,7 +34,7 @@ SELECT 'Delete 300K more rows using lightweight DELETE';
 DELETE FROM lwd_test WHERE id < 600000;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;
-SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
+SELECT 'Count', count() FROM lwd_test;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
@@ -42,7 +42,7 @@ SELECT 'Do UPDATE mutation';
 ALTER TABLE lwd_test UPDATE value = 'v' WHERE id % 2 == 0;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;
-SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
+SELECT 'Count', count() FROM lwd_test;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
@@ -50,7 +50,7 @@ SELECT 'Force merge to cleanup deleted rows';
 OPTIMIZE TABLE lwd_test FINAL;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;
-SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
+SELECT 'Count', count() FROM lwd_test;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
