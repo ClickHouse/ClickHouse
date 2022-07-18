@@ -7,14 +7,20 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
+main_configs = [
+    "configs/remote_servers.xml",
+    "configs/replicated_access_storage.xml",
+    "configs/backups_disk.xml",
+]
+
+user_configs = [
+    "configs/allow_experimental_database_replicated.xml",
+]
+
 node1 = cluster.add_instance(
     "node1",
-    main_configs=[
-        "configs/remote_servers.xml",
-        "configs/replicated_access_storage.xml",
-        "configs/backups_disk.xml",
-    ],
-    user_configs=["configs/allow_experimental_database_replicated.xml"],
+    main_configs=main_configs,
+    user_configs=user_configs,
     external_dirs=["/backups/"],
     macros={"replica": "node1", "shard": "shard1"},
     with_zookeeper=True,
@@ -22,12 +28,8 @@ node1 = cluster.add_instance(
 
 node2 = cluster.add_instance(
     "node2",
-    main_configs=[
-        "configs/remote_servers.xml",
-        "configs/replicated_access_storage.xml",
-        "configs/backups_disk.xml",
-    ],
-    user_configs=["configs/allow_experimental_database_replicated.xml"],
+    main_configs=main_configs,
+    user_configs=user_configs,
     external_dirs=["/backups/"],
     macros={"replica": "node2", "shard": "shard1"},
     with_zookeeper=True,
@@ -36,12 +38,8 @@ node2 = cluster.add_instance(
 
 node3 = cluster.add_instance(
     "node3",
-    main_configs=[
-        "configs/remote_servers.xml",
-        "configs/replicated_access_storage.xml",
-        "configs/backups_disk.xml",
-    ],
-    user_configs=["configs/allow_experimental_database_replicated.xml"],
+    main_configs=main_configs,
+    user_configs=user_configs,
     external_dirs=["/backups/"],
     macros={"replica": "node3", "shard": "shard1"},
     with_zookeeper=True,
@@ -436,6 +434,7 @@ def test_required_privileges():
     node1.query("INSERT INTO tbl VALUES (100)")
 
     node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
 
     backup_name = new_backup_name()
     expected_error = "necessary to have grant BACKUP ON default.tbl"
@@ -480,6 +479,7 @@ def test_system_users():
 
     backup_name = new_backup_name()
     node1.query("CREATE USER u2 SETTINGS allow_backup=false")
+    node1.query("GRANT CLUSTER ON *.* TO u2")
 
     expected_error = "necessary to have grant BACKUP ON system.users"
     assert expected_error in node1.query_and_get_error(

@@ -2971,7 +2971,12 @@ class ClickHouseInstance:
         ignore_error=False,
         query_id=None,
     ):
-        logging.debug("Executing query %s on %s", sql, self.name)
+        sql_for_log = ""
+        if len(sql) > 1000:
+            sql_for_log = sql[:1000]
+        else:
+            sql_for_log = sql
+        logging.debug("Executing query %s on %s", sql_for_log, self.name)
         return self.client.query(
             sql,
             stdin=stdin,
