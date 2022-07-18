@@ -3489,7 +3489,11 @@ namespace
             case FieldTypeId::TYPE_MESSAGE:
             {
                 const auto * message_descriptor = field_descriptor->message_type();
-                if (message_descriptor->field_count() == 1)
+                if (message_descriptor->field_count() == 0)
+                {
+                    throw Exception("Empty messages are not supported", ErrorCodes::BAD_ARGUMENTS);
+                }
+                else if (message_descriptor->field_count() == 1)
                 {
                     const auto * nested_field_descriptor = message_descriptor->field(0);
                     auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor);
