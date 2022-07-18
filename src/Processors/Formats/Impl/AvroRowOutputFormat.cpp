@@ -179,14 +179,14 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             if (traits->isStringAsString(column_name))
                 return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_ref & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
                         encoder.encodeString(std::string(s));
                     }
                 };
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toString();
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
                         encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
                     }
                 };
@@ -343,7 +343,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
 
             auto keys_serializer = [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const StringRef & s = column.getDataAt(row_num).toView();
+                const std::string_view & s = column.getDataAt(row_num).toView();
                 encoder.encodeString(std::string(s));
             };
 
