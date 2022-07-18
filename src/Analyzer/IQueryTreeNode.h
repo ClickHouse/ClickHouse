@@ -68,7 +68,7 @@ public:
       */
     virtual String getName() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method is not supported for {} query node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getName is not supported for {} query node", getNodeTypeName());
     }
 
     /** Get result type of query tree node that can be used as part of expression.
@@ -77,7 +77,7 @@ public:
       */
     virtual DataTypePtr getResultType() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method is not supported for {} query node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
     /// Dump query tree to string

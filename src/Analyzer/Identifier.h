@@ -21,14 +21,28 @@ public:
 
     /// Create Identifier from parts
     explicit Identifier(const std::vector<std::string> & parts_)
-        : full_name(boost::algorithm::join(parts_, "."))
-        , parts(parts_)
+        : parts(parts_)
+        , full_name(boost::algorithm::join(parts_, "."))
     {
     }
 
-    /// Create Identifier from full_name. Full_name is splitted with '.' as separator.
+        /// Create Identifier from parts
+    explicit Identifier(std::vector<std::string> && parts_)
+        : parts(std::move(parts_))
+        , full_name(boost::algorithm::join(parts_, "."))
+    {
+    }
+
+    /// Create Identifier from full name, full name is splitted with '.' as separator.
     explicit Identifier(const std::string & full_name_)
         : full_name(full_name_)
+    {
+        boost::split(parts, full_name, [](char c) { return c == '.'; });
+    }
+
+    /// Create Identifier from full name, full name is splitted with '.' as separator.
+    explicit Identifier(std::string && full_name_)
+        : full_name(std::move(full_name_))
     {
         boost::split(parts, full_name, [](char c) { return c == '.'; });
     }
@@ -151,8 +165,8 @@ public:
     }
 
 private:
-    std::string full_name;
     std::vector<std::string> parts;
+    std::string full_name;
 };
 
 inline bool operator==(const Identifier & lhs, const Identifier & rhs)

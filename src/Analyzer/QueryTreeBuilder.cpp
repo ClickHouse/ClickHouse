@@ -62,9 +62,9 @@ public:
     }
 
 private:
-    QueryTreeNodePtr getSelectWithUnionExpression(const ASTPtr & select_with_union_query, bool is_scalar_query) const;
+    QueryTreeNodePtr getSelectWithUnionExpression(const ASTPtr & select_with_union_query, bool is_subquery, const std::string & cte_name) const;
 
-    QueryTreeNodePtr getSelectExpression(const ASTPtr & select_query, bool is_scalar_query) const;
+    QueryTreeNodePtr getSelectExpression(const ASTPtr & select_query, bool is_subquery, const std::string & cte_name) const;
 
     QueryTreeNodePtr getExpressionList(const ASTPtr & expression_list) const;
 
@@ -73,8 +73,6 @@ private:
     QueryTreeNodePtr getFromNode(const ASTPtr & tables_in_select_query) const;
 
     ColumnTransformersNodes getColumnTransformers(const ASTPtr & matcher_expression, size_t start_child_index) const;
-
-    StoragePtr resolveStorage(const Identifier & storage_identifier) const;
 
     ASTPtr query;
     QueryTreeNodePtr query_tree_node;
@@ -86,23 +84,23 @@ QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_, ContextPtr context_)
     , query(query_->clone())
 {
     if (query->as<ASTSelectWithUnionQuery>())
-        query_tree_node = getSelectWithUnionExpression(query, false /*is_scalar_query*/);
+        query_tree_node = getSelectWithUnionExpression(query, false /*is_subquery*/, {} /*cte_name*/);
     else if (query->as<ASTSelectQuery>())
-        query_tree_node = getSelectExpression(query, false /*is_scalar_query*/);
+        query_tree_node = getSelectExpression(query, false /*is_subquery*/, {} /*cte_name*/);
     else if (query->as<ASTExpressionList>())
         query_tree_node = getExpressionList(query);
     else
         query_tree_node = getExpression(query);
 }
 
-QueryTreeNodePtr QueryTreeBuilder::getSelectWithUnionExpression(const ASTPtr & select_with_union_query, bool is_scalar_query) const
+QueryTreeNodePtr QueryTreeBuilder::getSelectWithUnionExpression(const ASTPtr & select_with_union_query, bool is_subquery, const std::string & cte_name) const
 {
     auto & select_with_union_query_typed = select_with_union_query->as<ASTSelectWithUnionQuery &>();
     auto & select_lists = select_with_union_query_typed.list_of_selects->as<ASTExpressionList &>();
 
     if (select_lists.children.size() == 1)
     {
-        return getSelectExpression(select_with_union_query->children[0]->children[0], is_scalar_query);
+        return getSelectExpression(select_with_union_query->children[0]->children[0], is_subquery, cte_name);
     }
     else
     {
@@ -125,10 +123,15 @@ QueryTreeNodePtr QueryTreeBuilder::getSelectWithUnionExpression(const ASTPtr & s
     }
 }
 
-QueryTreeNodePtr QueryTreeBuilder::getSelectExpression(const ASTPtr & select_query, bool) const
+QueryTreeNodePtr QueryTreeBuilder::getSelectExpression(const ASTPtr & select_query, bool is_subquery, const std::string & cte_name) const
 {
     const auto & select_query_typed = select_query->as<ASTSelectQuery &>();
     auto current_query_tree = std::make_shared<QueryNode>();
+
+    current_query_tree->setIsSubquery(is_subquery);
+    current_query_tree->setIsCTE(!cte_name.empty());
+    current_query_tree->setCTEName(cte_name);
+
     current_query_tree->getFrom() = getFromNode(select_query_typed.tables());
     current_query_tree->setOriginalAST(select_query);
 
@@ -281,7 +284,15 @@ QueryTreeNodePtr QueryTreeBuilder::getExpression(const ASTPtr & expression) cons
     else if (const auto * subquery = expression->as<ASTSubquery>())
     {
         auto subquery_query = subquery->children[0];
-        auto query_node = getSelectWithUnionExpression(subquery_query, false);
+        auto query_node = getSelectWithUnionExpression(subquery_query, true /*is_subquery*/, {} /*cte_name*/);
+
+        result = query_node;
+    }
+    else if (const auto * with_element = expression->as<ASTWithElement>())
+    {
+        auto with_element_subquery = with_element->subquery->as<ASTSubquery &>().children.at(0);
+        auto query_node = getSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, with_element->name /*cte_name*/);
+
         result = query_node;
     }
     else if (const auto * columns_regexp_matcher = expression->as<ASTColumnsRegexpMatcher>())
@@ -344,8 +355,7 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
           * SELECT * FROM system.one;
           */
         Identifier storage_identifier("system.one");
-        auto table = resolveStorage(storage_identifier);
-        return std::make_shared<TableNode>(table, getContext());
+        return std::make_shared<IdentifierNode>(storage_identifier);
     }
 
     auto & tables = tables_in_select_query->as<ASTTablesInSelectQuery &>();
@@ -358,32 +368,31 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
 
         if (table_element.table_expression)
         {
-            auto * table_expression = table_element.table_expression->as<ASTTableExpression>();
+            auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
 
-            if (table_expression->database_and_table_name)
+            if (table_expression.database_and_table_name)
             {
-                /// Add CTE support
-                auto & table_identifier_typed = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
+                auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);
-                auto table = resolveStorage(storage_identifier);
-                auto node = std::make_shared<TableNode>(table, getContext());
+                auto node = std::make_shared<IdentifierNode>(storage_identifier);
 
                 node->setAlias(table_identifier_typed.tryGetAlias());
                 node->setOriginalAST(table_element.table_expression);
 
                 return node;
             }
-            // else if (auto * subquery_expression = table_expression->subquery->as<ASTSubquery>())
-            // {
-            //     const auto & select_with_union_query = subquery_expression->children[0];
-            //     auto expression = getSelectWithUnionExpression(select_with_union_query, false /*scalar query*/);
-            //     expression->setAlias(subquery_expression->tryGetAlias());
+            else if (table_expression.subquery)
+            {
+                auto & subquery_expression = table_expression.subquery->as<ASTSubquery &>();
+                const auto & select_with_union_query = subquery_expression.children[0];
 
-            //     if (auto * select_expression = expression->as<SelectExpression>())
-            //         scope->addInnerScope(select_expression->getScope());
+                auto node = getSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/);
 
-            //     table_expressions.emplace_back(std::move(expression));
-            // }
+                node->setAlias(subquery_expression.tryGetAlias());
+                node->setOriginalAST(select_with_union_query);
+
+                return node;
+            }
             else
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only table is supported");
@@ -503,42 +512,6 @@ ColumnTransformersNodes QueryTreeBuilder::getColumnTransformers(const ASTPtr & m
     }
 
     return column_transformers;
-}
-
-StoragePtr QueryTreeBuilder::resolveStorage(const Identifier & storage_identifier) const
-{
-    size_t parts_size = storage_identifier.getPartsSize();
-    if (parts_size < 1 || parts_size > 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table identifier should consist of 1 or 2 parts");
-
-    std::string database_name;
-    std::string table_name;
-
-    if (storage_identifier.isCompound())
-    {
-        database_name = storage_identifier[0];
-        table_name = storage_identifier[1];
-    }
-    else
-    {
-        table_name = storage_identifier[0];
-    }
-
-    auto current_context = getContext();
-    if (database_name.empty())
-        database_name = current_context->getCurrentDatabase();
-
-    auto & database_catalog = DatabaseCatalog::instance();
-    auto database = database_catalog.tryGetDatabase(database_name);
-    if (!database)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exists", database_name);
-
-    auto table = database->tryGetTable(table_name, current_context);
-
-    if (!table)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exists", table_name);
-
-    return table;
 }
 
 QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context)

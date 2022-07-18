@@ -8,7 +8,6 @@ namespace DB
 {
 
 /** Query node represents query in query tree.
-  * TODO: CTE.
   */
 class QueryNode;
 using QueryNodePtr = std::shared_ptr<QueryNode>;
@@ -16,7 +15,37 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class QueryNode final : public IQueryTreeNode
 {
 public:
-    QueryNode();
+    explicit QueryNode();
+
+    bool isSubquery() const
+    {
+        return is_subquery;
+    }
+
+    void setIsSubquery(bool is_subquery_value)
+    {
+        is_subquery = is_subquery_value;
+    }
+
+    bool isCTE() const
+    {
+        return is_cte;
+    }
+
+    void setIsCTE(bool is_cte_value)
+    {
+        is_cte = is_cte_value;
+    }
+
+    const std::string & getCTEName() const
+    {
+        return cte_name;
+    }
+
+    void setCTEName(std::string cte_name_value)
+    {
+        cte_name = std::move(cte_name_value);
+    }
 
     const ListNode & getWith() const
     {
@@ -105,6 +134,10 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
+    bool is_subquery = false;
+    bool is_cte = false;
+    std::string cte_name;
+
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;
     static constexpr size_t from_child_index = 2;
