@@ -56,7 +56,7 @@ void ProgressIndication::resetProgress()
     write_progress_on_update = false;
     {
         std::lock_guard lock(profile_events_mutex);
-        cpu_usage_meter.reset(clock_gettime_ns());
+        cpu_usage_meter.reset(static_cast<double>(clock_gettime_ns()));
         thread_data.clear();
     }
 }
@@ -93,7 +93,7 @@ void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread
         total_cpu_ns += aggregateCPUUsageNs(new_host_map.second);
         thread_data[new_host_map.first] = std::move(new_host_map.second);
     }
-    cpu_usage_meter.add(clock_gettime_ns(), total_cpu_ns);
+    cpu_usage_meter.add(static_cast<double>(clock_gettime_ns()), total_cpu_ns);
 }
 
 size_t ProgressIndication::getUsedThreadsCount() const

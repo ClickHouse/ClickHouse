@@ -2,9 +2,14 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+
+#include <Common/ExponentiallySmoothedCounter.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cassert>
+#include <numbers>
+
 
 namespace DB
 {
@@ -12,42 +17,23 @@ namespace DB
 /// Event count measurement with exponential smoothing intended for computing time derivatives
 class EventRateMeter {
 public:
-    explicit EventRateMeter(UInt64 period_, UInt64 resolution = 1000)
-        : period(std::max(period_, 1ul))
-        , step(std::max(period / resolution, 1ul))
-        , decay(1.0 - 1.0 / resolution)
-    {}
+    explicit EventRateMeter(double now, double period_)
+        : period(period_)
+        , half_decay_time(period * std::numbers::ln2) // for `ExponentiallySmoothedAverage::sumWeights()` to be equal to `1/period`
+    {
+        reset(now);
+    }
 
     /// Add `count` events happened at `now` instant.
     /// Previous events that are older than `period` from `now` will be forgotten
     /// in a way to keep average event rate the same, using exponential smoothing.
     /// NOTE: Adding events into distant past (further than `period`) must be avoided.
-    void add(UInt64 now, UInt64 count = 1)
+    void add(double now, double count)
     {
-        if (unlikely(end == 0))
-        {
-            // Initialization during the first call
-            if (start == 0)
-                start = now;
-            end = start + period;
-        }
-        else if (now > end)
-        {
-            // Compute number of steps we have to move for `now <= end` to became true
-            UInt64 steps = (now - end + step - 1) / step;
-            end += steps * step;
-            assert(now <= end);
-
-            // Forget old events, assuming all events are distributed evenly throughout whole `period`.
-            // This assumption leads to exponential decay in case no new events will come.
-            if (steps == 1)
-                events *= decay;
-            else
-                events *= std::pow(decay, steps);
-        }
-
-        // Add new events
-        events += count;
+        if (now - period <= start) // precise counting mode
+            events = ExponentiallySmoothedAverage(events.value + count, now);
+        else // exponential smoothing mode
+            events.add(count, now, half_decay_time);
     }
 
     /// Compute average event rate thoughout `[now - period, now]` period.
@@ -58,23 +44,23 @@ public:
         add(now, 0);
         if (unlikely(now <= start))
             return 0;
-        return double(events) / std::min(period, now - start);
+        if (now - period <= start) // precise counting mode
+            return events.value / (now - start);
+        else // exponential smoothing mode
+            return events.get(half_decay_time); // equals to `events.value / period`
     }
 
-    void reset(UInt64 now)
+    void reset(double now)
     {
-        events = 0;
         start = now;
-        end = 0;
+        events = ExponentiallySmoothedAverage();
     }
 
 private:
-    const UInt64 period;
-    const UInt64 step;
-    const double decay;
-    double events = 0; // Estimated number of events in [end - period, end] range
-    UInt64 start = 0; // Instant in past without events before it; when measurement started or reset
-    UInt64 end = 0; // Instant in future to start decay; moving in steps
+    const double period;
+    const double half_decay_time;
+    double start; // Instant in past without events before it; when measurement started or reset
+    ExponentiallySmoothedAverage events; // Estimated number of events in the last `period`
 };
 
 }
