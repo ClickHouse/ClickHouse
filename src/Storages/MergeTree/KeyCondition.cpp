@@ -419,7 +419,7 @@ Block KeyCondition::getBlockWithConstants(
 
     const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
 
-    expr_for_constant_folding->execute(result);
+    expr_for_constant_folding->execute(result, true);
 
     return result;
 }

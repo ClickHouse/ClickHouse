@@ -77,8 +77,17 @@ public:
 
         return std::make_shared<DataTypeUInt8>();
     }
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    {
+        return execute(arguments, result_type, true);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    {
+        return execute(arguments, result_type, false);
+    }
+
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
     {
         const IColumn * col = arguments[0].column.get();
 
@@ -99,11 +108,14 @@ public:
             if (seconds > 3.0)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
-            UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
-            UInt64 microseconds = seconds * count * 1e6;
-            sleepForMicroseconds(microseconds);
-            ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
-            ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
+            if (!dry_run)
+            {
+                UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
+                UInt64 microseconds = seconds * count * 1e6;
+                sleepForMicroseconds(microseconds);
+                ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
+                ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
+            }
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each columns.
