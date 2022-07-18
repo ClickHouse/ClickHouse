@@ -692,9 +692,7 @@ auto s = std::string{"Hello"};
 
 **1.** Virtual inheritance is not used.
 
-**2.** Exception specifiers from C++03 are not used.
-
-**3.** Constructs which have convenient syntactic sugar in modern C++, e.g.
+**2.** Constructs which have convenient syntactic sugar in modern C++, e.g.
 
 ```
 // Traditional way without syntactic sugar
