@@ -301,6 +301,7 @@ void MemoryTracker::free(Int64 size)
         {
             /// For global memory tracker always update memory usage.
             amount.fetch_sub(size, std::memory_order_relaxed);
+            rss.fetch_sub(size, std::memory_order_relaxed);
 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
