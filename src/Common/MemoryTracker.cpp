@@ -136,6 +136,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         {
             /// For global memory tracker always update memory usage.
             amount.fetch_add(size, std::memory_order_relaxed);
+            rss.fetch_add(size, std::memory_order_relaxed);
 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
@@ -207,17 +208,21 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         allocation_traced = true;
     }
 
+    Int64 amount_to_check = will_be;
     bool used_rss_counter = false;
+    /// For Global memory tracker, additionally check RSS.
+    /// It is needed to avoid possible OOM.
+    /// We can't track all memory allocations from external libraries (yet).
     if (level == VariableContext::Global)
     {
-        if (Int64 current_rss = rss.load(std::memory_order_relaxed); unlikely(current_rss + size > will_be))
+        if (Int64 current_rss = size + rss.fetch_add(size, std::memory_order_relaxed); unlikely(current_rss > will_be))
         {
             used_rss_counter = true;
-            will_be = current_rss + size;
+            amount_to_check = current_rss;
         }
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
+    if (unlikely(current_hard_limit && amount_to_check > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         OvercommitResult overcommit_result = OvercommitResult::NONE;
         if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
@@ -235,7 +240,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
                 description ? " " : "",
                 description ? description : "",
                 used_rss_counter ? "(RSS) " : "",
-                formatReadableSizeWithBinarySuffix(will_be),
+                formatReadableSizeWithBinarySuffix(amount_to_check),
                 size,
                 formatReadableSizeWithBinarySuffix(current_hard_limit),
                 toDescription(overcommit_result));
