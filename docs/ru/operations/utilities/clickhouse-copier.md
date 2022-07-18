@@ -1,6 +1,6 @@
 ---
-sidebar_position: 59
-sidebar_label: clickhouse-copier
+toc_priority: 59
+toc_title: clickhouse-copier
 ---
 
 # clickhouse-copier {#clickhouse-copier}

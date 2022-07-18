@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -27,7 +27,6 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 
 TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
-    const AggregateDescriptions & aggregates_,
     bool overflow_row_,
     const ActionsDAGPtr & actions_dag_,
     const std::string & filter_column_,
@@ -36,16 +35,14 @@ TotalsHavingStep::TotalsHavingStep(
     double auto_include_threshold_,
     bool final_)
     : ITransformingStep(
-        input_stream_,
-        TotalsHavingTransform::transformHeader(
-            input_stream_.header,
-            actions_dag_.get(),
-            filter_column_,
-            remove_filter_,
-            final_,
-            getAggregatesMask(input_stream_.header, aggregates_)),
-        getTraits(!filter_column_.empty()))
-    , aggregates(aggregates_)
+            input_stream_,
+            TotalsHavingTransform::transformHeader(
+                    input_stream_.header,
+                    actions_dag_.get(),
+                    filter_column_,
+                    remove_filter_,
+                    final_),
+            getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
     , actions_dag(actions_dag_)
     , filter_column_name(filter_column_)
@@ -62,7 +59,6 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
-        getAggregatesMask(pipeline.getHeader(), aggregates),
         overflow_row,
         expression_actions,
         filter_column_name,
@@ -124,20 +120,5 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Expression", expression->toTree());
     }
 }
-
-void TotalsHavingStep::updateOutputStream()
-{
-    output_stream = createOutputStream(
-        input_streams.front(),
-        TotalsHavingTransform::transformHeader(
-            input_streams.front().header,
-            actions_dag.get(),
-            filter_column_name,
-            remove_filter,
-            final,
-            getAggregatesMask(input_streams.front().header, aggregates)),
-        getDataStreamTraits());
-}
-
 
 }

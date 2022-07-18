@@ -1,6 +1,6 @@
 ---
-sidebar_position: 21
-sidebar_label: OnTime
+toc_priority: 21
+toc_title: OnTime
 ---
 
 # OnTime {#ontime}
@@ -154,7 +154,7 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 ```
 
-:::info "Info"
+!!! info "Info"
     Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
 нужно добавить имя базы, `datasets.ontime`.
 

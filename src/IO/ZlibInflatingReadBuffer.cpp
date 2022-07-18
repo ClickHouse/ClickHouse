@@ -14,7 +14,8 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
         size_t buf_size,
         char * existing_memory,
         size_t alignment)
-    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
+    , in(std::move(in_))
     , eof_flag(false)
 {
     zstr.zalloc = nullptr;

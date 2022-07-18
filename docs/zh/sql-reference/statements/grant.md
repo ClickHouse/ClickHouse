@@ -1,6 +1,6 @@
 ---
-sidebar_position: 39
-sidebar_label: 授权操作
+toc_priority: 39
+toc_title: 授权操作
 ---
 
 # 授权 {#grant}

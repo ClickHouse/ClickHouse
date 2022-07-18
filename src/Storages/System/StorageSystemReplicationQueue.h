@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -11,8 +12,9 @@ class Context;
 
 /** Implements the `replication_queue` system table, which allows you to view the replication queues for the replicated tables.
   */
-class StorageSystemReplicationQueue final : public IStorageSystemOneBlock<StorageSystemReplicationQueue>
+class StorageSystemReplicationQueue final : public shared_ptr_helper<StorageSystemReplicationQueue>, public IStorageSystemOneBlock<StorageSystemReplicationQueue>
 {
+    friend struct shared_ptr_helper<StorageSystemReplicationQueue>;
 public:
     std::string getName() const override { return "SystemReplicationQueue"; }
 
@@ -20,6 +22,7 @@ public:
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 

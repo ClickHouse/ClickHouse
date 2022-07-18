@@ -2,7 +2,7 @@
 
 #include <Server/IServer.h>
 
-#include <Daemon/BaseDaemon.h>
+#include <daemon/BaseDaemon.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
@@ -67,12 +67,7 @@ protected:
 
 private:
     ContextMutablePtr global_context;
-    Poco::Net::SocketAddress socketBindListen(
-        const Poco::Util::AbstractConfiguration & config,
-        Poco::Net::ServerSocket & socket,
-        const std::string & host,
-        UInt16 port,
-        [[maybe_unused]] bool secure = false) const;
+    Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
     using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
     void createServer(

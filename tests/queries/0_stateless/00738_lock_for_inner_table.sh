@@ -29,7 +29,7 @@ function wait_for_query_to_start()
     while [[ $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = 'insert_$CLICKHOUSE_DATABASE'") == 0 ]]; do sleep 0.001; done
 
     # The query is already started, but there is no guarantee that it locks the underlying table already.
-    # Wait until PushingToViews chain will acquire the lock of the underlying table for the INSERT query.
+    # Wait until PushingToViewsBlockOutputStream will acquire the lock of the underlying table for the INSERT query.
     # (assume that 0.5 second is enough for this, but this is not 100% correct)
     sleep 0.5
 

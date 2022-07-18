@@ -4,11 +4,11 @@
 #   include <Formats/FormatFactory.h>
 #   include <Core/Block.h>
 #   include <Formats/FormatSchemaInfo.h>
-#   include <Formats/FormatSettings.h>
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Formats/ProtobufWriter.h>
 #   include <google/protobuf/descriptor.h>
+
 
 namespace DB
 {
@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int NO_ROW_DELIMITER;
 }
+
 
 ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     WriteBuffer & out_,
@@ -29,10 +30,8 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_),
           with_length_delimiter_,
-          /* with_envelope = */ false,
-          settings_.protobuf.output_nullables_with_google_wrappers,
           *writer))
     , allow_multiple_rows(with_length_delimiter_ || settings_.protobuf.allow_multiple_rows_without_delimiter)
 {
@@ -45,11 +44,12 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
             "The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.",
             ErrorCodes::NO_ROW_DELIMITER);
 
-    if (row_num == 0)
+    if (!row_num)
         serializer->setColumns(columns.data(), columns.size());
 
     serializer->writeRow(row_num);
 }
+
 
 void registerOutputFormatProtobuf(FormatFactory & factory)
 {

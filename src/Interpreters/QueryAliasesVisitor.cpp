@@ -108,7 +108,7 @@ void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const AST
         {
             alias = dummy_subquery_name_prefix + std::to_string(++subquery_index);
         }
-        while (aliases.contains(alias));
+        while (aliases.count(alias));
 
         subquery.setAlias(alias);
         aliases[alias] = ast;
@@ -126,7 +126,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
     String alias = ast->tryGetAlias();
     if (!alias.empty())
     {
-        if (aliases.contains(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
+        if (aliases.count(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
             throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;

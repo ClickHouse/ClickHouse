@@ -1,9 +1,9 @@
 ---
-sidebar_position: 37
-sidebar_label: COLUMN
+toc_priority: 37
+toc_title: COLUMN
 ---
 
-# Column Manipulations
+# Column Manipulations {#column-manipulations}
 
 A set of queries that allow changing the table structure.
 
@@ -18,18 +18,18 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
--   [ADD COLUMN](#add-column) — Adds a new column to the table.
--   [DROP COLUMN](#drop-column) — Deletes the column.
--   [RENAME COLUMN](#rename-column) — Renames an existing column.
--   [CLEAR COLUMN](#clear-column) — Resets column values.
--   [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
--   [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
+-   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
+-   [DROP COLUMN](#alter_drop-column) — Deletes the column.
+-   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
+-   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
+-   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
+-   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
 -   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.
 
-## ADD COLUMN
+## ADD COLUMN {#alter_add-column}
 
 ``` sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
@@ -65,7 +65,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-## DROP COLUMN
+## DROP COLUMN {#alter_drop-column}
 
 ``` sql
 DROP COLUMN [IF EXISTS] name
@@ -75,9 +75,8 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
-:::warning    
-You can’t delete a column if it is referenced by [materialized view](../../../sql-reference/statements/create/view.md#materialized). Otherwise, it returns an error.
-:::
+!!! warning "Warning"
+    You can’t delete a column if it is referenced by [materialized view](../../../sql-reference/statements/create/view.md#materialized). Otherwise, it returns an error.
 
 Example:
 
@@ -85,7 +84,7 @@ Example:
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-## RENAME COLUMN
+## RENAME COLUMN {#alter_rename-column}
 
 ``` sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -101,7 +100,7 @@ Example:
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-## CLEAR COLUMN
+## CLEAR COLUMN {#alter_clear-column}
 
 ``` sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -117,7 +116,7 @@ Example:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-## COMMENT COLUMN
+## COMMENT COLUMN {#alter_comment-column}
 
 ``` sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -135,7 +134,7 @@ Example:
 ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
-## MODIFY COLUMN
+## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
@@ -174,7 +173,7 @@ The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-## MODIFY COLUMN REMOVE
+## MODIFY COLUMN REMOVE {#modify-remove}
 
 Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
 
@@ -196,7 +195,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 - [REMOVE TTL](ttl.md).
 
-## MATERIALIZE COLUMN
+## MATERIALIZE COLUMN {#materialize-column}
 
 Materializes or updates a column with an expression for a default value (`DEFAULT` or `MATERIALIZED`).
 It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive. 
@@ -247,7 +246,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 - [MATERIALIZED](../../statements/create/table.md#materialized).
 
-## Limitations
+## Limitations {#alter-query-limitations}
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 

@@ -2,7 +2,7 @@
 
 #include <string>
 #include <Core/Block.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
 #include <Core/ExternalResultDescription.h>
@@ -25,7 +25,7 @@ struct StreamSettings
 };
 
 /// Allows processing results of a MySQL query as a sequence of Blocks, simplifies chaining
-class MySQLSource : public ISource
+class MySQLSource : public SourceWithProgress
 {
 public:
     MySQLSource(

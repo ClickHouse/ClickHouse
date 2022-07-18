@@ -2,7 +2,7 @@
 
 
 #include <string.h>
-#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
 #include <algorithm>
@@ -513,11 +513,6 @@ public:
     static void executeLSD(Element * arr, size_t size)
     {
         radixSortLSDInternal<false>(arr, size, false, nullptr);
-    }
-
-    static void executeLSD(Element * arr, size_t size, bool reverse)
-    {
-        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
     }
 
     /** This function will start to sort inplace (modify 'arr')

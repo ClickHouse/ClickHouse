@@ -1,6 +1,6 @@
 ---
-sidebar_position: 11
-sidebar_label: GitHub 事件数据集
+toc_priority: 11
+toc_title: GitHub 事件数据集
 ---
 
 # GitHub 事件数据集

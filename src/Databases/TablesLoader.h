@@ -12,7 +12,7 @@
 
 namespace Poco
 {
-    class Logger; // NOLINT(cppcoreguidelines-virtual-class-destructor)
+    class Logger;
 }
 
 class AtomicStopwatch;

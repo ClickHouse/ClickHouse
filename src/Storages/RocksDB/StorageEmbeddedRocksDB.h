@@ -2,8 +2,8 @@
 
 #include <memory>
 #include <shared_mutex>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <Storages/IKVStorage.h>
 #include <rocksdb/status.h>
 
 
@@ -19,21 +19,11 @@ namespace DB
 
 class Context;
 
-/// Wrapper for rocksdb storage.
-/// Operates with rocksdb data structures via rocksdb API (holds pointer to rocksdb::DB inside for that).
-/// Storage have one primary key.
-/// Values are serialized into raw strings to store in rocksdb.
-class StorageEmbeddedRocksDB final : public IKeyValueStorage, WithContext
+class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSink;
 public:
-    StorageEmbeddedRocksDB(const StorageID & table_id_,
-        const String & relative_data_path_,
-        const StorageInMemoryMetadata & metadata,
-        bool attach,
-        ContextPtr context_,
-        const String & primary_key_);
-
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
     Pipe read(
@@ -61,16 +51,15 @@ public:
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
-    Names getPrimaryKey() const override { return {primary_key}; }
+    const String & getPrimaryKey() const { return primary_key; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const override;
-
-    /// Return chunk with data for given serialized keys.
-    /// If out_null_map is passed, fill it with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
-    /// If out_null_map is not passed. Not found rows excluded from result chunk.
-    Chunk getBySerializedKeys(
-        const std::vector<std::string> & keys,
-        PaddedPODArray<UInt8> * out_null_map) const;
+protected:
+    StorageEmbeddedRocksDB(const StorageID & table_id_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
+        bool attach,
+        ContextPtr context_,
+        const String & primary_key_);
 
 private:
     const String primary_key;

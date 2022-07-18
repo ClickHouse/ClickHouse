@@ -71,7 +71,7 @@ def test_backward_compatability(start_cluster):
 
     assert node1.query("SELECT avgMerge(x) FROM state") == "2.5\n"
 
-    node1.restart_with_latest_version(fix_metadata=True)
+    node1.restart_with_latest_version()
 
     assert node1.query("SELECT avgMerge(x) FROM state") == "2.5\n"
 

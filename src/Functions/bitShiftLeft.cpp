@@ -72,7 +72,7 @@ struct BitShiftLeftImpl
                 if (shift_left_bits)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
-                    *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer) >> (8 - shift_left_bits)) | previous);
+                    *out = UInt8(UInt8(*(op_pointer) >> (8 - shift_left_bits)) | previous);
                     previous = *op_pointer << shift_left_bits;
                 }
                 else
@@ -131,7 +131,7 @@ struct BitShiftLeftImpl
                 if (op_pointer + 1 < end)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
-                    *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer + 1) >> (8 - shift_left_bits)) | *out);
+                    *out = UInt8(UInt8(*(op_pointer + 1) >> (8 - shift_left_bits)) | *out);
                 }
                 op_pointer++;
                 out++;

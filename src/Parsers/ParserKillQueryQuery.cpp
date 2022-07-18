@@ -18,7 +18,6 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword p_query{"QUERY"};
     ParserKeyword p_mutation{"MUTATION"};
     ParserKeyword p_part_move_to_shard{"PART_MOVE_TO_SHARD"};
-    ParserKeyword p_transaction{"TRANSACTION"};
     ParserKeyword p_on{"ON"};
     ParserKeyword p_test{"TEST"};
     ParserKeyword p_sync{"SYNC"};
@@ -35,8 +34,6 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         query->type = ASTKillQueryQuery::Type::Mutation;
     else if (p_part_move_to_shard.ignore(pos, expected))
         query->type = ASTKillQueryQuery::Type::PartMoveToShard;
-    else if (p_transaction.ignore(pos, expected))
-        query->type = ASTKillQueryQuery::Type::Transaction;
     else
         return false;
 

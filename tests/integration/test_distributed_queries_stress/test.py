@@ -67,10 +67,10 @@ def started_cluster():
             insert into data (key) select * from numbers(10);
 
             create table if not exists dist_one           as data engine=Distributed(one_shard, currentDatabase(), data, key);
-            create table if not exists dist_one_over_dist as data engine=Distributed(one_shard, currentDatabase(), dist_one, kostikConsistentHash(key, 2));
+            create table if not exists dist_one_over_dist as data engine=Distributed(one_shard, currentDatabase(), dist_one, yandexConsistentHash(key, 2));
 
             create table if not exists dist_two as data           engine=Distributed(two_shards, currentDatabase(), data, key);
-            create table if not exists dist_two_over_dist as data engine=Distributed(two_shards, currentDatabase(), dist_two, kostikConsistentHash(key, 2));
+            create table if not exists dist_two_over_dist as data engine=Distributed(two_shards, currentDatabase(), dist_two, yandexConsistentHash(key, 2));
             """
             )
         yield cluster

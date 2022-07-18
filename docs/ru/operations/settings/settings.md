@@ -1,7 +1,6 @@
 ---
-sidebar_position: 60
-sidebar_label: "Настройки"
-slug: /ru/operations/settings/settings
+toc_priority: 60
+toc_title: "Настройки"
 ---
 
 # Настройки {#settings}
@@ -374,9 +373,9 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 -   [CSV](../../interfaces/formats.md#csv)
 -   [TabSeparated](../../interfaces/formats.md#tabseparated)
 
-    :::note "Примечание"
+!!! note "Примечание"
     Когда опция включена, сервер отправляет клиенту расширенные метаданные. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
-    :::
+
 Возможные значения:
 
 -   0 — выключена.
@@ -392,7 +391,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как порядковых номеров.
+Включает или отключает парсинг значений перечислений как порядковых номеров. 
 
 Если режим включен, то во входящих данных в формате `TCV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
 
@@ -626,7 +625,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Изменяет поведение операций, выполняемых со строгостью `ANY`.
 
-:::danger "Внимание"
+!!! warning "Внимание"
     Настройка применяется только для операций `JOIN`, выполняемых над таблицами с движком [Join](../../engines/table-engines/special/join.md).
 
 Возможные значения:
@@ -707,9 +706,9 @@ ClickHouse может парсить только базовый формат `Y
 
 Включает устаревшее поведение сервера ClickHouse при выполнении операций `ANY INNER|LEFT JOIN`.
 
-    :::note "Внимание"
+!!! note "Внимание"
     Используйте этот параметр только в целях обратной совместимости, если ваши варианты использования требуют устаревшего поведения `JOIN`.
-    :::
+
 Когда включено устаревшее поведение:
 
 -   Результаты операций "t1 ANY LEFT JOIN t2" и "t2 ANY RIGHT JOIN t1" не равны, поскольку ClickHouse использует логику с сопоставлением ключей таблицы "многие к одному слева направо".
@@ -1071,9 +1070,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Максимальный размер блоков несжатых данных перед сжатием при записи в таблицу. По умолчанию - 1 048 576 (1 MiB). При уменьшении размера, незначительно уменьшается коэффициент сжатия, незначительно возрастает скорость сжатия и разжатия за счёт кэш-локальности, и уменьшается потребление оперативной памяти.
 
-    :::note "Предупреждение"
+!!! note "Предупреждение"
     Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
-    :::
+
 Не путайте блоки для сжатия (кусок памяти, состоящий из байт) и блоки для обработки запроса (пачка строк из таблицы).
 
 ## min_compress_block_size {#min-compress-block-size}
@@ -1088,9 +1087,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Пусть мы записываем столбец URL типа String (средний размер - 60 байт на значение). При записи 8192 строк, будет, в среднем, чуть меньше 500 КБ данных. Так как это больше 65 536 строк, то сжатый блок будет сформирован на каждую засечку. В этом случае, при чтении с диска данных из диапазона в одну засечку, не будет разжато лишних данных.
 
-    :::note "Предупреждение"
+!!! note "Предупреждение"
     Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
-    :::
+
 ## max_query_size {#settings-max_query_size}
 
 Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
@@ -1177,9 +1176,8 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
-    :::note
-    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
-    :::
+!!! note "Note"
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
@@ -1198,9 +1196,8 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
-    :::note
-    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
-    :::
+!!! note "Note"
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1361,7 +1358,7 @@ load_balancing = round_robin
 
 Значение по умолчанию: 1.
 
-:::danger "Warning"
+!!! warning "Warning"
     Отключайте эту настройку при использовании [max_parallel_replicas](#settings-max_parallel_replicas).
 
 ## totals_mode {#totals-mode}
@@ -1391,7 +1388,7 @@ load_balancing = round_robin
 - Ключ сэмплирования является выражением, которое сложно вычисляется.
 - У распределения сетевых задержек в кластере длинный «хвост», из-за чего при параллельных запросах к нескольким серверам увеличивается среднее время задержки.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
 
 ## compile_expressions {#compile-expressions}
@@ -1422,13 +1419,13 @@ load_balancing = round_robin
 
 Значение по умолчанию: `1`.
 
-**См. также**
+**См. также** 
 
 -   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
 
 ## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
 
-Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).
+Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).  
 
 Возможные значения:
 
@@ -1557,7 +1554,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как порядковых номеров.
+Включает или отключает парсинг значений перечислений как порядковых номеров. 
 Если режим включен, то во входящих данных в формате `CSV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
 
 Возможные значения:
@@ -1764,11 +1761,11 @@ SETTINGS non_replicated_deduplication_window = 100;
 
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
 
--- следующая вставка не будет дедуплицирована, потому что insert_deduplication_token отличается
+-- следующая вставка не будет дедуплицирована, потому что insert_deduplication_token отличается 
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
 
 -- следующая вставка будет дедуплицирована, потому что insert_deduplication_token
--- тот же самый, что и один из предыдущих
+-- тот же самый, что и один из предыдущих 
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
 
 SELECT * FROM test_table
@@ -1871,7 +1868,7 @@ SELECT * FROM test_table
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности.
+Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности. 
 
 Это позволяет избежать:
 - отправки дополнительных строк по сети;
@@ -1996,7 +1993,7 @@ SELECT * FROM test_table
 
    - 0 — оптимизация отключена.
    - 1 — оптимизация включена.
-
+   
 Значение по умолчанию: `1`.
 
 См. также:
@@ -2082,7 +2079,7 @@ SELECT * FROM test_table
 
 Устанавливает приоритет ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) для потоков, исполняющих запросы. Планировщик ОС учитывает эти приоритеты при выборе следующего потока для исполнения на доступном ядре CPU.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Для использования этой настройки необходимо установить свойство `CAP_SYS_NICE`. Пакет `clickhouse-server` устанавливает его во время инсталляции. Некоторые виртуальные окружения не позволяют установить `CAP_SYS_NICE`. В этом случае, `clickhouse-server` выводит сообщение при запуске.
 
 Допустимые значения:
@@ -2207,6 +2204,16 @@ SELECT * FROM test_table
 Возможные значения: 32 (32 байта) - 1073741824 (1 GiB)
 
 Значение по умолчанию: 32768 (32 KiB)
+
+## background_pool_size {#background_pool_size}
+
+Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пул, тем ниже нагрузка на CPU и диск, при этом фоновые процессы работают с меньшей интенсивностью, что в конечном итоге может повлиять на производительность запросов, потому что сервер будет обрабатывать больше кусков.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
@@ -2432,7 +2439,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Разрешает или запрещает использование типа данных `LowCardinality` с форматом данных [Native](../../interfaces/formats.md#native).
 
-Если использование типа `LowCardinality` ограничено, сервер ClickHouse преобразует столбцы `LowCardinality` в обычные столбцы для запросов `SELECT`, а обычные столбцы - в столбцы `LowCardinality` для запросов `INSERT`.
+Если использование типа `LowCardinality` ограничено, сервер CLickHouse преобразует столбцы `LowCardinality` в обычные столбцы для запросов `SELECT`, а обычные столбцы - в столбцы `LowCardinality` для запросов `INSERT`.
 
 В основном настройка используется для сторонних клиентов, не поддерживающих тип данных `LowCardinality`.
 
@@ -2864,7 +2871,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `1`.
 
-## format_csv_null_representation {#format_csv_null_representation}
+## output_format_csv_null_representation {#output_format_csv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [CSV](../../interfaces/formats.md#csv). Пользователь может установить в качестве значения любую строку, например, `My NULL`.
 
@@ -2889,7 +2896,7 @@ SELECT * FROM csv_custom_null FORMAT CSV;
 Запрос:
 
 ```sql
-SET format_csv_null_representation = 'My NULL';
+SET output_format_csv_null_representation = 'My NULL';
 SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
@@ -2901,7 +2908,7 @@ My NULL
 My NULL
 ```
 
-## format_tsv_null_representation {#format_tsv_null_representation}
+## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
 
@@ -2926,7 +2933,7 @@ SELECT * FROM tsv_custom_null FORMAT TSV;
 Запрос
 
 ```sql
-SET format_tsv_null_representation = 'My NULL';
+SET output_format_tsv_null_representation = 'My NULL';
 SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 
@@ -3672,7 +3679,7 @@ SETTINGS index_granularity = 8192 │
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
-Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке.
+Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
 
 Возможные значения:
 

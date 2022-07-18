@@ -39,13 +39,13 @@ SYSTEM FLUSH LOGS;
 -- The main query should have a cache miss and 3 global hits
 -- The MV is executed 20 times (100 / 5) and each run does 1 miss and 4 hits to the LOCAL cache
 -- In addition to this, to prepare the MV, there is an extra preparation to get the list of columns via
--- InterpreterSelectQuery, which adds 5 miss (since we don't use cache for preparation)
+-- InterpreterSelectQuery, which adds 1 miss and 4 global hits (since it uses the global cache)
 -- So in total we have:
 -- Main query:  1  miss, 3 global
--- Preparation: 5  miss
+-- Preparation: 1  miss, 4 global
 -- Blocks (20): 20 miss, 0 global, 80 local hits
 
--- TOTAL:       26 miss, 3 global, 80 local
+-- TOTAL:       22 miss, 7 global, 80 local
 SELECT
     '02177_MV',
     ProfileEvents['ScalarSubqueriesGlobalCacheHit'] as scalar_cache_global_hit,

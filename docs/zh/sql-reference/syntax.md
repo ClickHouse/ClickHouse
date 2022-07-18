@@ -1,6 +1,6 @@
 ---
-sidebar_position: 31
-sidebar_label: SQL语法
+toc_priority: 31
+toc_title: SQL语法
 
 ---
 

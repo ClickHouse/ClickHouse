@@ -40,9 +40,9 @@ private:
     void syncAfterError() override;
 
     const String & columnName(size_t i) const;
-    size_t columnIndex(StringRef name, size_t key_index);
+    size_t columnIndex(const StringRef & name, size_t key_index);
     bool advanceToNextKey(size_t key_index);
-    void skipUnknownField(StringRef name_ref);
+    void skipUnknownField(const StringRef & name_ref);
     StringRef readColumnName(ReadBuffer & buf);
     void readField(size_t index, MutableColumns & columns);
     void readJSONObject(MutableColumns & columns);
@@ -91,7 +91,7 @@ public:
     JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings);
 
 private:
-    NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
+    std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() override;
 
     bool json_strings;
     bool first_row = true;

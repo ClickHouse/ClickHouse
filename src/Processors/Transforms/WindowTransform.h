@@ -320,7 +320,7 @@ public:
     // We update the states of the window functions after we find the final frame
     // boundaries.
     // After we have found the final boundaries of the frame, we can immediately
-    // output the result for the current row, without waiting for more data.
+    // output the result for the current row, w/o waiting for more data.
     RowNumber frame_start;
     RowNumber frame_end;
     bool frame_ended = false;

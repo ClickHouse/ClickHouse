@@ -1,10 +1,10 @@
 ---
 toc_folder_title: Reference
-sidebar_position: 36
+toc_priority: 36
 toc_hidden: true
 ---
 
-# List of Aggregate Functions
+# List of Aggregate Functions {#aggregate-functions-reference}
 
 Standard aggregate functions:
 

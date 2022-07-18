@@ -67,7 +67,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
         values_types.push_back(array_type->getNestedType());
     }
 
-    return std::tuple<DataTypePtr, DataTypes, bool>{std::move(keys_type), std::move(values_types), tuple_argument};
+    return std::tuple{std::move(keys_type), std::move(values_types), tuple_argument};
 }
 
 // This function instantiates a particular overload of the sumMap family of
