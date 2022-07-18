@@ -61,6 +61,8 @@ public:
 
     void setProgressCallback(ContextPtr context);
 
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
+
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
     bool poll(size_t timeout_microseconds);

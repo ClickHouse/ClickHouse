@@ -152,6 +152,12 @@ public:
     void setOnClusterQueriesRequireClusterGrant(bool enable) { on_cluster_queries_require_cluster_grant = enable; }
     bool doesOnClusterQueriesRequireClusterGrant() const { return on_cluster_queries_require_cluster_grant; }
 
+    void setSelectFromSystemDatabaseRequiresGrant(bool enable) { select_from_system_db_requires_grant = enable; }
+    bool doesSelectFromSystemDatabaseRequireGrant() const { return select_from_system_db_requires_grant; }
+
+    void setSelectFromInformationSchemaRequiresGrant(bool enable) { select_from_information_schema_requires_grant = enable; }
+    bool doesSelectFromInformationSchemaRequireGrant() const { return select_from_information_schema_requires_grant; }
+
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
         const std::vector<UUID> & current_roles,
@@ -215,6 +221,8 @@ private:
     std::atomic_bool allow_no_password = true;
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
+    std::atomic_bool select_from_system_db_requires_grant = false;
+    std::atomic_bool select_from_information_schema_requires_grant = false;
 };
 
 }
