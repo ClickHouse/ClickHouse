@@ -91,50 +91,50 @@ SELECT * FROM remote_table;
 This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`. 
 
 #### On the source ClickHouse system (the system that currently hosts the data)
-- Verify the source database and table name (`imdb.actors`)
-```sql
-show databases
-```
+- Verify the source database and table name (`imdb.actors`)  
+  ```sql
+  show databases
+  ```
 
-```sql
-show tables in imdb
-```
+  ```sql
+  show tables in imdb
+  ```
 
 - Get the CREATE TABLE statement from the source:
-```
-select create_table_query
-from system.tables
-where database = 'imdb' and table = 'actors'
-```
+  ```
+  select create_table_query
+  from system.tables
+  where database = 'imdb' and table = 'actors'
+  ```
 
-Response
-```sql
-CREATE TABLE imdb.actors (`id` UInt32,
-                          `first_name` String,
-                          `last_name` String,
-                          `gender` FixedString(1))
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
-                ORDER BY (id, first_name, last_name, gender)
-                SETTINGS index_granularity = 8192
-```
+  Response
+  ```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+                  ORDER BY (id, first_name, last_name, gender)
+                  SETTINGS index_granularity = 8192
+  ```
 
 #### On the destination ClickHouse system:
 
 - Create the destination database:
-```sql
-CREATE DATABASE imdb
-```
+  ```sql
+  CREATE DATABASE imdb
+  ```
 
 - Using the CREATE TABLE statement from the source, create the destination:
-```sql
-CREATE TABLE imdb.actors (`id` UInt32,
-                          `first_name` String,
-                          `last_name` String,
-                          `gender` FixedString(1))
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
-                ORDER BY (id, first_name, last_name, gender)
-                SETTINGS index_granularity = 8192
-```
+  ```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+                  ORDER BY (id, first_name, last_name, gender)
+                  SETTINGS index_granularity = 8192
+  ```
 
 #### Back on the source deployment:
 
@@ -145,7 +145,7 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD', 
 SELECT * from imdb.actors
 ```
 
-## Globs in Addresses {globs-in-addresses}
+## Globs in Addresses {#globs-in-addresses}
 
 Patterns in curly brackets `{ }` are used to generate a set of shards and to specify replicas. If there are multiple pairs of curly brackets, then the direct product of the corresponding sets is generated.
 The following pattern types are supported.

@@ -206,10 +206,12 @@ namespace
             filtered_thread_names.emplace(thread_name);
         }
 
-        for (const auto & [tid, name] : tid_to_name)
+        for (auto it = tid_to_name.begin(); it != tid_to_name.end();)
         {
-            if (!filtered_thread_names.contains(name))
-                tid_to_name.erase(tid);
+            if (!filtered_thread_names.contains(it->second))
+                it = tid_to_name.erase(it);
+            else
+                ++it;
         }
 
         return tid_to_name;
@@ -302,8 +304,13 @@ Pipe StorageSystemStackTrace::read(
         size_t res_index = 0;
 
         String thread_name;
-        if (auto it = thread_names.find(tid); it != thread_names.end())
-            thread_name = it->second;
+        if (read_thread_names)
+        {
+            if (auto it = thread_names.find(tid); it != thread_names.end())
+                thread_name = it->second;
+            else
+                continue; /// was filtered out by "thread_name" condition
+        }
 
         if (!send_signal)
         {
