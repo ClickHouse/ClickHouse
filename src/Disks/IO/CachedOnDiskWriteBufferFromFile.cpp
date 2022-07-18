@@ -133,24 +133,33 @@ void CachedOnDiskWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment
     }
 }
 
-void CachedOnDiskWriteBufferFromFile::finalizeImpl()
+void CachedOnDiskWriteBufferFromFile::preFinalize()
 {
-    try
-    {
-        next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        if (cache_writer)
-            cache_writer->finalize();
-
-        throw;
-    }
-
     if (cache_writer)
+    {
         cache_writer->finalize();
+        cache_writer.reset();
+    }
 }
+
+/// void CachedOnDiskWriteBufferFromFile::finalizeImpl()
+/// {
+///     // try
+///     // {
+///     //     next();
+///     // }
+///     // catch (...)
+///     // {
+///     //     tryLogCurrentException(__PRETTY_FUNCTION__);
+///
+///     //     if (cache_writer)
+///     //         cache_writer->finalize();
+///
+///     //     throw;
+///     // }
+///
+///     if (cache_writer)
+///         cache_writer->finalize();
+/// }
 
 }

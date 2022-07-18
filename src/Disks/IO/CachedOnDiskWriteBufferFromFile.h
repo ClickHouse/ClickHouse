@@ -29,7 +29,8 @@ public:
 
     void nextImpl() override;
 
-    void finalizeImpl() override;
+    void preFinalize() override;
+    // void finalizeImpl() override;
 
 private:
     void cacheData(char * data, size_t size);

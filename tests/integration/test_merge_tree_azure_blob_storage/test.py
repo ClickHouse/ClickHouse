@@ -32,6 +32,17 @@ def cluster():
             ],
             with_azurite=True,
         )
+        cluster.add_instance(
+            "node_with_limited_disk",
+            main_configs=[
+                "configs/config.d/storage_conf.xml",
+                "configs/config.d/bg_processing_pool_conf.xml",
+            ],
+            with_minio=True,
+            tmpfs=[
+                "/jbod1:size=2M",
+            ],
+        )
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -574,3 +585,18 @@ def test_big_insert(cluster):
         f"INSERT INTO {TABLE_NAME} select '2020-01-03', number, toString(number) from numbers(5000000)",
     )
     assert int(azure_query(node, f"SELECT count() FROM {TABLE_NAME}")) == 5000000
+
+
+def test_cache_with_full_disk_space(cluster):
+    node = cluster.instances["node_with_limited_disk"]
+    settings = {"storage_policy":"cache_on_jbod"}
+    create_table(node, TABLE_NAME, **settings)
+    azure_query(
+        node,
+        f"INSERT INTO {TABLE_NAME} select '2020-01-03', number, toString(number) from numbers(500000)",
+    )
+    azure_query(node, f"SELECT * FROM {TABLE_NAME} WHERE value LIKE '%abc%' ORDER BY value FORMAT Null")
+
+    assert node.contains_in_log(
+        "Insert into cache is skipped due to insufficient disk space"
+    )

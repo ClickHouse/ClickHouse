@@ -11,7 +11,7 @@ TMP_PATH=${CLICKHOUSE_TEST_UNIQUE_NAME}
 QUERIES_FILE=02241_filesystem_cache_on_write_operations.queries
 TEST_FILE=$CUR_DIR/filesystem_cache_queries/$QUERIES_FILE
 
-for storagePolicy in 's3_cache' 'local_cache'; do
+for storagePolicy in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $storagePolicy"
     cat $TEST_FILE | sed -e "s/_storagePolicy/${storagePolicy}/"  > $TMP_PATH
     ${CLICKHOUSE_CLIENT} --queries-file $TMP_PATH

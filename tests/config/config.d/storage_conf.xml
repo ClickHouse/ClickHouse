@@ -74,6 +74,24 @@
                 <path>s3_cache_5/</path>
                 <max_size>22548578304</max_size>
             </s3_cache_5>
+            <azure>
+                <type>azure_blob_storage</type>
+                <storage_account_url>http://localhost:10000/devstoreaccount1</storage_account_url>
+                <container_name>cont</container_name>
+                <container_already_exists>true</container_already_exists>
+                <skip_access_check>false</skip_access_check>
+                <!-- default credentials for Azurite storage account -->
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <max_single_part_upload_size>33554432</max_single_part_upload_size>
+            </azure>
+            <cached_azure>
+                <type>cache</type>
+                <disk>azure</disk>
+                <path>/home/ubuntu/azure_cache/</path>
+                <max_size>100000000000</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </cached_azure>
             <!-- local disks -->
             <local_disk>
                 <type>local</type>
@@ -180,6 +198,13 @@
                     </main>
                 </volumes>
             </local_cache_3>
+            <azure_cache>
+                <volumes>
+                    <main>
+                        <disk>cached_azure</disk>
+                    </main>
+                </volumes>
+            </azure_cache>
         </policies>
     </storage_configuration>
 </clickhouse>
