@@ -242,9 +242,10 @@ def extract_test_name(base_path):
     Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
     """
     name = p.basename(base_path)
-    name = p.splitext(name)[0]
-    name = name.removeprefix("test")
-    name = name.strip("-_")
+    if name == "test.py":
+        name = ""
+    elif name.startswith("test_") and name.endswith(".py"):
+        name = name[len("test_"):(len(name)-len(".py"))]
     return name
 
 
