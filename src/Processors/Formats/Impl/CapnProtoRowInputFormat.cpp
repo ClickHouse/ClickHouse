@@ -264,20 +264,26 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     if (in->eof())
         return false;
 
-    auto array = readMessage();
+    try
+    {
+        auto array = readMessage();
 
 #if CAPNP_VERSION >= 7000 && CAPNP_VERSION < 8000
-    capnp::UnalignedFlatArrayMessageReader msg(array);
+        capnp::UnalignedFlatArrayMessageReader msg(array);
 #else
-    capnp::FlatArrayMessageReader msg(array);
+        capnp::FlatArrayMessageReader msg(array);
 #endif
 
-    auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
-
-    for (size_t i = 0; i != columns.size(); ++i)
+        auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
+        for (size_t i = 0; i != columns.size(); ++i)
+        {
+            auto value = getReaderByColumnName(root_reader, column_names[i]);
+            insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        }
+    }
+    catch (const kj::Exception & e)
     {
-        auto value = getReaderByColumnName(root_reader, column_names[i]);
-        insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read row: {}", e.getDescription().cStr());
     }
 
     return true;
