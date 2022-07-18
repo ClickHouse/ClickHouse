@@ -1,13 +1,9 @@
 #pragma once
 
 #include <base/defines.h>
-#include <base/types.h>
 
 #include <Common/ExponentiallySmoothedCounter.h>
 
-#include <algorithm>
-#include <cmath>
-#include <cassert>
 #include <numbers>
 
 
@@ -40,7 +36,7 @@ public:
     /// Compute average event rate throughout `[now - period, now]` period.
     /// If measurements are just started (`now - period < start`), then average
     /// is computed based on shorter `[start; now]` period to avoid initial linear growth.
-    double rate(UInt64 now)
+    double rate(double now)
     {
         add(now, 0);
         if (unlikely(now <= start))
