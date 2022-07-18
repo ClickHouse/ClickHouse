@@ -586,10 +586,7 @@ class ClickHouseCluster:
                     f"Trying to kill unstopped containers: {unstopped_containers}"
                 )
                 for id in unstopped_containers:
-                    try:
-                        run_and_check(f"docker kill {id}", shell=True, nothrow=True)
-                    except:
-                        pass
+                    run_and_check(f"docker kill {id}", shell=True, nothrow=True)
                     run_and_check(f"docker rm {id}", shell=True, nothrow=True)
                 unstopped_containers = self.get_running_containers()
                 if unstopped_containers:
