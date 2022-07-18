@@ -15,8 +15,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/CompressionMethod.h>
-#include <IO/WriteSettings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -29,14 +27,12 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
@@ -150,7 +146,6 @@ StorageHDFS::StorageHDFS(
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
-    FormatFactory::instance().checkFormatName(format_name);
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
 
@@ -187,23 +182,41 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 {
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
     auto paths = getPathsList(path_from_uri, uri, ctx);
-    if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
-        throw Exception(
-            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
-            "specify table structure manually",
-            format);
 
-    ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
+    std::string exception_messages;
+    bool read_buffer_creator_was_used = false;
+    for (const auto & path : paths)
     {
-        if (it == paths.end())
-            return nullptr;
-        auto compression = chooseCompressionMethod(*it, compression_method);
-        auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
-        const auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
-        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
-    };
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
+        auto read_buffer_creator = [&, uri_without_path = uri_without_path]()
+        {
+            read_buffer_creator_was_used = true;
+
+            if (paths.empty())
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
+                    "specify table structure manually",
+                    format);
+
+            auto compression = chooseCompressionMethod(path, compression_method);
+            return wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadBufferFromHDFS>(uri_without_path, path, ctx->getGlobalContext()->getConfigRef()), compression);
+        };
+
+        try
+        {
+            return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
+        }
+        catch (...)
+        {
+            if (paths.size() == 1 || !read_buffer_creator_was_used)
+                throw;
+
+           exception_messages += getCurrentExceptionMessage(false) + "\n";
+        }
+    }
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from hdfs files failed. Errors:\n{}", exception_messages);
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl
@@ -242,7 +255,7 @@ public:
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
-        auto fs = createHDFSFS(builder.get());
+        HDFSFSPtr fs = createHDFSFS(builder.get());
         for (const auto & uri : uris_)
         {
             path_and_uri = getPathFromUriAndUriWithoutPath(uri);
@@ -302,7 +315,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
+    : SourceWithProgress(getHeader(block_for_format_, requested_virtual_columns_))
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -330,10 +343,7 @@ bool HDFSSource::initialize()
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    auto impl = std::make_unique<ReadBufferFromHDFS>(
-        uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-    const auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
+    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression);
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -413,13 +423,7 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(
-            std::make_unique<WriteBufferFromHDFS>(
-                uri,
-                context->getGlobalContext()->getConfigRef(),
-                context->getSettingsRef().hdfs_replication,
-                context->getWriteSettings()),
-            compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication), compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
@@ -428,13 +432,6 @@ public:
     void consume(Chunk chunk) override
     {
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
-    }
-
-    void onException() override
-    {
-        if (!writer)
-            return;
-        onFinish();
     }
 
     void onFinish() override
@@ -448,7 +445,6 @@ public:
         }
         catch (...)
         {
-            /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
             throw;
         }
@@ -494,9 +490,9 @@ private:
 };
 
 
-bool StorageHDFS::supportsSubsetOfColumns() const
+bool StorageHDFS::isColumnOriented() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
 }
 
 Pipe StorageHDFS::read(
@@ -545,7 +541,7 @@ Pipe StorageHDFS::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSubsetOfColumns())
+    if (isColumnOriented())
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();
@@ -557,7 +553,8 @@ Pipe StorageHDFS::read(
         if (fetch_columns.empty())
             fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
+        columns_description = ColumnsDescription{
+            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -650,7 +647,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
     const String url = uris[0].substr(0, begin_of_path);
 
     HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", local_context->getGlobalContext()->getConfigRef());
-    auto fs = createHDFSFS(builder.get());
+    HDFSFSPtr fs = createHDFSFS(builder.get());
 
     for (const auto & uri : uris)
     {
@@ -674,13 +671,13 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
-        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         String format_name = "auto";
         if (engine_args.size() > 1)
         {
             engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
-            format_name = checkAndGetLiteralArgument<String>(engine_args[1], "format_name");
+            format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         if (format_name == "auto")
@@ -690,14 +687,14 @@ void registerStorageHDFS(StorageFactory & factory)
         if (engine_args.size() == 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[2], "compression_method");
+            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
         ASTPtr partition_by;
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        return std::make_shared<StorageHDFS>(
+        return StorageHDFS::create(
             url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method, false, partition_by);
     },
     {

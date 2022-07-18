@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Common/config.h>
+#include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <IO/AsynchronousReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
@@ -27,10 +26,9 @@ friend class ReadIndirectBufferFromRemoteFS;
 
 public:
     ReadBufferFromRemoteFSGather(
-        const StoredObjects & blobs_to_read_,
+        const std::string & common_path_prefix_,
+        const BlobsPathToSize & blobs_to_read_,
         const ReadSettings & settings_);
-
-    ~ReadBufferFromRemoteFSGather() override;
 
     String getFileName() const;
 
@@ -38,7 +36,13 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
+    struct ReadResult
+    {
+        size_t size = 0;
+        size_t offset = 0;
+    };
+
+    ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
     size_t getFileSize() const;
 
@@ -51,26 +55,21 @@ public:
     size_t getImplementationBufferOffset() const;
 
 protected:
-    virtual SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) = 0;
+    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) = 0;
 
-    StoredObjects blobs_to_read;
+    std::string common_path_prefix;
+
+    BlobsPathToSize blobs_to_read;
 
     ReadSettings settings;
 
+    bool use_external_buffer;
+
     size_t read_until_position = 0;
 
-    String current_file_path;
-    size_t current_file_size = 0;
-
-    bool with_cache;
-
-    String query_id;
-
-    Poco::Logger * log;
+    String current_path;
 
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
-
     bool nextImpl() override;
 
     void initialize();
@@ -78,8 +77,6 @@ private:
     bool readImpl();
 
     bool moveToNextBuffer();
-
-    void appendFilesystemCacheLog();
 
     SeekableReadBufferPtr current_buf;
 
@@ -94,9 +91,7 @@ private:
      */
     size_t bytes_to_ignore = 0;
 
-    size_t total_bytes_read_from_current_file = 0;
-
-    bool enable_cache_log = false;
+    Poco::Logger * log;
 };
 
 
@@ -106,26 +101,24 @@ class ReadBufferFromS3Gather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromS3Gather(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
-        const String & version_id_,
-        const StoredObjects & blobs_to_read_,
+        const std::string & common_path_prefix_,
+        const BlobsPathToSize & blobs_to_read_,
         size_t max_single_read_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
-        , version_id(version_id_)
         , max_single_read_retries(max_single_read_retries_)
     {
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
-    String version_id;
     UInt64 max_single_read_retries;
 };
 #endif
@@ -137,22 +130,23 @@ class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFS
 {
 public:
     ReadBufferFromAzureBlobStorageGather(
-        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
-        const StoredObjects & blobs_to_read_,
+        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+        const std::string & common_path_prefix_,
+        const BlobsPathToSize & blobs_to_read_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , blob_container_client(blob_container_client_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
     {
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
 };
@@ -164,16 +158,17 @@ class ReadBufferFromWebServerGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromWebServerGather(
             const String & uri_,
-            const StoredObjects & blobs_to_read_,
+            const std::string & common_path_prefix_,
+            const BlobsPathToSize & blobs_to_read_,
             ContextPtr context_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , uri(uri_)
         , context(context_)
     {
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
     String uri;
@@ -188,19 +183,25 @@ class ReadBufferFromHDFSGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromHDFSGather(
             const Poco::Util::AbstractConfiguration & config_,
-            const StoredObjects & blobs_to_read_,
+            const String & hdfs_uri_,
+            const std::string & common_path_prefix_,
+            const BlobsPathToSize & blobs_to_read_,
             const ReadSettings & settings_)
-        : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
+        : ReadBufferFromRemoteFSGather(common_path_prefix_, blobs_to_read_, settings_)
         , config(config_)
     {
+        const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);
+        hdfs_directory = hdfs_uri_.substr(begin_of_path);
+        hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
-    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
     const Poco::Util::AbstractConfiguration & config;
+    String hdfs_uri;
+    String hdfs_directory;
 };
-
 #endif
 
 }

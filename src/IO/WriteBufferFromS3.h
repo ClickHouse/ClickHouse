@@ -7,7 +7,7 @@
 #include <memory>
 #include <vector>
 #include <list>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/types.h>
 
 #include <Common/ThreadPool.h>
@@ -16,7 +16,6 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
@@ -48,15 +47,14 @@ class WriteBufferFromFile;
 class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    WriteBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+    explicit WriteBufferFromS3(
+        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const S3Settings::ReadWriteSettings & s3_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ScheduleFunc schedule_ = {},
-        const WriteSettings & write_settings_ = {},
         FileCachePtr cache_ = nullptr);
 
     ~WriteBufferFromS3() override;
@@ -92,11 +90,10 @@ private:
 
     String bucket;
     String key;
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::optional<std::map<String, String>> object_metadata;
+    std::shared_ptr<Aws::S3::S3Client> client_ptr;
     size_t upload_part_size = 0;
     S3Settings::ReadWriteSettings s3_settings;
-    std::optional<std::map<String, String>> object_metadata;
-
     /// Buffer to accumulate data.
     std::shared_ptr<Aws::StringStream> temporary_buffer;
     size_t last_part_size = 0;
@@ -120,8 +117,6 @@ private:
     std::condition_variable bg_tasks_condvar;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
-
-    WriteSettings write_settings;
 
     FileCachePtr cache;
     size_t current_download_offset = 0;

@@ -3,7 +3,7 @@
 #include <Interpreters/CatBoostModel.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <memory>
 

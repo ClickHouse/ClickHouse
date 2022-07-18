@@ -31,11 +31,6 @@ if __name__ == "__main__":
         default="",
         help="a branch to get from docs repository",
     )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="check the docs even if there no changes",
-    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -54,7 +49,7 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    if not pr_info.has_changes_in_documentation() and not args.force:
+    if not pr_info.has_changes_in_documentation():
         logging.info("No changes in documentation")
         commit = get_commit(gh, pr_info.sha)
         commit.create_status(
@@ -62,10 +57,7 @@ if __name__ == "__main__":
         )
         sys.exit(0)
 
-    if pr_info.has_changes_in_documentation():
-        logging.info("Has changes in docs")
-    elif args.force:
-        logging.info("Check the docs because of force flag")
+    logging.info("Has changes in docs")
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)

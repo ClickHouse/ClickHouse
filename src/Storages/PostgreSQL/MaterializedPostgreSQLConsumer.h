@@ -5,7 +5,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>

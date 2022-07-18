@@ -1,13 +1,13 @@
 #include "ProcfsMetricsProvider.h"
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
 #include <base/find_symbols.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <cassert>
 #include <sys/types.h>

@@ -91,7 +91,7 @@ private:
 
     static UInt16 extractPort(UInt16 default_port, const ColumnString::Chars & buf, size_t offset, size_t size)
     {
-        const char * p = reinterpret_cast<const char *>(buf.data()) + offset;
+        const char * p = reinterpret_cast<const char *>(&buf[0]) + offset;
         const char * end = p + size;
 
         StringRef host = getURLHost(p, size);
@@ -113,7 +113,7 @@ private:
                 return default_port;
 
             port = (port * 10) + (*p - '0');
-            if (port < 0 || port > static_cast<UInt16>(-1))
+            if (port < 0 || port > UInt16(-1))
                 return default_port;
             ++p;
         }
@@ -127,3 +127,4 @@ void registerFunctionPort(FunctionFactory & factory)
 }
 
 }
+

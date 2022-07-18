@@ -3,78 +3,71 @@ sidebar_position: 21
 sidebar_label: Input and Output Formats
 ---
 
-# Formats for Input and Output Data
+# Formats for Input and Output Data {#formats}
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read an external dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
 
-| Format                                                                                    | Input | Output |
-|-------------------------------------------------------------------------------------------|------|--------|
-| [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔      |
-| [Template](#format-template)                                                              | ✔    | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗      |
-| [CSV](#csv)                                                                               | ✔    | ✔      |
-| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔      |
-| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔      |
-| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔      |
-| [Values](#data-format-values)                                                             | ✔    | ✔      |
-| [Vertical](#vertical)                                                                     | ✗    | ✔      |
-| [JSON](#json)                                                                             | ✗    | ✔      |
-| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗    | ✔      |
-| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔      |
-| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗    | ✔      |
-| [JSONCompact](#jsoncompact)                                                               | ✗    | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
-| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
-| [TSKV](#tskv)                                                                             | ✔    | ✔      |
-| [Pretty](#pretty)                                                                         | ✗    | ✔      |
-| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
-| [PrettySpace](#prettyspace)                                                               | ✗    | ✔      |
-| [Prometheus](#prometheus)                                                                 | ✗    | ✔      |
-| [Protobuf](#protobuf)                                                                     | ✔    | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔      |
-| [Avro](#data-format-avro)                                                                 | ✔    | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗      |
-| [Parquet](#data-format-parquet)                                                           | ✔    | ✔      |
-| [Arrow](#data-format-arrow)                                                               | ✔    | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔      |
-| [ORC](#data-format-orc)                                                                   | ✔    | ✔      |
-| [RowBinary](#rowbinary)                                                                   | ✔    | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔      |
-| [Native](#native)                                                                         | ✔    | ✔      |
-| [Null](#null)                                                                             | ✗    | ✔      |
-| [XML](#xml)                                                                               | ✗    | ✔      |
-| [CapnProto](#capnproto)                                                                   | ✔    | ✔      |
-| [LineAsString](#lineasstring)                                                             | ✔    | ✗      |
-| [Regexp](#data-format-regexp)                                                             | ✔    | ✗      |
-| [RawBLOB](#rawblob)                                                                       | ✔    | ✔      |
-| [MsgPack](#msgpack)                                                                       | ✔    | ✔      |
-| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗      |
-
+| Format                                                                                  | Input | Output |
+|-----------------------------------------------------------------------------------------|-------|--------|
+| [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                                     | ✔     | ✔      |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                                                     | ✔     | ✔      |
+| [Template](#format-template)                                                            | ✔     | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
+| [CSV](#csv)                                                                             | ✔     | ✔      |
+| [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                                           | ✔     | ✔      |
+| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
+| [Values](#data-format-values)                                                           | ✔     | ✔      |
+| [Vertical](#vertical)                                                                   | ✗     | ✔      |
+| [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
+| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
+| [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
+| [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)             | ✔     | ✔      |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames) | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
+| [TSKV](#tskv)                                                                           | ✔     | ✔      |
+| [Pretty](#pretty)                                                                       | ✗     | ✔      |
+| [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                       | ✗     | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
+| [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
+| [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
+| [Avro](#data-format-avro)                                                               | ✔     | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
+| [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
+| [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
+| [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
+| [Native](#native)                                                                       | ✔     | ✔      |
+| [Null](#null)                                                                           | ✗     | ✔      |
+| [XML](#xml)                                                                             | ✗     | ✔      |
+| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
+| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
+| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
+| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -107,7 +100,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-23      1406958
 ```
 
-### Data Formatting {#tabseparated-data-formatting}
+### Data Formatting {#data-formatting}
 
 Integer numbers are written in decimal form. Numbers can contain an extra “+” character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can’t contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
@@ -120,7 +113,7 @@ Dates with times are written in the format `YYYY-MM-DD hh:mm:ss` and parsed in t
 This all occurs in the system time zone at the time the client or server starts (depending on which of them formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
 During a read operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
 
-As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats `YYYY-MM-DD hh:mm:ss` and `NNNNNNNNNN` are differentiated automatically.
+As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
 
 Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH` (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n` or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of space can be parsed in any of the following variations:
 
@@ -139,12 +132,16 @@ Only a small set of symbols are escaped. You can easily stumble onto a string va
 
 Arrays are written as a list of comma-separated values in square brackets. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
-[NULL](../sql-reference/syntax.md) is formatted according to setting [format_tsv_null_representation](../operations/settings/settings.md#format_tsv_null_representation) (default value is `\N`).
+[NULL](../sql-reference/syntax.md) is formatted according to setting [format_tsv_null_representation](../operations/settings/settings.md#settings-format_tsv_null_representation) (default value is `\N`).
 
-In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
-If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#input_format_tsv_enum_as_number) to optimize ENUM parsing.
+
+If setting [input_format_tsv_empty_as_default](../operations/settings/settings.md#settings-input_format_tsv_empty_as_default) is enabled,
+empty input fields are replaced with default values. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields) must be enabled too.
 
 Each element of [Nested](../sql-reference/data-types/nested-data-structures/nested.md) structures is represented as array.
+
+In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
+If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
 For example:
 
@@ -172,15 +169,6 @@ SELECT * FROM nestedt FORMAT TSV
 1  [1]    ['a']
 ```
 
-### TabSeparated format settings {#tabseparated-format-settings}
-
-- [format_tsv_null_representation](../operations/settings/settings.md#format_tsv_null_representation) - custom NULL representation in TSV format. Default value - `\N`.
-- [input_format_tsv_empty_as_default](../operations/settings/settings.md#input_format_tsv_empty_as_default) - treat empty fields in TSV input as default values. Default value - `false`. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#input_format_defaults_for_omitted_fields) must be enabled too.
-- [input_format_tsv_enum_as_number](../operations/settings/settings.md#input_format_tsv_enum_as_number) - treat inserted enum values in TSV formats as enum indices. Default value - `false`.
-- [input_format_tsv_use_best_effort_in_schema_inference](../operations/settings/settings.md#input_format_tsv_use_best_effort_in_schema_inference) - use some tweaks and heuristics to infer schema in TSV format. If disabled, all fields will be inferred as Strings. Default value - `true`.
-- [output_format_tsv_crlf_end_of_line](../operations/settings/settings.md#output_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`. Default value - `false`.
-- [input_format_tsv_skip_first_lines](../operations/settings/settings.md#input_format_tsv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
-
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Differs from `TabSeparated` format in that the rows are written without escaping.
@@ -194,8 +182,8 @@ Differs from the `TabSeparated` format in that the column names are written in t
 
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
-If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#settings-input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
 
 This format is also available under the name `TSVWithNames`.
@@ -204,8 +192,8 @@ This format is also available under the name `TSVWithNames`.
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 The first row with names is processed the same way as in `TabSeparatedWithNames` format.
-If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#settings-input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped. 
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
@@ -334,9 +322,8 @@ Total rows: 2
 ```
 
 ``` sql
-INSERT INTO UserActivity SETTINGS
+INSERT INTO UserActivity FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
-FORMAT Template
 ```
 
 `/some/path/resultset.format`:
@@ -361,9 +348,8 @@ Similar to `Template`, but skips whitespace characters between delimiters and va
 It’s possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
 
 ``` sql
-INSERT INTO table_name SETTINGS
+INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = ','
-FORMAT TemplateIgnoreSpaces
 ```
 
 `/some/path/resultset.format`:
@@ -411,41 +397,29 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
 
-During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
-
 ## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\*By default, the delimiter is `,`. See the [format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter) setting for more information.
+\*By default, the delimiter is `,`. See the [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) setting for more information.
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
-`NULL` is formatted according to setting [format_csv_null_representation](../operations/settings/settings.md#format_csv_null_representation) (default value is `\N`).
+If setting [input_format_csv_empty_as_default](../operations/settings/settings.md#settings-input_format_csv_empty_as_default) is enabled,
+empty unquoted input values are replaced with default values. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields) must be enabled too.
+
+`NULL` is formatted according to setting [format_csv_null_representation](../operations/settings/settings.md#settings-format_csv_null_representation) (default value is `\N`).
 
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
-If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](../operations/settings/settings.md#input_format_csv_enum_as_number) to optimize ENUM parsing.
+If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](../operations/settings/settings.md#settings-input_format_csv_enum_as_number) to optimize ENUM parsing.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
-
-### CSV format settings {#csv-format-settings}
-
-- [format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter) - the character to be considered as a delimiter in CSV data. Default value - `,`.
-- [format_csv_allow_single_quotes](../operations/settings/settings.md#format_csv_allow_single_quotes) - allow strings in single quotes. Default value - `true`.
-- [format_csv_allow_double_quotes](../operations/settings/settings.md#format_csv_allow_double_quotes) - allow strings in double quotes. Default value - `true`.
-- [format_csv_null_representation](../operations/settings/settings.md#format_tsv_null_representation) - custom NULL representation in CSV format. Default value - `\N`.
-- [input_format_csv_empty_as_default](../operations/settings/settings.md#input_format_csv_empty_as_default) - treat empty fields in CSV input as default values. Default value - `true`. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#input_format_defaults_for_omitted_fields) must be enabled too.
-- [input_format_csv_enum_as_number](../operations/settings/settings.md#input_format_csv_enum_as_number) - treat inserted enum values in CSV formats as enum indices. Default value - `false`.
-- [input_format_csv_use_best_effort_in_schema_inference](../operations/settings/settings.md#input_format_csv_use_best_effort_in_schema_inference) - use some tweaks and heuristics to infer schema in CSV format. If disabled, all fields will be inferred as Strings. Default value - `true`.
-- [input_format_csv_arrays_as_nested_csv](../operations/settings/settings.md#input_format_csv_arrays_as_nested_csv) - when reading Array from CSV, expect that its elements were serialized in nested CSV and then put into string. Default value - `false`.
-- [output_format_csv_crlf_end_of_line](../operations/settings/settings.md#output_format_csv_crlf_end_of_line) - if it is set true, end of line in CSV output format will be `\r\n` instead of `\n`. Default value - `false`.
-- [input_format_csv_skip_first_lines](../operations/settings/settings.md#input_format_csv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -457,7 +431,7 @@ Also prints two header rows with column names and types, similar to [TabSeparate
 
 ## CustomSeparated {#format-customseparated}
 
-Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../operations/settings/settings.md#format_custom_escaping_rule) setting and delimiters from [format_custom_field_delimiter](../operations/settings/settings.md#format_custom_field_delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format_custom_row_before_delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format_custom_row_after_delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format_custom_row_between_delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format_custom_result_before_delimiter) and [format_custom_result_after_delimiter](../operations/settings/settings.md#format_custom_result_after_delimiter) settings, not from format strings.
+Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../operations/settings/settings.md#format-custom-escaping-rule) setting and delimiters from [format_custom_field_delimiter](../operations/settings/settings.md#format-custom-field-delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format-custom-row-before-delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format-custom-row-after-delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format-custom-row-between-delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format-custom-result-before-delimiter) and [format_custom_result_after_delimiter](../operations/settings/settings.md#format-custom-result-after-delimiter) settings, not from format strings.
 
 There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
 
@@ -468,34 +442,6 @@ Also prints the header row with column names, similar to [TabSeparatedWithNames]
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
-
-## SQLInsert {#sqlinsert}
-
-Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
-
-Example:
-
-```sql
-SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
-```
-
-```sql
-INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
-INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
-INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
-INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
-INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
-```
-
-To read data output by this format ypu can use [MySQLDump](#mysqldump) input format.
-
-### SQLInsert format settings {#sqlinsert-format-settings}
-
-- [output_format_sql_insert_max_batch_size](../operations/settings/settings.md#output_format_sql_insert_max_batch_size) - The maximum number of rows in one INSERT statement. Default value - `65505`.
-- [output_format_sql_insert_table_name](../operations/settings/settings.md#output_format_sql_insert_table_name) - The name of table in the output INSERT query. Default value - `'table'`.
-- [output_format_sql_insert_include_column_names](../operations/settings/settings.md#output_format_sql_insert_include_column_names) - Include column names in INSERT query. Default value - `true`.
-- [output_format_sql_insert_use_replace](../operations/settings/settings.md#output_format_sql_insert_use_replace) - Use REPLACE statement instead of INSERT. Default value - `false`.
-- [output_format_sql_insert_quote_names](../operations/settings/settings.md#output_format_sql_insert_quote_names) - Quote column names with "\`" characters . Default value - `true`.
 
 ## JSON {#json}
 
@@ -510,15 +456,15 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "meta":
         [
                 {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "arr",
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -526,36 +472,29 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "data":
         [
                 {
-                        "num": 42,
-                        "str": "hello",
-                        "arr": [0,1]
+                        "'hello'": "hello",
+                        "multiply(42, number)": "0",
+                        "range(5)": [0,1,2,3,4]
                 },
                 {
-                        "num": 43,
-                        "str": "hello",
-                        "arr": [0,1,2]
+                        "'hello'": "hello",
+                        "multiply(42, number)": "42",
+                        "range(5)": [0,1,2,3,4]
                 },
                 {
-                        "num": 44,
-                        "str": "hello",
-                        "arr": [0,1,2,3]
+                        "'hello'": "hello",
+                        "multiply(42, number)": "84",
+                        "range(5)": [0,1,2,3,4]
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001137687,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
+        "rows_before_limit_at_least": 3
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#output_format_json_quote_64bit_integers) to 0.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
 
 `rows` – The total number of output rows.
 
@@ -568,12 +507,12 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) to 1.
+ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
 **See Also**
 
 -   [JSONEachRow](#jsoneachrow) format
--   [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) setting
+-   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
 
 ## JSONStrings {#jsonstrings}
 
@@ -586,15 +525,15 @@ Example:
         "meta":
         [
                 {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "arr",
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -602,95 +541,25 @@ Example:
         "data":
         [
                 {
-                        "num": "42",
-                        "str": "hello",
-                        "arr": "[0,1]"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "0",
+                        "range(5)": "[0,1,2,3,4]"
                 },
                 {
-                        "num": "43",
-                        "str": "hello",
-                        "arr": "[0,1,2]"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "42",
+                        "range(5)": "[0,1,2,3,4]"
                 },
                 {
-                        "num": "44",
-                        "str": "hello",
-                        "arr": "[0,1,2,3]"
+                        "'hello'": "hello",
+                        "multiply(42, number)": "84",
+                        "range(5)": "[0,1,2,3,4]"
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001403233,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
-
-## JSONColumns {#jsoncolumns}
-
-In this format, all data is represented as a single JSON Object.
-Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
-
-Example:
-```json
-{
-	"num": [42, 43, 44],
-	"str": ["hello", "hello", "hello"],
-	"arr": [[0,1], [0,1,2], [0,1,2,3]]
-}
-```
-
-During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
-Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#input_format_defaults_for_omitted_fields) setting here)
-
-
-## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
-
-Differs from JSONColumns output format in that it also outputs some metadata and statistics (similar to JSON output format).
-This format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
-
-Example:
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
-                        "type": "String"
-                },
-
-                {
-                        "name": "arr",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        {
-                "num": [42, 43, 44],
-                "str": ["hello", "hello", "hello"],
-                "arr": [[0,1], [0,1,2], [0,1,2,3]]
-        },
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.000272376,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
+        "rows_before_limit_at_least": 3
 }
 ```
 
@@ -742,158 +611,90 @@ Result:
 ```
 
 ## JSONCompact {#jsoncompact}
+## JSONCompactStrings {#jsoncompactstrings}
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
 Example:
 
-```json
+```
+// JSONCompact
 {
         "meta":
         [
                 {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "arr",
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
                         "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
-                [42, "hello", [0,1]],
-                [43, "hello", [0,1,2]],
-                [44, "hello", [0,1,2,3]]
+                ["hello", "0", [0,1,2,3,4]],
+                ["hello", "42", [0,1,2,3,4]],
+                ["hello", "84", [0,1,2,3,4]]
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001222069,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
+        "rows_before_limit_at_least": 3
 }
 ```
 
-## JSONCompactStrings {#jsoncompactstrings}
-
-Differs from JSONStrings only in that data rows are output in arrays, not in objects.
-
-Example:
-f
-```json
+```
+// JSONCompactStrings
 {
         "meta":
         [
                 {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
+                        "name": "'hello'",
                         "type": "String"
                 },
                 {
-                        "name": "arr",
+                        "name": "multiply(42, number)",
+                        "type": "UInt64"
+                },
+                {
+                        "name": "range(5)",
                         "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
-                ["42", "hello", "[0,1]"],
-                ["43", "hello", "[0,1,2]"],
-                ["44", "hello", "[0,1,2,3]"]
+                ["hello", "0", "[0,1,2,3,4]"],
+                ["hello", "42", "[0,1,2,3,4]"],
+                ["hello", "84", "[0,1,2,3,4]"]
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001572097,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
+        "rows_before_limit_at_least": 3
 }
 ```
-
-## JSONCompactColumns {#jsoncompactcolumns}
-
-In this format, all data is represented as a single JSON Array.
-Note that JSONCompactColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption
-
-Example:
-```json
-[
-	[42, 43, 44],
-	["hello", "hello", "hello"],
-	[[0,1], [0,1,2], [0,1,2,3]]
-]
-```
-
-Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#input_format_defaults_for_omitted_fields) setting here)
 
 ## JSONEachRow {#jsoneachrow}
-
-In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
-
-Example:
-
-```json
-{"num":42,"str":"hello","arr":[0,1]}
-{"num":43,"str":"hello","arr":[0,1,2]}
-{"num":44,"str":"hello","arr":[0,1,2,3]}
-```
-
-While importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
-
 ## JSONStringsEachRow {#jsonstringseachrow}
-
-Differs from JSONEachRow only in that data fields are output in strings, not in typed JSON values.
-
-Example:
-
-```json
-{"num":"42","str":"hello","arr":"[0,1]"}
-{"num":"43","str":"hello","arr":"[0,1,2]"}
-{"num":"44","str":"hello","arr":"[0,1,2,3]"}
-```
-
 ## JSONCompactEachRow {#jsoncompacteachrow}
-
-Differs from JSONEachRow only in that data rows are output in arrays, not in objects.
-
-Example:
-
-```json
-[42, "hello", [0,1]]
-[43, "hello", [0,1,2]]
-[44, "hello", [0,1,2,3]]
-```
-
 ## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
-Differs from JSONCompactEachRow only in that data fields are output in strings, not in typed JSON values.
+When using these formats, ClickHouse outputs rows as separated, newline-delimited JSON values, but the data as a whole is not valid JSON.
 
-Example:
-
-```json
-["42", "hello", "[0,1]"]
-["43", "hello", "[0,1,2]"]
-["44", "hello", "[0,1,2,3]"]
+``` json
+{"some_int":42,"some_str":"hello","some_tuple":[1,"a"]} // JSONEachRow
+[42,"hello",[1,"a"]] // JSONCompactEachRow
+["42","hello","(2,'a')"] // JSONCompactStringsEachRow
 ```
+
+When inserting the data, you should provide a separate JSON value for each row.
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
 ## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
@@ -901,9 +702,9 @@ Example:
 Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
-{"row":{"num":42,"str":"hello","arr":[0,1]}}
-{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
-{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
+{"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
+{"row":{"'hello'":"hello","multiply(42, number)":"42","range(5)":[0,1,2,3,4]}}
+{"row":{"'hello'":"hello","multiply(42, number)":"84","range(5)":[0,1,2,3,4]}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
@@ -924,14 +725,14 @@ Differs from `JSONCompactStringsEachRow` in that in that it also prints the head
 Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ```json
-["num", "str", "arr"]
-["Int32", "String", "Array(UInt8)"]
-[42, "hello", [0,1]]
-[43, "hello", [0,1,2]]
-[44, "hello", [0,1,2,3]]
+["'hello'", "multiply(42, number)", "range(5)"]
+["String", "UInt64", "Array(UInt8)"]
+["hello", "0", [0,1,2,3,4]]
+["hello", "42", [0,1,2,3,4]]
+["hello", "84", [0,1,2,3,4]]
 ```
 
-### Inserting Data {#json-inserting-data}
+### Inserting Data {#inserting-data}
 
 ``` sql
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -948,7 +749,7 @@ ClickHouse ignores spaces between elements and commas after the objects. You can
 
 ClickHouse substitutes omitted values with the default values for the corresponding [data types](../sql-reference/data-types/index.md).
 
-If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#input_format_defaults_for_omitted_fields) setting.
+If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting.
 
 Consider the following table:
 
@@ -967,7 +768,7 @@ CREATE TABLE IF NOT EXISTS example_table
 When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
 :::
 
-### Selecting Data {#json-selecting-data}
+### Selecting Data {#selecting-data}
 
 Consider the `UserActivity` table as an example:
 
@@ -987,13 +788,13 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
-:::info
+:::info    
 Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 :::
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with [Nested](../sql-reference/data-types/nested-data-structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](../operations/settings/settings.md#input_format_import_nested_json) setting.
+If you have a table with [Nested](../sql-reference/data-types/nested-data-structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
@@ -1007,7 +808,7 @@ As you can see in the `Nested` data type description, ClickHouse treats each com
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-To insert data as a hierarchical JSON object, set [input_format_import_nested_json=1](../operations/settings/settings.md#input_format_import_nested_json).
+To insert data as a hierarchical JSON object, set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -1049,16 +850,6 @@ SELECT * FROM json_each_row_nested
 │ ['abc','def'] │ [1,23] │
 └───────────────┴────────┘
 ```
-
-### JSON formats settings {#json-formats-settings}
-
-- [input_format_import_nested_json](../operations/settings/settings.md#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
-- [input_format_json_read_bools_as_numbers](../operations/settings/settings.md#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
-- [output_format_json_quote_64bit_integers](../operations/settings/settings.md#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
-- [output_format_json_quote_denormals](../operations/settings/settings.md#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
-- [output_format_json_escape_forward_slashes](../operations/settings/settings.md#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.
-- [output_format_json_named_tuples_as_objects](../operations/settings/settings.md#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `false`.
-- [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) - output a JSON array of all rows in JSONEachRow(Compact) format. Default value - `false`.
 
 ## Native {#native}
 
@@ -1168,15 +959,6 @@ The same as the previous setting.
 
 Differs from [PrettyCompact](#prettycompact) in that whitespace (space characters) is used instead of the grid.
 
-### Pretty formats settings {#pretty-formats-settings}
-
-- [output_format_pretty_max_rows](../operations/settings/settings.md#output_format_pretty_max_rows) - rows limit for Pretty formats. Default value - `10000`.
-- [output_format_pretty_max_column_pad_width](../operations/settings/settings.md#output_format_pretty_max_column_pad_width) - maximum width to pad all values in a column in Pretty formats. Default value - `250`.
-- [output_format_pretty_max_value_width](../operations/settings/settings.md#output_format_pretty_max_value_width) - Maximum width of value to display in Pretty formats. If greater - it will be cut. Default value - `10000`.
-- [output_format_pretty_color](../operations/settings/settings.md#output_format_pretty_color) - use ANSI escape sequences to paint colors in Pretty formats. Default value - `true`.
-- [output_format_pretty_grid_charset](../operations/settings/settings.md#output_format_pretty_grid_charset) - Charset for printing grid borders. Available charsets: ASCII, UTF-8. Default value - `UTF-8`.
-- [output_format_pretty_row_numbers](../operations/settings/settings.md#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `false`.
-
 ## RowBinary {#rowbinary}
 
 Formats and parses data by row in binary format. Rows and values are listed consecutively, without separators.
@@ -1215,12 +997,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
-## Values format settings {#values-format-settings}
-
-- [input_format_values_interpret_expressions](../operations/settings/settings.md#input_format_values_interpret_expressions) - if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression. Default value - `true`.
-- [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#input_format_values_deduce_templates_of_expressions) -if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. Default value - `true`.
-- [input_format_values_accurate_types_of_literals](../operations/settings/settings.md#input_format_values_accurate_types_of_literals) - when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues. Default value - `true`.
-
+See also: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
 
 ## Vertical {#vertical}
 
@@ -1359,7 +1136,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `LIST`                         | [Array](../sql-reference/data-types/array.md)             | `LIST`                         |
 | `STRUCT`                       | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                       |
 
-For working with `Enum` in CapnProto format use the [format_capn_proto_enum_comparising_mode](../operations/settings/settings.md#format_capn_proto_enum_comparising_mode) setting.
+For working with `Enum` in CapnProto format use the [format_capn_proto_enum_comparising_mode](../operations/settings/settings.md#format-capn-proto-enum-comparising-mode) setting.
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` type also can be nested.
 
@@ -1368,7 +1145,7 @@ Arrays can be nested and can have a value of the `Nullable` type as an argument.
 You can insert CapnProto data from a file into ClickHouse table by the following command:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_schema = 'schema:Message' FORMAT CapnProto"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 Where `schema.capnp` looks like this:
@@ -1385,76 +1162,6 @@ You can select data from a ClickHouse table and save them into some file in the 
 ``` bash
 $ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
-## Prometheus {#prometheus}
-
-Expose metrics in [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
-
-The output table should have a proper structure.
-Columns `name` ([String](../sql-reference/data-types/string.md)) and `value` (number) are required.
-Rows may optionally contain `help` ([String](../sql-reference/data-types/string.md)) and `timestamp` (number).
-Column `type` ([String](../sql-reference/data-types/string.md)) is either `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
-Each metric value may also have some `labels` ([Map(String, String)](../sql-reference/data-types/map.md)).
-Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
-
-There's special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
-
-**Example:**
-
-```
-┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
-│ http_request_duration_seconds       │ histogram │ A histogram of the request duration.      │ {'le':'0.05'}                  │    24054 │             0 │
-│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.1'}                   │    33444 │             0 │
-│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.2'}                   │   100392 │             0 │
-│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.5'}                   │   129389 │             0 │
-│ http_request_duration_seconds       │ histogram │                                           │ {'le':'1'}                     │   133988 │             0 │
-│ http_request_duration_seconds       │ histogram │                                           │ {'le':'+Inf'}                  │   144320 │             0 │
-│ http_request_duration_seconds       │ histogram │                                           │ {'sum':''}                     │    53423 │             0 │
-│ http_requests_total                 │ counter   │ Total number of HTTP requests             │ {'method':'post','code':'200'} │     1027 │ 1395066363000 │
-│ http_requests_total                 │ counter   │                                           │ {'method':'post','code':'400'} │        3 │ 1395066363000 │
-│ metric_without_timestamp_and_labels │           │                                           │ {}                             │    12.47 │             0 │
-│ rpc_duration_seconds                │ summary   │ A summary of the RPC duration in seconds. │ {'quantile':'0.01'}            │     3102 │             0 │
-│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.05'}            │     3272 │             0 │
-│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.5'}             │     4773 │             0 │
-│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.9'}             │     9001 │             0 │
-│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.99'}            │    76656 │             0 │
-│ rpc_duration_seconds                │ summary   │                                           │ {'count':''}                   │     2693 │             0 │
-│ rpc_duration_seconds                │ summary   │                                           │ {'sum':''}                     │ 17560473 │             0 │
-│ something_weird                     │           │                                           │ {'problem':'division by zero'} │      inf │      -3982045 │
-└─────────────────────────────────────┴───────────┴───────────────────────────────────────────┴────────────────────────────────┴──────────┴───────────────┘
-```
-
-Will be formatted as:
-
-```
-# HELP http_request_duration_seconds A histogram of the request duration.
-# TYPE http_request_duration_seconds histogram
-http_request_duration_seconds_bucket{le="0.05"} 24054
-http_request_duration_seconds_bucket{le="0.1"} 33444
-http_request_duration_seconds_bucket{le="0.5"} 129389
-http_request_duration_seconds_bucket{le="1"} 133988
-http_request_duration_seconds_bucket{le="+Inf"} 144320
-http_request_duration_seconds_sum 53423
-http_request_duration_seconds_count 144320
-
-# HELP http_requests_total Total number of HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{code="200",method="post"} 1027 1395066363000
-http_requests_total{code="400",method="post"} 3 1395066363000
-
-metric_without_timestamp_and_labels 12.47
-
-# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
-# TYPE rpc_duration_seconds summary
-rpc_duration_seconds{quantile="0.01"} 3102
-rpc_duration_seconds{quantile="0.05"} 3272
-rpc_duration_seconds{quantile="0.5"} 4773
-rpc_duration_seconds{quantile="0.9"} 9001
-rpc_duration_seconds{quantile="0.99"} 76656
-rpc_duration_seconds_sum 17560473
-rpc_duration_seconds_count 2693
-
-something_weird{problem="division by zero"} +Inf -3982045
-```
 
 ## Protobuf {#protobuf}
 
@@ -1470,7 +1177,7 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 ```
 
 ``` bash
-cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table SETTINGS format_schema='schemafile:MessageType' FORMAT Protobuf"
+cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
 where the file `schemafile.proto` looks like this:
@@ -1553,7 +1260,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `long (timestamp-millis)` \**               | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-millis)` \* |
 | `long (timestamp-micros)` \**               | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                              | `long (timestamp-micros)` \* |
 
-\* `bytes` is default, controlled by [output_format_avro_string_column_pattern](../operations/settings/settings.md#output_format_avro_string_column_pattern)
+\* `bytes` is default, controlled by [output_format_avro_string_column_pattern](../operations/settings/settings.md#settings-output_format_avro_string_column_pattern)
 \** [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Unsupported Avro data types: `record` (non-root), `map`
@@ -1575,8 +1282,6 @@ Unused fields are skipped.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to corresponding column type.
 
-While importing data, when field is not found in schema and setting [input_format_avro_allow_missing_fields](../operations/settings/settings.md#input_format_avro_allow_missing_fields) is enabled, default value will be used instead of error.
-
 ### Selecting Data {#selecting-data-1}
 
 To select data from ClickHouse table into an Avro file:
@@ -1590,7 +1295,7 @@ Column names must:
 -   start with `[A-Za-z_]`
 -   subsequently contain only `[A-Za-z0-9_]`
 
-Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#output_format_avro_sync_interval) respectively.
+Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -1637,7 +1342,7 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-:::warning
+:::warning    
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 :::
 
@@ -1645,7 +1350,7 @@ Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` 
 
 [Apache Parquet](https://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
-### Data Types Matching {#data-types-matching-parquet}
+### Data Types Matching {#data_types-matching-2}
 
 The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -1678,13 +1383,15 @@ Unsupported Parquet data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
-### Inserting and Selecting Data {#inserting-and-selecting-data-parquet}
+### Inserting and Selecting Data {#inserting-and-selecting-data}
 
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
 ``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
+
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
 
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
@@ -1694,22 +1401,13 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
 
-### Parquet format settings {#parquet-format-settings}
-
-- [output_format_parquet_row_group_size](../operations/settings/settings.md#output_format_parquet_row_group_size) - row group size in rows while data output. Default value - `1000000`.
-- [output_format_parquet_string_as_string](../operations/settings/settings.md#output_format_parquet_string_as_string) - use Parquet String type instead of Binary for String columns. Default value - `false`.
-- [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) - allow inserting array of structs into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) table in Parquet input format. Default value - `false`.
-- [input_format_parquet_case_insensitive_column_matching](../operations/settings/settings.md#input_format_parquet_case_insensitive_column_matching) - ignore case when matching Parquet columns with ClickHouse columns. Default value - `false`.
-- [input_format_parquet_allow_missing_columns](../operations/settings/settings.md#input_format_parquet_allow_missing_columns) - allow missing columns while reading Parquet data. Default value - `false`.
-- [input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference](../operations/settings/settings.md#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Parquet format. Default value - `false`.
-
 ## Arrow {#data-format-arrow}
 
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 
 `Arrow` is Apache Arrow’s "file mode" format. It is designed for in-memory random access.
 
-### Data Types Matching {#data-types-matching-arrow}
+### Data Types Matching {#data_types-matching-arrow}
 
 The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -1753,6 +1451,8 @@ You can insert Arrow data from a file into ClickHouse table by the following com
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested) setting.
+
 ### Selecting Data {#selecting-data-arrow}
 
 You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
@@ -1760,15 +1460,6 @@ You can select data from a ClickHouse table and save them into some file in the 
 ``` bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
 ```
-
-### Arrow format settings {#parquet-format-settings}
-
-- [output_format_arrow_low_cardinality_as_dictionary](../operations/settings/settings.md#output_format_arrow_low_cardinality_as_dictionary) - enable output ClickHouse LowCardinality type as Dictionary Arrow type. Default value - `false`.
-- [output_format_arrow_string_as_string](../operations/settings/settings.md#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
-- [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested) - allow inserting array of structs into Nested table in Arrow input format. Default value - `false`.
-- [input_format_arrow_case_insensitive_column_matching](../operations/settings/settings.md#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
-- [input_format_arrow_allow_missing_columns](../operations/settings/settings.md#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
-- [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](../operations/settings/settings.md#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
 
 ## ArrowStream {#data-format-arrow-stream}
 
@@ -1778,7 +1469,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 
 [Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the [Hadoop](https://hadoop.apache.org/) ecosystem.
 
-### Data Types Matching {#data-types-matching-orc}
+### Data Types Matching {#data_types-matching-3}
 
 The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -1810,7 +1501,7 @@ Unsupported ORC data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM
 
 The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
-### Inserting Data {#inserting-data-orc}
+### Inserting Data {#inserting-data-2}
 
 You can insert ORC data from a file into ClickHouse table by the following command:
 
@@ -1818,22 +1509,15 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-### Selecting Data {#selecting-data-orc}
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested) setting.
+
+### Selecting Data {#selecting-data-2}
 
 You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
 
 ``` bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
 ```
-
-### Arrow format settings {#parquet-format-settings}
-
-- [output_format_arrow_string_as_string](../operations/settings/settings.md#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
-- [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested) - allow inserting array of structs into Nested table in Arrow input format. Default value - `false`.
-- [input_format_arrow_case_insensitive_column_matching](../operations/settings/settings.md#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
-- [input_format_arrow_allow_missing_columns](../operations/settings/settings.md#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
-- [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](../operations/settings/settings.md#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
-
 
 To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
 
@@ -1875,18 +1559,18 @@ When working with the `Regexp` format, you can use the following settings:
     -   Escaped (similarly to [TSV](#tabseparated))
     -   Quoted (similarly to [Values](#data-format-values))
     -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
-
--   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+	
+-   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
 
-The regular expression from [format_regexp](../operations/settings/settings.md#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
+The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
 
 Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
 
-The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](../operations/settings/settings.md#format_regexp_escaping_rule) setting.
+The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting.
 
-If the regular expression does not match the line and [format_regexp_skip_unmatched](../operations/settings/settings.md#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
+If the regular expression does not match the line and `format_regexp_skip_unmatched` is set to 1, the line is silently skipped. If `format_regexp_skip_unmatched` is set to 0, exception is thrown.
 
 **Example**
 
@@ -1906,7 +1590,7 @@ CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, dat
 Import command:
 
 ```bash
-$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table FORMAT Regexp SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0;"
 ```
 
 Query:
@@ -1944,8 +1628,8 @@ in the server configuration.
 
 ## Skipping Errors {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#input_format_allow_errors_num) and
-[input_format_allow_errors_ratio](../operations/settings/settings.md#input_format_allow_errors_ratio) settings.
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
+[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
@@ -2020,76 +1704,4 @@ Writing to a file ".msgpk":
 $ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
 $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
-```
-
-### MsgPack format settings {#msgpack-format-settings}
-
-- [input_format_msgpack_number_of_columns](../operations/settings/settings.md#input_format_msgpack_number_of_columns) - the number of columns in inserted MsgPack data. Used for automatic schema inference from data. Default value - `0`.
-- [output_format_msgpack_uuid_representation](../operations/settings/settings.md#output_format_msgpack_uuid_representation) - the way how to output UUID in MsgPack format. Default value - `EXT`.
-
-## MySQLDump {#mysqldump}
-
-ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
-It reads all data from INSERT queries belonging to one table in dump. If there are more than one table, by default it reads data from the first one.
-You can specify the name of the table from which to read data from using [input_format_mysql_dump_table_name](../operations/settings/settings.md#input_format_mysql_dump_table_name) settings.
-If setting [input_format_mysql_dump_map_columns](../operations/settings/settings.md#input_format_mysql_dump_map_columns) is set to 1 and
-dump contains CREATE query for specified table or column names in INSERT query the columns from input data will be mapped to the columns from the table by their names,
-columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
-This format supports schema inference: if the dump contains CREATE query for the specified table, the structure is extracted from it, otherwise schema is inferred from the data of INSERT queries.
-
-Examples:
-
-File dump.sql:
-```sql
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `test` (
-  `x` int DEFAULT NULL,
-  `y` int DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `test 3` (
-  `y` int DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-INSERT INTO `test 3` VALUES (1);
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `test2` (
-  `x` int DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-INSERT INTO `test2` VALUES (1),(2),(3);
-```
-
-Queries:
-
-```sql
-:) desc file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
-
-DESCRIBE TABLE file(dump.sql, MySQLDump)
-SETTINGS input_format_mysql_dump_table_name = 'test2'
-
-Query id: 25e66c89-e10a-42a8-9b42-1ee8bbbde5ef
-
-┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ x    │ Nullable(Int32) │              │                    │         │                  │                │
-└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-:) select * from file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
-
-SELECT *
-FROM file(dump.sql, MySQLDump)
-         SETTINGS input_format_mysql_dump_table_name = 'test2'
-
-Query id: 17d59664-ebce-4053-bb79-d46a516fb590
-
-┌─x─┐
-│ 1 │
-│ 2 │
-│ 3 │
-└───┘
 ```

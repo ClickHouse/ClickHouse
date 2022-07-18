@@ -507,7 +507,7 @@
 "toStartOfFifteenMinutes"
 "emptyArrayUInt8"
 "dictGetUInt8"
-"toStartOfFiveMinutes"
+"toStartOfFiveMinute"
 "cbrt"
 "toStartOfMinute"
 "dictGet"

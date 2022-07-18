@@ -58,8 +58,6 @@ void PostgreSQLHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
 
-    session->getClientInfo().connection_id = connection_id;
-
     try
     {
         if (!startup())

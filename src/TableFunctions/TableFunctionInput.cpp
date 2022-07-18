@@ -1,3 +1,4 @@
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionInput.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
@@ -5,7 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
 #include <Storages/StorageInput.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
@@ -40,7 +40,7 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "structure");
+    structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context) const
@@ -60,7 +60,7 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
 
 StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
+    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();
     return storage;
 }

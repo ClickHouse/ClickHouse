@@ -2,13 +2,10 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1", main_configs=["configs/macro.xml"], with_hdfs=True
-)
+node1 = cluster.add_instance("node1", with_hdfs=True)
 
 
 @pytest.fixture(scope="module")
@@ -544,30 +541,6 @@ def test_schema_inference_with_globs(started_cluster):
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
-    node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
-    )
-
-    filename = "data{1,3}.jsoncompacteachrow"
-
-    result = node1.query_and_get_error(f"desc hdfs('hdfs://hdfs1:9000/{filename}')")
-
-    assert "All attempts to extract table structure from files failed" in result
-
-    node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
-    )
-
-    url_filename = "data{0,1,2,3}.jsoncompacteachrow"
-
-    result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
-    )
-
-    assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
-    )
-
 
 def test_insert_select_schema_inference(started_cluster):
     node1.query(
@@ -590,22 +563,6 @@ def test_cluster_join(started_cluster):
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
-
-
-def test_cluster_macro(started_cluster):
-    with_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
-    """
-    )
-
-    no_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
-    """
-    )
-
-    assert TSV(with_macro) == TSV(no_macro)
 
 
 def test_virtual_columns_2(started_cluster):

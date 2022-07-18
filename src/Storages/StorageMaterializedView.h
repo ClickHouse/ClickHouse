@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
+
 #include <Parsers/IAST_fwd.h>
 
 #include <Storages/IStorage.h>
@@ -9,17 +11,10 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public IStorage, WithMutableContext
+class StorageMaterializedView final : public shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
 {
+    friend struct shared_ptr_helper<StorageMaterializedView>;
 public:
-    StorageMaterializedView(
-        const StorageID & table_id_,
-        ContextPtr local_context,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns_,
-        bool attach_,
-        const String & comment);
-
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
 
@@ -42,7 +37,7 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void drop() override;
-    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
+    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -69,7 +64,6 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
-    void startup() override;
     void shutdown() override;
 
     QueryProcessingStage::Enum
@@ -83,6 +77,15 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -95,12 +98,9 @@ public:
 
     Strings getDataPaths() const override;
 
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    bool supportsBackupPartition() const override;
-
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    bool hasDataToBackup() const override { return hasInnerTable(); }
+    BackupEntries backupData(ContextPtr context_, const ASTs & partitions_) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_) override;
 
 private:
     /// Will be initialized in constructor
@@ -109,6 +109,15 @@ private:
     bool has_inner_table = false;
 
     void checkStatementCanBeForwarded() const;
+
+protected:
+    StorageMaterializedView(
+        const StorageID & table_id_,
+        ContextPtr local_context,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns_,
+        bool attach_,
+        const String & comment);
 };
 
 }

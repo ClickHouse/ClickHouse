@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -22,10 +23,9 @@ struct StoragesInfo
     bool need_inactive_parts = false;
     MergeTreeData * data = nullptr;
 
-    explicit operator bool() const { return storage != nullptr; }
-
-    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
-    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    operator bool() const { return storage != nullptr; } /// NOLINT
+    MergeTreeData::DataPartsVector
+    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */

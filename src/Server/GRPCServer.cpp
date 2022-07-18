@@ -40,7 +40,7 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -627,7 +627,7 @@ namespace
         void executeQuery();
 
         void processInput();
-        void initializePipeline(const Block & header);
+        void initializeBlockInputStream(const Block & header);
         void createExternalTables();
 
         void generateOutput();
@@ -848,7 +848,6 @@ namespace
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
             logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
-            logs_queue->setSourceRegexp(settings.send_logs_source_regexp);
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
             CurrentThread::setFatalErrorCallback([this]{ onFatalError(); });
         }
@@ -921,7 +920,7 @@ namespace
             if (context != query_context)
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
-            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -968,7 +967,7 @@ namespace
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializePipeline(io.pipeline.getHeader());
+        initializeBlockInputStream(io.pipeline.getHeader());
 
         PushingPipelineExecutor executor(io.pipeline);
         executor.start();
@@ -983,7 +982,7 @@ namespace
         executor.finish();
     }
 
-    void Call::initializePipeline(const Block & header)
+    void Call::initializeBlockInputStream(const Block & header)
     {
         assert(!read_buffer);
         read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
@@ -1048,7 +1047,10 @@ namespace
         auto source = query_context->getInputFormat(
             input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
 
-        pipeline = std::make_unique<QueryPipeline>(std::move(source));
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(source));
+
+        pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
@@ -1480,7 +1482,7 @@ namespace
 
     void Call::addProgressToResult()
     {
-        auto values = progress.fetchValuesAndResetPiecewiseAtomically();
+        auto values = progress.fetchAndResetPiecewiseAtomically();
         if (!values.read_rows && !values.read_bytes && !values.total_rows_to_read && !values.written_rows && !values.written_bytes)
             return;
         auto & grpc_progress = *result.mutable_progress();

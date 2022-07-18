@@ -4,6 +4,8 @@
 #include <optional>
 #include <mutex>
 
+#include <base/shared_ptr_helper.h>
+
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
@@ -11,26 +13,19 @@
 
 namespace DB
 {
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
 
 /** Implements storage in the RAM.
   * Suitable for temporary data.
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public IStorage
+class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
 {
 friend class MemorySink;
+friend class MemoryRestoreTask;
+friend struct shared_ptr_helper<StorageMemory>;
 
 public:
-    StorageMemory(
-        const StorageID & table_id_,
-        ColumnsDescription columns_description_,
-        ConstraintsDescription constraints_,
-        const String & comment,
-        bool compress_ = false);
-
     String getName() const override { return "Memory"; }
 
     size_t getSize() const { return data.get()->size(); }
@@ -71,8 +66,9 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    bool hasDataToBackup() const override { return true; }
+    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -115,9 +111,6 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk);
-
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
     MultiVersion<Blocks> data;
@@ -130,6 +123,14 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
+
+protected:
+    StorageMemory(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        ConstraintsDescription constraints_,
+        const String & comment,
+        bool compress_ = false);
 };
 
 }

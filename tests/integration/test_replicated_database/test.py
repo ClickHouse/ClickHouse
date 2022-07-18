@@ -96,16 +96,13 @@ def test_create_replicated_table(started_cluster):
         "Explicit zookeeper_path and replica_name are specified"
         in main_node.query_and_get_error(
             "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
-            "ENGINE=ReplicatedMergeTree('/test/tmp', 'r') ORDER BY k PARTITION BY toYYYYMM(d);"
+            "ENGINE=ReplicatedMergeTree('/test/tmp', 'r', d, k, 8192);"
         )
     )
 
-    assert (
-        "This syntax for *MergeTree engine is deprecated"
-        in main_node.query_and_get_error(
-            "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
-            "ENGINE=ReplicatedMergeTree('/test/tmp/{shard}', '{replica}', d, k, 8192);"
-        )
+    assert "Old syntax is not allowed" in main_node.query_and_get_error(
+        "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+        "ENGINE=ReplicatedMergeTree('/test/tmp/{shard}', '{replica}', d, k, 8192);"
     )
 
     main_node.query(
@@ -396,7 +393,7 @@ def test_alters_from_different_replicas(started_cluster):
     main_node.query(
         "CREATE TABLE testdb.concurrent_test "
         "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
-        "ENGINE = MergeTree PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID);"
+        "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192);"
     )
 
     main_node.query(
@@ -446,7 +443,7 @@ def test_alters_from_different_replicas(started_cluster):
         "    `Added0` UInt32,\\n    `Added1` UInt32,\\n    `Added2` UInt32,\\n    `AddedNested1.A` Array(UInt32),\\n"
         "    `AddedNested1.B` Array(UInt64),\\n    `AddedNested1.C` Array(String),\\n    `AddedNested2.A` Array(UInt32),\\n"
         "    `AddedNested2.B` Array(UInt64)\\n)\\n"
-        "ENGINE = MergeTree\\nPARTITION BY toYYYYMM(StartDate)\\nORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)\\nSETTINGS index_granularity = 8192"
+        "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192)"
     )
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
@@ -803,67 +800,3 @@ def test_server_uuid(started_cluster):
     main_node.restart_clickhouse()
     uuid1_after_restart = main_node.query("select serverUUID()")
     assert uuid1 == uuid1_after_restart
-
-
-def test_sync_replica(started_cluster):
-    main_node.query(
-        "CREATE DATABASE test_sync_database ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
-    )
-    dummy_node.query(
-        "CREATE DATABASE test_sync_database ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
-    )
-
-    number_of_tables = 1000
-
-    settings = {"distributed_ddl_task_timeout": 0}
-
-    with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(dummy_node)
-
-        for i in range(number_of_tables):
-            main_node.query(
-                "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n".format(
-                    i
-                ),
-                settings=settings,
-            )
-
-    # wait for host to reconnect
-    dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")
-
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database")
-
-    assert dummy_node.query(
-        "SELECT count() FROM system.tables where database='test_sync_database'"
-    ).strip() == str(number_of_tables)
-
-    assert main_node.query(
-        "SELECT count() FROM system.tables where database='test_sync_database'"
-    ).strip() == str(number_of_tables)
-
-    engine_settings = {"default_table_engine": "ReplicatedMergeTree"}
-    dummy_node.query(
-        "CREATE TABLE test_sync_database.table (n int, primary key n) partition by n",
-        settings=engine_settings,
-    )
-    main_node.query("INSERT INTO test_sync_database.table SELECT * FROM numbers(10)")
-    dummy_node.query("TRUNCATE TABLE test_sync_database.table", settings=settings)
-    dummy_node.query(
-        "ALTER TABLE test_sync_database.table ADD COLUMN m int", settings=settings
-    )
-
-    main_node.query(
-        "SYSTEM SYNC DATABASE REPLICA ON CLUSTER test_sync_database test_sync_database"
-    )
-
-    lp1 = main_node.query(
-        "select value from system.zookeeper where path='/clickhouse/databases/test1/replicas/shard1|replica1' and name='log_ptr'"
-    )
-    lp2 = main_node.query(
-        "select value from system.zookeeper where path='/clickhouse/databases/test1/replicas/shard1|replica2' and name='log_ptr'"
-    )
-    max_lp = main_node.query(
-        "select value from system.zookeeper where path='/clickhouse/databases/test1/' and name='max_log_ptr'"
-    )
-    assert lp1 == max_lp
-    assert lp2 == max_lp

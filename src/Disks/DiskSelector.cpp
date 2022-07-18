@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Interpreters/Context.h>
 
 #include <set>

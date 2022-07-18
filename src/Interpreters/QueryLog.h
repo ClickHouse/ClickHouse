@@ -93,7 +93,6 @@ struct QueryLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };

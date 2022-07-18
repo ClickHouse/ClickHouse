@@ -17,7 +17,7 @@ namespace DB
 
 template <bool thread_safe>
 void OptimizedRegularExpressionImpl<thread_safe>::analyze(
-    std::string_view regexp,
+    const std::string & regexp,
     std::string & required_substring,
     bool & is_trivial,
     bool & required_substring_is_prefix)

@@ -45,7 +45,7 @@ CHECK TABLE test_table;
 └───────────┴───────────┴─────────┘
 ```
 
-Если `check_query_single_value_result` = 1, запрос `CHECK TABLE` возвращает статус таблицы в целом.
+Если `check_query_single_value_result` = 0, запрос `CHECK TABLE` возвращает статус таблицы в целом.
 
 ```sql
 SET check_query_single_value_result = 1;

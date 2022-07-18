@@ -14,9 +14,6 @@ from env_helper import (
     GITHUB_EVENT_PATH,
 )
 
-FORCE_TESTS_LABEL = "force tests"
-SKIP_SIMPLE_CHECK_LABEL = "skip simple check"
-
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
     ".md",
@@ -209,7 +206,6 @@ class PRInfo:
                         f"compare/{self.head_ref}...master.diff"
                     )
         else:
-            print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
@@ -277,13 +273,13 @@ class PRInfo:
             return True
 
         for f in self.changed_files:
-            if "contrib/" in f:
+            if "contrib" in f:
                 return True
         return False
 
     def can_skip_builds_and_use_version_from_master(self):
         # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -302,7 +298,7 @@ class PRInfo:
 
     def can_skip_integration_tests(self):
         # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -319,7 +315,7 @@ class PRInfo:
 
     def can_skip_functional_tests(self):
         # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:

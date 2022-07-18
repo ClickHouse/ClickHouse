@@ -3,7 +3,7 @@
 #include <Processors/Transforms/SortingTransform.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -23,7 +23,6 @@ public:
         const SortDescription & description_,
         size_t max_merged_block_size_,
         UInt64 limit_,
-        bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,

@@ -8,7 +8,7 @@
 namespace DB
 {
 class IBackupEntry;
-using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
+using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
 
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store
@@ -16,6 +16,7 @@ using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 class IBackup : public std::enable_shared_from_this<IBackup>
 {
 public:
+    IBackup() = default;
     virtual ~IBackup() = default;
 
     /// Name of the backup.
@@ -23,12 +24,17 @@ public:
 
     enum class OpenMode
     {
+        NONE,
         READ,
         WRITE,
     };
 
-    /// Returns whether the backup was opened for reading or writing.
+    /// Opens the backup and start its reading or writing depending on `open_mode`.
+    virtual void open(OpenMode open_mode) = 0;
     virtual OpenMode getOpenMode() const = 0;
+
+    /// Closes the backup and ends its reading or writing.
+    virtual void close() = 0;
 
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;
@@ -36,34 +42,31 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns names of entries stored in a specified directory in the backup.
-    /// If `directory` is empty or '/' the functions returns entries in the backup's root.
-    virtual Strings listFiles(const String & directory, bool recursive = false) const = 0;
-
-    /// Checks if a specified directory contains any files.
-    /// The function returns the same as `!listFiles(directory).empty()`.
-    virtual bool hasFiles(const String & directory) const = 0;
-
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
+    /// Returns names of entries stored in the backup.
+    /// If `prefix` isn't empty the function will return only the names starting with
+    /// the prefix (but without the prefix itself).
+    /// If the `terminator` isn't empty the function will returns only parts of the names
+    /// before the terminator. For example, list("", "") returns names of all the entries
+    /// in the backup; and list("data/", "/") return kind of a list of folders and
+    /// files stored in the "data/" directory inside the backup.
+    virtual Strings listFiles(const String & prefix = "", const String & terminator = "/") const = 0; /// NOLINT
 
     /// Checks if an entry with a specified name exists.
     virtual bool fileExists(const String & file_name) const = 0;
-    virtual bool fileExists(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Returns the size of the entry's data.
     /// This function does the same as `read(file_name)->getSize()` but faster.
-    virtual UInt64 getFileSize(const String & file_name) const = 0;
+    virtual size_t getFileSize(const String & file_name) const = 0;
 
     /// Returns the checksum of the entry's data.
     /// This function does the same as `read(file_name)->getCheckum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
-    /// Returns both the size and checksum in one call.
-    virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
+    /// Finds a file by its checksum, returns nullopt if not found.
+    virtual std::optional<String> findFileByChecksum(const UInt128 & checksum) const = 0;
 
     /// Reads an entry from the backup.
     virtual BackupEntryPtr readFile(const String & file_name) const = 0;
-    virtual BackupEntryPtr readFile(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const String & file_name, BackupEntryPtr entry) = 0;
@@ -72,7 +75,7 @@ public:
     virtual void finalizeWriting() = 0;
 
     /// Whether it's possible to add new entries to the backup in multiple threads.
-    virtual bool supportsWritingInMultipleThreads() const = 0;
+    virtual bool supportsWritingInMultipleThreads() const { return true; }
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

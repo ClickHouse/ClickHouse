@@ -219,10 +219,10 @@ private:
         auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
         Polygon tmp_poly;
         bg::convert(current_box, tmp_poly);
-        std::erase_if(possible_ids, [&](const auto id)
+        possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)
         {
             return !bg::intersects(current_box, polygons[id]);
-        });
+        }), possible_ids.end());
         int covered = 0;
 #ifndef __clang_analyzer__ /// Triggers a warning in boost geometry.
         auto it = std::find_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)

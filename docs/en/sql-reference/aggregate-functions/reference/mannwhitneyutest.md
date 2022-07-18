@@ -3,7 +3,7 @@ sidebar_position: 310
 sidebar_label: mannWhitneyUTest
 ---
 
-# mannWhitneyUTest
+# mannWhitneyUTest {#mannwhitneyutest}
 
 Applies the Mann-Whitney rank test to samples from two populations.
 

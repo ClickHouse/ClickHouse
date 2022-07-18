@@ -3,9 +3,9 @@ sidebar_position: 63
 sidebar_label: Nullable
 ---
 
-# Functions for Working with Nullable Values
+# Functions for Working with Nullable Values {#functions-for-working-with-nullable-aggregates}
 
-## isNull
+## isNull {#isnull}
 
 Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -47,7 +47,7 @@ SELECT x FROM t_null WHERE isNull(y);
 └───┘
 ```
 
-## isNotNull
+## isNotNull {#isnotnull}
 
 Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -87,7 +87,7 @@ SELECT x FROM t_null WHERE isNotNull(y);
 └───┘
 ```
 
-## coalesce
+## coalesce {#coalesce}
 
 Checks from left to right whether `NULL` arguments were passed and returns the first non-`NULL` argument.
 
@@ -130,7 +130,7 @@ SELECT name, coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
 └──────────┴──────────────────────────────────────────────────────┘
 ```
 
-## ifNull
+## ifNull {#ifnull}
 
 Returns an alternative value if the main argument is `NULL`.
 
@@ -170,7 +170,7 @@ SELECT ifNull(NULL, 'b');
 └───────────────────┘
 ```
 
-## nullIf
+## nullIf {#nullif}
 
 Returns `NULL` if the arguments are equal.
 
@@ -209,7 +209,7 @@ SELECT nullIf(1, 2);
 └──────────────┘
 ```
 
-## assumeNotNull
+## assumeNotNull {#assumenotnull}
 
 Results in an equivalent non-`Nullable` value for a [Nullable](../../sql-reference/data-types/nullable.md) type. In case the original value is `NULL` the result is undetermined. See also `ifNull` and `coalesce` functions.
 
@@ -271,7 +271,7 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null;
 └──────────────────────────────┘
 ```
 
-## toNullable
+## toNullable {#tonullable}
 
 Converts the argument type to `Nullable`.
 

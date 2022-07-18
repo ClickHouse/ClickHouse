@@ -16,8 +16,7 @@ public:
         const SortDescription & description_sorted_,
         const SortDescription & description_to_sort_,
         size_t max_merged_block_size_,
-        UInt64 limit_,
-        bool increase_sort_description_compile_attempts);
+        UInt64 limit_);
 
     String getName() const override { return "FinishSortingTransform"; }
 

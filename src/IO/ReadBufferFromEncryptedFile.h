@@ -26,12 +26,6 @@ public:
 
     std::string getFileName() const override { return in->getFileName(); }
 
-    void setReadUntilPosition(size_t position) override { in->setReadUntilPosition(position + FileEncryption::Header::kSize); }
-
-    void setReadUntilEnd() override { in->setReadUntilEnd(); }
-
-    size_t getFileSize() override { return in->getFileSize(); }
-
 private:
     bool nextImpl() override;
 

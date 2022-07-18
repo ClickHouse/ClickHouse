@@ -341,7 +341,7 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | 函数 (操作符) / 索引                                         | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 | ------------------------------------------------------------ | ----------- | ------ | ---------- | ---------- | ------------ |
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
@@ -522,7 +522,7 @@ ClickHouse 在数据片段合并时会删除掉过期的数据。
 
 当ClickHouse发现数据过期时, 它将会执行一个计划外的合并。要控制这类合并的频率, 您可以设置 `merge_with_ttl_timeout`。如果该值被设置的太低, 它将引发大量计划外的合并，这可能会消耗大量资源。
 
-如果在两次合并的时间间隔中执行 `SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在 `SELECT` 之前使用 [OPTIMIZE](../../../engines/table-engines/mergetree-family/mergetree.md#misc_operations-optimize) 。
+如果在合并的过程中执行 `SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在 `SELECT` 之前使用 [OPTIMIZE](../../../engines/table-engines/mergetree-family/mergetree.md#misc_operations-optimize) 。
 
 ## 使用多个块设备进行数据存储 {#table_engine-mergetree-multiple-volumes}
 

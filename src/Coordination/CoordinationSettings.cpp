@@ -1,6 +1,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <filesystem>
 #include <Coordination/Defines.h>
 #include <IO/WriteHelpers.h>
@@ -37,7 +37,7 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
 }
 
 
-const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr";
+const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
@@ -99,20 +99,20 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
     writeText("min_session_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->min_session_timeout_ms));
+    write_int(uint64_t(coordination_settings->min_session_timeout_ms));
     writeText("session_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->session_timeout_ms));
+    write_int(uint64_t(coordination_settings->session_timeout_ms));
     writeText("operation_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->operation_timeout_ms));
+    write_int(uint64_t(coordination_settings->operation_timeout_ms));
     writeText("dead_session_check_period_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->dead_session_check_period_ms));
+    write_int(uint64_t(coordination_settings->dead_session_check_period_ms));
 
     writeText("heart_beat_interval_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->heart_beat_interval_ms));
+    write_int(uint64_t(coordination_settings->heart_beat_interval_ms));
     writeText("election_timeout_lower_bound_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->election_timeout_lower_bound_ms));
+    write_int(uint64_t(coordination_settings->election_timeout_lower_bound_ms));
     writeText("election_timeout_upper_bound_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->election_timeout_upper_bound_ms));
+    write_int(uint64_t(coordination_settings->election_timeout_upper_bound_ms));
 
     writeText("reserved_log_items=", buf);
     write_int(coordination_settings->reserved_log_items);
@@ -122,9 +122,9 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("auto_forwarding=", buf);
     write_bool(coordination_settings->auto_forwarding);
     writeText("shutdown_timeout=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->shutdown_timeout));
+    write_int(uint64_t(coordination_settings->shutdown_timeout));
     writeText("startup_timeout=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->startup_timeout));
+    write_int(uint64_t(coordination_settings->startup_timeout));
 
     writeText("raft_logs_level=", buf);
     writeText(coordination_settings->raft_logs_level.toString(), buf);
@@ -186,8 +186,6 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
     ret->snapshot_storage_path = getSnapshotsPathFromConfig(config, standalone_keeper_);
 
-    ret->state_file_path = getStateFilePathFromConfig(config, standalone_keeper_);
-
     ret->coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
 
     return ret;
@@ -221,23 +219,6 @@ String KeeperConfigurationAndSettings::getSnapshotsPathFromConfig(const Poco::Ut
         return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots";
     else
         return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots";
-}
-
-String KeeperConfigurationAndSettings::getStateFilePathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_)
-{
-    if (config.has("keeper_server.storage_path"))
-        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "state";
-
-    if (config.has("keeper_server.snapshot_storage_path"))
-        return std::filesystem::path(config.getString("keeper_server.snapshot_storage_path")).parent_path() / "state";
-
-    if (config.has("keeper_server.log_storage_path"))
-        return std::filesystem::path(config.getString("keeper_server.log_storage_path")).parent_path() / "state";
-
-    if (standalone_keeper_)
-        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "state";
-    else
-        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/state";
 }
 
 }

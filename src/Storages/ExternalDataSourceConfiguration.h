@@ -99,13 +99,9 @@ getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfigura
 struct URLBasedDataSourceConfiguration
 {
     String url;
-    String endpoint;
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
-
-    String user;
-    String password;
 
     std::vector<std::pair<String, Field>> headers;
     String http_method;
@@ -132,9 +128,6 @@ struct URLBasedDataSourceConfig
 };
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
-
-std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 template<typename T>
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);

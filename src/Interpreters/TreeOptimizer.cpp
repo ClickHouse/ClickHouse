@@ -17,12 +17,10 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
-#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -78,7 +76,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
     /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
     /// might be in positional GROUP BY.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(Int64(-1)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -140,18 +138,10 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            else
+            else if (!function_factory.get(function->name, context)->isInjective({}))
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
-
-                if (!function_builder)
-                    function_builder = function_factory.get(function->name, context);
-
-                if (!function_builder->isInjective({}))
-                {
-                    ++i;
-                    continue;
-                }
+                ++i;
+                continue;
             }
 
             /// copy shared pointer to args in order to ensure lifetime
@@ -211,22 +201,10 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
     /// filling set with short names of keys
     for (const auto & group_key : group_by_keys)
     {
-        /// for grouping sets case
-        if (group_key->as<ASTExpressionList>())
-        {
-            const auto express_list_ast = group_key->as<const ASTExpressionList &>();
-            for (const auto & group_elem : express_list_ast.children)
-            {
-                data.key_names.insert(group_elem->getColumnName());
-            }
-        }
-        else
-        {
-            if (group_key->as<ASTFunction>())
-                data.has_function = true;
+        if (group_key->as<ASTFunction>())
+            data.has_function = true;
 
-            data.key_names.insert(group_key->getColumnName());
-        }
+        data.key_names.insert(group_key->getColumnName());
     }
 
     return data;
@@ -459,26 +437,11 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
-        if (select_query->group_by_with_grouping_sets)
+        for (auto & elem : group_by->children)
         {
-            for (auto & set : group_by->children)
-            {
-                for (auto & elem : set->children)
-                {
-                    auto hash = elem->getTreeHash();
-                    String key = toString(hash.first) + '_' + toString(hash.second);
-                    group_by_hashes.insert(key);
-                }
-            }
-        }
-        else
-        {
-            for (auto & elem : group_by->children)
-            {
-                auto hash = elem->getTreeHash();
-                String key = toString(hash.first) + '_' + toString(hash.second);
-                group_by_hashes.insert(key);
-            }
+            auto hash = elem->getTreeHash();
+            String key = toString(hash.first) + '_' + toString(hash.second);
+            group_by_hashes.insert(key);
         }
     }
 
@@ -674,11 +637,11 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
-void optimizeMultiIfToIf(ASTPtr & query)
+void optimizeCountConstantAndSumOne(ASTPtr & query)
 {
-    OptimizeMultiIfToIfVisitor::Data data;
-    OptimizeMultiIfToIfVisitor(data).visit(query);
+    RewriteCountVariantsVisitor::visit(query);
 }
+
 
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
@@ -757,12 +720,6 @@ void optimizeFuseQuantileFunctions(ASTPtr & query)
     }
 }
 
-void optimizeOrLikeChain(ASTPtr & query)
-{
-    ConvertFunctionOrLikeVisitor::Data data = {};
-    ConvertFunctionOrLikeVisitor(data).visit(query);
-}
-
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -772,11 +729,6 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
-}
-
-void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
-{
-    RewriteCountVariantsVisitor::visit(query);
 }
 
 void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
@@ -825,9 +777,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
-
-    if (settings.optimize_multiif_to_if)
-        optimizeMultiIfToIf(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
@@ -878,14 +827,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_syntax_fuse_functions)
         optimizeFuseQuantileFunctions(query);
-
-    if (settings.optimize_or_like_chain
-        && settings.allow_hyperscan
-        && settings.max_hyperscan_regexp_length == 0
-        && settings.max_hyperscan_regexp_total_length == 0)
-    {
-        optimizeOrLikeChain(query);
-    }
 }
 
 }

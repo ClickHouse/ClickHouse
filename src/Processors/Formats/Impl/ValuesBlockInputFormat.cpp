@@ -1,9 +1,11 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
@@ -16,6 +18,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/ObjectUtils.h>
 
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -49,8 +52,11 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         params(params_), format_settings(format_settings_), num_columns(header_.columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
+    serializations.resize(types.size());
+    for (size_t i = 0; i < types.size(); ++i)
+        serializations[i] = types[i]->getDefaultSerialization();
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -580,7 +586,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     skipWhitespaceIfAny(buf);
-    if (buf.eof() || end_of_data)
+    if (buf.eof())
         return {};
 
     assertChar('(', buf);
@@ -596,7 +602,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
             skipWhitespaceIfAny(buf);
         }
 
-        readQuotedField(value, buf);
+        readQuotedFieldIntoString(value, buf);
         auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
@@ -606,12 +612,6 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
     skipWhitespaceIfAny(buf);
     if (!buf.eof() && *buf.position() == ',')
         ++buf.position();
-
-    if (!buf.eof() && *buf.position() == ';')
-    {
-        ++buf.position();
-        end_of_data = true;
-    }
 
     return data_types;
 }

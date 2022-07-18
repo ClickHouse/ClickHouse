@@ -24,19 +24,21 @@ private:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
-    SortQueueVariants queue_variants;
     size_t total_merged_rows = 0;
 
     SortCursorImpls cursors;
 
     bool has_collation = false;
 
-    /** Two different cursors are supported - with and without Collation.
-      * Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
-      */
-    template <typename TSortingQueue>
-    Chunk mergeBatchImpl(TSortingQueue & queue);
+    SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SimpleSortCursor> queue_simple;
+    SortingHeap<SortCursorWithCollation> queue_with_collation;
 
+    /** Two different cursors are supported - with and without Collation.
+      *  Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
+      */
+    template <typename TSortingHeap>
+    Chunk mergeImpl(TSortingHeap & queue);
 };
 
 
@@ -66,15 +68,13 @@ public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     SortingTransform(const Block & header,
         const SortDescription & description_,
-        size_t max_merged_block_size_,
-        UInt64 limit_,
-        bool increase_sort_description_compile_attempts);
+        size_t max_merged_block_size_, UInt64 limit_);
 
     ~SortingTransform() override;
 
 protected:
-    Status prepare() final;
-    void work() final;
+    Status prepare() override final;
+    void work() override final;
 
     virtual void consume(Chunk chunk) = 0;
     virtual void generate() = 0;
@@ -82,7 +82,7 @@ protected:
 
     SortDescription description;
     size_t max_merged_block_size;
-    const UInt64 limit;
+    UInt64 limit;
 
     /// Before operation, will remove constant columns from blocks. And after, place constant columns back.
     /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)

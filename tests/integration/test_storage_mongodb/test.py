@@ -173,7 +173,6 @@ def test_predefined_connection_configuration(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    node.query("drop table if exists simple_mongo_table")
     node.query(
         "create table simple_mongo_table(key UInt64, data String) engine = MongoDB(mongo1)"
     )
@@ -252,31 +251,4 @@ def test_missing_columns(started_cluster):
     )
     result = node.query("SELECT count() FROM simple_mongo_table WHERE isNull(data)")
     assert result == "10\n"
-    simple_mongo_table.drop()
-
-
-@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
-def test_simple_insert_select(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
-    simple_mongo_table = db["simple_table"]
-
-    node = started_cluster.instances["node"]
-    node.query("DROP TABLE IF EXISTS simple_mongo_table")
-    node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
-    )
-    node.query("INSERT INTO simple_mongo_table SELECT 1, 'kek'")
-
-    assert (
-        node.query("SELECT data from simple_mongo_table where key = 1").strip() == "kek"
-    )
-    node.query("INSERT INTO simple_mongo_table(key) SELECT 12")
-    assert int(node.query("SELECT count() from simple_mongo_table")) == 2
-    assert (
-        node.query("SELECT data from simple_mongo_table where key = 12").strip() == ""
-    )
-
-    node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()

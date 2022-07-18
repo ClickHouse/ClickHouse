@@ -1,6 +1,5 @@
 ---
 sidebar_label: New York Taxi Data
-sidebar_position: 2
 description: Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009
 ---
 

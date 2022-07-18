@@ -3,7 +3,7 @@ sidebar_position: 46
 sidebar_label: QUOTA
 ---
 
-# ALTER QUOTA
+# ALTER QUOTA {#alter-quota-statement}
 
 Changes quotas.
 

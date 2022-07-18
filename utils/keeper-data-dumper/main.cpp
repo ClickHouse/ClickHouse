@@ -7,7 +7,7 @@
 #include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 using namespace Coordination;
 using namespace DB;

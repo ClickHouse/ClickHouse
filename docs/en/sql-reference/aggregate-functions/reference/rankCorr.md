@@ -2,7 +2,7 @@
 sidebar_position: 145
 ---
 
-# rankCorr
+# rankCorr {#agg_function-rankcorr}
 
 Computes a rank correlation coefficient.
 

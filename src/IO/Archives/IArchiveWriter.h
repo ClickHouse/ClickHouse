@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <memory>
 
@@ -10,7 +9,7 @@ namespace DB
 class WriteBufferFromFileBase;
 
 /// Interface for writing an archive.
-class IArchiveWriter : public std::enable_shared_from_this<IArchiveWriter>, boost::noncopyable
+class IArchiveWriter : public std::enable_shared_from_this<IArchiveWriter>
 {
 public:
     /// Destructors finalizes writing the archive.

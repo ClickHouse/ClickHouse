@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -224,10 +224,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    WithoutOnClusterASTRewriteParams params;
-    params.default_database = address_in_cluster.default_database;
-    params.host_id = address_in_cluster.toString();
-    query = query_on_cluster->getRewrittenASTWithoutOnCluster(params);
+    query = query_on_cluster->getRewrittenASTWithoutOnCluster(address_in_cluster.default_database);
     query_on_cluster = nullptr;
 }
 
@@ -383,18 +380,13 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
 
-    txn->addOp(getOpToUpdateLogPointer());
+    txn->addOp(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
     for (auto & op : ops)
         txn->addOp(std::move(op));
     ops.clear();
 
     return query_context;
-}
-
-Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
-{
-    return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
 }
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)

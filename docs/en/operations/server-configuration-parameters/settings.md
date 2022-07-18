@@ -3,7 +3,7 @@ sidebar_position: 57
 sidebar_label: Server Settings
 ---
 
-# Server Settings
+# Server Settings {#server-settings}
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -23,7 +23,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning
+:::warning    
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -193,35 +193,6 @@ Sets the delay before remove table data in seconds. If the query has `SYNC` modi
 
 Default value: `480` (8 minute).
 
-## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
-
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-`database_catalog_unused_dir_hide_timeout_sec` seconds, the task will "hide" this directory by 
-removing all access rights. It also works for directories that clickhouse-server does not
-expect to see inside `store/`. Zero means "immediately".
-
-Default value: `3600` (1 hour).
-
-## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
-
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previousely "hidden" 
-(see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec)) 
-and this directory was not modified for last
-`database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory. 
-It also works for directories that clickhouse-server does not
-expect to see inside `store/`. Zero means "never".
-
-Default value: `2592000` (30 days).
-
-## database_catalog_unused_dir_cleanup_period_sec {#database_catalog_unused_dir_cleanup_period_sec}
-
-Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task. Zero means "never".
-
-Default value: `86400` (1 day).
-
 ## default_database {#default-database}
 
 The default database.
@@ -280,23 +251,6 @@ See also “[External dictionaries](../../sql-reference/dictionaries/external-di
 
 ``` xml
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
-```
-
-## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
-
-The path to the config file for executable user defined functions.
-
-Path:
-
--   Specify the absolute path or the path relative to the server config file.
--   The path can contain wildcards \* and ?.
-
-See also “[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).”.
-
-**Example**
-
-``` xml
-<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
@@ -590,7 +544,6 @@ Keys:
 -   `errorlog` – Error log file.
 -   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
--   `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 
 **Example**
 
@@ -601,15 +554,6 @@ Keys:
     <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
-</logger>
-```
-
-Writing to the console can be configured. Config example:
-
-``` xml
-<logger>
-    <level>information</level>
-    <console>1</console>
 </logger>
 ```
 
@@ -733,8 +677,8 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries.
-Note that other limits also apply: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users).
+The maximum number of simultaneously processed queries related to MergeTree table.
+Queries may be limited by other settings: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 :::note
 These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -750,7 +694,7 @@ Default value: `100`.
 **Example**
 
 ``` xml
-<max_concurrent_queries>200</max_concurrent_queries>
+<max_concurrent_queries>100</max_concurrent_queries>
 ```
 
 ## max_concurrent_insert_queries {#max-concurrent-insert-queries}
@@ -836,6 +780,21 @@ Default value: `0`.
 **See Also**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled.
+
+**Example**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
 
 ## max_connections {#max-connections}
 
@@ -926,92 +885,6 @@ Default value: `10000`.
 ``` xml
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
-
-## background_pool_size {#background_pool_size}
-
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-
-Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
-
-**Example**
-
-```xml
-<background_pool_size>16</background_pool_size>
-```
-
-## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
-
-Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example if the ratio equals to 2 and
-`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operation could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
-The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 2.
-
-**Example**
-
-```xml
-<background_merges_mutations_concurrency_ratio>3</background_pbackground_merges_mutations_concurrency_ratio>
-```
-
-## background_move_pool_size {#background_move_pool_size}
-
-Sets the number of threads performing background moves for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 8.
-
-**Example**
-
-```xml
-<background_move_pool_size>36</background_move_pool_size>
-```
-
-## background_fetches_pool_size {#background_fetches_pool_size}
-
-Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 8.
-
-**Example**
-
-```xml
-<background_fetches_pool_size>36</background_fetches_pool_size>
-```
-
-## background_common_pool_size {#background_common_pool_size}
-
-Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 8.
-
-**Example**
-
-```xml
-<background_common_pool_size>36</background_common_pool_size>
-```
-
-
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
 
@@ -1489,26 +1362,6 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## user_scripts_path {#server_configuration_parameters-user_scripts_path}
-
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
-
-**Example**
-
-``` xml
-<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
-```
-
-## user_defined_path {#server_configuration_parameters-user_defined_path}
-
-The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
-
-**Example**
-
-``` xml
-<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
-```
-
 ## users_config {#users-config}
 
 Path to the file that contains:
@@ -1774,3 +1627,4 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+

@@ -279,7 +279,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.initial_query_start_time);
     columns[i++]->insert(client_info.initial_query_start_time_microseconds);
 
-    columns[i++]->insert(static_cast<UInt64>(client_info.interface));
+    columns[i++]->insert(UInt64(client_info.interface));
     columns[i++]->insert(static_cast<UInt64>(client_info.is_secure));
 
     columns[i++]->insert(client_info.os_user);
@@ -290,7 +290,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);
 
-    columns[i++]->insert(static_cast<UInt64>(client_info.http_method));
+    columns[i++]->insert(UInt64(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);
     columns[i++]->insert(client_info.http_referer);
     columns[i++]->insert(client_info.forwarded_for);

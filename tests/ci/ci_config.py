@@ -8,19 +8,28 @@ BuildConfig = Dict[str, ConfValue]
 CI_CONFIG = {
     "build_config": {
         "package_release": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
-            "static_binary_name": "amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
+        "performance": {
+            "compiler": "clang-13",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "performance",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": False,
+        },
         "coverity": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
@@ -28,14 +37,22 @@ CI_CONFIG = {
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
-            "official": False,
+        },
+        "binary_gcc": {
+            "compiler": "gcc-11",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "binary",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": False,
         },
         "package_aarch64": {
-            "compiler": "clang-14-aarch64",
+            "compiler": "clang-13-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
-            "static_binary_name": "aarch64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "additional_pkgs": True,
@@ -43,7 +60,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_asan": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
@@ -53,7 +70,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_ubsan": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
@@ -63,7 +80,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_tsan": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
@@ -73,7 +90,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_msan": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
@@ -83,7 +100,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_debug": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
@@ -93,17 +110,18 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_release": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
         "binary_tidy": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
@@ -114,7 +132,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_splitted": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -124,7 +142,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin": {
-            "compiler": "clang-14-darwin",
+            "compiler": "clang-13-darwin",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -135,17 +153,18 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_aarch64": {
-            "compiler": "clang-14-aarch64",
+            "compiler": "clang-13-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "aarch64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
         },
         "binary_freebsd": {
-            "compiler": "clang-14-freebsd",
+            "compiler": "clang-13-freebsd",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -156,7 +175,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_darwin_aarch64": {
-            "compiler": "clang-14-darwin-aarch64",
+            "compiler": "clang-13-darwin-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -167,11 +186,10 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_ppc64le": {
-            "compiler": "clang-14-ppc64le",
+            "compiler": "clang-13-ppc64le",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "powerpc64le",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -181,6 +199,7 @@ CI_CONFIG = {
     "builds_report_config": {
         "ClickHouse build check (actions)": [
             "package_release",
+            "performance",
             "coverity",
             "package_aarch64",
             "package_asan",
@@ -198,6 +217,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_gcc",
         ],
     },
     "tests_config": {
@@ -262,6 +282,7 @@ CI_CONFIG = {
         },
         "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
+            "force_tests": True,
         },
         "Stress test (address, actions)": {
             "required_build": "package_asan",
@@ -301,6 +322,9 @@ CI_CONFIG = {
         },
         "Testflows check (actions)": {
             "required_build": "package_release",
+        },
+        "Unit tests (release-gcc, actions)": {
+            "required_build": "binary_gcc",
         },
         "Unit tests (release-clang, actions)": {
             "required_build": "binary_release",
@@ -344,13 +368,8 @@ CI_CONFIG = {
         "ClickHouse Keeper Jepsen (actions)": {
             "required_build": "binary_release",
         },
-        "Performance Comparison": {
-            "required_build": "package_release",
-            "test_grep_exclude_filter": "",
-        },
-        "Performance Comparison Aarch64": {
-            "required_build": "package_aarch64",
-            "test_grep_exclude_filter": "constant_column_search",
+        "Performance Comparison (actions)": {
+            "required_build": "performance",
         },
     },
 }  # type: dict

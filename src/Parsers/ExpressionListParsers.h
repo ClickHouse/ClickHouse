@@ -9,11 +9,6 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wc99-extensions"
-#endif
-
 namespace DB
 {
 
@@ -522,20 +517,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserGroupingSetsExpressionList : public IParserBase
-{
-protected:
-    const char * getName() const override { return "grouping sets expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserGroupingSetsExpressionListElements : public IParserBase
-{
-protected:
-    const char * getName() const override { return "grouping sets expression elements"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 class ParserInterpolateExpressionList : public IParserBase
 {
 protected:
@@ -569,7 +550,3 @@ protected:
 };
 
 }
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif

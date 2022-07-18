@@ -34,23 +34,6 @@ def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
-# Search test by the common prefix.
-# This is accept tests w/o parameters in skip list.
-#
-# Examples:
-# - has_test(['foobar'], 'foobar[param]') == True
-# - has_test(['foobar[param]'], 'foobar') == True
-def has_test(tests, test_to_match):
-    for test in tests:
-        if len(test_to_match) < len(test):
-            if test[0 : len(test_to_match)] == test_to_match:
-                return True
-        else:
-            if test_to_match[0 : len(test)] == test:
-                return True
-    return False
-
-
 def get_changed_tests_to_run(pr_info, repo_path):
     result = set()
     changed_files = pr_info["changed_files"]
@@ -117,7 +100,6 @@ def get_counters(fname):
 
             # Lines like:
             #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
-            #     [gw3] [ 40%] PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
             state = line_arr[-2]
             test_name = line_arr[-1]
 
@@ -163,7 +145,7 @@ def get_test_times(output):
 def clear_ip_tables_and_restart_daemons():
     logging.info(
         "Dump iptables after run %s",
-        subprocess.check_output("sudo iptables -nvL", shell=True),
+        subprocess.check_output("sudo iptables -L", shell=True),
     )
     try:
         logging.info("Killing all alive docker containers")
@@ -367,7 +349,7 @@ class ClickhouseIntegrationTestsRunner:
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
         out_file = "all_tests.txt"
-        out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
+        out_file_full = "all_tests_full.txt"
         cmd = (
             "cd {repo_path}/tests/integration && "
             "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
@@ -393,16 +375,21 @@ class ClickhouseIntegrationTestsRunner:
             not os.path.isfile(all_tests_file_path)
             or os.path.getsize(all_tests_file_path) == 0
         ):
-            if os.path.isfile(out_file_full):
+            all_tests_full_file_path = (
+                "{repo_path}/tests/integration/{out_file}".format(
+                    repo_path=repo_path, out_file=out_file_full
+                )
+            )
+            if os.path.isfile(all_tests_full_file_path):
                 # log runner output
                 logging.info("runner output:")
-                with open(out_file_full, "r") as all_tests_full_file:
+                with open(all_tests_full_file_path, "r") as all_tests_full_file:
                     for line in all_tests_full_file:
                         line = line.rstrip()
                         if line:
                             logging.info("runner output: %s", line)
             else:
-                logging.info("runner output '%s' is empty", out_file_full)
+                logging.info("runner output '%s' is empty", all_tests_full_file_path)
 
             raise Exception(
                 "There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(
@@ -805,7 +792,7 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info(
             "Dump iptables before run %s",
-            subprocess.check_output("sudo iptables -nvL", shell=True),
+            subprocess.check_output("sudo iptables -L", shell=True),
         )
         all_tests = self._get_all_tests(repo_path)
 
@@ -822,19 +809,13 @@ class ClickhouseIntegrationTestsRunner:
             "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
         )
         filtered_sequential_tests = list(
-            filter(lambda test: has_test(all_tests, test), parallel_skip_tests)
+            filter(lambda test: test in all_tests, parallel_skip_tests)
         )
         filtered_parallel_tests = list(
-            filter(
-                lambda test: not has_test(parallel_skip_tests, test),
-                all_tests,
-            )
+            filter(lambda test: test not in parallel_skip_tests, all_tests)
         )
         not_found_tests = list(
-            filter(
-                lambda test: not has_test(all_tests, test),
-                parallel_skip_tests,
-            )
+            filter(lambda test: test not in all_tests, parallel_skip_tests)
         )
         logging.info(
             "Found %s tests first 3 %s, parallel %s, other %s",
@@ -936,16 +917,6 @@ class ClickhouseIntegrationTestsRunner:
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
-
-        for res in test_result:
-            # It's not easy to parse output of pytest
-            # Especially when test names may contain spaces
-            # Do not allow it to avoid obscure failures
-            if " " not in res[0]:
-                continue
-            logging.warning("Found invalid test name with space: %s", res[0])
-            status_text = "Found test with invalid name, see main log"
-            result_state = "failure"
 
         return result_state, status_text, test_result, []
 

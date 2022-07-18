@@ -2,7 +2,6 @@ SET send_logs_level = 'fatal';
 SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS old_style;
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE old_style(d Date, x UInt32) ENGINE MergeTree(d, x, 8192);
 ALTER TABLE old_style ADD COLUMN y UInt32, MODIFY ORDER BY (x, y); -- { serverError 36}
 DROP TABLE old_style;

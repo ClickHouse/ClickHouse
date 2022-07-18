@@ -4,7 +4,7 @@
 #include <optional>
 
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
@@ -16,11 +16,6 @@ namespace std
 {
     using namespace experimental::coroutines_v1;
 }
-
-#if __has_warning("-Wdeprecated-experimental-coroutine")
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-experimental-coroutine"
-#endif
 
 #else
 #include <coroutine>

@@ -6,8 +6,6 @@
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Transforms/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>

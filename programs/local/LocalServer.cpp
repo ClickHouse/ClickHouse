@@ -12,7 +12,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
@@ -23,15 +23,14 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Loggers/Loggers.h>
+#include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/IOThreadPool.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Common/ErrorHandlers.h>
+#include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -106,17 +105,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
-
-    GlobalThreadPool::initialize(
-        config().getUInt("max_thread_pool_size", 10000),
-        config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
-    );
-
-    IOThreadPool::initialize(
-        config().getUInt("max_io_thread_pool_size", 100),
-        config().getUInt("max_io_thread_pool_free_size", 0),
-        config().getUInt("io_thread_pool_queue_size", 10000));
 }
 
 
@@ -544,7 +532,8 @@ void LocalServer::processConfig()
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Size of cache for marks (index of MergeTree family of tables).
+    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
+    /// Specify default value for mark_cache_size explicitly!
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
@@ -554,7 +543,8 @@ void LocalServer::processConfig()
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices).
+    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
+    /// Specify default value for index_mark_cache_size explicitly!
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
@@ -624,7 +614,6 @@ void LocalServer::processConfig()
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
-    client_info.query_kind = query_kind;
 }
 
 
@@ -735,15 +724,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
-}
-
-void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
-{
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
-    {
-        const char * arg = argv[arg_num];
-        common_arguments.emplace_back(arg);
-    }
 }
 
 }

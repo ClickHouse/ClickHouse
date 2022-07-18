@@ -1,11 +1,10 @@
-#include <cstdlib>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <map>
 #include <iostream>
 #include <iomanip>
 #include <optional>
-#include <string_view>
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
@@ -49,7 +48,6 @@
 #endif
 
 namespace fs = std::filesystem;
-using namespace std::literals;
 
 
 namespace DB
@@ -106,12 +104,10 @@ void Client::processError(const String & query) const
 std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
-    connection->sendQuery(connection_parameters.timeouts,
-                          "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
-                          "" /* query_id */,
+    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
-                          &global_context->getClientInfo(), false, {});
+                          &global_context->getClientInfo(), false);
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -129,9 +125,13 @@ std::vector<String> Client::loadWarningMessages()
                 continue;
 
             case Protocol::Server::Progress:
+                continue;
             case Protocol::Server::ProfileInfo:
+                continue;
             case Protocol::Server::Totals:
+                continue;
             case Protocol::Server::Extremes:
+                continue;
             case Protocol::Server::Log:
                 continue;
 
@@ -996,7 +996,7 @@ void Client::processConfig()
     ///   The value of the option is used as the text of query (or of multiple queries).
     ///   If stdin is not a terminal, INSERT data for the first query is read from it.
     /// - stdin is not a terminal. In this case queries are read from it.
-    /// - --queries-file command line option is present.
+    /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
@@ -1040,159 +1040,6 @@ void Client::processConfig()
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
     client_info.quota_key = config().getString("quota_key", "");
-    client_info.query_kind = query_kind;
-}
-
-
-void Client::readArguments(
-    int argc,
-    char ** argv,
-    Arguments & common_arguments,
-    std::vector<Arguments> & external_tables_arguments,
-    std::vector<Arguments> & hosts_and_ports_arguments)
-{
-    /** We allow different groups of arguments:
-        * - common arguments;
-        * - arguments for any number of external tables each in form "--external args...",
-        *   where possible args are file, name, format, structure, types;
-        * - param arguments for prepared statements.
-        * Split these groups before processing.
-        */
-    bool in_external_group = false;
-
-    std::string prev_host_arg;
-    std::string prev_port_arg;
-
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
-    {
-        std::string_view arg = argv[arg_num];
-
-        if (arg == "--external")
-        {
-            in_external_group = true;
-            external_tables_arguments.emplace_back(Arguments{""});
-        }
-        /// Options with value after equal sign.
-        else if (
-            in_external_group
-            && (arg.starts_with("--file=") || arg.starts_with("--name=") || arg.starts_with("--format=") || arg.starts_with("--structure=")
-                || arg.starts_with("--types=")))
-        {
-            external_tables_arguments.back().emplace_back(arg);
-        }
-        /// Options with value after whitespace.
-        else if (in_external_group && (arg == "--file" || arg == "--name" || arg == "--format" || arg == "--structure" || arg == "--types"))
-        {
-            if (arg_num + 1 < argc)
-            {
-                external_tables_arguments.back().emplace_back(arg);
-                ++arg_num;
-                arg = argv[arg_num];
-                external_tables_arguments.back().emplace_back(arg);
-            }
-            else
-                break;
-        }
-        else
-        {
-            in_external_group = false;
-            if (arg == "--file"sv || arg == "--name"sv || arg == "--structure"sv || arg == "--types"sv)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
-
-            /// Parameter arg after underline.
-            if (arg.starts_with("--param_"))
-            {
-                auto param_continuation = arg.substr(strlen("--param_"));
-                auto equal_pos = param_continuation.find_first_of('=');
-
-                if (equal_pos == std::string::npos)
-                {
-                    /// param_name value
-                    ++arg_num;
-                    if (arg_num >= argc)
-                        throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
-                    arg = argv[arg_num];
-                    query_parameters.emplace(String(param_continuation), String(arg));
-                }
-                else
-                {
-                    if (equal_pos == 0)
-                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-                    /// param_name=value
-                    query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
-                }
-            }
-            else if (arg.starts_with("--host") || arg.starts_with("-h"))
-            {
-                std::string host_arg;
-                /// --host host
-                if (arg == "--host" || arg == "-h")
-                {
-                    ++arg_num;
-                    if (arg_num >= argc)
-                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
-                    arg = argv[arg_num];
-                    host_arg = "--host=";
-                    host_arg.append(arg);
-                }
-                else
-                    host_arg = arg;
-
-                /// --port port1 --host host1
-                if (!prev_port_arg.empty())
-                {
-                    hosts_and_ports_arguments.push_back({host_arg, prev_port_arg});
-                    prev_port_arg.clear();
-                }
-                else
-                {
-                    /// --host host1 --host host2
-                    if (!prev_host_arg.empty())
-                        hosts_and_ports_arguments.push_back({prev_host_arg});
-
-                    prev_host_arg = host_arg;
-                }
-            }
-            else if (arg.starts_with("--port"))
-            {
-                auto port_arg = String{arg};
-                /// --port port
-                if (arg == "--port")
-                {
-                    port_arg.push_back('=');
-                    ++arg_num;
-                    if (arg_num >= argc)
-                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
-                    arg = argv[arg_num];
-                    port_arg.append(arg);
-                }
-
-                /// --host host1 --port port1
-                if (!prev_host_arg.empty())
-                {
-                    hosts_and_ports_arguments.push_back({port_arg, prev_host_arg});
-                    prev_host_arg.clear();
-                }
-                else
-                {
-                    /// --port port1 --port port2
-                    if (!prev_port_arg.empty())
-                        hosts_and_ports_arguments.push_back({prev_port_arg});
-
-                    prev_port_arg = port_arg;
-                }
-            }
-            else if (arg == "--allow_repeated_settings")
-                allow_repeated_settings = true;
-            else
-                common_arguments.emplace_back(arg);
-        }
-    }
-    if (!prev_host_arg.empty())
-        hosts_and_ports_arguments.push_back({prev_host_arg});
-    if (!prev_port_arg.empty())
-        hosts_and_ports_arguments.push_back({prev_port_arg});
 }
 
 }

@@ -67,11 +67,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     BlockIO res;
 
     if (!alter.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
     getContext()->checkAccess(getRequiredAccess());
     auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
@@ -401,9 +397,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_FETCH_PARTITION, database, table);
             break;
         }
-        case ASTAlterCommand::FREEZE_PARTITION:
-        case ASTAlterCommand::FREEZE_ALL:
-        case ASTAlterCommand::UNFREEZE_PARTITION:
+        case ASTAlterCommand::FREEZE_PARTITION: [[fallthrough]];
+        case ASTAlterCommand::FREEZE_ALL: [[fallthrough]];
+        case ASTAlterCommand::UNFREEZE_PARTITION: [[fallthrough]];
         case ASTAlterCommand::UNFREEZE_ALL:
         {
             required_access.emplace_back(AccessType::ALTER_FREEZE_PARTITION, database, table);

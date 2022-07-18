@@ -7,13 +7,6 @@
 #include <Common/hex.h>
 #include <filesystem>
 #include <Common/checkStackSize.h>
-#include <Common/CurrentMetrics.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric KeeperAliveConnections;
-    extern const Metric KeeperOutstandingRequets;
-}
 
 namespace fs = std::filesystem;
 
@@ -64,7 +57,6 @@ void KeeperDispatcher::requestThread()
         {
             if (requests_queue->tryPop(request, max_wait))
             {
-                CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                 if (shutdown_called)
                     break;
 
@@ -86,7 +78,6 @@ void KeeperDispatcher::requestThread()
                         /// Trying to get batch requests as fast as possible
                         if (requests_queue->tryPop(request, 1))
                         {
-                            CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
                             {
@@ -224,8 +215,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
         {
-            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected",
-                response->xid, response->xid == Coordination::WATCH_XID ? "Watch" : toString(response->getOpNum()), session_id);
+            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected", response->xid, response->getOpNum(), session_id);
             return;
         }
 
@@ -235,7 +225,6 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
         {
             session_to_response_callback.erase(session_response_callback);
-            CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
     }
 }
@@ -270,7 +259,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
-    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
     return true;
 }
 
@@ -290,7 +278,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(config, configuration_and_settings->enable_ipv6);
+        server->startup(configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -362,7 +350,6 @@ void KeeperDispatcher::shutdown()
         /// Set session expired for all pending requests
         while (requests_queue && requests_queue->tryPop(request_for_session))
         {
-            CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
             auto response = request_for_session.request->makeResponse();
             response->error = Coordination::Error::ZSESSIONEXPIRED;
             setResponse(request_for_session.session_id, response);
@@ -371,7 +358,6 @@ void KeeperDispatcher::shutdown()
         /// Clear all registered sessions
         std::lock_guard lock(session_to_response_callback_mutex);
         session_to_response_callback.clear();
-        CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
     }
     catch (...)
     {
@@ -379,11 +365,6 @@ void KeeperDispatcher::shutdown()
     }
 
     LOG_DEBUG(log, "Dispatcher shut down");
-}
-
-void KeeperDispatcher::forceRecovery()
-{
-    server->forceRecovery();
 }
 
 KeeperDispatcher::~KeeperDispatcher()
@@ -396,7 +377,6 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
     std::lock_guard lock(session_to_response_callback_mutex);
     if (!session_to_response_callback.try_emplace(session_id, callback).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
-    CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
 }
 
 void KeeperDispatcher::sessionCleanerTask()
@@ -429,7 +409,6 @@ void KeeperDispatcher::sessionCleanerTask()
                         std::lock_guard lock(push_request_mutex);
                         if (!requests_queue->push(std::move(request_info)))
                             LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
-                        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
                     }
 
                     /// Remove session from registered sessions
@@ -453,22 +432,19 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_it = session_to_response_callback.find(session_id);
     if (session_it != session_to_response_callback.end())
-    {
         session_to_response_callback.erase(session_it);
-        CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
-    }
 }
 
 void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
-    for (const auto & request_for_session : requests_for_sessions)
+    for (const auto & [session_id, time, request] : requests_for_sessions)
     {
         KeeperStorage::ResponsesForSessions responses;
-        auto response = request_for_session.request->makeResponse();
-        response->xid = request_for_session.request->xid;
+        auto response = request->makeResponse();
+        response->xid = request->xid;
         response->zxid = 0;
         response->error = error;
-        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{request_for_session.session_id, response}))
+        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,
@@ -539,7 +515,6 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         std::lock_guard lock(push_request_mutex);
         if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
             throw Exception("Cannot push session id request to queue within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
-        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
     }
 
     if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
@@ -560,18 +535,10 @@ void KeeperDispatcher::updateConfigurationThread()
 
         try
         {
-            using namespace std::chrono_literals;
             if (!server->checkInit())
             {
                 LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
-                std::this_thread::sleep_for(5000ms);
-                continue;
-            }
-
-            if (server->isRecovering())
-            {
-                LOG_INFO(log, "Server is recovering, will not apply configuration until recovery is finished");
-                std::this_thread::sleep_for(5000ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
                 continue;
             }
 
@@ -584,9 +551,6 @@ void KeeperDispatcher::updateConfigurationThread()
             bool done = false;
             while (!done)
             {
-                if (server->isRecovering())
-                    break;
-
                 if (shutdown_called)
                     return;
 
@@ -608,11 +572,6 @@ void KeeperDispatcher::updateConfigurationThread()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-}
-
-bool KeeperDispatcher::isServerActive() const
-{
-    return checkInit() && hasLeader() && !server->isRecovering();
 }
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -671,7 +630,12 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
-    Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
+    Keeper4LWInfo result;
+    result.is_follower = server->isFollower();
+    result.is_standalone = !result.is_follower && server->getFollowerCount() == 0;
+    result.is_leader = isLeader();
+    result.is_observer = server->isObserver();
+    result.has_leader = hasLeader();
     {
         std::lock_guard lock(push_request_mutex);
         result.outstanding_requests_count = requests_queue->size();
@@ -680,6 +644,13 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
         std::lock_guard lock(session_to_response_callback_mutex);
         result.alive_connections_count = session_to_response_callback.size();
     }
+    if (result.is_leader)
+    {
+        result.follower_count = server->getFollowerCount();
+        result.synced_follower_count = server->getSyncedFollowerCount();
+    }
+    result.total_nodes_count = server->getKeeperStateMachine()->getNodesCount();
+    result.last_zxid = server->getKeeperStateMachine()->getLastProcessedZxid();
     return result;
 }
 

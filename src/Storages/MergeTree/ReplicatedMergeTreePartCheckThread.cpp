@@ -155,21 +155,19 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
         {
             auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.format_version);
 
-            /// All three following cases are "good" outcome for check thread and don't require
-            /// any special attention.
             if (part_info == part_on_replica_info)
             {
                 /// Found missing part at ourself. If we are here then something wrong with this part, so skipping.
                 if (replica_path == storage.replica_path)
                     continue;
 
-                LOG_INFO(log, "Found the missing part {} at {} on {}", part_name, part_on_replica, replica);
+                LOG_WARNING(log, "Found the missing part {} at {} on {}", part_name, part_on_replica, replica);
                 return MissingPartSearchResult::FoundAndNeedFetch;
             }
 
             if (part_on_replica_info.contains(part_info))
             {
-                LOG_INFO(log, "Found part {} on {} that covers the missing part {}", part_on_replica, replica, part_name);
+                LOG_WARNING(log, "Found part {} on {} that covers the missing part {}", part_on_replica, replica, part_name);
                 return MissingPartSearchResult::FoundAndDontNeedFetch;
             }
 
@@ -183,7 +181,7 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
                     /// FIXME It may never appear
-                    LOG_INFO(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
+                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
                     return MissingPartSearchResult::FoundAndDontNeedFetch;
                 }
             }

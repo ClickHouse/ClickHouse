@@ -95,19 +95,6 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                 }
             }
         }
-
-        /*
-         * We need to visit all children recursively because the WITH statement may appear in the subquery at the nested level.
-         * Behavior of `WITH ... UNION ALL ...` should be the same at the top level and inside the subquery.
-         *
-         * For example:
-         * SELECT * FROM (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
-         *                ^^^^^^^^^^^^     should be visited     ^^^^^^^^^^^^^^^^
-         * or inside `WHERE .. IN` clause:
-         * SELECT * FROM ... WHERE x IN (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
-         */
-        for (auto & child : node_union->list_of_selects->children)
-            visit(child);
     }
     else
     {

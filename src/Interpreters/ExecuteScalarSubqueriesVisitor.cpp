@@ -187,7 +187,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             auto io = interpreter->execute();
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
-            io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             while (block.rows() == 0 && executor.pull(block));
 
             if (block.rows() == 0)

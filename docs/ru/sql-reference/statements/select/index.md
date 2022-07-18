@@ -24,7 +24,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
+[INTO OUTFILE filename [COMPRESSION type] ] 
 [FORMAT format]
 ```
 
@@ -273,7 +273,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
 
-Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md).
+Другие способы задания настроек описаны [здесь](../../../operations/settings/overview.md).
 
 **Пример**
 

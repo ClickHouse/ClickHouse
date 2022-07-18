@@ -98,8 +98,7 @@ public:
                     + ", should be at most 255",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        std::vector<std::string_view> refs;
-        refs.reserve(src_arr.size());
+        std::vector<StringRef> refs;
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 

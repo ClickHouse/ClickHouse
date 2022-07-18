@@ -45,7 +45,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **Cм. также**
 
--   [Настройки](../settings/index.md#settings)
+-   [Настройки](../settings/overview.md#settings)
 -   [Разрешения для запросов](../settings/permissions-for-queries.md#settings_readonly)
 -   [Ограничения для значений настроек](../settings/constraints-on-settings.md)
 -   Выражение [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings)

@@ -5,37 +5,38 @@ sidebar_label: 体验平台
 
 # ClickHouse Playground {#clickhouse-playground}
 
-无需搭建服务或集群，[ClickHouse Playground](https://play.clickhouse.com/play?user=play)允许人们通过执行查询语句立即体验ClickHouse，在Playground中我们提供了一些示例数据集。
+[ClickHouse Playground](https://play.clickhouse.com/play?user=play) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
+Several example datasets are available in Playground.
 
-你可以使用任意HTTP客户端向Playground提交查询语句，比如[curl](https://curl.haxx.se)或者[wget](https://www.gnu.org/software/wget/)，也可以通过[JDBC](../interfaces/jdbc.md)或者[ODBC](../interfaces/odbc.md)驱动建立连接，更多信息详见[客户端](../interfaces/index.md)。
+You can make queries to Playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers. More information about software products that support ClickHouse is available [here](../interfaces/index.md).
 
-## 使用凭证 {#credentials}
-  
-| 参数                | 值                                  |
+## Credentials {#credentials}
+
+| Parameter           | Value                              |
 |:--------------------|:-----------------------------------|
-| HTTPS连接地址        | `https://play.clickhouse.com:443/` |
-| 原生TCP连接地址      | `play.clickhouse.com:9440`         |
-| 用户名              | `explorer`或者`play`                |
-| 密码                | (空)                                |
+| HTTPS endpoint      | `https://play.clickhouse.com:443/` |
+| Native TCP endpoint | `play.clickhouse.com:9440`         |
+| User                | `explorer` or `play`               |
+| Password            | (empty)                            |
 
-## 限制 {#limitations}
+## Limitations {#limitations}
 
-所有查询语句都会视为一个具有只读权限用户的操作，这意味着存在如下一些限制：
+The queries are executed as a read-only user. It implies some limitations:
 
-- 不允许执行DDL语句
-- 不允许执行INSERT语句
+-   DDL queries are not allowed
+-   INSERT queries are not allowed
 
-此外，Playground服务对资源使用也有限制。
+The service also have quotas on its usage.
 
-## 示例 {#examples}
+## Examples {#examples}
 
-使用`curl`命令：
+HTTPS endpoint example with `curl`:
 
 ``` bash
 curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
 ```
 
-使用[命令行客户端](../interfaces/cli.md)：
+TCP endpoint example with [CLI](../interfaces/cli.md):
 
 ``` bash
 clickhouse client --secure --host play.clickhouse.com --user explorer

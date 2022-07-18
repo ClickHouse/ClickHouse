@@ -1,12 +1,10 @@
--- Tags: no-ordinary-database
-
 drop table if exists mt1;
 drop table if exists mt2;
 
 create table mt1 (n Int64) engine=MergeTree order by n;
 create table mt2 (n Int64) engine=MergeTree order by n;
 
-commit; -- { serverError INVALID_TRANSACTION } -- no transaction
+commit; -- { serverError INVALID_TRANSACTION }
 rollback; -- { serverError INVALID_TRANSACTION }
 
 begin transaction;
@@ -33,7 +31,7 @@ select 'on exception before start', arraySort(groupArray(n)) from (select n from
 -- rollback on exception before start
 select functionThatDoesNotExist(); -- { serverError 46 }
 -- cannot commit after exception
-commit; -- { serverError INVALID_TRANSACTION } -- after 46
+commit; -- { serverError INVALID_TRANSACTION }
 begin transaction; -- { serverError INVALID_TRANSACTION }
 rollback;
 
@@ -44,7 +42,7 @@ select 'on exception while processing', arraySort(groupArray(n)) from (select n 
 -- rollback on exception while processing
 select throwIf(100 < number) from numbers(1000); -- { serverError 395 }
 -- cannot commit after exception
-commit; -- { serverError INVALID_TRANSACTION } -- after 395
+commit; -- { serverError INVALID_TRANSACTION }
 insert into mt1 values (5); -- { serverError INVALID_TRANSACTION }
 insert into mt2 values (50); -- { serverError INVALID_TRANSACTION }
 select 1; -- { serverError INVALID_TRANSACTION }
@@ -54,9 +52,10 @@ begin transaction;
 insert into mt1 values (6);
 insert into mt2 values (60);
 select 'on session close', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
+-- trigger reconnection by error on client, check rollback on session close
 insert into mt1 values ([1]); -- { clientError 43 }
--- INSERT failures does not produce client reconnect anymore, so rollback can be done
-rollback;
+commit; -- { serverError INVALID_TRANSACTION }
+rollback; -- { serverError INVALID_TRANSACTION }
 
 begin transaction;
 insert into mt1 values (7);
@@ -83,19 +82,19 @@ rollback;
 
 begin transaction;
 create table m (n int) engine=Memory; -- { serverError 48 }
-commit; -- { serverError INVALID_TRANSACTION } -- after 48
+commit; -- { serverError INVALID_TRANSACTION }
 rollback;
 
 create table m (n int) engine=Memory;
 begin transaction;
 insert into m values (1); -- { serverError 48 }
 select * from m; -- { serverError INVALID_TRANSACTION }
-commit; -- { serverError INVALID_TRANSACTION } -- after 48
+commit; -- { serverError INVALID_TRANSACTION }
 rollback;
 
 begin transaction;
 select * from m; -- { serverError 48 }
-commit; -- { serverError INVALID_TRANSACTION } -- after 48
+commit; -- { serverError INVALID_TRANSACTION }
 rollback;
 
 drop table m;

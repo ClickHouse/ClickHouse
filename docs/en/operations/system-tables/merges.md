@@ -1,4 +1,4 @@
-# merges
+# merges {#system-merges}
 
 Contains information about merges and part mutations currently in process for tables in the MergeTree family.
 

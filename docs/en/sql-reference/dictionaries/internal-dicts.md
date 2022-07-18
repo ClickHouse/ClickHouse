@@ -3,7 +3,7 @@ sidebar_position: 39
 sidebar_label: Internal Dictionaries
 ---
 
-# Internal Dictionaries
+# Internal Dictionaries {#internal_dicts}
 
 ClickHouse contains a built-in feature for working with a geobase.
 

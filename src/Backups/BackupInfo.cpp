@@ -17,21 +17,6 @@ namespace ErrorCodes
 
 String BackupInfo::toString() const
 {
-    ASTPtr ast = toAST();
-    return serializeAST(*ast);
-}
-
-
-BackupInfo BackupInfo::fromString(const String & str)
-{
-    ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    return fromAST(*ast);
-}
-
-
-ASTPtr BackupInfo::toAST() const
-{
     auto func = std::make_shared<ASTFunction>();
     func->name = backup_engine_name;
     func->no_empty_args = true;
@@ -47,7 +32,15 @@ ASTPtr BackupInfo::toAST() const
     for (const auto & arg : args)
         list->children.push_back(std::make_shared<ASTLiteral>(arg));
 
-    return func;
+    return serializeAST(*func);
+}
+
+
+BackupInfo BackupInfo::fromString(const String & str)
+{
+    ParserIdentifierWithOptionalParameters parser;
+    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    return fromAST(*ast);
 }
 
 

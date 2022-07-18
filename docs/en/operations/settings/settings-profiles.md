@@ -3,7 +3,7 @@ sidebar_position: 61
 sidebar_label: Settings Profiles
 ---
 
-# Settings Profiles
+# Settings Profiles {#settings-profiles}
 
 A settings profile is a collection of settings grouped under the same name.
 

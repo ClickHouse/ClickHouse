@@ -182,7 +182,6 @@ public:
     }
 
     UInt64 getSize() const override { return reservation->getSize(); }
-    UInt64 getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
     DiskPtr getDisk(size_t i) const override
     {
@@ -248,36 +247,6 @@ void DiskEncrypted::copy(const String & from_path, const std::shared_ptr<IDisk> 
 
     /// Copy the file through buffers with deciphering.
     copyThroughBuffers(from_path, to_disk, to_path);
-}
-
-
-void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
-{
-    /// Check if we can copy the file without deciphering.
-    if (isSameDiskType(*this, *to_disk))
-    {
-        /// Disk type is the same, check if the key is the same too.
-        if (auto * to_disk_enc = typeid_cast<DiskEncrypted *>(to_disk.get()))
-        {
-            auto from_settings = current_settings.get();
-            auto to_settings = to_disk_enc->current_settings.get();
-            if (from_settings->keys == to_settings->keys)
-            {
-                /// Keys are the same so we can simply copy the encrypted file.
-                auto wrapped_from_path = wrappedPath(from_dir);
-                auto to_delegate = to_disk_enc->delegate;
-                auto wrapped_to_path = to_disk_enc->wrappedPath(to_dir);
-                delegate->copyDirectoryContent(wrapped_from_path, to_delegate, wrapped_to_path);
-                return;
-            }
-        }
-    }
-
-    if (!to_disk->exists(to_dir))
-        to_disk->createDirectories(to_dir);
-
-    /// Copy the file through buffers with deciphering.
-    copyThroughBuffers(from_dir, to_disk, to_dir);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(

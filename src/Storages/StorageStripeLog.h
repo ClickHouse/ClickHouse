@@ -3,6 +3,8 @@
 #include <map>
 #include <shared_mutex>
 
+#include <base/shared_ptr_helper.h>
+
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Formats/IndexForNativeFormat.h>
@@ -14,28 +16,18 @@
 namespace DB
 {
 struct IndexForNativeFormat;
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
 
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public IStorage
+class StorageStripeLog final : public shared_ptr_helper<StorageStripeLog>, public IStorage
 {
-friend class StripeLogSource;
-friend class StripeLogSink;
+    friend class StripeLogSource;
+    friend class StripeLogSink;
+    friend class StripeLogRestoreTask;
+    friend struct shared_ptr_helper<StorageStripeLog>;
 
 public:
-    StorageStripeLog(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool attach,
-        size_t max_compress_block_size_);
-
     ~StorageStripeLog() override;
 
     String getName() const override { return "StripeLog"; }
@@ -60,11 +52,20 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    bool hasDataToBackup() const override { return true; }
+    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
 
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+protected:
+    StorageStripeLog(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool attach,
+        size_t max_compress_block_size_);
 
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;
@@ -84,12 +85,6 @@ private:
     /// Saves the sizes of the data and index files.
     void saveFileSizes(const WriteLock &);
 
-    /// Recalculates the number of rows stored in this table.
-    void updateTotalRows(const WriteLock &);
-
-    /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
-
     const DiskPtr disk;
     String table_path;
 
@@ -100,9 +95,6 @@ private:
     IndexForNativeFormat indices;
     std::atomic<bool> indices_loaded = false;
     size_t num_indices_saved = 0;
-
-    std::atomic<UInt64> total_rows = 0;
-    std::atomic<UInt64> total_bytes = 0;
 
     const size_t max_compress_block_size;
 

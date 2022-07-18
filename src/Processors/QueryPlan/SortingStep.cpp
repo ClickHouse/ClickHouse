@@ -89,11 +89,16 @@ SortingStep::SortingStep(
     output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
-void SortingStep::updateOutputStream()
+void SortingStep::updateInputStream(DataStream input_stream)
 {
-    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-    output_stream->sort_description = result_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
+    input_streams.clear();
+    input_streams.emplace_back(std::move(input_stream));
+}
+
+void SortingStep::updateOutputStream(Block result_header)
+{
+    output_stream = createOutputStream(input_streams.at(0), std::move(result_header), getDataStreamTraits());
+    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -103,12 +108,6 @@ void SortingStep::updateLimit(size_t limit_)
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;
     }
-}
-
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
-{
-    type = Type::FinishSorting;
-    prefix_description = std::move(prefix_description_);
 }
 
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -124,7 +123,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                     pipeline.getNumStreams(),
                     prefix_description,
                     max_block_size,
-                    SortingQueueStrategy::Batch,
                     limit_for_merging);
 
             pipeline.addTransform(std::move(transform));
@@ -140,21 +138,11 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 return std::make_shared<PartialSortingTransform>(header, result_description, limit);
             });
 
-            bool increase_sort_description_compile_attempts = true;
-
             /// NOTE limits are not applied to the size of temporary sets in FinishSortingTransform
-            pipeline.addSimpleTransform([&, increase_sort_description_compile_attempts](const Block & header) mutable -> ProcessorPtr
+            pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
-                /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan
-                  * To property support min_count_to_compile_sort_description.
-                  */
-                bool increase_sort_description_compile_attempts_current = increase_sort_description_compile_attempts;
-
-                if (increase_sort_description_compile_attempts)
-                    increase_sort_description_compile_attempts = false;
-
                 return std::make_shared<FinishSortingTransform>(
-                    header, prefix_description, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current);
+                    header, prefix_description, result_description, max_block_size, limit);
             });
         }
     }
@@ -181,23 +169,13 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             return transform;
         });
 
-        bool increase_sort_description_compile_attempts = true;
-
-        pipeline.addSimpleTransform([&, increase_sort_description_compile_attempts](const Block & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type == QueryPipelineBuilder::StreamType::Totals)
                 return nullptr;
 
-            /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
-              * To property support min_count_to_compile_sort_description.
-              */
-            bool increase_sort_description_compile_attempts_current = increase_sort_description_compile_attempts;
-
-            if (increase_sort_description_compile_attempts)
-                increase_sort_description_compile_attempts = false;
-
             return std::make_shared<MergeSortingTransform>(
-                    header, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current,
+                    header, result_description, max_block_size, limit,
                     max_bytes_before_remerge / pipeline.getNumStreams(),
                     remerge_lowered_memory_bytes_ratio,
                     max_bytes_before_external_sort,
@@ -208,13 +186,12 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         /// If there are several streams, then we merge them into one
         if (pipeline.getNumStreams() > 1)
         {
+
             auto transform = std::make_shared<MergingSortedTransform>(
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     result_description,
-                    max_block_size,
-                    SortingQueueStrategy::Batch,
-                    limit);
+                    max_block_size, limit);
 
             pipeline.addTransform(std::move(transform));
         }
@@ -223,13 +200,12 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     {        /// If there are several streams, then we merge them into one
         if (pipeline.getNumStreams() > 1)
         {
+
             auto transform = std::make_shared<MergingSortedTransform>(
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     result_description,
-                    max_block_size,
-                    SortingQueueStrategy::Batch,
-                    limit);
+                    max_block_size, limit);
 
             pipeline.addTransform(std::move(transform));
         }

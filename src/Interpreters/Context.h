@@ -83,10 +83,8 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
-class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
-class FilesystemCacheLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -291,43 +289,6 @@ private:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
-        QueryFactoriesInfo() = default;
-
-        QueryFactoriesInfo(const QueryFactoriesInfo & rhs)
-        {
-            std::lock_guard<std::mutex> lock(rhs.mutex);
-            aggregate_functions = rhs.aggregate_functions;
-            aggregate_function_combinators = rhs.aggregate_function_combinators;
-            database_engines = rhs.database_engines;
-            data_type_families = rhs.data_type_families;
-            dictionaries = rhs.dictionaries;
-            formats = rhs.formats;
-            functions = rhs.functions;
-            storages = rhs.storages;
-            table_functions = rhs.table_functions;
-        }
-
-        QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
-
-        QueryFactoriesInfo & operator=(QueryFactoriesInfo rhs)
-        {
-            swap(rhs);
-            return *this;
-        }
-
-        void swap(QueryFactoriesInfo & rhs)
-        {
-            std::swap(aggregate_functions, rhs.aggregate_functions);
-            std::swap(aggregate_function_combinators, rhs.aggregate_function_combinators);
-            std::swap(database_engines, rhs.database_engines);
-            std::swap(data_type_families, rhs.data_type_families);
-            std::swap(dictionaries, rhs.dictionaries);
-            std::swap(formats, rhs.formats);
-            std::swap(functions, rhs.functions);
-            std::swap(storages, rhs.storages);
-            std::swap(table_functions, rhs.table_functions);
-        }
-
         std::unordered_set<std::string> aggregate_functions;
         std::unordered_set<std::string> aggregate_function_combinators;
         std::unordered_set<std::string> database_engines;
@@ -337,11 +298,9 @@ private:
         std::unordered_set<std::string> functions;
         std::unordered_set<std::string> storages;
         std::unordered_set<std::string> table_functions;
-
-        mutable std::mutex mutex;
     };
 
-    /// Needs to be changed while having const context in factories methods
+    /// Needs to be chandged while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
     /// TODO: maybe replace with temporary tables?
@@ -410,7 +369,6 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
-    String getUserDefinedPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -422,9 +380,8 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
-    void setUserDefinedPath(const String & path);
 
-    void addWarningMessage(const String & msg) const;
+    void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -474,13 +431,13 @@ public:
     /// Checks access rights.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
-    void checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const;
     void checkAccess(const AccessRightsElement & element) const;
@@ -607,8 +564,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(StringRef name, const String & value);
-    void setSetting(StringRef name, const Field & value);
+    void setSetting(const StringRef & name, const String & value);
+    void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -642,8 +599,6 @@ public:
     Lemmatizers & getLemmatizers() const;
 #endif
 
-    BackupsWorker & getBackupsWorker() const;
-
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -651,7 +606,6 @@ public:
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
-    const InterserverIOHandler & getInterserverIOHandler() const;
 
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
@@ -659,7 +613,7 @@ public:
 
     /// Credentials which server will use to communicate with others
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
-    InterserverCredentialsPtr getInterserverCredentials() const;
+    InterserverCredentialsPtr getInterserverCredentials();
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
@@ -757,7 +711,6 @@ public:
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
-    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -820,8 +773,6 @@ public:
 
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -866,8 +817,6 @@ public:
     std::shared_ptr<SessionLog> getSessionLog() const;
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
-
-    std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -920,7 +869,6 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
-        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;
@@ -978,7 +926,6 @@ public:
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
-    bool areBackgroundExecutorsInitialized();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;

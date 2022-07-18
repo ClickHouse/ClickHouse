@@ -3,15 +3,13 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/ParserAttachAccessEntity.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include "Access/AccessEntityIO.h"
 #include <string_view>
 #include <regex>
 #include <gtest/gtest.h>

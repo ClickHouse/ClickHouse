@@ -24,15 +24,13 @@ class FormatWithNamesAndTypesReader;
 class RowInputFormatWithNamesAndTypes : public RowInputFormatWithDiagnosticInfo
 {
 protected:
-    /** is_binary - it is a binary format (e.g. don't search for BOM)
-      * with_names - in the first line the header with column names
+    /** with_names - in the first line the header with column names
       * with_types - in the second line the header with column names
       */
     RowInputFormatWithNamesAndTypes(
         const Block & header_,
         ReadBuffer & in_,
         const Params & params_,
-        bool is_binary_,
         bool with_names_,
         bool with_types_,
         const FormatSettings & format_settings_,
@@ -53,7 +51,10 @@ private:
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
-    bool is_binary;
+    void setupAllColumnsByTableSchema();
+    void addInputColumn(const String & column_name, std::vector<bool> & read_columns);
+    void insertDefaultsForNotSeenColumns(MutableColumns & columns, RowReadExtension & ext);
+
     bool with_names;
     bool with_types;
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
@@ -127,7 +128,8 @@ public:
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,
-        DataTypePtr default_type_ = nullptr);
+        DataTypePtr default_type_ = nullptr,
+        bool allow_bools_as_numbers_ = false);
 
     NamesAndTypesList readSchema() override;
 

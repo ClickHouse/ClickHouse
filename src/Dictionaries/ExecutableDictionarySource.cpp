@@ -4,7 +4,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
 
@@ -103,7 +103,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-QueryPipeline ExecutableDictionarySource::loadAll()
+Pipe ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -114,10 +114,10 @@ QueryPipeline ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, sample_block, context));
+    return coordinator->createPipe(command, configuration.command_arguments, sample_block, context);
 }
 
-QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
+Pipe ExecutableDictionarySource::loadUpdatedAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -148,10 +148,10 @@ QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
     update_time = new_update_time;
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
-    return QueryPipeline(coordinator->createPipe(command, command_arguments, sample_block, context));
+    return coordinator->createPipe(command, command_arguments, sample_block, context);
 }
 
-QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -159,7 +159,7 @@ QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & id
     return getStreamForBlock(block);
 }
 
-QueryPipeline ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -167,7 +167,7 @@ QueryPipeline ExecutableDictionarySource::loadKeys(const Columns & key_columns, 
     return getStreamForBlock(block);
 }
 
-QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
+Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
     const auto & coordinator_configuration = coordinator->getConfiguration();
     String command = configuration.command;
@@ -184,7 +184,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
-    return QueryPipeline(std::move(pipe));
+    return pipe;
 }
 
 bool ExecutableDictionarySource::isModified() const

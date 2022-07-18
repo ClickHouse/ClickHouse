@@ -3,7 +3,7 @@ sidebar_position: 63
 sidebar_label: User Settings
 ---
 
-# User Settings
+# User Settings {#user-settings}
 
 The `users` section of the `user.xml` configuration file contains user settings.
 

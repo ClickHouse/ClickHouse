@@ -62,18 +62,9 @@ select number, quantileExact(number) over (partition by intDiv(number, 3) AS val
 7	7
 8	7
 9	9
--- now we should be able to compute expressions with window functions
-select number, q * 10, quantileExact(number) over (partition by intDiv(number, 3) order by number rows unbounded preceding) q from numbers(10) order by number;
-0	0	0
-1	10	1
-2	10	1
-3	30	3
-4	40	4
-5	40	4
-6	60	6
-7	70	7
-8	70	7
-9	90	9
+-- can't reference it yet -- the window functions are calculated at the
+-- last stage of select, after all other functions.
+select q * 10, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10); -- { serverError 47 }
 -- must work in WHERE if you wrap it in a subquery
 select * from (select count(*) over (rows unbounded preceding) c from numbers(3)) where c > 0;
 1
@@ -921,7 +912,8 @@ Expression ((Projection + Before ORDER BY))
       Window (Window step for window \'PARTITION BY p ORDER BY o ASC\')
         Sorting (Sorting for window \'PARTITION BY p ORDER BY o ASC\')
           Expression ((Before window functions + (Projection + Before ORDER BY)))
-            ReadFromStorage (SystemNumbers)
+            SettingQuotaAndLimits (Set limits and quota after reading from storage)
+              ReadFromStorage (SystemNumbers)
 explain select
     count(*) over (order by o, number),
     count(*) over (order by number)
@@ -936,7 +928,8 @@ Expression ((Projection + Before ORDER BY))
         Expression ((Before window functions + (Projection + Before ORDER BY)) [lifted up part])
           Sorting (Sorting for window \'ORDER BY number ASC\')
             Expression ((Before window functions + (Projection + Before ORDER BY)))
-              ReadFromStorage (SystemNumbers)
+              SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.
 SELECT
     max(number) OVER (ORDER BY number DESC NULLS FIRST),
@@ -1098,70 +1091,6 @@ order by number
 7	6	8
 8	7	9
 9	8	9
--- nth_value without specific frame range given
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number)
-order by number
-;
-0	0	0	0	0
-1	0	1	0	0
-2	0	1	2	0
-3	0	1	2	3
-4	0	1	2	3
-5	0	1	2	3
-6	0	1	2	3
-7	0	1	2	3
-8	0	1	2	3
-9	0	1	2	3
--- nth_value with frame range specified
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number range between 1 preceding and 1 following)
-order by number
-;
-0	0	1	0	0
-1	0	1	2	0
-2	1	2	3	0
-3	2	3	4	0
-4	3	4	5	0
-5	4	5	6	0
-6	5	6	7	0
-7	6	7	8	0
-8	7	8	9	0
-9	8	9	0	0
--- to make nth_value return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    nth_value(toNullable(number), 1) OVER w as firstValue,
-    nth_value(toNullable(number), 3) OVER w as thridValue
-FROM numbers(5)
-WINDOW w AS (ORDER BY number ASC)
-;
-0	0	\N
-1	0	\N
-2	0	2
-3	0	2
-4	0	2
--- nth_value UBsan
-SELECT nth_value(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, 0) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-0
-SELECT nth_value(1, 1) OVER ();
-1
 -- lagInFrame UBsan
 SELECT lagInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
 SELECT lagInFrame(1, 0) OVER ();
@@ -1180,12 +1109,6 @@ SELECT leadInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
 0
 SELECT leadInFrame(1, 1) OVER ();
 0
--- nth_value Msan
-SELECT nth_value(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
--- lagInFrame Msan
-SELECT lagInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
--- leadInFrame Msan
-SELECT leadInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;

@@ -2,8 +2,6 @@
 
 #include <cmath>
 #include <cstring>
-#include <string>
-#include <string_view>
 #include <limits>
 #include <algorithm>
 #include <iterator>
@@ -620,8 +618,6 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 struct NullOutput
 {
     void append(const char *, size_t) {}
-    void append(const char *) {}
-    void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
 };
 
@@ -836,7 +832,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(std::string_view str)
+inline T parseFromString(const std::string_view & str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -908,8 +904,6 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         return ReturnType(false);
     }
 
-    int negative_multiplier = 1;
-
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
     if (!buf.eof() && *buf.position() == '.')
@@ -936,19 +930,13 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
 
-        /// Fractional part (subseconds) is treated as positive by users
-        /// (as DateTime64 itself is a positive, although underlying decimal is negative)
-        /// setting fractional part to be negative when whole is 0 results in wrong value,
-        /// so we multiply result by -1.
+        /// Keep sign of fractional part the same with whole part if datetime64 is negative
+        /// 1965-12-12 12:12:12.123 => whole = -127914468, fraction = 123(sign>0) -> new whole = -127914467, new fraction = 877(sign<0)
         if (components.whole < 0 && components.fractional != 0)
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
             ++components.whole;
             components.fractional = scale_multiplier - components.fractional;
-            if (!components.whole)
-            {
-                negative_multiplier = -1;
-            }
         }
     }
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
@@ -960,7 +948,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    datetime64 = negative_multiplier * DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
 
     return ReturnType(true);
 }
@@ -1064,8 +1052,6 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
 {
     return tryReadIntText(x, buf);
 }
-
-inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
 
 inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
@@ -1238,7 +1224,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
 
 
 /** Read serialized exception.
@@ -1338,7 +1324,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(std::string_view s)
+inline T parseWithSizeSuffix(const std::string_view & s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }
@@ -1362,12 +1348,6 @@ inline T parse(const String & s)
 }
 
 template <typename T>
-inline T parse(std::string_view s)
-{
-    return parse<T>(s.data(), s.size());
-}
-
-template <typename T>
 inline bool tryParse(T & res, const char * data)
 {
     return tryParse(res, data, strlen(data));
@@ -1375,12 +1355,6 @@ inline bool tryParse(T & res, const char * data)
 
 template <typename T>
 inline bool tryParse(T & res, const String & s)
-{
-    return tryParse(res, s.data(), s.size());
-}
-
-template <typename T>
-inline bool tryParse(T & res, std::string_view s)
 {
     return tryParse(res, s.data(), s.size());
 }
@@ -1451,11 +1425,8 @@ struct PcgDeserializer
     }
 };
 
-template <typename Vector>
-void readQuotedFieldInto(Vector & s, ReadBuffer & buf);
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
 
-void readQuotedField(String & s, ReadBuffer & buf);
-
-void readJSONField(String & s, ReadBuffer & buf);
+void readJSONFieldIntoString(String & s, ReadBuffer & buf);
 
 }

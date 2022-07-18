@@ -3,7 +3,7 @@ sidebar_position: 51
 sidebar_label: SET ROLE
 ---
 
-# SET ROLE Statement
+# SET ROLE Statement {#set-role-statement}
 
 Activates roles for the current user.
 
@@ -11,7 +11,7 @@ Activates roles for the current user.
 SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 ```
 
-## SET DEFAULT ROLE
+## SET DEFAULT ROLE {#set-default-role-statement}
 
 Sets default roles to a user.
 
@@ -21,7 +21,7 @@ Default roles are automatically activated at user login. You can set as default 
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
 ```
 
-## Examples
+## Examples {#set-default-role-examples}
 
 Set multiple default roles to a user:
 

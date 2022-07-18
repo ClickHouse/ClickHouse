@@ -1,4 +1,4 @@
-# IN Operators
+# IN Operators {#select-in-operators}
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -80,7 +80,7 @@ ORDER BY EventDate ASC
 For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
 
-## NULL Processing
+## NULL Processing {#in-null-processing}
 
 During request processing, the `IN` operator assumes that the result of an operation with [NULL](../../sql-reference/syntax.md#null-literal) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](../../operations/settings/settings.md#transform_null_in).
 
@@ -115,7 +115,7 @@ FROM t_null
 └───────────────────────┘
 ```
 
-## Distributed Subqueries
+## Distributed Subqueries {#select-distributed-subqueries}
 
 There are two options for IN-s with subqueries (similar to JOINs): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
@@ -228,7 +228,7 @@ select * from table1 where col1 global in (select col1 from table2 where <some_p
  
 If `some_predicate` is not selective enough, it will return large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](../../operations/settings/query-complexity.md#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
 
-### Distributed Subqueries and max_parallel_replicas
+### Distributed Subqueries and max_parallel_replicas {#max_parallel_replica-subqueries}
 
 When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
 

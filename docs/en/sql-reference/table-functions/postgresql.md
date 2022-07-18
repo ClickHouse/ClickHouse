@@ -3,7 +3,7 @@ sidebar_position: 42
 sidebar_label: postgresql
 ---
 
-# postgresql
+# postgresql {#postgresql}
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
@@ -30,7 +30,7 @@ A table object with the same columns as the original PostgreSQL table.
 In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 

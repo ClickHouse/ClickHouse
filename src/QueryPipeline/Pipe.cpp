@@ -8,9 +8,8 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
 
 namespace DB
@@ -24,18 +23,16 @@ namespace ErrorCodes
 static void checkSource(const IProcessor & source)
 {
     if (!source.getInputs().empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for pipe shouldn't have any input, but {} has {} inputs",
-            source.getName(),
-            source.getInputs().size());
+        throw Exception("Source for pipe shouldn't have any input, but " + source.getName() + " has " +
+                        toString(source.getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
 
-    if (source.getOutputs().size() != 1)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for pipe should have single output, but {} has {} outputs",
-            source.getName(),
-            source.getOutputs().size());
+    if (source.getOutputs().empty())
+        throw Exception("Source for pipe should have single output, but it doesn't have any",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (source.getOutputs().size() > 1)
+        throw Exception("Source for pipe should have single output, but " + source.getName() + " has " +
+                        toString(source.getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
 static OutputPort * uniteExtremes(const OutputPortRawPtrs & ports, const Block & header, Processors & processors)
@@ -102,14 +99,21 @@ static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & h
     return totals_port;
 }
 
+void Pipe::addQueryPlan(std::unique_ptr<QueryPlan> plan)
+{
+    holder.query_plans.emplace_back(std::move(plan));
+}
+
+PipelineResourcesHolder Pipe::detachResources()
+{
+    return std::move(holder);
+}
+
 Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes)
 {
     if (!source->getInputs().empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for pipe shouldn't have any input, but {} has {} inputs",
-            source->getName(),
-            source->getInputs().size());
+        throw Exception("Source for pipe shouldn't have any input, but " + source->getName() + " has " +
+                        toString(source->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
 
     if (!output)
         throw Exception("Cannot create Pipe from source because specified output port is nullptr",
@@ -137,7 +141,8 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
 
             auto it = std::find_if(outputs.begin(), outputs.end(), [port](const OutputPort & p) { return &p == port; });
             if (it == outputs.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create Pipe because specified {} port does not belong to source", name);
+                throw Exception("Cannot create Pipe because specified " + name + " port does not belong to source",
+                                ErrorCodes::LOGICAL_ERROR);
         };
 
         check_port_from_source(output, "output");
@@ -145,11 +150,9 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
         check_port_from_source(extremes, "extremes");
 
         if (num_specified_ports != outputs.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot create Pipe from source because it has {} output ports, but {} were specified",
-                outputs.size(),
-                num_specified_ports);
+            throw Exception("Cannot create Pipe from source because it has " + std::to_string(outputs.size()) +
+                            " output ports, but " + std::to_string(num_specified_ports) + " were specified",
+                            ErrorCodes::LOGICAL_ERROR);
     }
 
     totals_port = totals;
@@ -161,7 +164,8 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
 
 Pipe::Pipe(ProcessorPtr source)
 {
-    checkSource(*source);
+    if (source->getOutputs().size() != 1)
+        checkSource(*source);
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -184,16 +188,14 @@ Pipe::Pipe(Processors processors_) : processors(std::move(processors_))
         for (const auto & port : processor->getInputs())
         {
             if (!port.isConnected())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Cannot create Pipe because processor {} has disconnected input port", processor->getName());
+                throw Exception("Cannot create Pipe because processor " + processor->getName() +
+                                " has not connected input port", ErrorCodes::LOGICAL_ERROR);
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
             if (!set.contains(connected_processor))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Cannot create Pipe because processor {} has input port which is connected with unknown processor {}",
-                    processor->getName(),
-                    connected_processor->getName());
+                throw Exception("Cannot create Pipe because processor " + processor->getName() +
+                                " has input port which is connected with unknown processor " +
+                                connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
         }
 
         for (auto & port : processor->getOutputs())
@@ -206,16 +208,14 @@ Pipe::Pipe(Processors processors_) : processors(std::move(processors_))
 
             const auto * connected_processor = &port.getInputPort().getProcessor();
             if (!set.contains(connected_processor))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Cannot create Pipe because processor {} has output port which is connected with unknown processor {}",
-                    processor->getName(),
-                    connected_processor->getName());
+                throw Exception("Cannot create Pipe because processor " + processor->getName() +
+                                " has output port which is connected with unknown processor " +
+                                connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
         }
     }
 
     if (output_ports.empty())
-        throw Exception("Cannot create Pipe because processors don't have any disconnected output ports",
+        throw Exception("Cannot create Pipe because processors don't have any not-connected output ports",
                         ErrorCodes::LOGICAL_ERROR);
 
     header = output_ports.front()->getHeader();
@@ -293,13 +293,19 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 {
     Pipe res;
 
+    for (auto & pipe : pipes)
+        res.holder = std::move(pipe.holder); /// see move assignment for Pipe::Holder.
+
     pipes = removeEmptyPipes(std::move(pipes));
 
     if (pipes.empty())
         return res;
 
     if (pipes.size() == 1)
+    {
+        pipes[0].holder = std::move(res.holder);
         return std::move(pipes[0]);
+    }
 
     OutputPortRawPtrs totals;
     OutputPortRawPtrs extremes;
@@ -359,10 +365,10 @@ void Pipe::addSource(ProcessorPtr source)
 void Pipe::addTotalsSource(ProcessorPtr source)
 {
     if (output_ports.empty())
-        throw Exception("Cannot add totals source to empty Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot add totals source to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     if (totals_port)
-        throw Exception("Totals source was already added to Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Totals source was already added to Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     checkSource(*source);
     const auto & source_header = output_ports.front()->getHeader();
@@ -379,10 +385,10 @@ void Pipe::addTotalsSource(ProcessorPtr source)
 void Pipe::addExtremesSource(ProcessorPtr source)
 {
     if (output_ports.empty())
-        throw Exception("Cannot add extremes source to empty Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot add extremes source to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     if (extremes_port)
-        throw Exception("Extremes source was already added to Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Extremes source was already added to Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     checkSource(*source);
     const auto & source_header = output_ports.front()->getHeader();
@@ -429,23 +435,20 @@ void Pipe::addTransform(ProcessorPtr transform)
 void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes)
 {
     if (output_ports.empty())
-        throw Exception("Cannot add transform to empty Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot add transform to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     auto & inputs = transform->getInputs();
     if (inputs.size() != output_ports.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot add transform {} to Pipe because it has {} input ports, but {} expected",
-            transform->getName(),
-            inputs.size(),
-            output_ports.size());
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "Processor has " + std::to_string(inputs.size()) + " input ports, "
+                        "but " + std::to_string(output_ports.size()) + " expected", ErrorCodes::LOGICAL_ERROR);
 
     if (totals && totals_port)
-        throw Exception("Cannot add transform with totals to Pipe because it already has totals",
+        throw Exception("Cannot add transform with totals to Pipe because it already has totals.",
                         ErrorCodes::LOGICAL_ERROR);
 
     if (extremes && extremes_port)
-        throw Exception("Cannot add transform with extremes to Pipe because it already has extremes",
+        throw Exception("Cannot add transform with extremes to Pipe because it already has extremes.",
                         ErrorCodes::LOGICAL_ERROR);
 
     if (totals)
@@ -494,7 +497,7 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     for (size_t i = 1; i < output_ports.size(); ++i)
         assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
 
-    // Temporarily skip this check. TotalsHavingTransform may return finalized totals but not finalized data.
+    // Temporarily skip this check. TotaslHavingTransform may return finalized totals but not finalized data.
     // if (totals_port)
     //     assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
 
@@ -512,24 +515,21 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
 void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes)
 {
     if (output_ports.empty())
-        throw Exception("Cannot add transform to empty Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot add transform to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     auto & inputs = transform->getInputs();
     size_t expected_inputs = output_ports.size() + (totals ? 1 : 0) + (extremes ? 1 : 0);
     if (inputs.size() != expected_inputs)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot add transform {} to Pipe because it has {} input ports, but {} expected",
-            transform->getName(),
-            inputs.size(),
-            expected_inputs);
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "Processor has " + std::to_string(inputs.size()) + " input ports, "
+                        "but " + std::to_string(expected_inputs) + " expected", ErrorCodes::LOGICAL_ERROR);
 
     if (totals && !totals_port)
-        throw Exception("Cannot add transform consuming totals to Pipe because Pipe does not have totals",
+        throw Exception("Cannot add transform consuming totals to Pipe because Pipe does not have totals.",
                         ErrorCodes::LOGICAL_ERROR);
 
     if (extremes && !extremes_port)
-        throw Exception("Cannot add transform consuming extremes to Pipe because it already has extremes",
+        throw Exception("Cannot add transform consuming extremes to Pipe because it already has extremes.",
                         ErrorCodes::LOGICAL_ERROR);
 
     if (totals)
@@ -561,20 +561,17 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
     }
 
     if (totals && !found_totals)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot add transform {} to Pipes because specified totals port does not belong to it",
-            transform->getName());
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "specified totals port does not belong to it", ErrorCodes::LOGICAL_ERROR);
 
     if (extremes && !found_extremes)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot add transform {} to Pipes because specified extremes port does not belong to it",
-            transform->getName());
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "specified extremes port does not belong to it", ErrorCodes::LOGICAL_ERROR);
 
     auto & outputs = transform->getOutputs();
     if (outputs.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform {} to Pipes because it has no outputs", transform->getName());
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because it has no outputs",
+                        ErrorCodes::LOGICAL_ERROR);
 
     output_ports.clear();
     output_ports.reserve(outputs.size());
@@ -617,18 +614,14 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
         if (transform)
         {
             if (transform->getInputs().size() != 1)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Processor for query pipeline transform should have single input, but {} has {} inputs",
-                    transform->getName(),
-                    transform->getInputs().size());
+                throw Exception("Processor for query pipeline transform should have single input, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
 
             if (transform->getOutputs().size() != 1)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Processor for query pipeline transform should have single output, but {} has {} outputs",
-                    transform->getName(),
-                    transform->getOutputs().size());
+                throw Exception("Processor for query pipeline transform should have single output, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
         }
 
         const auto & out_header = transform ? transform->getOutputs().front().getHeader()
@@ -668,11 +661,10 @@ void Pipe::addSimpleTransform(const ProcessorGetter & getter)
 void Pipe::addChains(std::vector<Chain> chains)
 {
     if (output_ports.size() != chains.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot add chains to Pipe because number of output ports ({}) is not equal to the number of chains ({})",
-            output_ports.size(),
-            chains.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot add chains to Pipe because "
+                        "number of output ports ({}) is not equal to the number of chains ({})",
+                        output_ports.size(), chains.size());
 
     dropTotals();
     dropExtremes();
@@ -692,6 +684,7 @@ void Pipe::addChains(std::vector<Chain> chains)
         connect(*output_ports[i], chains[i].getInputPort());
         output_ports[i] = &chains[i].getOutputPort();
 
+        holder = chains[i].detachResources();
         auto added_processors = Chain::getProcessors(std::move(chains[i]));
         for (auto & transform : added_processors)
         {
@@ -709,7 +702,7 @@ void Pipe::addChains(std::vector<Chain> chains)
 void Pipe::resize(size_t num_streams, bool force, bool strict)
 {
     if (output_ports.empty())
-        throw Exception("Cannot resize an empty Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot resize an empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     if (!force && num_streams == numOutputPorts())
         return;
@@ -727,7 +720,7 @@ void Pipe::resize(size_t num_streams, bool force, bool strict)
 void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     if (output_ports.empty())
-        throw Exception("Cannot set sink to empty Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot set sink to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     auto add_transform = [&](OutputPort *& stream, Pipe::StreamType stream_type)
     {
@@ -739,18 +732,14 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
         if (transform)
         {
             if (transform->getInputs().size() != 1)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Sink for query pipeline transform should have single input, but {} has {} inputs",
-                    transform->getName(),
-                    transform->getInputs().size());
+                throw Exception("Sink for query pipeline transform should have single input, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
 
             if (!transform->getOutputs().empty())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Sink for query pipeline transform should have no outputs, but {} has {} outputs",
-                    transform->getName(),
-                    transform->getOutputs().size());
+                throw Exception("Sink for query pipeline transform should have no outputs, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
         }
 
         if (!transform)
@@ -773,7 +762,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 void Pipe::transform(const Transformer & transformer)
 {
     if (output_ports.empty())
-        throw Exception("Cannot transform empty Pipe", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot transform empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
     auto new_processors = transformer(output_ports);
 
@@ -785,10 +774,8 @@ void Pipe::transform(const Transformer & transformer)
     for (const auto & port : output_ports)
     {
         if (!port->isConnected())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Transformation of Pipe is not valid because output port ({})",
-                port->getHeader().dumpStructure());
+            throw Exception("Transformation of Pipe is not valid because output port (" +
+                            port->getHeader().dumpStructure() + ") is not connected", ErrorCodes::LOGICAL_ERROR);
 
         set.emplace(&port->getProcessor());
     }
@@ -800,18 +787,14 @@ void Pipe::transform(const Transformer & transformer)
         for (const auto & port : processor->getInputs())
         {
             if (!port.isConnected())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Transformation of Pipe is not valid because processor {} has not connected input port",
-                    processor->getName());
+                throw Exception("Transformation of Pipe is not valid because processor " + processor->getName() +
+                                " has not connected input port", ErrorCodes::LOGICAL_ERROR);
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
             if (!set.contains(connected_processor))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Transformation of Pipe is not valid because processor {} has input port which is connected with unknown processor {}",
-                    processor->getName(),
-                    connected_processor->getName());
+                throw Exception("Transformation of Pipe is not valid because processor " + processor->getName() +
+                                " has input port which is connected with unknown processor " +
+                                connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
         }
 
         for (auto & port : processor->getOutputs())
@@ -824,17 +807,15 @@ void Pipe::transform(const Transformer & transformer)
 
             const auto * connected_processor = &port.getInputPort().getProcessor();
             if (!set.contains(connected_processor))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Transformation of Pipe is not valid because processor {} has output port which is connected with unknown processor {}",
-                    processor->getName(),
-                    connected_processor->getName());
+                throw Exception("Transformation of Pipe is not valid because processor " + processor->getName() +
+                                " has output port which is connected with unknown processor " +
+                                connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
         }
     }
 
     if (output_ports.empty())
-        throw Exception(
-            "Transformation of Pipe is not valid because processors don't have any disconnected output ports", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Transformation of Pipe is not valid because processors don't have any "
+                        "not-connected output ports", ErrorCodes::LOGICAL_ERROR);
 
     header = output_ports.front()->getHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
@@ -855,6 +836,33 @@ void Pipe::transform(const Transformer & transformer)
     processors.insert(processors.end(), new_processors.begin(), new_processors.end());
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
+
+void Pipe::setLimits(const StreamLocalLimits & limits)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setLimits(limits);
+    }
+}
+
+void Pipe::setLeafLimits(const SizeLimits & leaf_limits)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setLeafLimits(leaf_limits);
+    }
+}
+
+void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setQuota(quota);
+    }
 }
 
 }

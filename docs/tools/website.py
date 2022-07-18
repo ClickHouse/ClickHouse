@@ -1,17 +1,23 @@
+import concurrent.futures
 import hashlib
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 
 import bs4
+import closure
+import cssmin
+import htmlmin
+import jsmin
 
 import util
 
 
 def handle_iframe(iframe, soup):
-    allowed_domains = ["https://www.youtube.com/"]
+    allowed_domains = ["https://www.youtube.com/", "https://datalens.yandex/"]
     illegal_domain = True
     iframe_src = iframe.attrs["src"]
     for domain in allowed_domains:
@@ -121,6 +127,10 @@ def adjust_markdown_html(content):
     return str(soup)
 
 
+def minify_html(content):
+    return htmlmin.minify(content)
+
+
 def build_website(args):
     logging.info("Building website")
     env = util.init_jinja2_env(args)
@@ -207,15 +217,47 @@ def get_js_in(args):
     ]
 
 
+def minify_file(path, css_digest, js_digest):
+    if not (path.endswith(".html") or path.endswith(".css")):
+        return
+
+    logging.info("Minifying %s", path)
+    with open(path, "rb") as f:
+        content = f.read().decode("utf-8")
+    if path.endswith(".html"):
+        content = minify_html(content)
+        content = content.replace("base.css?css_digest", f"base.css?{css_digest}")
+        content = content.replace("base.js?js_digest", f"base.js?{js_digest}")
+    # TODO: restore cssmin
+    #     elif path.endswith('.css'):
+    #         content = cssmin.cssmin(content)
+    # TODO: restore jsmin
+    #     elif path.endswith('.js'):
+    #         content = jsmin.jsmin(content)
+    with open(path, "wb") as f:
+        f.write(content.encode("utf-8"))
+
+
 def minify_website(args):
     css_in = " ".join(get_css_in(args))
     css_out = f"{args.output_dir}/docs/css/base.css"
     os.makedirs(f"{args.output_dir}/docs/css")
 
-    command = f"cat {css_in}"
-    output = subprocess.check_output(command, shell=True)
-    with open(css_out, "wb+") as f:
-        f.write(output)
+    if args.minify and False:  # TODO: return closure
+        command = (
+            f"purifycss -w '*algolia*' --min {css_in} '{args.output_dir}/*.html' "
+            f"'{args.output_dir}/docs/en/**/*.html' '{args.website_dir}/js/**/*.js' > {css_out}"
+        )
+        logging.info(css_in)
+        logging.info(command)
+        output = subprocess.check_output(command, shell=True)
+        logging.debug(output)
+
+    else:
+        command = f"cat {css_in}"
+        output = subprocess.check_output(command, shell=True)
+        with open(css_out, "wb+") as f:
+            f.write(output)
 
     with open(css_out, "rb") as f:
         css_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
@@ -224,28 +266,69 @@ def minify_website(args):
     js_out = f"{args.output_dir}/docs/js/base.js"
     os.makedirs(f"{args.output_dir}/docs/js")
 
-    command = f"cat {js_in}"
-    output = subprocess.check_output(command, shell=True)
-    with open(js_out, "wb+") as f:
-        f.write(output)
+    if args.minify and False:  # TODO: return closure
+        js_in = [js[1:-1] for js in js_in]
+        closure_args = [
+            "--js",
+            *js_in,
+            "--js_output_file",
+            js_out,
+            "--compilation_level",
+            "SIMPLE",
+            "--dependency_mode",
+            "NONE",
+            "--third_party",
+            "--use_types_for_optimization",
+            "--isolation_mode",
+            "IIFE",
+        ]
+        logging.info(closure_args)
+        if closure.run(*closure_args):
+            raise RuntimeError("failed to run closure compiler")
+        with open(js_out, "r") as f:
+            js_content = jsmin.jsmin(f.read())
+        with open(js_out, "w") as f:
+            f.write(js_content)
+
+    else:
+        command = f"cat {js_in}"
+        output = subprocess.check_output(command, shell=True)
+        with open(js_out, "wb+") as f:
+            f.write(output)
 
     with open(js_out, "rb") as f:
         js_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
         logging.info(js_digest)
 
+    if args.minify:
+        logging.info("Minifying website")
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = []
+            for root, _, filenames in os.walk(args.output_dir):
+                for filename in filenames:
+                    path = os.path.join(root, filename)
+                    futures.append(
+                        executor.submit(minify_file, path, css_digest, js_digest)
+                    )
+            for future in futures:
+                exc = future.exception()
+                if exc:
+                    logging.error(exc)
+                    sys.exit(1)
+
 
 def process_benchmark_results(args):
     benchmark_root = os.path.join(args.website_dir, "benchmark")
     required_keys = {
+        "dbms": ["result"],
         "hardware": ["result", "system", "system_full", "kind"],
-        "versions": ["version", "system"],
     }
-    for benchmark_kind in ["hardware", "versions"]:
+    for benchmark_kind in ["dbms", "hardware"]:
         results = []
         results_root = os.path.join(benchmark_root, benchmark_kind, "results")
         for result in sorted(os.listdir(results_root)):
             result_file = os.path.join(results_root, result)
-            logging.info(f"Reading benchmark result from {result_file}")
+            logging.debug(f"Reading benchmark result from {result_file}")
             with open(result_file, "r") as f:
                 result = json.loads(f.read())
                 for item in result:
