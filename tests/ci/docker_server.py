@@ -6,6 +6,7 @@ import json
 import logging
 import subprocess
 import sys
+import time
 from os import path as p, makedirs
 from typing import List, Tuple
 
@@ -113,6 +114,34 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
+
+def retry_popen(cmd: str) -> int:
+    max_retries = 5
+    for retry in range(max_retries):
+        # From time to time docker build may failed. Curl issues, or even push
+        # It will sleep progressively 5, 15, 30 and 50 seconds between retries
+        progressive_sleep = 5 * sum(i + 1 for i in range(retry))
+        if progressive_sleep:
+            logging.warning(
+                "The following command failed, sleep %s before retry: %s",
+                progressive_sleep,
+                cmd,
+            )
+            time.sleep(progressive_sleep)
+        with subprocess.Popen(
+            cmd,
+            shell=True,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            universal_newlines=True,
+        ) as process:
+            for line in process.stdout:  # type: ignore
+                print(line, end="")
+            retcode = process.wait()
+            if retcode == 0:
+                return 0
+    return retcode
 
 
 def auto_release_type(version: ClickHouseVersion, release_type: str) -> str:
@@ -240,41 +269,22 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        with subprocess.Popen(
-            cmd,
-            shell=True,
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ) as process:
-            for line in process.stdout:  # type: ignore
-                print(line, end="")
-            retcode = process.wait()
-            if retcode != 0:
-                result.append((f"{image.repo}:{tag}-{arch}", "FAIL"))
-                return result
-            result.append((f"{image.repo}:{tag}-{arch}", "OK"))
-            with open(metadata_path, "rb") as m:
-                metadata = json.load(m)
-                digests.append(metadata["containerimage.digest"])
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}-{arch}", "FAIL"))
+            return result
+        result.append((f"{image.repo}:{tag}-{arch}", "OK"))
+        with open(metadata_path, "rb") as m:
+            metadata = json.load(m)
+            digests.append(metadata["containerimage.digest"])
     if push:
         cmd = (
             "docker buildx imagetools create "
             f"--tag {image.repo}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
-        with subprocess.Popen(
-            cmd,
-            shell=True,
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ) as process:
-            for line in process.stdout:  # type: ignore
-                print(line, end="")
-            retcode = process.wait()
-            if retcode != 0:
-                result.append((f"{image.repo}:{tag}", "FAIL"))
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}", "FAIL"))
+            return result
     else:
         logging.info(
             "Merging is available only on push, separate %s images are created",

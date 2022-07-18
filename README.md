@@ -15,4 +15,8 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Contacts](https://clickhouse.com/company/#contact) can help to get your questions answered if there are any.
 
 ## Upcoming events
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/286304312/) Please join us for an evening of talks (in English), food and discussion. Featuring talks of ClickHouse in production and at least one on the deep internals of ClickHouse itself.
+* [v22.7 Release Webinar](https://clickhouse.com/company/events/v22-7-release-webinar/) Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
+* [ClickHouse Meetup at the Cloudflare office in London](https://www.meetup.com/clickhouse-london-user-group/events/286891586/) ClickHouse meetup at the Cloudflare office space in central London
+* [ClickHouse Meetup at the Metoda office in Munich](https://www.meetup.com/clickhouse-meetup-munich/events/286891667/) ClickHouse meetup at the Metoda office in Munich
+
+

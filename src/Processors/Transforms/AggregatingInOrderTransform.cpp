@@ -87,7 +87,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     Columns key_columns(params->params.keys_size);
     for (size_t i = 0; i < params->params.keys_size; ++i)
     {
-        materialized_columns.push_back(columns.at(params->params.keys[i])->convertToFullColumnIfConst());
+        const auto pos = inputs.front().getHeader().getPositionByName(params->params.keys[i]);
+        materialized_columns.push_back(chunk.getColumns().at(pos)->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back();
         if (group_by_key)
             key_columns_raw[i] = materialized_columns.back().get();
@@ -95,7 +96,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
-    params->aggregator.prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
+    if (!params->params.only_merge)
+    {
+        params->aggregator.prepareAggregateInstructions(
+            columns, aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
+    }
 
     size_t key_end = 0;
     size_t key_begin = 0;
@@ -123,7 +128,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     Int64 current_memory_usage = 0;
 
     Aggregator::AggregateColumnsConstData aggregate_columns_data(params->params.aggregates_size);
-    if (params->only_merge)
+    if (params->params.only_merge)
     {
         for (size_t i = 0, j = 0; i < columns.size(); ++i)
         {
@@ -149,7 +154,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
         {
-            if (params->only_merge)
+            if (params->params.only_merge)
             {
                 if (group_by_key)
                     params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
