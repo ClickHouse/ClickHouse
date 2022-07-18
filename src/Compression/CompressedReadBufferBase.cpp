@@ -187,7 +187,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     return size_compressed_without_checksum + sizeof(Checksum);
 }
 
-size_t CompressedReadBufferBase::readCompressedDataBlockHold(size_t & size_decompressed, size_t & size_compressed_without_checksum)
+size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t & size_decompressed, size_t & size_compressed_without_checksum)
 {
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     if (compressed_in->eof() || (compressed_in->available() < (header_size + sizeof(Checksum))))
