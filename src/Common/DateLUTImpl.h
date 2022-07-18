@@ -71,7 +71,7 @@ private:
     static inline LUTIndex normalizeLUTIndex(UInt32 index)
     {
         if (index >= DATE_LUT_SIZE)
-            LUTIndex(DATE_LUT_SIZE - 1);
+            return LUTIndex(DATE_LUT_SIZE - 1);
         return LUTIndex{index};
     }
 
@@ -80,7 +80,7 @@ private:
         if unlikely(index < 0 )
             return LUTIndex(0);
         if (index >= DATE_LUT_SIZE)
-            LUTIndex(DATE_LUT_SIZE - 1);
+            return LUTIndex(DATE_LUT_SIZE - 1);
         return LUTIndex{index};
     }
 
@@ -93,7 +93,7 @@ private:
     template <typename T>
     friend inline LUTIndex operator+(const T v, const LUTIndex & index)
     {
-        return normalizeLUTIndex(v + index.toUnderType());
+        return normalizeLUTIndex(static_cast<Int64>(v + index.toUnderType()));
     }
 
     friend inline LUTIndex operator+(const LUTIndex & index, const LUTIndex & v)
