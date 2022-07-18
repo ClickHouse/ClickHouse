@@ -171,15 +171,6 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     auto requested_keys = requested_keys_extractor.extractAllKeys();
     size_t requested_keys_size = requested_keys.size();
 
-    HashMap<KeyType, size_t> requested_key_to_index;
-    requested_key_to_index.reserve(requested_keys_size);
-
-    for (size_t i = 0; i < requested_keys.size(); ++i)
-    {
-        auto requested_key = requested_keys[i];
-        requested_key_to_index[requested_key] = i;
-    }
-
     auto result = ColumnUInt8::create(requested_keys_size, false);
     auto & result_data = result->getData();
 
@@ -205,15 +196,17 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
         {
             auto block_key = block_keys_extractor.extractCurrentKey();
 
-            const auto * it = requested_key_to_index.find(block_key);
-            assert(it);
+            size_t index;
+            for (index = 0; index < requested_keys_size; ++index)
+            {
+                if (!result_data[index] && requested_keys[index] == block_key)
+                {
+                    keys_found++;
+                    result_data[index] = true;
 
-            size_t result_data_found_index = it->getMapped();
-            /// block_keys_size cannot be used, due to duplicates.
-            keys_found += !result_data[result_data_found_index];
-            result_data[result_data_found_index] = true;
-
-            block_keys_extractor.rollbackCurrentKey();
+                    block_keys_extractor.rollbackCurrentKey();
+                }
+            }
         }
 
         block_key_columns.clear();
