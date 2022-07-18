@@ -20,6 +20,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
