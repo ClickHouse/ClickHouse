@@ -93,6 +93,7 @@
 #    define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED __attribute__((__always_inline__, __no_sanitize__("undefined")))
+#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
 #else  /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
 #    define NO_SANITIZE_UNDEFINED
 #    define NO_SANITIZE_ADDRESS

@@ -210,6 +210,7 @@ public:
     SortCursorImpl cursor;
 
     const Block & sampleBlock() const { return sample_block; }
+    Columns sampleColumns() const { return sample_block.getColumns(); }
 
 private:
     Block sample_block;
@@ -232,19 +233,14 @@ public:
     virtual void consume(Input & input, size_t source_num) override;
     virtual Status merge() override;
 
-    void logElapsed(double seconds, bool force)
+    void logElapsed(double seconds)
     {
-        /// Do not log more frequently than once per ten seconds
-        if (seconds - stat.last_log_seconds < 10 && !force)
-            return;
-
         LOG_TRACE(log,
             "Finished pocessing in {} seconds"
             ", left: {} blocks, {} rows; right: {} blocks, {} rows"
             ", max blocks loaded to memory: {}",
             seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
             stat.max_blocks_loaded);
-        stat.last_log_seconds = seconds;
     }
 
 private:
@@ -261,7 +257,6 @@ private:
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     std::vector<FullMergeJoinCursorPtr> cursors;
-    std::vector<Chunk> sample_chunks;
 
     /// Keep some state to make connection between data in different blocks
     AnyJoinState any_join_state;
@@ -277,8 +272,6 @@ private:
         size_t num_rows[2] = {0, 0};
 
         size_t max_blocks_loaded = 0;
-
-        double last_log_seconds = 0;
     };
 
     Statistic stat;
@@ -302,12 +295,6 @@ public:
 
 protected:
     void onFinish() override;
-
-    void work() override
-    {
-        algorithm.logElapsed(total_stopwatch.elapsedSeconds(), true);
-        Base::work();
-    }
 
     Poco::Logger * log;
 };
