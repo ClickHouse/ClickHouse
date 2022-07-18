@@ -25,7 +25,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
             else
                 all_arrays = false;
         }
-        
+
         if (have_array)
         {
             if (all_arrays)
@@ -137,7 +137,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
             return;
         }
     }
-    
+
     {
         /// Nullable
         bool have_nullable = false;
@@ -159,7 +159,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
                 nested_types.push_back(type);
             }
         }
-        
+
         if (have_nullable)
         {
             transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
