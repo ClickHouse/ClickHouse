@@ -274,7 +274,11 @@ class ClickHouseCluster:
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
-        self.name = name if name is not None else ""
+        self.name = (
+            name
+            if name is not None
+            else p.splitext(p.basename(base_path))[0].replace("test", "").strip("_-")
+        )
 
         self.base_config_dir = base_config_dir or os.environ.get(
             "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
