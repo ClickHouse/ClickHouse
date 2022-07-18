@@ -18,6 +18,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh stateful
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 
 function start()
 {
