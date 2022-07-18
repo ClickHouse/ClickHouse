@@ -4,7 +4,7 @@
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
-#include <unordered_map>
+#include <map>
 
 namespace DB
 {
@@ -105,7 +105,7 @@ std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_ch
         {"20.4", {{"validate_polygons", false, true, "Throw exception if polygon is invalid in function pointInPolygon by default instead of returning possibly wrong results"}}},
         {"19.18", {{"enable_scalar_subquery_optimization", false, true, "Prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once"}}},
         {"19.14", {{"any_join_distinct_right_table_keys", true, false, "Disable ANY RIGHT and ANY FULL JOINs by default to avoid inconsistency"}}},
-        {"19.12", {{"input_format_defaults_for_omitted_fields", false, true, "Enable calculation of complex default expressions for ommitted fields for some input formats, because it should be the expected behaviour"}}},
+        {"19.12", {{"input_format_defaults_for_omitted_fields", false, true, "Enable calculation of complex default expressions for omitted fields for some input formats, because it should be the expected behaviour"}}},
         {"19.5", {{"max_partitions_per_insert_block", 0, 100, "Add a limit for the number of partitions in one block"}}},
         {"18.12.17", {{"enable_optimize_predicate_expression", 0, 1, "Optimize predicates to subqueries by default"}}},
 };
