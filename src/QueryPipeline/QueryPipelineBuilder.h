@@ -21,7 +21,6 @@ class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct SizeLimits;
 

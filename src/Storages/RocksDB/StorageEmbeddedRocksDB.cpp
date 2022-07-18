@@ -76,7 +76,7 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
 
 // returns keys may be filter by condition
 static bool traverseASTFilter(
-    const String & primary_key, const DataTypePtr & primary_key_type, const ASTPtr & elem, const PreparedSets & sets, FieldVectorPtr & res)
+    const String & primary_key, const DataTypePtr & primary_key_type, const ASTPtr & elem, const PreparedSetsPtr & prepared_sets, FieldVectorPtr & res)
 {
     const auto * function = elem->as<ASTFunction>();
     if (!function)
@@ -86,7 +86,7 @@ static bool traverseASTFilter(
     {
         // one child has the key filter condition is ok
         for (const auto & child : function->arguments->children)
-            if (traverseASTFilter(primary_key, primary_key_type, child, sets, res))
+            if (traverseASTFilter(primary_key, primary_key_type, child, prepared_sets, res))
                 return true;
         return false;
     }
@@ -94,7 +94,7 @@ static bool traverseASTFilter(
     {
         // make sure every child has the key filter condition
         for (const auto & child : function->arguments->children)
-            if (!traverseASTFilter(primary_key, primary_key_type, child, sets, res))
+            if (!traverseASTFilter(primary_key, primary_key_type, child, prepared_sets, res))
                 return false;
         return true;
     }
@@ -109,6 +109,9 @@ static bool traverseASTFilter(
 
         if (function->name == "in")
         {
+            if (!prepared_sets)
+                return false;
+
             ident = args.children.at(0)->as<ASTIdentifier>();
             if (!ident)
                 return false;
@@ -123,16 +126,15 @@ static bool traverseASTFilter(
             else
                 set_key = PreparedSetKey::forLiteral(*value, {primary_key_type});
 
-            auto set_it = sets.find(set_key);
-            if (set_it == sets.end())
-                return false;
-            SetPtr prepared_set = set_it->second;
-
-            if (!prepared_set->hasExplicitSetElements())
+            SetPtr set = prepared_sets->getSet(set_key);
+            if (!set)
                 return false;
 
-            prepared_set->checkColumnsNumber(1);
-            const auto & set_column = *prepared_set->getSetElements()[0];
+            if (!set->hasExplicitSetElements())
+                return false;
+
+            set->checkColumnsNumber(1);
+            const auto & set_column = *set->getSetElements()[0];
             for (size_t row = 0; row < set_column.size(); ++row)
                 res->push_back(set_column[row]);
             return true;

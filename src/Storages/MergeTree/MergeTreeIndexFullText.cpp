@@ -609,11 +609,10 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     else
         set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
 
-    auto set_it = prepared_sets.find(set_key);
-    if (set_it == prepared_sets.end())
+    auto prepared_set = prepared_sets->getSet(set_key);
+    if (!prepared_set)
         return false;
 
-    const SetPtr & prepared_set = set_it->second;
     if (!prepared_set->hasExplicitSetElements())
         return false;
 

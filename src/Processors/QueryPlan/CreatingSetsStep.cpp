@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
+#include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
@@ -61,8 +62,6 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << prefix;
     if (subquery_for_set.set)
         settings.out << "Set: ";
-    // else if (subquery_for_set.join)
-    //     settings.out << "Join: ";
 
     settings.out << description << '\n';
 }
@@ -71,8 +70,6 @@ void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (subquery_for_set.set)
         map.add("Set", description);
-    // else if (subquery_for_set.join)
-    //     map.add("Join", description);
 }
 
 
@@ -125,7 +122,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 }
 
 void addCreatingSetsStep(
-    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, ContextPtr context)
+    QueryPlan & query_plan, PreparedSets & prepared_sets, const SizeLimits & limits, ContextPtr context)
 {
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
@@ -134,17 +131,18 @@ void addCreatingSetsStep(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, set] : subqueries_for_sets)
+    for (auto & [description, subquery_for_set] : prepared_sets.moveSubqueries())
     {
-        if (!set.source)
+        if (!subquery_for_set.source)
             continue;
 
-        auto plan = std::move(set.source);
+        auto plan = std::move(subquery_for_set.source);
+        subquery_for_set.source = nullptr;
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
                 description,
-                std::move(set),
+                std::move(subquery_for_set),
                 limits,
                 context);
         creating_set->setStepDescription("Create set for subquery");

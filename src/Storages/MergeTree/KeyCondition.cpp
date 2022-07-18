@@ -883,14 +883,16 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const ASTPtr & right_arg = args[1];
 
+
+    if (!prepared_sets)
+        return false;
+
     SetPtr prepared_set;
     if (right_arg->as<ASTSubquery>() || right_arg->as<ASTTableIdentifier>())
     {
-        auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
-        if (set_it == prepared_sets.end())
+        prepared_set = prepared_sets->getSet(PreparedSetKey::forSubquery(*right_arg));
+        if (!prepared_sets)
             return false;
-
-        prepared_set = set_it->second;
     }
     else
     {
@@ -899,8 +901,9 @@ bool KeyCondition::tryPrepareSetIndex(
         /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
         /// that the types it was prepared with are compatible with the types of the primary key.
         auto set_ast_hash = right_arg->getTreeHash();
+        const auto & sets_map = prepared_sets->getSetsMap();
         auto set_it = std::find_if(
-            prepared_sets.begin(), prepared_sets.end(),
+            sets_map.begin(), sets_map.end(),
             [&](const auto & candidate_entry)
             {
                 if (candidate_entry.first.ast_hash != set_ast_hash)
@@ -912,7 +915,7 @@ bool KeyCondition::tryPrepareSetIndex(
 
                 return true;
         });
-        if (set_it == prepared_sets.end())
+        if (set_it == sets_map.end())
             return false;
 
         prepared_set = set_it->second;

@@ -2,8 +2,8 @@
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
@@ -51,7 +51,7 @@ private:
 
 void addCreatingSetsStep(
     QueryPlan & query_plan,
-    SubqueriesForSets subqueries_for_sets,
+    PreparedSets & prepared_sets,
     const SizeLimits & limits,
     ContextPtr context);
 

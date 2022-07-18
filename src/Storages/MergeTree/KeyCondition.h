@@ -434,7 +434,7 @@ private:
     const NameSet key_subexpr_names;
 
     NameSet array_joined_columns;
-    PreparedSets prepared_sets;
+    PreparedSetsPtr prepared_sets;
 
     // If true, always allow key_expr to be wrapped by function
     bool single_point;
