@@ -1,0 +1,25 @@
+-- test summarize --
+12	25	46	32.416666666666664	389
+Skilled Manual	5	26	36	30.2	151
+Professional	6	25	46	34.166666666666664	205
+Management abcd defg	1	33	33	33	33
+Skilled Manual	0
+Professional	2
+Management abcd defg	0
+Skilled Manual	36
+Professional	38
+Management abcd defg	33
+Skilled Manual	26
+Professional	25
+Management abcd defg	33
+Skilled Manual	30.2
+Professional	29.25
+Management abcd defg	33
+Skilled Manual	151
+Professional	117
+Management abcd defg	33
+4
+2
+40	2
+20	6
+30	4
