@@ -193,25 +193,10 @@ void DatabaseOnDisk::createTable(
     if (!create.attach)
         checkMetadataFilenameAvailability(table_name);
 
-    if (create.attach && fs::exists(table_metadata_path))
-    {
-        ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
-        auto & create_detached = ast_detached->as<ASTCreateQuery &>();
-
-        // either both should be Nil, either values should be equal
-        if (create.uuid != create_detached.uuid)
-            throw Exception(
-                    ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "Table {}.{} already exist (detached permanently). To attach it back "
-                    "you need to use short ATTACH syntax or a full statement with the same UUID",
-                    backQuote(getDatabaseName()), backQuote(table_name));
-    }
-
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
-    String statement;
 
     {
-        statement = getObjectDefinitionFromCreateQuery(query);
+        String statement = getObjectDefinitionFromCreateQuery(query);
 
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
