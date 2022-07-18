@@ -135,6 +135,7 @@ class GitHub(github.Github):
             if updated_at <= cached_pr.updated_at:
                 logger.debug("Getting PR #%s from cache", number)
                 return cached_pr
+        logger.debug("Getting PR #%s from API", number)
         for i in range(self.retries):
             try:
                 pr = repo.get_pull(number)
@@ -143,7 +144,7 @@ class GitHub(github.Github):
                 if i == self.retries - 1:
                     raise
                 self.sleep_on_rate_limit()
-        logger.debug("Getting PR #%s from API", number)
+        logger.debug("Caching PR #%s from API in %s", number, pr_cache_file)
         with open(pr_cache_file, "wb") as prfd:
             self.dump(pr, prfd)  # type: ignore
         return pr
