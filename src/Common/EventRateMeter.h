@@ -15,7 +15,8 @@ namespace DB
 {
 
 /// Event count measurement with exponential smoothing intended for computing time derivatives
-class EventRateMeter {
+class EventRateMeter
+{
 public:
     explicit EventRateMeter(double now, double period_)
         : period(period_)
@@ -36,7 +37,7 @@ public:
             events.add(count, now, half_decay_time);
     }
 
-    /// Compute average event rate thoughout `[now - period, now]` period.
+    /// Compute average event rate throughout `[now - period, now]` period.
     /// If measurements are just started (`now - period < start`), then average
     /// is computed based on shorter `[start; now]` period to avoid initial linear growth.
     double rate(UInt64 now)
