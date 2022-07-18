@@ -2019,6 +2019,20 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 }
             }
 
+            // Here we need to set order by expression as required output to avoid
+            // their removal from the ActionsDAG.
+            const auto * select_query = query_analyzer.getSelectQuery();
+            if (select_query->orderBy())
+            {
+                for (auto & child : select_query->orderBy()->children)
+                {
+                    auto * ast = child->as<ASTOrderByElement>();
+                    ASTPtr order_expression = ast->children.at(0);
+                    const String & column_name = order_expression->getColumnName();
+                    chain.getLastStep().addRequiredOutput(column_name);
+                }
+            }
+
             before_window = chain.getLastActions();
             finalize_chain(chain);
 
@@ -2038,7 +2052,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct
             // list of columns is important when we apply SELECT DISTINCT later.
-            const auto * select_query = query_analyzer.getSelectQuery();
             for (const auto & child : select_query->select()->children)
             {
                 step.addRequiredOutput(child->getColumnName());
