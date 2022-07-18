@@ -243,8 +243,8 @@ def extract_test_name(base_path):
     """
     name = p.basename(base_path)
     name = p.splitext(name)[0]
-    name = name.removeprefix('test')
-    name = name.strip('-_')
+    name = name.removeprefix("test")
+    name = name.strip("-_")
     return name
 
 
