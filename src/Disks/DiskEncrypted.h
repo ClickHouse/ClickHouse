@@ -6,6 +6,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskDecorator.h>
 #include <Common/MultiVersion.h>
+#include <Disks/FakeDiskTransaction.h>
 
 
 namespace DB
@@ -237,6 +238,13 @@ public:
     bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+
+    DiskTransactionPtr createTransaction() override
+    {
+        /// Need to overwrite explicetly because this disk change
+        /// a lot of "delegate" methods.
+        return std::make_shared<FakeDiskTransaction>(*this);
+    }
 
 private:
     String wrappedPath(const String & path) const

@@ -4,6 +4,7 @@
         <max_partitions_per_insert_block>1024</max_partitions_per_insert_block>
         <max_insert_threads>1</max_insert_threads>
         <max_memory_usage>20G</max_memory_usage>
+        <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
     </settings>
 
     <substitutions>

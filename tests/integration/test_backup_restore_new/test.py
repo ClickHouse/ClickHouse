@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 import re
 import os.path
 from helpers.cluster import ClickHouseCluster
@@ -67,6 +68,15 @@ def new_session_id():
     global session_id_counter
     session_id_counter += 1
     return "Session #" + str(session_id_counter)
+
+
+def has_mutation_in_backup(mutation_id, backup_name, database, table):
+    return os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/{database}/{table}/mutations/{mutation_id}.txt",
+        )
+    )
 
 
 @pytest.mark.parametrize(
@@ -138,7 +148,7 @@ def test_backup_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "100\t4950\n"
 
 
-def test_materialized_view():
+def test_materialized_view_select_1():
     backup_name = new_backup_name()
     instance.query(
         "CREATE MATERIALIZED VIEW mv_1(x UInt8) ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT 1 AS x"
@@ -314,6 +324,42 @@ def test_async():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+@pytest.mark.parametrize("interface", ["native", "http"])
+def test_async_backups_to_same_destination(interface):
+    create_and_fill_table()
+    backup_name = new_backup_name()
+
+    ids = []
+    for _ in range(2):
+        if interface == "http":
+            res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+        else:
+            res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+        ids.append(res.split("\t")[0])
+
+    [id1, id2] = ids
+
+    assert_eq_with_retry(
+        instance,
+        f"SELECT count() FROM system.backups WHERE uuid IN ['{id1}', '{id2}'] AND status != 'BACKUP_COMPLETE' AND status != 'FAILED_TO_BACKUP'",
+        "0\n",
+    )
+
+    assert (
+        instance.query(f"SELECT status FROM system.backups WHERE uuid='{id1}'")
+        == "BACKUP_COMPLETE\n"
+    )
+
+    assert (
+        instance.query(f"SELECT status FROM system.backups WHERE uuid='{id2}'")
+        == "FAILED_TO_BACKUP\n"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
 def test_empty_files_in_backup():
     instance.query("CREATE DATABASE test")
     instance.query(
@@ -456,18 +502,32 @@ def test_temporary_table():
     ) == TSV([["e"], ["q"], ["w"]])
 
 
-# "BACKUP DATABASE _temporary_and_external_tables" is allowed but the backup must not contain these tables.
-def test_temporary_tables_database():
+# The backup created by "BACKUP DATABASE _temporary_and_external_tables" must not contain tables from other sessions.
+def test_temporary_database():
     session_id = new_session_id()
     instance.http_query(
         "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
     )
 
-    backup_name = new_backup_name()
-    instance.query(f"BACKUP DATABASE _temporary_and_external_tables TO {backup_name}")
+    other_session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE other_temp_tbl(s String)",
+        params={"session_id": other_session_id},
+    )
 
-    assert os.listdir(os.path.join(get_path_to_backup(backup_name), "metadata/")) == [
-        "_temporary_and_external_tables.sql"  # database metadata only
+    backup_name = new_backup_name()
+    instance.http_query(
+        f"BACKUP DATABASE _temporary_and_external_tables TO {backup_name}",
+        params={"session_id": session_id},
+    )
+
+    assert os.listdir(
+        os.path.join(get_path_to_backup(backup_name), "temporary_tables/metadata")
+    ) == ["temp_tbl.sql"]
+
+    assert sorted(os.listdir(get_path_to_backup(backup_name))) == [
+        ".backup",
+        "temporary_tables",
     ]
 
 
@@ -711,3 +771,135 @@ def test_system_users_async():
         instance.query("SHOW CREATE USER u1")
         == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_c = 3\n"
     )
+
+
+def test_projection():
+    create_and_fill_table(n=3)
+
+    instance.query("ALTER TABLE test.table ADD PROJECTION prjmax (SELECT MAX(x))")
+    instance.query(f"INSERT INTO test.table VALUES (100, 'a'), (101, 'b')")
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.projection_parts WHERE database='test' AND table='table' AND name='prjmax'"
+        )
+        == "2\n"
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name), "data/test/table/1_5_5_0/data.bin"
+        )
+    )
+
+    assert os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            "data/test/table/1_5_5_0/prjmax.proj/data.bin",
+        )
+    )
+
+    instance.query("DROP TABLE test.table")
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.projection_parts WHERE database='test' AND table='table' AND name='prjmax'"
+        )
+        == "0\n"
+    )
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
+        [[0, "0"], [1, "1"], [2, "2"], [100, "a"], [101, "b"]]
+    )
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.projection_parts WHERE database='test' AND table='table' AND name='prjmax'"
+        )
+        == "2\n"
+    )
+
+
+def test_system_functions():
+    instance.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;")
+
+    instance.query("CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.functions TO {backup_name}")
+
+    instance.query("DROP FUNCTION linear_equation")
+    instance.query("DROP FUNCTION parity_str")
+
+    instance.query(f"RESTORE TABLE system.functions FROM {backup_name}")
+
+    assert instance.query(
+        "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
+    ) == TSV([[0, 1], [1, 3], [2, 5]])
+
+    assert instance.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
+        [[0, "even"], [1, "odd"], [2, "even"]]
+    )
+
+
+def test_backup_partition():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table PARTITIONS '1', '4' TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
+        [[1, "1"], [4, "4"], [11, "11"], [14, "14"], [21, "21"], [24, "24"]]
+    )
+
+
+def test_restore_partition():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table PARTITIONS '2', '3' FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
+        [[2, "2"], [3, "3"], [12, "12"], [13, "13"], [22, "22"], [23, "23"]]
+    )
+
+
+def test_mutation():
+    create_and_fill_table(engine="MergeTree ORDER BY tuple()", n=5)
+
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(5, 5)"
+    )
+
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(10, 5)"
+    )
+
+    instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(1) WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(2) WHERE 1")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    assert not has_mutation_in_backup("0000000004", backup_name, "test", "table")
+    assert has_mutation_in_backup("0000000005", backup_name, "test", "table")
+    assert has_mutation_in_backup("0000000006", backup_name, "test", "table")
+    assert not has_mutation_in_backup("0000000007", backup_name, "test", "table")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
