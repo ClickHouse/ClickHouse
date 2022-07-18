@@ -210,6 +210,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
     /// and we will be able to remove old entries from transaction log in ZK.
     /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
@@ -245,6 +246,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
 bool MergeTreeTransaction::rollback() noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     CSN expected = Tx::UnknownCSN;
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
 
