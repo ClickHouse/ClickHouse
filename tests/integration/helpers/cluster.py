@@ -245,7 +245,7 @@ def extract_test_name(base_path):
     if name == "test.py":
         name = ""
     elif name.startswith("test_") and name.endswith(".py"):
-        name = name[len("test_"):(len(name)-len(".py"))]
+        name = name[len("test_") : (len(name) - len(".py"))]
     return name
 
 
