@@ -104,7 +104,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
 
-        size_t new_size_compressed = readCompressedDataBlockHold(size_decompressed, size_compressed_without_checksum);
+        size_t new_size_compressed = readCompressedDataBlockForAsynchronous(size_decompressed, size_compressed_without_checksum);
 
         if (new_size_compressed)
         {
