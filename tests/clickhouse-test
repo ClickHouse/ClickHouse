@@ -426,6 +426,27 @@ class SettingsRandomizer:
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
+        "use_uncompressed_cache": lambda: random.randint(0, 1),
+        "min_bytes_to_use_direct_io": lambda: 0
+        if random.random() < 0.5
+        else 1
+        if random.random() < 0.2
+        else random.randint(1, 1024 * 1024 * 1024),
+        "min_bytes_to_use_mmap_io": lambda: 0
+        if random.random() < 0.5
+        else 1
+        if random.random() < 0.2
+        else random.randint(1, 1024 * 1024 * 1024),
+        "local_filesystem_read_method": lambda: random.choice(
+            ["read", "pread", "mmap", "pread_threadpool"]
+        ),
+        "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
+        "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "compile_expressions": lambda: random.randint(0, 1),
+        "compile_aggregate_expressions": lambda: random.randint(0, 1),
+        "compile_sort_description": lambda: random.randint(0, 1),
+        "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
     }
 
     @staticmethod
@@ -710,7 +731,9 @@ class TestCase:
 
         return None
 
-    def process_result_impl(self, proc, stdout: str, stderr: str, debug_log: str, total_time: float):
+    def process_result_impl(
+        self, proc, stdout: str, stderr: str, debug_log: str, total_time: float
+    ):
         description = ""
 
         if proc:
@@ -1038,7 +1061,9 @@ class TestCase:
                 server_logs_level, client_options
             )
 
-            result = self.process_result_impl(proc, stdout, stderr, debug_log, total_time)
+            result = self.process_result_impl(
+                proc, stdout, stderr, debug_log, total_time
+            )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(
@@ -1530,7 +1555,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.RELEASE)
 
     value = clickhouse_execute(
-        args, "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'"
+        args,
+        "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'",
     )
     if value == b"1":
         result.append(BuildFlags.ORDINARY_DATABASE)
@@ -1634,7 +1660,9 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
 
                 queue.close()
         except Full:
-            print("Couldn't put test to the queue within timeout. Server probably hung.")
+            print(
+                "Couldn't put test to the queue within timeout. Server probably hung."
+            )
             print_stacktraces()
             queue.close()
 
