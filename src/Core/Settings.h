@@ -832,7 +832,7 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
 
     void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
 
-    void set(const std::string_view & name, const Field & value) override;
+    void set(std::string_view name, const Field & value) override;
 
 private:
     void applyCompatibilitySetting();
