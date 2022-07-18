@@ -40,7 +40,9 @@ String IFourLetterCommand::toName(int32_t code)
 
 int32_t IFourLetterCommand::toCode(const String & name)
 {
-    return Coordination::fourLetterCommandNameToCode(name);
+    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
+    /// keep consistent with Coordination::read method by changing big endian to little endian.
+    return __builtin_bswap32(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -245,8 +247,6 @@ String MonitorCommand::run()
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
     }
-
-    print(ret, "api_version", static_cast<uint64_t>(Coordination::current_keeper_api_version));
 
     return ret.str();
 }
