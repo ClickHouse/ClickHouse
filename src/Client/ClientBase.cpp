@@ -549,25 +549,17 @@ try
                             range.second);
                 }
 
+                out_file_buf = wrapWriteBufferWithCompressionMethod(
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    compression_method,
+                    compression_level
+                );
+
                 if (query_with_output->is_into_outfile_with_stdout)
                 {
                     select_into_file_and_stdout = true;
-                    WriteBufferPtr file_buf = wrapWriteBufferWithCompressionMethod(
-                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                        compression_method,
-                        compression_level
-                    );
-
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{file_buf,
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
                             std::make_shared<WriteBufferFromFileDescriptor>(STDOUT_FILENO)});
-                }
-                else
-                {
-                    out_file_buf = wrapWriteBufferWithCompressionMethod(
-                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                        compression_method,
-                        compression_level
-                    );
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
