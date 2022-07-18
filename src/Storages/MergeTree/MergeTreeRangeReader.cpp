@@ -677,7 +677,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (column_name == "_part_offset")
             sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
 
-//        if (column_name == "__row_exists")
+//        if (column_name == "_row_exists")
 //            sample_block.insert(ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), column_name));
     }
 
@@ -1240,7 +1240,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
                 block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
             }
-            else if (column_name == "__row_exists")
+            else if (column_name == "_row_exists")
             {
                 /// do nothing, it will be added later
                 /// TODO: properly implement reading non-const virtual columns or filling them with default values 

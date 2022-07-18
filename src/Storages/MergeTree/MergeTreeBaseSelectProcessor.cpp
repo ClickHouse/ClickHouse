@@ -61,7 +61,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         {
             non_const_virtual_column_names.emplace_back(*it);
         }
-        else if (*it == "__row_exists")
+        else if (*it == "_row_exists")
         {
             non_const_virtual_column_names.emplace_back(*it);
         }
@@ -472,9 +472,9 @@ static void injectNonConstVirtualColumns(
             }
         }
 
-        if (virtual_column_name == "__row_exists")
+        if (virtual_column_name == "_row_exists")
         {
-                /// If __row_exists column isn't present in the part then fill it here with 1s
+                /// If _row_exists column isn't present in the part then fill it here with 1s
                 ColumnPtr column;
                 if (rows)
                     column = DataTypeUInt8().createColumnConst(rows, 1)->convertToFullColumnIfConst();
