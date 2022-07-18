@@ -4,6 +4,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/IFileCache.h>
+#include <Common/Throttler.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -61,6 +62,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
     ScheduleFunc schedule_,
+    const WriteSettings & write_settings_,
     FileCachePtr cache_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
@@ -70,6 +72,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , s3_settings(s3_settings_)
     , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
+    , write_settings(write_settings_)
     , cache(cache_)
 {
     allocateBuffer();
@@ -121,8 +124,9 @@ void WriteBufferFromS3::nextImpl()
     }
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
-
     last_part_size += offset();
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(offset());
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
     if (multipart_upload_id.empty() && last_part_size > s3_settings.max_single_part_upload_size)
@@ -389,12 +393,6 @@ void WriteBufferFromS3::makeSinglepartUpload()
         return;
     }
 
-    if (size == 0)
-    {
-        LOG_TRACE(log, "Skipping single part upload. Buffer is empty.");
-        return;
-    }
-
     if (schedule)
     {
         put_object_task = std::make_unique<PutObjectTask>();
@@ -468,7 +466,6 @@ void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
     auto outcome = client_ptr->PutObject(task.req);
     bool with_pool = static_cast<bool>(schedule);
-
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else

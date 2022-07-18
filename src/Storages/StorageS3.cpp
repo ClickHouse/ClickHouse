@@ -11,14 +11,12 @@
 
 #include <IO/S3Common.h>
 
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
@@ -27,6 +25,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/getVirtualsForStorage.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
@@ -588,7 +587,8 @@ public:
                 s3_configuration_.rw_settings,
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
-                threadPoolCallbackRunner(IOThreadPool::get())),
+                threadPoolCallbackRunner(IOThreadPool::get()),
+                context->getWriteSettings()),
             compression_method,
             3);
         writer
@@ -1051,25 +1051,25 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
     for (const auto & [arg_name, arg_value] : key_value_args)
     {
         if (arg_name == "access_key_id")
-            configuration.auth_settings.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(arg_value, "access_key_id");
         else if (arg_name == "secret_access_key")
-            configuration.auth_settings.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(arg_value, "secret_access_key");
         else if (arg_name == "filename")
-            configuration.url = std::filesystem::path(configuration.url) / arg_value->as<ASTLiteral>()->value.safeGet<String>();
+            configuration.url = std::filesystem::path(configuration.url) / checkAndGetLiteralArgument<String>(arg_value, "filename");
         else if (arg_name == "use_environment_credentials")
-            configuration.auth_settings.use_environment_credentials = arg_value->as<ASTLiteral>()->value.safeGet<UInt8>();
+            configuration.auth_settings.use_environment_credentials = checkAndGetLiteralArgument<UInt8>(arg_value, "use_environment_credentials");
         else if (arg_name == "max_single_read_retries")
-            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+            configuration.rw_settings.max_single_read_retries = checkAndGetLiteralArgument<UInt64>(arg_value, "max_single_read_retries");
         else if (arg_name == "min_upload_part_size")
-            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+            configuration.rw_settings.max_single_read_retries = checkAndGetLiteralArgument<UInt64>(arg_value, "min_upload_part_size");
         else if (arg_name == "upload_part_size_multiply_factor")
-            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+            configuration.rw_settings.max_single_read_retries = checkAndGetLiteralArgument<UInt64>(arg_value, "upload_part_size_multiply_factor");
         else if (arg_name == "upload_part_size_multiply_parts_count_threshold")
-            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+            configuration.rw_settings.max_single_read_retries = checkAndGetLiteralArgument<UInt64>(arg_value, "upload_part_size_multiply_parts_count_threshold");
         else if (arg_name == "max_single_part_upload_size")
-            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+            configuration.rw_settings.max_single_read_retries = checkAndGetLiteralArgument<UInt64>(arg_value, "max_single_part_upload_size");
         else if (arg_name == "max_connections")
-            configuration.rw_settings.max_single_read_retries = arg_value->as<ASTLiteral>()->value.safeGet<UInt64>();
+            configuration.rw_settings.max_single_read_retries = checkAndGetLiteralArgument<UInt64>(arg_value, "max_connections");
         else
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
@@ -1098,22 +1098,22 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
-        configuration.url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
         if (engine_args.size() >= 4)
         {
-            configuration.auth_settings.access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            configuration.auth_settings.secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
+            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
         }
 
         if (engine_args.size() == 3 || engine_args.size() == 5)
         {
-            configuration.compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
-            configuration.format = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args.back(), "compression_method");
+            configuration.format = checkAndGetLiteralArgument<String>(engine_args[engine_args.size() - 2], "format");
         }
         else if (engine_args.size() != 1)
         {
             configuration.compression_method = "auto";
-            configuration.format = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.format = checkAndGetLiteralArgument<String>(engine_args.back(), "format");
         }
     }
 
@@ -1151,7 +1151,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     auto file_iterator
         = createFileIterator(s3_configuration, {s3_configuration.uri.key}, is_key_with_globs, distributed_processing, ctx, nullptr, {});
 
-    ReadBufferIterator read_buffer_iterator = [&, first = false]() mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, first = true]() mutable -> std::unique_ptr<ReadBuffer>
     {
         auto key = (*file_iterator)();
 

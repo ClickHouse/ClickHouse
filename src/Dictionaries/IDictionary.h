@@ -62,26 +62,26 @@ public:
 
     std::string getFullName() const
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         return dictionary_id.getNameForLogs();
     }
 
     StorageID getDictionaryID() const
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         return dictionary_id;
     }
 
     void updateDictionaryName(const StorageID & new_name) const
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
         dictionary_id = new_name;
     }
 
     std::string getLoadableName() const final
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         return dictionary_id.getInternalDictionaryName();
     }
 
@@ -92,6 +92,8 @@ public:
 
     std::string getDatabaseOrNoDatabaseTag() const
     {
+        std::lock_guard lock{mutex};
+
         if (!dictionary_id.database_name.empty())
             return dictionary_id.database_name;
 
@@ -278,22 +280,20 @@ public:
 
     void setDictionaryComment(String new_comment)
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         dictionary_comment = std::move(new_comment);
     }
 
     String getDictionaryComment() const
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         return dictionary_comment;
     }
 
 private:
-    mutable std::mutex name_mutex;
-    mutable StorageID dictionary_id;
-
-protected:
-    String dictionary_comment;
+    mutable std::mutex mutex;
+    mutable StorageID dictionary_id TSA_GUARDED_BY(mutex);
+    String dictionary_comment TSA_GUARDED_BY(mutex);
 };
 
 }

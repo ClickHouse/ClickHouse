@@ -6,6 +6,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <base/defines.h>
 #include <base/scope_guard.h>
 
 #include <Common/ThreadPool.h>
@@ -37,7 +38,8 @@ public:
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override { return backup_allowed; }
-    void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
+    void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 private:
     String zookeeper_path;
@@ -70,10 +72,10 @@ private:
     bool refresh();
     void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper);
     void refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
-    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
+    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(mutex);
 
-    void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity);
-    void removeEntityNoLock(const UUID & id);
+    void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity) TSA_REQUIRES(mutex);
+    void removeEntityNoLock(const UUID & id) TSA_REQUIRES(mutex);
 
     struct Entry
     {
@@ -86,8 +88,8 @@ private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     mutable std::mutex mutex;
-    std::unordered_map<UUID, Entry> entries_by_id;
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
+    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
     AccessChangesNotifier & changes_notifier;
     bool backup_allowed = false;
 };

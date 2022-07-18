@@ -51,8 +51,6 @@
 
                 zoomContainer1.attr("transform", "translate(" + tr.x + ",0) scale(" + tr.k + ",1)");
                 zoomContainer2.attr("transform", "translate(" + tr.x + ",0) scale(" + tr.k + ",1)");
-
-                //render();
             })
             .on("start", function() {
                 zoom.startScreenY = d3.event.sourceEvent.screenY;
@@ -264,10 +262,6 @@
         return "translate(" + x(d.t1) + "," + y(d.band) + ")";
     }
 
-    var xPixel = function(d) {
-        return xZoomed.invert(1) - xZoomed.invert(0);
-    }
-
     var render = function(t0, smooth) {
         // Save/restore last t0 value
         if (!arguments.length || t0 == -1) {
@@ -298,7 +292,7 @@
             .attr("y", 0)
             .attr("transform", bandTransform)
             .attr("height", y.bandwidth())
-            .attr("width", d => Math.max(1*xPixel(), x(d.t2) - x(d.t1)))
+            .attr("width", d => x(d.t2) - x(d.t1))
         ;
 
         var emptyMarker = bandsSvg.selectAll("text")

@@ -7,6 +7,7 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace ProfileEvents
@@ -241,6 +242,11 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     working_buffer.resize(0);
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
+}
+
+size_t AsynchronousReadBufferFromFileDescriptor::getFileSize()
+{
+    return getSizeFromFileDescriptor(fd, getFileName());
 }
 
 }

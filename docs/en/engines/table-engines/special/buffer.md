@@ -11,24 +11,45 @@ Buffers the data to write in RAM, periodically flushing it to another table. Dur
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 ```
 
-Engine parameters:
+### Engine parameters:
 
--   `database` – Database name. You can use `currentDatabase()` or another constant expression that returns a string.
--   `table` – Table to flush data to.
--   `num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers. Recommended value: 16.
--   `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes` – Conditions for flushing data from the buffer.
+#### database
 
-Optional engine parameters:
+`database` – Database name. You can use `currentDatabase()` or another constant expression that returns a string.
 
--   `flush_time`, `flush_rows`, `flush_bytes` – Conditions for flushing data from the buffer, that will happen only in background (omitted or zero means no `flush*` parameters).
+#### table
+
+`table` – Table to flush data to.
+
+#### num_layers
+
+`num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers. Recommended value: 16.
+
+#### min_time, max_time, min_rows, max_rows, min_bytes, and max_bytes
+
+Conditions for flushing data from the buffer.
+
+### Optional engine parameters:
+
+#### flush_time, flush_rows, and flush_bytes
+
+Conditions for flushing data from the buffer, that will happen only in background (omitted or zero means no `flush*` parameters).
 
 Data is flushed from the buffer and written to the destination table if all the `min*` conditions or at least one `max*` condition are met.
 
 Also, if at least one `flush*` condition are met flush initiated in background, this is different from `max*`, since `flush*` allows you to configure background flushes separately to avoid adding latency for `INSERT` (into `Buffer`) queries.
 
--   `min_time`, `max_time`, `flush_time` – Condition for the time in seconds from the moment of the first write to the buffer.
--   `min_rows`, `max_rows`, `flush_rows` – Condition for the number of rows in the buffer.
--   `min_bytes`, `max_bytes`, `flush_bytes` – Condition for the number of bytes in the buffer.
+#### min_time, max_time, and flush_time
+
+Condition for the time in seconds from the moment of the first write to the buffer.
+
+#### min_rows, max_rows, and flush_rows
+
+Condition for the number of rows in the buffer.
+
+#### min_bytes, max_bytes, and flush_bytes
+
+Condition for the number of bytes in the buffer.
 
 During the write operation, data is inserted to a `num_layers` number of random buffers. Or, if the data part to insert is large enough (greater than `max_rows` or `max_bytes`), it is written directly to the destination table, omitting the buffer.
 

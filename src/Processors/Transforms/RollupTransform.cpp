@@ -8,9 +8,11 @@ namespace DB
 RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_)
     : IAccumulatingTransform(std::move(header), appendGroupingSetColumn(params_->getHeader()))
     , params(std::move(params_))
-    , keys(params->params.keys)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
+    keys.reserve(params->params.keys_size);
+    for (const auto & key : params->params.keys)
+        keys.emplace_back(input.getHeader().getPositionByName(key));
 }
 
 void RollupTransform::consume(Chunk chunk)

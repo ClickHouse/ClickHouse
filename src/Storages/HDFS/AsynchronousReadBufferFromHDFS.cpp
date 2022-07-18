@@ -90,7 +90,7 @@ void AsynchronousReadBufferFromHDFS::prefetch()
 }
 
 
-std::optional<size_t> AsynchronousReadBufferFromHDFS::getFileSize()
+size_t AsynchronousReadBufferFromHDFS::getFileSize()
 {
     return impl->getFileSize();
 }

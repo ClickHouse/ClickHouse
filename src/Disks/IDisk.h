@@ -13,6 +13,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
+#include <Disks/IDiskTransaction.h>
 
 #include <memory>
 #include <mutex>
@@ -49,7 +50,13 @@ class WriteBufferFromFileBase;
 class MMappedFileCache;
 class IMetadataStorage;
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;
+struct IDiskTransaction;
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
+struct RemoveRequest;
+using RemoveBatchRequest = std::vector<RemoveRequest>;
 
+class DiskObjectStorage;
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 /**
  * Provide interface for reservation.
@@ -96,6 +103,8 @@ public:
         : executor(std::move(executor_))
     {
     }
+
+    virtual DiskTransactionPtr createTransaction();
 
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
@@ -208,52 +217,31 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
+    virtual String getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
-    virtual String getCacheBasePath() const { return ""; }
+    virtual bool supportsCache() const { return false; }
 
-    /// Returns a list of paths because for Log family engines there might be
-    /// multiple files in remote fs for single clickhouse file.
-    virtual std::vector<String> getRemotePaths(const String &) const
+    /// Returns a list of storage objects (contains path, size, ...).
+    /// (A list is returned because for Log family engines there might
+    /// be multiple files in remote fs for single clickhouse file.
+    virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePaths() not implemented for disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getType());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    using LocalPathWithRemotePaths = std::pair<String, std::vector<String>>;
+    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
 
-    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &)
+    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
     }
-
-    struct RemoveRequest
-    {
-        String path;
-        bool if_exists = false;
-
-        explicit RemoveRequest(String path_, bool if_exists_ = false)
-            : path(std::move(path_)), if_exists(std::move(if_exists_))
-        {
-        }
-    };
-
-    using RemoveBatchRequest = std::vector<RemoveRequest>;
 
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
-    {
-        for (const auto & file : files)
-        {
-            bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
-            if (file.if_exists)
-                removeSharedFileIfExists(file.path, keep_file);
-            else
-                removeSharedFile(file.path, keep_file);
-        }
-    }
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
@@ -352,6 +340,13 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
+    virtual DiskObjectStoragePtr createDiskObjectStorage(const String &)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method createDiskObjectStorage() is not implemented for disk type: {}",
+            getType());
+    }
 
 protected:
     friend class DiskDecorator;

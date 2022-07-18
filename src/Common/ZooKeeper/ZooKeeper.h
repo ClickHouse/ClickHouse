@@ -194,11 +194,13 @@ public:
     /// * The node doesn't exist.
     Coordination::Error tryGetChildren(const std::string & path, Strings & res,
                            Coordination::Stat * stat = nullptr,
-                           const EventPtr & watch = nullptr);
+                           const EventPtr & watch = nullptr,
+                           Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Coordination::Error tryGetChildrenWatch(const std::string & path, Strings & res,
                                 Coordination::Stat * stat,
-                                Coordination::WatchCallback watch_callback);
+                                Coordination::WatchCallback watch_callback,
+                                Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
@@ -208,6 +210,10 @@ public:
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+
+    std::string sync(const std::string & path);
+
+    Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
     Int64 getClientID();
 
@@ -275,9 +281,15 @@ public:
     FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
-    FutureGetChildren asyncGetChildren(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureGetChildren asyncGetChildren(
+        const std::string & path,
+        Coordination::WatchCallback watch_callback = {},
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGetChildren asyncTryGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureGetChildren asyncTryGetChildrenNoThrow(
+        const std::string & path,
+        Coordination::WatchCallback watch_callback = {},
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
@@ -293,6 +305,11 @@ public:
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+
+    using FutureSync = std::future<Coordination::SyncResponse>;
+    FutureSync asyncSync(const std::string & path);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureSync asyncTrySyncNoThrow(const std::string & path);
 
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
@@ -326,9 +343,14 @@ private:
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
-        const std::string & path, Strings & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+        const std::string & path,
+        Strings & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallback watch_callback,
+        Coordination::ListRequestType list_request_type);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
+    Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
     std::unique_ptr<Coordination::IKeeper> impl;
 

@@ -14,6 +14,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -169,6 +170,7 @@ private:
 
     std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
+    ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;

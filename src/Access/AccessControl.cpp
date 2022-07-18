@@ -19,6 +19,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 #include <base/find_symbols.h>
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
@@ -100,7 +101,7 @@ public:
         registered_prefixes = prefixes_;
     }
 
-    bool isSettingNameAllowed(const std::string_view & setting_name) const
+    bool isSettingNameAllowed(std::string_view setting_name) const
     {
         if (Settings::hasBuiltin(setting_name))
             return true;
@@ -115,7 +116,7 @@ public:
         return false;
     }
 
-    void checkSettingNameIsAllowed(const std::string_view & setting_name) const
+    void checkSettingNameIsAllowed(std::string_view setting_name) const
     {
         if (isSettingNameAllowed(setting_name))
             return;
@@ -133,7 +134,7 @@ public:
     }
 
 private:
-    Strings registered_prefixes;
+    Strings registered_prefixes TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 
@@ -164,13 +165,12 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
 
-    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool(
-        "access_control_improvements.users_without_row_policies_can_read_rows",
-        false /* false because we need to be compatible with earlier access configurations */));
-
-    setOnClusterQueriesRequireClusterGrant(config_.getBool(
-        "access_control_improvements.on_cluster_queries_require_cluster_grant",
-        false /* false because we need to be compatible with earlier access configurations */));
+    /// Optional improvements in access control system.
+    /// The default values are false because we need to be compatible with earlier access configurations
+    setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", false));
+    setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", false));
+    setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", false));
+    setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 }
@@ -458,20 +458,9 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
     }
 }
 
-void AccessControl::backup(BackupEntriesCollector & backup_entries_collector, AccessEntityType type, const String & data_path_in_backup) const
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
 {
-    backupAccessEntities(backup_entries_collector, data_path_in_backup, *this, type);
-}
-
-void AccessControl::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
-{
-    /// The restorer must already know about `data_path_in_backup`, but let's check.
-    restorer.checkPathInBackupToRestoreAccess(data_path_in_backup);
-}
-
-void AccessControl::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)
-{
-    MultipleAccessStorage::insertFromBackup(entities_from_backup, restore_settings, restore_coordination);
+    MultipleAccessStorage::restoreFromBackup(restorer);
     changes_notifier->sendNotifications();
 }
 
