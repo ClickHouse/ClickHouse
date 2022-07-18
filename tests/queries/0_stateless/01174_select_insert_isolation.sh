@@ -36,7 +36,7 @@ function thread_insert_rollback()
 function thread_select()
 {
     while true; do
-        # Result of `uniq | wc -l` must be 1 if the first and the last queries got the same result
+        # The first and the last queries must get the same result
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         SET throw_on_unsupported_query_inside_transaction=0;
