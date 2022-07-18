@@ -362,7 +362,7 @@ namespace JSONUtils
         }
     };
 
-    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, const FormatSettings & settings,  bool json_strings)
+    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, const FormatSettings & settings, bool json_strings)
     {
         JSONCompactEachRowFieldsExtractor extractor;
         return determineColumnDataTypesFromJSONEachRowDataImpl<JSONCompactEachRowFieldsExtractor, '[', ']'>(in, settings, json_strings, extractor);
