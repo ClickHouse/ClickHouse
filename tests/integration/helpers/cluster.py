@@ -278,7 +278,6 @@ class ClickHouseCluster:
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
     ):
-        logging.debug(f"INIT CALLED")
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
@@ -2124,7 +2123,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to MeiliSearch " + str(ex))
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=10, secure=False):
+    def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
 
