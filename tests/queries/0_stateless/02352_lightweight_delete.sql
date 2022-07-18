@@ -13,8 +13,8 @@ SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
-SELECT 'Delete 3M rows using UPDATE __row_exists';
---ALTER TABLE lwd_test UPDATE __row_exists = 0 WHERE id < 3000000;
+SELECT 'Delete 3M rows using lightweight DELETE';
+--ALTER TABLE lwd_test UPDATE _row_exists = 0 WHERE id < 3000000;
 DELETE FROM lwd_test WHERE id < 3000000;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;
@@ -30,7 +30,7 @@ SELECT 'Count', count() FROM lwd_test WHERE id >= 0;
 SELECT 'First row', id, length(value) FROM lwd_test ORDER BY id LIMIT 1;
 
 
-SELECT 'Delete 3M more rows using light weight DELETE';
+SELECT 'Delete 3M more rows using lightweight DELETE';
 DELETE FROM lwd_test WHERE id < 6000000;
 
 SELECT 'Rows in parts', SUM(rows) FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_test' AND active;

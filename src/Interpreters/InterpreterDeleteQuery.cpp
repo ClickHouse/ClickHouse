@@ -75,7 +75,7 @@ BlockIO InterpreterDeleteQuery::execute()
 
     if (getContext()->getSettingsRef().allow_experimental_lightweight_delete_with_row_exists)
     {
-        /// Build "UPDATE __row_exists = 0 WHERE predicate" query
+        /// Build "UPDATE _row_exists = 0 WHERE predicate" query
         mut_command.type = MutationCommand::Type::UPDATE;
         mut_command.predicate = delete_query.predicate;
 

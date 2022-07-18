@@ -353,7 +353,7 @@ static void validateUpdateColumns(
             }
         }
 
-        /// Allow to override values of virtual columns
+        /// Allow to override value of lightweight delete filter virtual column
         if (!found && column_name == metadata_snapshot->lightweight_delete_description.filter_column.name)
             found = true;
 
