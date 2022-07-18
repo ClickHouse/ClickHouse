@@ -35,6 +35,7 @@ namespace CurrentMetrics
     extern const Metric MemoryTracking;
 }
 
+extern "C" int_fast64_t getTotalMemoryMappedBytes();
 
 namespace DB
 {
@@ -650,6 +651,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             new_values["HashTableStatsCacheMisses"] = stats->misses;
         }
     }
+
+    new_values["MemoryMapped"] = getTotalMemoryMappedBytes();
 
     /// Process process memory usage according to OS
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
