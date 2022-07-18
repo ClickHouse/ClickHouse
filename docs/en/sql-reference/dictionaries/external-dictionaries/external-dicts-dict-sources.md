@@ -553,6 +553,7 @@ Setting fields:
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+There is no explicit parameter `secure`. Both cases: when establishing SSL-connection is mandatory and when it's not are handled automatically.
 :::
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
