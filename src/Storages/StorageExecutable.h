@@ -33,8 +33,7 @@ public:
             return "Executable";
     }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & query_info,

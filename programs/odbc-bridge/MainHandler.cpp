@@ -110,12 +110,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
-        nanodbc::ConnectionHolderPtr connection_handler;
-        if (getContext()->getSettingsRef().odbc_bridge_use_connection_pooling)
-            connection_handler = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
-        else
-            connection_handler = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
+        auto connection_handler = ODBCConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string),
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
         if (mode == "write")
         {

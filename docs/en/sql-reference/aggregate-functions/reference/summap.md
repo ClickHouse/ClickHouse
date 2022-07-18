@@ -2,7 +2,7 @@
 sidebar_position: 141
 ---
 
-# sumMap
+# sumMap {#agg_functions-summap}
 
 Syntax: `sumMap(key, value)` or `sumMap(Tuple(key, value))`
 

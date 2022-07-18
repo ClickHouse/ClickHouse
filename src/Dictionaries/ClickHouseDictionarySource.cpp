@@ -110,29 +110,29 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-QueryPipeline ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
+Pipe ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
 {
     return createStreamForQuery(load_all_query, result_size_hint);
 }
 
-QueryPipeline ClickHouseDictionarySource::loadAll()
+Pipe ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
 }
 
-QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
+Pipe ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
     return createStreamForQuery(load_update_query);
 }
 
-QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     return createStreamForQuery(query_builder.composeLoadIdsQuery(ids));
 }
 
 
-QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
@@ -162,9 +162,9 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
+Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
 {
-    QueryPipeline pipeline;
+    QueryPipelineBuilder builder;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
@@ -175,25 +175,32 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, true).pipeline;
+        builder.init(executeQuery(query, context_copy, true).pipeline);
+        auto converting = ActionsDAG::makeConvertingActions(
+            builder.getHeader().getColumnsWithTypeAndName(),
+            empty_sample_block.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
 
-        pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
+        builder.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, std::make_shared<ExpressionActions>(converting));
+        });
     }
     else
     {
-        pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false));
+        builder.init(Pipe(std::make_shared<RemoteSource>(
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false)));
     }
 
     if (result_size_hint)
     {
-        pipeline.setProgressCallback([result_size_hint](const Progress & progress)
+        builder.setProgressCallback([result_size_hint](const Progress & progress)
         {
             *result_size_hint += progress.total_rows_to_read;
         });
     }
 
-    return pipeline;
+    return QueryPipelineBuilder::getPipe(std::move(builder));
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const

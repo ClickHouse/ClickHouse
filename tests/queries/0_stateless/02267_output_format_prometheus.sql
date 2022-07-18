@@ -152,7 +152,7 @@ SELECT
     1.7560473e+07 AS value,
     0 :: Float64 AS timestamp
 
-) ORDER BY name, value
+) ORDER BY name
 FORMAT Prometheus;
 
 SELECT

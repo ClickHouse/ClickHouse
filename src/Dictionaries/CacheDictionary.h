@@ -190,7 +190,7 @@ private:
 
     /// Dictionary source should be used with mutex
     mutable std::mutex source_mutex;
-    mutable DictionarySourcePtr source_ptr TSA_GUARDED_BY(source_mutex);
+    mutable DictionarySourcePtr source_ptr;
 
     CacheDictionaryStoragePtr cache_storage_ptr;
     mutable CacheDictionaryUpdateQueue<dictionary_key_type> update_queue;

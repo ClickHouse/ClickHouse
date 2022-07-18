@@ -17,9 +17,8 @@
 #include <Interpreters/join_common.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h> /// toLower
 
@@ -124,7 +123,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        auto pipeline = interpreter->execute();
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
@@ -378,11 +377,11 @@ size_t rawSize(const StringRef & t)
     return t.size;
 }
 
-class JoinSource : public ISource
+class JoinSource : public SourceWithProgress
 {
 public:
     JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
-        : ISource(sample_block_)
+        : SourceWithProgress(sample_block_)
         , join(join_)
         , lock_holder(lock_holder_)
         , max_block_size(max_block_size_)

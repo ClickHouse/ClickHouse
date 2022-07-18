@@ -4,7 +4,6 @@
 #include <base/types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/IDisk.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
 
 namespace DB
 {
@@ -29,7 +28,7 @@ public:
 
     MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_);
 
-    void changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage);
+    void changeGranularityIfRequired(const DiskPtr & disk, const String & path_to_part);
 
     String getMarksFilePath(const String & path_prefix) const
     {
@@ -38,7 +37,7 @@ public:
 
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
-    static std::optional<std::string> getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
+    static std::optional<std::string> getMarksExtensionFromFilesystem(const DiskPtr & disk, const String & path_to_part);
 
 private:
     MergeTreeDataPartType type;

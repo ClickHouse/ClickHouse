@@ -3,9 +3,9 @@ sidebar_position: 66
 sidebar_label: Tuples
 ---
 
-# Functions for Working with Tuples
+# Functions for Working with Tuples {#tuple-functions}
 
-## tuple
+## tuple {#tuple}
 
 A function that allows grouping multiple columns.
 For columns with the types T1, T2, …, it returns a Tuple(T1, T2, …) type tuple containing these columns. There is no cost to execute the function.
@@ -19,7 +19,7 @@ The function implements the operator `(x, y, …)`.
 tuple(x, y, …)
 ```
 
-## tupleElement
+## tupleElement {#tupleelement}
 
 A function that allows getting a column from a tuple.
 ‘N’ is the column index, starting from 1. ‘N’ must be a constant. ‘N’ must be a strict postive integer no greater than the size of the tuple.
@@ -33,7 +33,7 @@ The function implements the operator `x.N`.
 tupleElement(tuple, n)
 ```
 
-## untuple
+## untuple {#untuple}
 
 Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
 
@@ -113,7 +113,7 @@ Result:
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-## tupleHammingDistance
+## tupleHammingDistance {#tuplehammingdistance}
 
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
@@ -182,7 +182,7 @@ Result:
 └─────────────────┘
 ```
 
-## tupleToNameValuePairs
+## tupleToNameValuePairs {#tupletonamevaluepairs}
 
 Turns a named tuple into an array of (name, value) pairs. For a `Tuple(a T, b T, ..., c T)` returns `Array(Tuple(String, T), ...)`
 in which the `Strings` represents the named fields of the tuple and `T` are the values associated with those names. All values in the tuple should be of the same type.
@@ -258,7 +258,7 @@ Result:
 └───────────────────────────────────────┘
 ```
 
-## tuplePlus
+## tuplePlus {#tupleplus}
 
 Calculates the sum of corresponding values of two tuples of the same size.
 
@@ -297,7 +297,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## tupleMinus
+## tupleMinus {#tupleminus}
 
 Calculates the subtraction of corresponding values of two tuples of the same size.
 
@@ -336,7 +336,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## tupleMultiply
+## tupleMultiply {#tuplemultiply}
 
 Calculates the multiplication of corresponding values of two tuples of the same size.
 
@@ -373,7 +373,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## tupleDivide
+## tupleDivide {#tupledivide}
 
 Calculates the division of corresponding values of two tuples of the same size. Note that division by zero will return `inf`.
 
@@ -410,7 +410,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## tupleNegate
+## tupleNegate {#tuplenegate}
 
 Calculates the negation of the tuple values.
 
@@ -446,7 +446,7 @@ Result:
 └─────────────────────┘
 ```
 
-## tupleMultiplyByNumber
+## tupleMultiplyByNumber {#tuplemultiplybynumber}
 
 Returns a tuple with all values multiplied by a number.
 
@@ -483,7 +483,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## tupleDivideByNumber
+## tupleDivideByNumber {#tupledividebynumber}
 
 Returns a tuple with all values divided by a number. Note that division by zero will return `inf`.
 
@@ -520,7 +520,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## dotProduct
+## dotProduct {#dotproduct}
 
 Calculates the scalar product of two tuples of the same size.
 
@@ -559,7 +559,502 @@ Result:
 └────────────────────────────┘
 ```
 
+## L1Norm {#l1norm}
 
-## Distance functions
+Calculates the sum of absolute values of a tuple.
 
-All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
+**Syntax**
+
+```sql
+L1Norm(tuple)
+```
+
+Alias: `normL1`.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.
+
+Type: [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L1Norm((1, 2));
+```
+
+Result:
+
+```text
+┌─L1Norm((1, 2))─┐
+│              3 │
+└────────────────┘
+```
+
+## L2Norm {#l2norm}
+
+Calculates the square root of the sum of the squares of the tuple values.
+
+**Syntax**
+
+```sql
+L2Norm(tuple)
+```
+
+Alias: `normL2`.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L2Norm((1, 2));
+```
+
+Result:
+
+```text
+┌───L2Norm((1, 2))─┐
+│ 2.23606797749979 │
+└──────────────────┘
+```
+
+## LinfNorm {#linfnorm}
+
+Calculates the maximum of absolute values of a tuple.
+
+**Syntax**
+
+```sql
+LinfNorm(tuple)
+```
+
+Alias: `normLinf`.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   Linf-norm or the maximum absolute value.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT LinfNorm((1, -2));
+```
+
+Result:
+
+```text
+┌─LinfNorm((1, -2))─┐
+│                 2 │
+└───────────────────┘
+```
+
+## LpNorm {#lpnorm}
+
+Calculates the root of `p`-th power of the sum of the absolute values of a tuple in the power of `p`.
+
+**Syntax**
+
+```sql
+LpNorm(tuple, p)
+```
+
+Alias: `normLp`.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+-   `p` — The power. Possible values: real number in `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+-   [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT LpNorm((1, -2), 2);
+```
+
+Result:
+
+```text
+┌─LpNorm((1, -2), 2)─┐
+│   2.23606797749979 │
+└────────────────────┘
+```
+
+## L1Distance {#l1distance}
+
+Calculates the distance between two points (the values of the tuples are the coordinates) in `L1` space (1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance)).
+
+**Syntax**
+
+```sql
+L1Distance(tuple1, tuple2)
+```
+
+Alias: `distanceL1`.
+
+**Arguments**
+
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple1` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   1-norm distance.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L1Distance((1, 2), (2, 3));
+```
+
+Result:
+
+```text
+┌─L1Distance((1, 2), (2, 3))─┐
+│                          2 │
+└────────────────────────────┘
+```
+
+## L2Distance {#l2distance}
+
+Calculates the distance between two points (the values of the tuples are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+
+**Syntax**
+
+```sql
+L2Distance(tuple1, tuple2)
+```
+
+Alias: `distanceL2`.
+
+**Arguments**
+
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple1` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   2-norm distance.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L2Distance((1, 2), (2, 3));
+```
+
+Result:
+
+```text
+┌─L2Distance((1, 2), (2, 3))─┐
+│         1.4142135623730951 │
+└────────────────────────────┘
+```
+
+## LinfDistance {#linfdistance}
+
+Calculates the distance between two points (the values of the tuples are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
+
+**Syntax**
+
+```sql
+LinfDistance(tuple1, tuple2)
+```
+
+Alias: `distanceLinf`.
+
+**Arguments**
+
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple1` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   Infinity-norm distance.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT LinfDistance((1, 2), (2, 3));
+```
+
+Result:
+
+```text
+┌─LinfDistance((1, 2), (2, 3))─┐
+│                            1 │
+└──────────────────────────────┘
+```
+
+## LpDistance {#lpdistance}
+
+Calculates the distance between two points (the values of the tuples are the coordinates) in `Lp` space ([p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
+
+**Syntax**
+
+```sql
+LpDistance(tuple1, tuple2, p)
+```
+
+Alias: `distanceLp`.
+
+**Arguments**
+
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple1` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `p` — The power. Possible values: real number from `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+-   p-norm distance.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT LpDistance((1, 2), (2, 3), 3);
+```
+
+Result:
+
+```text
+┌─LpDistance((1, 2), (2, 3), 3)─┐
+│            1.2599210498948732 │
+└───────────────────────────────┘
+```
+
+## L1Normalize {#l1normalize}
+
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+
+**Syntax**
+
+```sql
+L1Normalize(tuple)
+```
+
+Alias: `normalizeL1`.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   Unit vector.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L1Normalize((1, 2));
+```
+
+Result:
+
+```text
+┌─L1Normalize((1, 2))─────────────────────┐
+│ (0.3333333333333333,0.6666666666666666) │
+└─────────────────────────────────────────┘
+```
+
+## L2Normalize {#l2normalize}
+
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+
+**Syntax**
+
+```sql
+L2Normalize(tuple)
+```
+
+Alias: `normalizeL1`.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   Unit vector.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT L2Normalize((3, 4));
+```
+
+Result:
+
+```text
+┌─L2Normalize((3, 4))─┐
+│ (0.6,0.8)           │
+└─────────────────────┘
+```
+
+## LinfNormalize {#linfnormalize}
+
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
+
+**Syntax**
+
+```sql
+LinfNormalize(tuple)
+```
+
+Alias: `normalizeLinf `.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   Unit vector.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT LinfNormalize((3, 4));
+```
+
+Result:
+
+```text
+┌─LinfNormalize((3, 4))─┐
+│ (0.75,1)              │
+└───────────────────────┘
+```
+
+## LpNormalize {#lpnormalize}
+
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
+
+**Syntax**
+
+```sql
+LpNormalize(tuple, p)
+```
+
+Alias: `normalizeLp `.
+
+**Arguments**
+
+-   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+-   `p` — The power. Possible values: any number from [1;inf). [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+-   Unit vector.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md) of [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT LpNormalize((3, 4),5);
+```
+
+Result:
+
+```text
+┌─LpNormalize((3, 4), 5)──────────────────┐
+│ (0.7187302630182624,0.9583070173576831) │
+└─────────────────────────────────────────┘
+```
+
+## cosineDistance {#cosinedistance}
+
+Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The less the returned value is, the more similar are the vectors.
+
+**Syntax**
+
+```sql
+cosineDistance(tuple1, tuple2)
+```
+
+**Arguments**
+
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+
+**Returned value**
+
+-   Cosine of the angle between two vectors substracted from one.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT cosineDistance((1, 2), (2, 3));
+```
+
+Result:
+
+```text
+┌─cosineDistance((1, 2), (2, 3))─┐
+│           0.007722123286332261 │
+└────────────────────────────────┘
+```

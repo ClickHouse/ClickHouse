@@ -50,8 +50,8 @@ public:
         Job && job_to_execute_,
         Callback && job_result_callback_,
         StorageID id_)
-        : job_to_execute(std::forward<Job>(job_to_execute_))
-        , job_result_callback(std::forward<Callback>(job_result_callback_))
+        : job_to_execute(job_to_execute_)
+        , job_result_callback(job_result_callback_)
         , id(id_) {}
 
     bool executeStep() override

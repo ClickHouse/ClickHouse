@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
@@ -69,7 +67,6 @@ struct ExpressionAnalyzerData
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
     NamesAndTypesLists aggregation_keys_list;
-    ColumnNumbersList aggregation_keys_indexes_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
@@ -80,8 +77,6 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     TemporaryTablesMapping external_tables;
-
-    GroupByKind group_by_kind = GroupByKind::NONE;
 };
 
 
@@ -140,7 +135,6 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
-    void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
     /**
@@ -192,8 +186,6 @@ protected:
 
     void getRootActionsForHaving(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
-    void getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions);
-
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
@@ -208,11 +200,6 @@ protected:
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
-
-    AggregationKeysInfo getAggregationKeysInfo() const noexcept
-    {
-      return { aggregation_keys, aggregation_keys_indexes_list, group_by_kind };
-    }
 };
 
 class SelectQueryExpressionAnalyzer;
@@ -339,15 +326,7 @@ public:
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
-    /// When there is only one group in GROUPING SETS
-    /// it is a special case that is equal to GROUP BY, i.e.:
-    ///
-    ///     GROUPING SETS ((a, b)) -> GROUP BY a, b
-    ///
-    /// But it is rewritten by GroupingSetsRewriterVisitor to GROUP BY,
-    /// so instead of aggregation_keys_list.size() > 1,
-    /// !aggregation_keys_list.empty() can be used.
-    bool useGroupingSetKey() const { return !aggregation_keys_list.empty(); }
+    bool useGroupingSetKey() const { return aggregation_keys_list.size() > 1; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
@@ -375,7 +354,7 @@ private:
     NameSet required_result_columns;
     SelectQueryOptions query_options;
 
-    JoinPtr makeJoin(
+    JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,
         const ColumnsWithTypeAndName & left_columns,
         ActionsDAGPtr & left_convert_actions);
@@ -403,14 +382,11 @@ private:
 
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
+    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
-
-    void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);

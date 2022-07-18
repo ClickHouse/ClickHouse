@@ -156,13 +156,8 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
         PreparedSets prepared_sets;
         SubqueriesForSets subqueries_for_sets;
-        const NamesAndTypesList source_columns;
-        const NamesAndTypesList aggregation_keys;
-        const ColumnNumbersList grouping_set_keys;
-
         ActionsVisitor::Data visitor_data(
-            context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, subqueries_for_sets, true, true, true, false,
-            { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
+            context, SizeLimits{}, 1, {}, std::move(actions), prepared_sets, subqueries_for_sets, true, true, true, false);
         ActionsVisitor(visitor_data).visit(node);
         actions = visitor_data.getActions();
         auto expression_actions = std::make_shared<ExpressionActions>(actions);

@@ -3,11 +3,11 @@ sidebar_position: 46
 sidebar_label: KILL
 ---
 
-# KILL Statements
+# KILL Statements {#kill-statements}
 
 There are two kinds of kill statements: to kill a query and to kill a mutation
 
-## KILL QUERY
+## KILL QUERY {#kill-query-statement}
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
@@ -42,7 +42,7 @@ The response contains the `kill_status` column, which can take the following val
 
 A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
 
-## KILL MUTATION
+## KILL MUTATION {#kill-mutation}
 
 ``` sql
 KILL MUTATION [ON CLUSTER cluster]

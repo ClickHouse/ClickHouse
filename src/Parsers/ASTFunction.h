@@ -22,8 +22,6 @@ public:
 
     bool is_window_function = false;
 
-    bool compute_after_window_functions = false;
-
     // We have to make these fields ASTPtr because this is what the visitors
     // expect. Some of them take const ASTPtr & (makes no sense), and some
     // take ASTPtr & and modify it. I don't understand how the latter is
@@ -56,8 +54,6 @@ public:
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
-private:
-    void finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 

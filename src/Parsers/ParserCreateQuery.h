@@ -105,9 +105,9 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
-    const bool require_type = true;
-    const bool allow_null_modifiers = false;
-    const bool check_keywords_after_name = false;
+    bool require_type = true;
+    bool allow_null_modifiers = false;
+    bool check_keywords_after_name = false;
     /// just for ALTER TABLE ALTER COLUMN use
     bool check_type_keyword = false;
 };
@@ -175,22 +175,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
 
-    auto null_check_without_moving = [&]() -> bool
-    {
-        if (!allow_null_modifiers)
-            return false;
-
-        if (s_null.checkWithoutMoving(pos, expected))
-            return true;
-
-        Pos before_null = pos;
-        bool res = s_not.check(pos, expected) && s_null.checkWithoutMoving(pos, expected);
-        pos = before_null;
-        return res;
-    };
-
-    if (!null_check_without_moving()
-        && !s_default.checkWithoutMoving(pos, expected)
+    if (!s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
@@ -208,18 +193,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             if (!collation_parser.parse(pos, collation_expression, expected))
                 return false;
         }
-    }
-
-    if (allow_null_modifiers)
-    {
-        if (s_not.check(pos, expected))
-        {
-            if (!s_null.check(pos, expected))
-                return false;
-            null_modifier.emplace(false);
-        }
-        else if (s_null.check(pos, expected))
-            null_modifier.emplace(true);
     }
 
     Pos pos_before_specifier = pos;
@@ -257,7 +230,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    if ((type || default_expression) && allow_null_modifiers && !null_modifier.has_value())
+    if (type && allow_null_modifiers)
     {
         if (s_not.ignore(pos, expected))
         {
@@ -333,21 +306,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
 class ParserColumnDeclarationList : public IParserBase
 {
-public:
-    explicit ParserColumnDeclarationList(bool require_type_ = true, bool allow_null_modifiers_ = true, bool check_keywords_after_name_ = false)
-        : require_type(require_type_)
-        , allow_null_modifiers(allow_null_modifiers_)
-        , check_keywords_after_name(check_keywords_after_name_)
-    {
-    }
-
 protected:
     const char * getName() const override { return "column declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    const bool require_type;
-    const bool allow_null_modifiers;
-    const bool check_keywords_after_name;
 };
 
 
@@ -458,7 +419,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ...
+/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE [db.]name] [WATERMARK function] AS SELECT ...
 class ParserCreateWindowViewQuery : public IParserBase
 {
 protected:

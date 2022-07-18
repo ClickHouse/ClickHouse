@@ -19,7 +19,7 @@ FileLogSource::FileLogSource(
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
+    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)

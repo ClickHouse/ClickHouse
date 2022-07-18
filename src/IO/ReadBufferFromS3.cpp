@@ -5,13 +5,12 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
+#include <Common/Stopwatch.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 
-#include <Common/Stopwatch.h>
-#include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 
@@ -38,7 +37,7 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const String & version_id_,
@@ -48,7 +47,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
+    : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -117,11 +116,6 @@ bool ReadBufferFromS3::nextImpl()
                     assert(working_buffer.begin() != nullptr);
                     assert(!internal_buffer.empty());
                 }
-                else
-                {
-                    /// use the buffer returned by `impl`
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
-                }
             }
 
             /// Try to read a next portion of data.
@@ -161,12 +155,10 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
         return false;
 
-    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
-    if (read_settings.remote_throttler)
-        read_settings.remote_throttler->add(working_buffer.size());
 
     return true;
 }
@@ -225,15 +217,20 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-size_t ReadBufferFromS3::getFileSize()
+std::optional<size_t> ReadBufferFromS3::getFileSize()
 {
     if (file_size)
-        return *file_size;
+        return file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, false);
+
+    if (!object_size)
+    {
+        return std::nullopt;
+    }
 
     file_size = object_size;
-    return *file_size;
+    return file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()
@@ -302,6 +299,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
+
         size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
@@ -336,7 +334,7 @@ off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
     return off;
 }
 
-size_t ReadBufferS3Factory::getFileSize()
+std::optional<size_t> ReadBufferS3Factory::getFileSize()
 {
     return object_size;
 }

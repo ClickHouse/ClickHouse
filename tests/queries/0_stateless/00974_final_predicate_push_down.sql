@@ -1,6 +1,5 @@
 DROP TABLE IF EXISTS test_00974;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE test_00974
 (
     date Date,

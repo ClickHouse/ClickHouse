@@ -1,5 +1,3 @@
--- Tags: no-ordinary-database
-
 drop table if exists mt1;
 drop table if exists mt2;
 

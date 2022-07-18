@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Common/Exception.h"
 #include <cstddef>
 #include <type_traits>
 
@@ -205,7 +204,7 @@ struct ConvertImpl
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
-                    throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
                 }
                 else
                 {
@@ -706,7 +705,7 @@ template <>
 struct FormatImpl<DataTypeDate32>
 {
     template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl *)
+    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl *)
     {
         writeDateText(ExtendedDayNum(x), wb);
         return ReturnType(true);
@@ -1047,11 +1046,13 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */
-[[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, const IDataType & result_type)
+[[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, const DataTypePtr result_type)
 {
+    const IDataType & to_type = *result_type;
+
     WriteBufferFromOwnString message_buf;
     message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
-                << " as " << result_type.getName()
+                << " as " << to_type.getName()
                 << ": syntax error";
 
     if (read_buffer.offset())
@@ -1061,8 +1062,8 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
         message_buf << " at begin of string";
 
     // Currently there are no functions toIPv{4,6}Or{Null,Zero}
-    if (isNativeNumber(result_type) && !(result_type.getName() == "IPv4" || result_type.getName() == "IPv6"))
-        message_buf << ". Note: there are to" << result_type.getName() << "OrZero and to" << result_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
+    if (isNativeNumber(to_type) && !(to_type.getName() == "IPv4" || to_type.getName() == "IPv6"))
+        message_buf << ". Note: there are to" << to_type.getName() << "OrZero and to" << to_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
 
     throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);
 }
@@ -1252,7 +1253,7 @@ struct ConvertThroughParsing
                 }
 
                 if (!isAllRead(read_buffer))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
+                    throwExceptionForIncompletelyParsedValue(read_buffer, res_type);
             }
             else
             {
@@ -1353,32 +1354,18 @@ struct ConvertImplGenericFromString
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to parse from ColumnString or ColumnFixedString");
 
-        const IColumn & column_from = *arguments[0].column;
+        const IColumn & col_from = *arguments[0].column;
         const IDataType & data_type_to = *result_type;
-        auto res = data_type_to.createColumn();
-        auto serialization = data_type_to.getDefaultSerialization();
-        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-
-        executeImpl(column_from, *res, *serialization, input_rows_count, null_map, result_type.get());
-        return res;
-    }
-
-    static void executeImpl(
-        const IColumn & column_from,
-        IColumn & column_to,
-        const ISerialization & serialization_from,
-        size_t input_rows_count,
-        const PaddedPODArray<UInt8> * null_map = nullptr,
-        const IDataType * result_type = nullptr)
-    {
-        static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
-                "Can be used only to parse from ColumnString or ColumnFixedString");
-
-        if (const StringColumnType * col_from_string = checkAndGetColumn<StringColumnType>(&column_from))
+        if (const StringColumnType * col_from_string = checkAndGetColumn<StringColumnType>(&col_from))
         {
+            auto res = data_type_to.createColumn();
+
+            IColumn & column_to = *res;
             column_to.reserve(input_rows_count);
 
             FormatSettings format_settings;
+            auto serialization = data_type_to.getDefaultSerialization();
+            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (null_map && (*null_map)[i])
@@ -1389,24 +1376,20 @@ struct ConvertImplGenericFromString
 
                 const auto & val = col_from_string->getDataAt(i);
                 ReadBufferFromMemory read_buffer(val.data, val.size);
-                serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
+
+                serialization->deserializeWholeText(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
-                {
-                    if (result_type)
-                        throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
-                    else
-                        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                            "Cannot parse string to column {}. Expected eof", column_to.getName());
-                }
+                    throwExceptionForIncompletelyParsedValue(read_buffer, result_type);
             }
+
+            return res;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of conversion function from string",
-                column_from.getName());
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                    + " of first argument of conversion function from string",
+                ErrorCodes::ILLEGAL_COLUMN);
     }
-
 };
 
 
@@ -2533,8 +2516,6 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// CAST(Nothing, T) -> T
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }

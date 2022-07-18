@@ -2,7 +2,7 @@
 sidebar_label: EXCEPT
 ---
 
-# EXCEPT Clause
+# EXCEPT Clause {#except-clause}
 
 The `EXCEPT` clause returns only those rows that result from the first query without the second. The queries must match the number of columns, order, and type. The result of `EXCEPT` can contain duplicate rows.
 

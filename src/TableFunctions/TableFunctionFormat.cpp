@@ -14,7 +14,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/StorageValues.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <TableFunctions/TableFunctionFormat.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -44,8 +43,8 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    format = checkAndGetLiteralArgument<String>(args[0], "format");
-    data = checkAndGetLiteralArgument<String>(args[1], "data");
+    format = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    data = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
@@ -65,7 +64,9 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
     auto input_format = context->getInputFormat(format, *read_buf, block, context->getSettingsRef().max_block_size);
-    auto pipeline = std::make_unique<QueryPipeline>(input_format);
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
+    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     std::vector<Block> blocks;

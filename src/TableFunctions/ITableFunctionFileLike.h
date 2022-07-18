@@ -20,7 +20,7 @@ public:
 
 protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-    virtual void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context);
+    virtual void parseFirstArguments(const ASTPtr & arg, ContextPtr context);
     virtual String getFormatFromFirstArgument();
 
     String filename;

@@ -5564,4 +5564,3 @@ sha256_block_data_order:
 	ret
 .size	sha256_block_data_order,.-.L_sha256_block_data_order_begin
 #endif
-.section	.note.GNU-stack,"",@progbits

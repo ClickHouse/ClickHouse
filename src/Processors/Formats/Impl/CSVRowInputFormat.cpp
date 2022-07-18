@@ -41,15 +41,7 @@ CSVRowInputFormat::CSVRowInputFormat(
     bool with_types_,
     const FormatSettings & format_settings_,
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_)
-    : RowInputFormatWithNamesAndTypes(
-        header_,
-        in_,
-        params_,
-        false,
-        with_names_,
-        with_types_,
-        format_settings_,
-        std::move(format_reader_))
+    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::move(format_reader_))
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
@@ -120,9 +112,7 @@ String CSVFormatReader::readCSVFieldIntoString()
 
 void CSVFormatReader::skipField()
 {
-    skipWhitespacesAndTabs(*in);
-    NullOutput out;
-    readCSVStringInto(out, *in, format_settings.csv);
+    readCSVFieldIntoString<true>();
 }
 
 void CSVFormatReader::skipRowEndDelimiter()
@@ -267,12 +257,6 @@ bool CSVFormatReader::readField(
     }
 }
 
-void CSVFormatReader::skipPrefixBeforeHeader()
-{
-    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
-        readRow();
-}
-
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_)
     : FormatWithNamesAndTypesSchemaReader(
@@ -390,7 +374,6 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("CSV", register_func);
-    markFormatWithNamesAndTypesSupportsSamplingColumns("CSV", factory);
 }
 
 void registerCSVSchemaReader(FormatFactory & factory)

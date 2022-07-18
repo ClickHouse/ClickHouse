@@ -42,9 +42,6 @@ public:
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }
-
-    bool supportsSubcolumns() const override { return true; }
-
     bool mayBenefitFromIndexForIn(
         const ASTPtr & /* left_in_operand */,
         ContextPtr /* query_context */,
@@ -66,11 +63,10 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool isColumnOriented() const override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
 private:
     using FileFormat = IHiveFile::FileFormat;
@@ -120,6 +116,8 @@ private:
         const HiveTableMetadataPtr & hive_table_metadata,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
+
+    void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
 
     void lazyInitialize();
 

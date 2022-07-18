@@ -27,8 +27,6 @@ public:
 
     ReadBuffer & getWrappedReadBuffer() { return *impl; }
 
-    size_t getFileSize() override;
-
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;
     String file_name;

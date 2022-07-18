@@ -1,12 +1,9 @@
 #pragma once
 
+#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Core/UUID.h>
 #include <set>
-
-#include <Interpreters/Context_fwd.h>
-#include <Disks/IDisk.h>
-#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
@@ -90,17 +87,15 @@ public:
 
     size_t getFileSize(const String & path) const override;
 
-    void listFiles(const String & /* path */, std::vector<String> & /* file_names */) const override { }
+    void listFiles(const String & /* path */, std::vector<String> & /* file_names */) override { }
 
     void setReadOnly(const String & /* path */) override {}
 
     bool isDirectory(const String & path) const override;
 
-    DirectoryIteratorPtr iterateDirectory(const String & /* path */) const override;
+    DiskDirectoryIteratorPtr iterateDirectory(const String & /* path */) override;
 
-    Poco::Timestamp getLastModified(const String &) const override { return Poco::Timestamp{}; }
-
-    time_t getLastChanged(const String &) const override { return {}; }
+    Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp{}; }
 
     /// Write and modification part
 
@@ -144,11 +139,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    void removeSharedFileIfExists(const String &, bool) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
-    }
-
     void removeSharedRecursive(const String &, bool, const NameSet &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
@@ -174,9 +164,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    StoredObjects getStorageObjects(const String &) const override { return {}; }
+    std::vector<String> getRemotePaths(const String &) const override { return {}; }
 
-    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &) override {}
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
 
     /// Create part
 

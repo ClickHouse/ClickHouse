@@ -44,13 +44,17 @@ static Block addWindowFunctionResultColumns(const Block & block,
     return result;
 }
 
-WindowStep::WindowStep(
-    const DataStream & input_stream_,
-    const WindowDescription & window_description_,
-    const std::vector<WindowFunctionDescription> & window_functions_)
-    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits())
+WindowStep::WindowStep(const DataStream & input_stream_,
+        const WindowDescription & window_description_,
+        const std::vector<WindowFunctionDescription> & window_functions_)
+    : ITransformingStep(
+        input_stream_,
+            addWindowFunctionResultColumns(input_stream_.header,
+                window_functions_),
+        getTraits())
     , window_description(window_description_)
     , window_functions(window_functions_)
+    , input_header(input_stream_.header)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -66,12 +70,11 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     // have resized it.
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform(
-        [&](const Block & /*header*/)
-        {
-            return std::make_shared<WindowTransform>(
-                input_streams.front().header, output_stream->header, window_description, window_functions);
-        });
+    pipeline.addSimpleTransform([&](const Block & /*header*/)
+    {
+        return std::make_shared<WindowTransform>(input_header,
+            output_stream->header, window_description, window_functions);
+    });
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
         "WindowStep transform for '" + window_description.window_name + "'");
@@ -133,19 +136,6 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
         functions_array->add(func.column_name);
 
     map.add("Functions", std::move(functions_array));
-}
-
-void WindowStep::updateOutputStream()
-{
-    output_stream = createOutputStream(
-        input_streams.front(), addWindowFunctionResultColumns(input_streams.front().header, window_functions), getDataStreamTraits());
-
-    window_description.checkValid();
-}
-
-const WindowDescription & WindowStep::getWindowDescription() const
-{
-    return window_description;
 }
 
 }

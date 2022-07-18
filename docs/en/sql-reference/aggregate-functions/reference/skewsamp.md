@@ -2,7 +2,7 @@
 sidebar_position: 151
 ---
 
-# skewSamp
+# skewSamp {#skewsamp}
 
 Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 

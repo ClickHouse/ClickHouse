@@ -5,14 +5,10 @@
 
 #include <mutex>
 #include <filesystem>
-#include <unordered_map>
 
 #include <base/scope_guard.h>
 
 #include <Storages/System/StorageSystemStackTrace.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -20,11 +16,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/logger_useful.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/Pipe.h>
 #include <base/getThreadId.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -154,84 +147,13 @@ namespace
             throw Exception("Logical error: read wrong number of bytes from pipe", ErrorCodes::LOGICAL_ERROR);
         }
     }
-
-    ColumnPtr getFilteredThreadIds(ASTPtr query, ContextPtr context)
-    {
-        MutableColumnPtr all_thread_ids = ColumnUInt64::create();
-
-        std::filesystem::directory_iterator end;
-
-        /// There is no better way to enumerate threads in a process other than looking into procfs.
-        for (std::filesystem::directory_iterator it("/proc/self/task"); it != end; ++it)
-        {
-            pid_t tid = parse<pid_t>(it->path().filename());
-            all_thread_ids->insert(tid);
-        }
-
-        Block block { ColumnWithTypeAndName(std::move(all_thread_ids), std::make_shared<DataTypeUInt64>(), "thread_id") };
-        VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-        return block.getByPosition(0).column;
-    }
-
-    using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
-    ThreadIdToName getFilteredThreadNames(ASTPtr query, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids)
-    {
-        ThreadIdToName tid_to_name;
-        MutableColumnPtr all_thread_names = ColumnString::create();
-
-        for (UInt64 tid : thread_ids)
-        {
-            std::filesystem::path thread_name_path = fmt::format("/proc/self/task/{}/comm", tid);
-            String thread_name;
-            if (std::filesystem::exists(thread_name_path))
-            {
-                constexpr size_t comm_buf_size = 32; /// More than enough for thread name
-                ReadBufferFromFile comm(thread_name_path.string(), comm_buf_size);
-                readEscapedStringUntilEOL(thread_name, comm);
-                comm.close();
-            }
-
-            tid_to_name[tid] = thread_name;
-            all_thread_names->insert(thread_name);
-        }
-
-        Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
-        VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-        ColumnPtr thread_names = std::move(block.getByPosition(0).column);
-
-        std::unordered_set<String> filtered_thread_names;
-        for (size_t i = 0; i != thread_names->size(); ++i)
-        {
-            const auto & thread_name = thread_names->getDataAt(i);
-            filtered_thread_names.emplace(thread_name);
-        }
-
-        for (auto it = tid_to_name.begin(); it != tid_to_name.end();)
-        {
-            if (!filtered_thread_names.contains(it->second))
-                it = tid_to_name.erase(it);
-            else
-                ++it;
-        }
-
-        return tid_to_name;
-    }
 }
 
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : IStorageSystemOneBlock<StorageSystemStackTrace>(table_id_)
     , log(&Poco::Logger::get("StorageSystemStackTrace"))
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({
-        { "thread_name", std::make_shared<DataTypeString>() },
-        { "thread_id", std::make_shared<DataTypeUInt64>() },
-        { "query_id", std::make_shared<DataTypeString>() },
-        { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-    }, { /* aliases */ }));
-    setInMemoryMetadata(storage_metadata);
-
     notification_pipe.open();
 
     /// Setup signal handler.
@@ -251,39 +173,22 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 }
 
 
-Pipe StorageSystemStackTrace::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 {
-    storage_snapshot->check(column_names);
+    return
+    {
+        { "thread_name", std::make_shared<DataTypeString>() },
+        { "thread_id", std::make_shared<DataTypeUInt64>() },
+        { "query_id", std::make_shared<DataTypeString>() },
+        { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) }
+    };
+}
 
+
+void StorageSystemStackTrace::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+{
     /// It shouldn't be possible to do concurrent reads from this table.
     std::lock_guard lock(mutex);
-
-    /// Create a mask of what columns are needed in the result.
-
-    NameSet names_set(column_names.begin(), column_names.end());
-
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
-
-    std::vector<UInt8> columns_mask(sample_block.columns());
-    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
-    {
-        if (names_set.contains(sample_block.getByPosition(i).name))
-        {
-            columns_mask[i] = 1;
-        }
-    }
-
-    bool send_signal = names_set.contains("trace") || names_set.contains("query_id");
-    bool read_thread_names = names_set.contains("thread_name");
-
-    MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     /// Send a signal to every thread and wait for result.
     /// We must wait for every thread one by one sequentially,
@@ -292,85 +197,71 @@ Pipe StorageSystemStackTrace::read(
 
     /// Obviously, results for different threads may be out of sync.
 
-    ColumnPtr thread_ids = getFilteredThreadIds(query_info.query, context);
-    const auto & thread_ids_data = assert_cast<const ColumnUInt64 &>(*thread_ids).getData();
+    /// There is no better way to enumerate threads in a process other than looking into procfs.
 
-    ThreadIdToName thread_names;
-    if (read_thread_names)
-        thread_names = getFilteredThreadNames(query_info.query, context, thread_ids_data);
-
-    for (UInt64 tid : thread_ids_data)
+    std::filesystem::directory_iterator end;
+    for (std::filesystem::directory_iterator it("/proc/self/task"); it != end; ++it)
     {
-        size_t res_index = 0;
+        pid_t tid = parse<pid_t>(it->path().filename());
 
-        String thread_name;
-        if (read_thread_names)
+        sigval sig_value{};
+        sig_value.sival_int = sequence_num.load(std::memory_order_acquire);
+        if (0 != ::sigqueue(tid, sig, sig_value))
         {
-            if (auto it = thread_names.find(tid); it != thread_names.end())
-                thread_name = it->second;
-            else
-                continue; /// was filtered out by "thread_name" condition
+            /// The thread may has been already finished.
+            if (ESRCH == errno)
+                continue;
+
+            throwFromErrno("Cannot send signal with sigqueue", ErrorCodes::CANNOT_SIGQUEUE);
         }
 
-        if (!send_signal)
+        std::filesystem::path thread_name_path = it->path();
+        thread_name_path.append("comm");
+
+        String thread_name;
+        if (std::filesystem::exists(thread_name_path))
         {
-            res_columns[res_index++]->insert(thread_name);
-            res_columns[res_index++]->insert(tid);
-            res_columns[res_index++]->insertDefault();
-            res_columns[res_index++]->insertDefault();
+            constexpr size_t comm_buf_size = 32; /// More than enough for thread name
+            ReadBufferFromFile comm(thread_name_path.string(), comm_buf_size);
+            readEscapedStringUntilEOL(thread_name, comm);
+            comm.close();
+        }
+
+        /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
+
+        if (wait(100) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
+        {
+            size_t stack_trace_size = stack_trace.getSize();
+            size_t stack_trace_offset = stack_trace.getOffset();
+
+            Array arr;
+            arr.reserve(stack_trace_size - stack_trace_offset);
+            for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
+                arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace.getFramePointers()[i]));
+
+            res_columns[0]->insert(thread_name);
+            res_columns[1]->insert(tid);
+            res_columns[2]->insertData(query_id_data, query_id_size);
+            res_columns[3]->insert(arr);
         }
         else
         {
-            sigval sig_value{};
+            LOG_DEBUG(log, "Cannot obtain a stack trace for thread {}", tid);
 
-            sig_value.sival_int = sequence_num.load(std::memory_order_acquire);
-            if (0 != ::sigqueue(tid, sig, sig_value))
-            {
-                /// The thread may has been already finished.
-                if (ESRCH == errno)
-                    continue;
+            /// Cannot obtain a stack trace. But create a record in result nevertheless.
 
-                throwFromErrno("Cannot send signal with sigqueue", ErrorCodes::CANNOT_SIGQUEUE);
-            }
-
-            /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
-            if (send_signal && wait(100) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
-            {
-                size_t stack_trace_size = stack_trace.getSize();
-                size_t stack_trace_offset = stack_trace.getOffset();
-
-                Array arr;
-                arr.reserve(stack_trace_size - stack_trace_offset);
-                for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                    arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace.getFramePointers()[i]));
-
-                res_columns[res_index++]->insert(thread_name);
-                res_columns[res_index++]->insert(tid);
-                res_columns[res_index++]->insertData(query_id_data, query_id_size);
-                res_columns[res_index++]->insert(arr);
-            }
-            else
-            {
-                LOG_DEBUG(log, "Cannot obtain a stack trace for thread {}", tid);
-
-                res_columns[res_index++]->insert(thread_name);
-                res_columns[res_index++]->insert(tid);
-                res_columns[res_index++]->insertDefault();
-                res_columns[res_index++]->insertDefault();
-            }
-
-            /// Signed integer overflow is undefined behavior in both C and C++. However, according to
-            /// C++ standard, Atomic signed integer arithmetic is defined to use two's complement; there
-            /// are no undefined results. See https://en.cppreference.com/w/cpp/atomic/atomic and
-            /// http://eel.is/c++draft/atomics.types.generic#atomics.types.int-8
-            ++sequence_num;
+            res_columns[0]->insert(thread_name);
+            res_columns[1]->insert(tid);
+            res_columns[2]->insertDefault();
+            res_columns[3]->insertDefault();
         }
+
+        /// Signed integer overflow is undefined behavior in both C and C++. However, according to
+        /// C++ standard, Atomic signed integer arithmetic is defined to use two's complement; there
+        /// are no undefined results. See https://en.cppreference.com/w/cpp/atomic/atomic and
+        /// http://eel.is/c++draft/atomics.types.generic#atomics.types.int-8
+        ++sequence_num;
     }
-
-    UInt64 num_rows = res_columns.at(0)->size();
-    Chunk chunk(std::move(res_columns), num_rows);
-
-    return Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk)));
 }
 
 }

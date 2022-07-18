@@ -192,7 +192,6 @@ public:
     /// Supports only increasing the number of threads and tasks, because
     /// implementing tasks eviction will definitely be too error-prone and buggy.
     void increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count);
-    size_t getMaxTasksCount() const;
 
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);
@@ -210,7 +209,7 @@ private:
     /// Initially it will be empty
     Queue pending{};
     boost::circular_buffer<TaskRuntimeDataPtr> active{0};
-    mutable std::mutex mutex;
+    std::mutex mutex;
     std::condition_variable has_tasks;
     std::atomic_bool shutdown{false};
     ThreadPool pool;

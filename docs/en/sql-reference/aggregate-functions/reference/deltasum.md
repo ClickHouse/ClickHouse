@@ -2,11 +2,11 @@
 sidebar_position: 141
 ---
 
-# deltaSum
+# deltaSum {#agg_functions-deltasum}
 
 Sums the arithmetic difference between consecutive rows. If the difference is negative, it is ignored.
 
-:::note
+:::note    
 The underlying data must be sorted for this function to work properly. If you would like to use this function in a [materialized view](../../../sql-reference/statements/create/view.md#materialized), you most likely want to use the [deltaSumTimestamp](../../../sql-reference/aggregate-functions/reference/deltasumtimestamp.md#agg_functions-deltasumtimestamp) method instead.
 :::
 
@@ -68,6 +68,6 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
 -   [runningDifference](../../functions/other-functions.md#other_functions-runningdifference)

@@ -9,11 +9,9 @@ concurrency:
 on: # yamllint disable-line rule:truthy
   schedule:
     - cron: '0 */3 * * *'
-  workflow_dispatch:
-
 jobs:
   CherryPick:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Set envs
         # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings

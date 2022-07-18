@@ -3,7 +3,7 @@ sidebar_position: 45
 sidebar_label: Monitoring
 ---
 
-# Monitoring
+# Monitoring {#monitoring}
 
 You can monitor:
 

@@ -1,4 +1,4 @@
-# metric_log
+# metric_log {#system_tables-metric_log}
 
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 

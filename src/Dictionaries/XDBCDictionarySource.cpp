@@ -1,6 +1,7 @@
 #include "XDBCDictionarySource.h"
 
 #include <Columns/ColumnString.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
@@ -118,14 +119,14 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 }
 
 
-QueryPipeline XDBCDictionarySource::loadAll()
+Pipe XDBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadFromQuery(bridge_url, sample_block, load_all_query);
 }
 
 
-QueryPipeline XDBCDictionarySource::loadUpdatedAll()
+Pipe XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
@@ -134,14 +135,14 @@ QueryPipeline XDBCDictionarySource::loadUpdatedAll()
 }
 
 
-QueryPipeline XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadFromQuery(bridge_url, sample_block, query);
 }
 
 
-QueryPipeline XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     return loadFromQuery(bridge_url, sample_block, query);
@@ -203,7 +204,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 }
 
 
-QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const
+Pipe XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const
 {
     bridge_helper->startBridgeSync();
 
@@ -219,7 +220,7 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const B
     auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, required_sample_block, max_block_size);
     format->addBuffer(std::move(read_buf));
 
-    return QueryPipeline(std::move(format));
+    return Pipe(std::move(format));
 }
 
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)

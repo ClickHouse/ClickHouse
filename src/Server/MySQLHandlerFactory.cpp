@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_CLOSE_FILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int OPENSSL_ERROR;
 }
@@ -67,10 +66,7 @@ void MySQLHandlerFactory::readRSAKeys()
         FILE * fp = fopen(certificate_file.data(), "r");
         if (fp == nullptr)
             throw Exception("Cannot open certificate file: " + certificate_file + ".", ErrorCodes::CANNOT_OPEN_FILE);
-        SCOPE_EXIT(
-            if (0 != fclose(fp))
-                throwFromErrno("Cannot close file with the certificate in MySQLHandlerFactory", ErrorCodes::CANNOT_CLOSE_FILE);
-        );
+        SCOPE_EXIT(fclose(fp));
 
         X509 * x509 = PEM_read_X509(fp, nullptr, nullptr, nullptr);
         SCOPE_EXIT(X509_free(x509));
@@ -93,10 +89,7 @@ void MySQLHandlerFactory::readRSAKeys()
         FILE * fp = fopen(private_key_file.data(), "r");
         if (fp == nullptr)
             throw Exception ("Cannot open private key file " + private_key_file + ".", ErrorCodes::CANNOT_OPEN_FILE);
-        SCOPE_EXIT(
-            if (0 != fclose(fp))
-                throwFromErrno("Cannot close file with the certificate in MySQLHandlerFactory", ErrorCodes::CANNOT_CLOSE_FILE);
-        );
+        SCOPE_EXIT(fclose(fp));
 
         private_key.reset(PEM_read_RSAPrivateKey(fp, nullptr, nullptr, nullptr));
         if (!private_key)

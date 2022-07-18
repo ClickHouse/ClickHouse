@@ -11,7 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <IO/S3Common.h>
@@ -29,38 +29,30 @@ namespace DB
 
 class PullingPipelineExecutor;
 class StorageS3SequentialSource;
-class StorageS3Source : public ISource, WithContext
+class StorageS3Source : public SourceWithProgress, WithContext
 {
 public:
     class DisclosedGlobIterator
     {
-    public:
-        DisclosedGlobIterator(
-            const Aws::S3::S3Client & client_,
-            const S3::URI & globbed_uri_,
-            ASTPtr query,
-            const Block & virtual_header,
-            ContextPtr context);
-
-        String next();
-
-    private:
-        class Impl;
-        /// shared_ptr to have copy constructor
-        std::shared_ptr<Impl> pimpl;
+        public:
+            DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
+            String next();
+        private:
+            class Impl;
+            /// shared_ptr to have copy constructor
+            std::shared_ptr<Impl> pimpl;
     };
 
     class KeysIterator
     {
-    public:
-        explicit KeysIterator(
-            const std::vector<String> & keys_, const String & bucket_, ASTPtr query, const Block & virtual_header, ContextPtr context);
-        String next();
+        public:
+            explicit KeysIterator(const std::vector<String> & keys_);
+            String next();
 
-    private:
-        class Impl;
-        /// shared_ptr to have copy constructor
-        std::shared_ptr<Impl> pimpl;
+        private:
+            class Impl;
+            /// shared_ptr to have copy constructor
+            std::shared_ptr<Impl> pimpl;
     };
 
     class ReadTasksIterator
@@ -90,7 +82,7 @@ public:
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
         String compression_hint_,
-        const std::shared_ptr<const Aws::S3::S3Client> & client_,
+        const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IteratorWrapper> file_iterator_,
@@ -112,7 +104,7 @@ private:
     UInt64 max_block_size;
     UInt64 max_single_read_retries;
     String compression_hint;
-    std::shared_ptr<const Aws::S3::S3Client> client;
+    std::shared_ptr<Aws::S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
@@ -199,7 +191,7 @@ public:
         const S3::URI uri;
         const String access_key_id;
         const String secret_access_key;
-        std::shared_ptr<const Aws::S3::S3Client> client;
+        std::shared_ptr<Aws::S3::S3Client> client;
         S3Settings::AuthSettings auth_settings;
         S3Settings::ReadWriteSettings rw_settings;
     };
@@ -211,7 +203,6 @@ private:
     S3Configuration s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
 
     String format_name;
     String compression_method;
@@ -231,8 +222,6 @@ private:
         bool is_key_with_globs,
         bool distributed_processing,
         ContextPtr local_context,
-        ASTPtr query,
-        const Block & virtual_block,
         const std::vector<String> & read_tasks = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
@@ -245,7 +234,7 @@ private:
         ContextPtr ctx,
         std::vector<String> * read_keys_in_distributed_processing = nullptr);
 
-    bool supportsSubsetOfColumns() const override;
+    bool isColumnOriented() const override;
 };
 
 }

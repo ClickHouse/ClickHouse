@@ -3,7 +3,7 @@ sidebar_position: 50
 sidebar_label:  SummingMergeTree
 ---
 
-# SummingMergeTree
+# SummingMergeTree {#summingmergetree}
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
@@ -26,16 +26,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of request parameters, see [request description](../../../sql-reference/statements/create/table.md).
 
-### Parameters of SummingMergeTree
+**Parameters of SummingMergeTree**
 
-#### columns
-
-`columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
+-   `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
     The columns must be of a numeric type and must not be in the primary key.
 
     If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
 
-### Query clauses
+**Query clauses**
 
 When creating a `SummingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 

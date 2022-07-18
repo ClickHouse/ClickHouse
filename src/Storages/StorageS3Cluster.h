@@ -49,8 +49,6 @@ private:
     String cluster_name;
     String format_name;
     String compression_method;
-    NamesAndTypesList virtual_columns;
-    Block virtual_block;
 };
 
 

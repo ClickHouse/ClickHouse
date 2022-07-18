@@ -1,0 +1,210 @@
+3
+SELECT count(*) FROM hits;
+Execution time: 23471 ms, Total time: 23471 ms
+Execution time: 42 ms, Total time: 43 ms
+Execution time: 35 ms, Total time: 35 ms
+3
+SELECT count(*) FROM hits WHERE AdvEngineID != 0;
+Execution time: 17328 ms, Total time: 17329 ms
+Execution time: 58 ms, Total time: 59 ms
+Execution time: 57 ms, Total time: 59 ms
+3
+SELECT sum(AdvEngineID), count(*), avg(ResolutionWidth) FROM hits;
+Execution time: 17309 ms, Total time: 17310 ms
+Execution time: 115 ms, Total time: 115 ms
+Execution time: 129 ms, Total time: 130 ms
+3
+SELECT sum(UserID) FROM hits;
+Execution time: 26091 ms, Total time: 26091 ms
+Execution time: 88 ms, Total time: 89 ms
+Execution time: 71 ms, Total time: 72 ms
+3
+SELECT APPROX_COUNT_DISTINCT(UserID) FROM hits;
+Execution time: 21720 ms, Total time: 21720 ms
+Execution time: 364 ms, Total time: 364 ms
+Execution time: 344 ms, Total time: 345 ms
+3
+SELECT APPROX_COUNT_DISTINCT(SearchPhrase) FROM hits;
+Execution time: 19314 ms, Total time: 19315 ms
+Execution time: 385 ms, Total time: 386 ms
+Execution time: 382 ms, Total time: 382 ms
+3
+SELECT min(EventDate), max(EventDate) FROM hits;
+Execution time: 19431 ms, Total time: 19432 ms
+Execution time: 130 ms, Total time: 131 ms
+Execution time: 147 ms, Total time: 148 ms
+3
+SELECT AdvEngineID, count(*) FROM hits WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count(*) DESC;
+Execution time: 20660 ms, Total time: 20661 ms
+Execution time: 63 ms, Total time: 64 ms
+Execution time: 88 ms, Total time: 89 ms
+3
+SELECT RegionID, APPROX_COUNT_DISTINCT(UserID) AS u FROM hits GROUP BY RegionID ORDER BY u DESC LIMIT 10;
+Execution time: 21364 ms, Total time: 21472 ms
+Execution time: 1387 ms, Total time: 1504 ms
+Execution time: 1443 ms, Total time: 1505 ms
+3
+SELECT RegionID, sum(AdvEngineID), count(*) AS c, avg(ResolutionWidth), APPROX_COUNT_DISTINCT(UserID) FROM hits GROUP BY RegionID ORDER BY c DESC LIMIT 10;
+Execution time: 22205 ms, Total time: 22285 ms
+Execution time: 1590 ms, Total time: 1655 ms
+Execution time: 1591 ms, Total time: 1658 ms
+3
+SELECT MobilePhoneModel, APPROX_COUNT_DISTINCT(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
+Execution time: 22343 ms, Total time: 22344 ms
+Execution time: 122 ms, Total time: 123 ms
+Execution time: 117 ms, Total time: 118 ms
+3
+SELECT MobilePhone, MobilePhoneModel, APPROX_COUNT_DISTINCT(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
+Execution time: 21681 ms, Total time: 21695 ms
+Execution time: 299 ms, Total time: 310 ms
+Execution time: 275 ms, Total time: 292 ms
+3
+SELECT SearchPhrase, count(*) AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+Execution time: 23346 ms, Total time: 23360 ms
+Execution time: 613 ms, Total time: 631 ms
+Execution time: 606 ms, Total time: 624 ms
+3
+SELECT SearchPhrase, APPROX_COUNT_DISTINCT(UserID) AS u FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+Execution time: 66014 ms, Total time: 68618 ms
+Execution time: 44309 ms, Total time: 47296 ms
+Execution time: 44019 ms, Total time: 46866 ms
+3
+SELECT SearchEngineID, SearchPhrase, count(*) AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10;
+Execution time: 25853 ms, Total time: 25984 ms
+Execution time: 2590 ms, Total time: 2728 ms
+Execution time: 2652 ms, Total time: 2789 ms
+3
+SELECT UserID, count(*) FROM hits GROUP BY UserID ORDER BY count(*) DESC LIMIT 10;
+Execution time: 26581 ms, Total time: 26953 ms
+Execution time: 5843 ms, Total time: 6158 ms
+Execution time: 5970 ms, Total time: 6286 ms
+3
+SELECT UserID, SearchPhrase, count(*) FROM hits GROUP BY UserID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+Execution time: 33007 ms, Total time: 33581 ms
+Execution time: 9943 ms, Total time: 10509 ms
+Execution time: 9470 ms, Total time: 10047 ms
+3
+SELECT UserID, SearchPhrase, count(*) FROM hits GROUP BY UserID, SearchPhrase LIMIT 10;
+Execution time: 39009 ms, Total time: 39575 ms
+Execution time: 8151 ms, Total time: 8785 ms
+Execution time: 8037 ms, Total time: 8665 ms
+3
+SELECT UserID, extract(minute FROM EventTime) AS m, SearchPhrase, count(*) FROM hits GROUP BY UserID, m, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+Execution time: 56207 ms, Total time: 57764 ms
+Execution time: 26653 ms, Total time: 28199 ms
+Execution time: 25614 ms, Total time: 27336 ms
+3
+SELECT UserID FROM hits WHERE UserID = -6101065172474983726;
+Execution time: 18975 ms, Total time: 18976 ms
+Execution time: 136 ms, Total time: 136 ms
+Execution time: 136 ms, Total time: 136 ms
+3
+SELECT count(*) FROM hits WHERE URL LIKE '%metrika%';
+Execution time: 32444 ms, Total time: 32445 ms
+Execution time: 125 ms, Total time: 126 ms
+Execution time: 134 ms, Total time: 136 ms
+3
+SELECT SearchPhrase, min(URL), count(*) AS c FROM hits WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+Exception: Aggregate on TEXT is not supported yet.
+Exception: Aggregate on TEXT is not supported yet.
+Exception: Aggregate on TEXT is not supported yet.
+3
+SELECT SearchPhrase, min(URL), min(Title), count(*) AS c, APPROX_COUNT_DISTINCT(UserID) FROM hits WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+Exception: Aggregate on TEXT is not supported yet.
+Exception: Aggregate on TEXT is not supported yet.
+Exception: Aggregate on TEXT is not supported yet.
+3
+SELECT * FROM hits WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
+Execution time: 96163 ms, Total time: 96166 ms
+Execution time: 312 ms, Total time: 314 ms
+Execution time: 303 ms, Total time: 305 ms
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
+Execution time: 27493 ms, Total time: 27494 ms
+Execution time: 216 ms, Total time: 216 ms
+Execution time: 221 ms, Total time: 222 ms
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
+Execution time: 38230 ms, Total time: 38308 ms
+Execution time: 17175 ms, Total time: 17256 ms
+Execution time: 17225 ms, Total time: 17310 ms
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
+Execution time: 115614 ms, Total time: 115714 ms
+Execution time: 95944 ms, Total time: 96041 ms
+Execution time: 94274 ms, Total time: 94383 ms
+3
+SELECT CounterID, avg(length(URL)) AS l, count(*) AS c FROM hits WHERE URL != '' GROUP BY CounterID HAVING c > 100000 ORDER BY l DESC LIMIT 25;
+Execution time: 31775 ms, Total time: 31779 ms
+Execution time: 2643 ms, Total time: 2647 ms
+Execution time: 2933 ms, Total time: 2937 ms
+3
+SELECT domainWithoutWWW(Referer) AS key, avg(length(Referer)) AS l, count(*) AS c, min(Referer) FROM hits WHERE Referer != '' GROUP BY key HAVING c > 100000 ORDER BY l DESC LIMIT 25;
+Exception: Exception occurred: org.apache.calcite.runtime.CalciteContextException: From line 1, column 8 to line 1, column 36: No match found for function signature domainWithoutWWW(<CHARACTER>)
+Exception: Exception occurred: org.apache.calcite.runtime.CalciteContextException: From line 1, column 8 to line 1, column 36: No match found for function signature domainWithoutWWW(<CHARACTER>)
+Exception: Exception occurred: org.apache.calcite.runtime.CalciteContextException: From line 1, column 8 to line 1, column 36: No match found for function signature domainWithoutWWW(<CHARACTER>)
+3
+SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits;
+Execution time: 28853 ms, Total time: 28854 ms
+Execution time: 5654 ms, Total time: 5655 ms
+Execution time: 5579 ms, Total time: 5581 ms
+3
+SELECT SearchEngineID, ClientIP, count(*) AS c, sum("Refresh"), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10;
+Execution time: 31694 ms, Total time: 31925 ms
+Execution time: 3872 ms, Total time: 4142 ms
+Execution time: 3928 ms, Total time: 4162 ms
+3
+SELECT WatchID, ClientIP, count(*) AS c, sum("Refresh"), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
+Execution time: 43690 ms, Total time: 44297 ms
+Execution time: 8221 ms, Total time: 8825 ms
+Execution time: 8115 ms, Total time: 8711 ms
+3
+SELECT URL, count(*) AS c FROM hits GROUP BY URL ORDER BY c DESC LIMIT 10;
+Execution time: 29669 ms, Total time: 29715 ms
+Execution time: 1623 ms, Total time: 1669 ms
+Execution time: 1534 ms, Total time: 1586 ms
+3
+SELECT 1, URL, count(*) AS c FROM hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10;
+Execution time: 34860 ms, Total time: 35201 ms
+Execution time: 7075 ms, Total time: 7414 ms
+Execution time: 7164 ms, Total time: 7567 ms
+3
+SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) AS c FROM hits GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY c DESC LIMIT 10;
+Execution time: 26467 ms, Total time: 26724 ms
+Execution time: 5740 ms, Total time: 6026 ms
+Execution time: 5667 ms, Total time: 5920 ms
+3
+SELECT URL, count(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND DontCountHits = 0 AND "Refresh" = 0 AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+Execution time: 31899 ms, Total time: 31908 ms
+Execution time: 1141 ms, Total time: 1154 ms
+Execution time: 1155 ms, Total time: 1168 ms
+3
+SELECT Title, count(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND DontCountHits = 0 AND "Refresh" = 0 AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+Execution time: 27991 ms, Total time: 27997 ms
+Execution time: 719 ms, Total time: 724 ms
+Execution time: 737 ms, Total time: 744 ms
+3
+SELECT URL, count(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND "Refresh" = 0 AND IsLink != 0 AND IsDownload = 0 GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+Execution time: 34651 ms, Total time: 34661 ms
+Execution time: 1182 ms, Total time: 1200 ms
+Execution time: 1142 ms, Total time: 1159 ms
+3
+SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN (SearchEngineID = 0 AND AdvEngineID = 0) THEN Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND "Refresh" = 0 GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000;
+Execution time: 30130 ms, Total time: 30136 ms
+Execution time: 461 ms, Total time: 467 ms
+Execution time: 445 ms, Total time: 451 ms
+3
+SELECT URLHash, EventDate, count(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND "Refresh" = 0 AND TraficSourceID IN (-1, 6) AND RefererHash = 686716256552154761 GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100;
+Execution time: 19989 ms, Total time: 19991 ms
+Execution time: 326 ms, Total time: 327 ms
+Execution time: 325 ms, Total time: 326 ms
+3
+SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND "Refresh" = 0 AND DontCountHits = 0 AND URLHash = 686716256552154761 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000;
+Execution time: 18658 ms, Total time: 18660 ms
+Execution time: 265 ms, Total time: 266 ms
+Execution time: 254 ms, Total time: 255 ms
+3
+SELECT DATE_TRUNC(minute, EventTime) AS "Minute", count(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-02' AND "Refresh" = 0 AND DontCountHits = 0 GROUP BY DATE_TRUNC(minute, EventTime) ORDER BY DATE_TRUNC(minute, EventTime);
+Execution time: 25225 ms, Total time: 25227 ms
+Execution time: 210 ms, Total time: 212 ms
+Execution time: 199 ms, Total time: 200 ms

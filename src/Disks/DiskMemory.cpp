@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-class DiskMemoryDirectoryIterator final : public IDirectoryIterator
+class DiskMemoryDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
     explicit DiskMemoryDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
@@ -262,7 +262,7 @@ void DiskMemory::moveDirectory(const String & /*from_path*/, const String & /*to
     throw Exception("Method moveDirectory is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-DirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path) const
+DiskDirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
 {
     std::lock_guard lock(mutex);
 
@@ -409,7 +409,7 @@ void DiskMemory::removeRecursive(const String & path)
     }
 }
 
-void DiskMemory::listFiles(const String & path, std::vector<String> & file_names) const
+void DiskMemory::listFiles(const String & path, std::vector<String> & file_names)
 {
     std::lock_guard lock(mutex);
 

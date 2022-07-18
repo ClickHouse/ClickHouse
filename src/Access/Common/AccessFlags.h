@@ -21,7 +21,7 @@ public:
     AccessFlags() = default;
 
     /// Constructs from a string like "SELECT".
-    AccessFlags(std::string_view keyword); /// NOLINT
+    AccessFlags(const std::string_view & keyword); /// NOLINT
 
     /// Constructs from a list of strings like "SELECT, UPDATE, INSERT".
     AccessFlags(const std::vector<std::string_view> & keywords); /// NOLINT

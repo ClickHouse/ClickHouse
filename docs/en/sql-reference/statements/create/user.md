@@ -3,7 +3,7 @@ sidebar_position: 39
 sidebar_label: USER
 ---
 
-# CREATE USER
+# CREATE USER {#create-user-statement}
 
 Creates [user accounts](../../../operations/access-rights.md#user-account-management).
 
@@ -22,7 +22,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-## Identification
+## Identification {#identification}
 
 There are multiple ways of user identification:
 
@@ -37,7 +37,7 @@ There are multiple ways of user identification:
 
 For identification with sha256_hash using `SALT` - hash must be calculated from concatination of 'password' and 'salt'.
 
-## User Host
+## User Host {#user-host}
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:
 
@@ -58,7 +58,7 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 :::
 
-## GRANTEES Clause
+## GRANTEES Clause {#grantees}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#grant-privigele-syntax). Options of the `GRANTEES` clause:
 
@@ -69,7 +69,7 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 
-## Examples
+## Examples {#create-user-examples}
 
 Create the user account `mira` protected by the password `qwerty`:
 

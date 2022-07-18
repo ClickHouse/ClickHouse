@@ -2,7 +2,7 @@
 sidebar_position: 154
 ---
 
-# kurtSamp
+# kurtSamp {#kurtsamp}
 
 Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 

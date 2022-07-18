@@ -448,7 +448,7 @@ public:
 class SplitByRegexpImpl
 {
 private:
-    Regexps::RegexpPtr re;
+    Regexps::Pool::Pointer re;
     OptimizedRegularExpression::MatchVec matches;
 
     Pos pos;
@@ -477,7 +477,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN);
 
         if (!col->getValue<String>().empty())
-            re = std::make_shared<Regexps::Regexp>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            re = Regexps::get<false, false, false>(col->getValue<String>());
 
     }
 
@@ -532,7 +532,7 @@ public:
 class ExtractAllImpl
 {
 private:
-    Regexps::RegexpPtr re;
+    Regexps::Pool::Pointer re;
     OptimizedRegularExpression::MatchVec matches;
     size_t capture;
 
@@ -560,7 +560,7 @@ public:
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        re = std::make_shared<Regexps::Regexp>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+        re = Regexps::get<false, false, false>(col->getValue<String>());
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);

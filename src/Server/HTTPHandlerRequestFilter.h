@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
-static inline bool checkRegexExpression(StringRef match_str, const CompiledRegexPtr & compiled_regex)
+static inline bool checkRegexExpression(const StringRef & match_str, const CompiledRegexPtr & compiled_regex)
 {
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
@@ -32,7 +32,7 @@ static inline bool checkRegexExpression(StringRef match_str, const CompiledRegex
     return compiled_regex->Match(match_input, 0, match_str.size, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
 }
 
-static inline bool checkExpression(StringRef match_str, const std::pair<String, CompiledRegexPtr> & expression)
+static inline bool checkExpression(const StringRef & match_str, const std::pair<String, CompiledRegexPtr> & expression)
 {
     if (expression.second)
         return checkRegexExpression(match_str, expression.second);

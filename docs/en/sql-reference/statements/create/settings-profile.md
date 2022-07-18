@@ -3,7 +3,7 @@ sidebar_position: 43
 sidebar_label: SETTINGS PROFILE
 ---
 
-# CREATE SETTINGS PROFILE
+# CREATE SETTINGS PROFILE {#create-settings-profile-statement}
 
 Creates [settings profiles](../../../operations/access-rights.md#settings-profiles-management) that can be assigned to a user or a role.
 
@@ -17,7 +17,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluste
 
 `ON CLUSTER` clause allows creating settings profiles on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-## Example
+## Example {#create-settings-profile-syntax}
 
 Create the `max_memory_usage_profile` settings profile with value and constraints for the `max_memory_usage` setting and assign it to user `robin`:
 

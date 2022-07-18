@@ -3,7 +3,7 @@ toc_folder_title: Third-Party
 sidebar_position: 24
 ---
 
-# Third-Party Interfaces
+# Third-Party Interfaces {#third-party-interfaces}
 
 This is a collection of links to third-party tools that provide some sort of interface to ClickHouse. It can be either visual interface, command-line interface or an API:
 

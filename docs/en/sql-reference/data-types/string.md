@@ -3,7 +3,7 @@ sidebar_position: 44
 sidebar_label: String
 ---
 
-# String
+# String {#string}
 
 Strings of an arbitrary length. The length is not limited. The value can contain an arbitrary set of bytes, including null bytes.
 The String type replaces the types VARCHAR, BLOB, CLOB, and others from other DBMSs.
@@ -14,7 +14,7 @@ Aliases:
 
 -   `String` — `LONGTEXT`, `MEDIUMTEXT`, `TINYTEXT`, `TEXT`, `LONGBLOB`, `MEDIUMBLOB`, `TINYBLOB`, `BLOB`, `VARCHAR`, `CHAR`.
 
-## Encodings
+## Encodings {#encodings}
 
 ClickHouse does not have the concept of encodings. Strings can contain an arbitrary set of bytes, which are stored and output as-is.
 If you need to store texts, we recommend using UTF-8 encoding. At the very least, if your terminal uses UTF-8 (as recommended), you can read and write your values without making conversions.

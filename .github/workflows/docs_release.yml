@@ -7,17 +7,16 @@ env:
 concurrency:
   group: master-release
   cancel-in-progress: true
-'on':
+on: # yamllint disable-line rule:truthy
   push:
     branches:
       - master
     paths:
-      - '.github/**'
-      - 'benchmark/**'
-      - 'docker/docs/release/**'
       - 'docs/**'
-      - 'utils/list-versions/version_date.tsv'
       - 'website/**'
+      - 'benchmark/**'
+      - 'docker/**'
+      - '.github/**'
   workflow_dispatch:
 jobs:
   DockerHubPushAarch64:

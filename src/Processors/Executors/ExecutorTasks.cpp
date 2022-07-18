@@ -128,7 +128,7 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
     }
 }
 
-void ExecutorTasks::init(size_t num_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
+void ExecutorTasks::init(size_t num_threads_, bool profile_processors)
 {
     num_threads = num_threads_;
     threads_queue.init(num_threads);
@@ -139,7 +139,7 @@ void ExecutorTasks::init(size_t num_threads_, bool profile_processors, bool trac
 
         executor_contexts.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors, trace_processors, callback));
+            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors));
     }
 }
 

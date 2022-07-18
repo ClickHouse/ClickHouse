@@ -4,7 +4,7 @@
 
 #if USE_HDFS
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
@@ -57,7 +57,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool supportsSubsetOfColumns() const override;
+    bool isColumnOriented() const override;
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -82,7 +82,7 @@ private:
 
 class PullingPipelineExecutor;
 
-class HDFSSource : public ISource, WithContext
+class HDFSSource : public SourceWithProgress, WithContext
 {
 public:
     class DisclosedGlobIterator
@@ -132,6 +132,8 @@ private:
     Block block_for_format;
     std::vector<NameAndTypePair> requested_virtual_columns;
     UInt64 max_block_size;
+    bool need_path_column;
+    bool need_file_column;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
 

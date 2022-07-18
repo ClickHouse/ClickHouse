@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr & context)
+void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, ContextPtr context)
 {
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
@@ -29,27 +29,36 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         return;
     }
 
-    const auto * literal = arg->as<ASTLiteral>();
-    auto type = literal->value.getType();
-    if (type == Field::Types::String)
+    if (auto opt_name = tryGetIdentifierName(arg))
     {
-        filename = literal->value.safeGet<String>();
-        if (filename == "stdin" || filename == "-")
+        if (*opt_name == "stdin")
             fd = STDIN_FILENO;
-        else if (filename == "stdout")
+        else if (*opt_name == "stdout")
             fd = STDOUT_FILENO;
-        else if (filename == "stderr")
+        else if (*opt_name == "stderr")
             fd = STDERR_FILENO;
+        else
+            filename = *opt_name;
     }
-    else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
+    else if (const auto * literal = arg->as<ASTLiteral>())
     {
-        fd = (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>();
-        if (fd < 0)
-            throw Exception("File descriptor must be non-negative", ErrorCodes::BAD_ARGUMENTS);
+        auto type = literal->value.getType();
+        if (type == Field::Types::Int64 || type == Field::Types::UInt64)
+        {
+            fd = (type == Field::Types::Int64) ? static_cast<int>(literal->value.get<Int64>()) : static_cast<int>(literal->value.get<UInt64>());
+            if (fd < 0)
+                throw Exception("File descriptor must be non-negative", ErrorCodes::BAD_ARGUMENTS);
+        }
+        else if (type == Field::Types::String)
+        {
+            filename = literal->value.get<String>();
+            if (filename == "-")
+                fd = STDIN_FILENO;
+        }
+        else
+            throw Exception(
+                "The first argument of table function '" + getName() + "' mush be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
     }
-    else
-        throw Exception(
-            "The first argument of table function '" + getName() + "' mush be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
 }
 
 String TableFunctionFile::getFormatFromFirstArgument()

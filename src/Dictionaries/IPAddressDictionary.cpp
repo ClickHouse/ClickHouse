@@ -261,7 +261,7 @@ ColumnPtr IPAddressDictionary::getColumn(
             getItemsImpl<ValueType>(
                 attribute,
                 key_columns,
-                [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                 default_value_extractor);
         }
         else

@@ -124,7 +124,7 @@ def init_jinja2_env(args):
 
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(
-            [args.website_dir, os.path.join(args.src_dir, "docs", "_includes")]
+            [args.website_dir, os.path.join(args.docs_dir, "_includes")]
         ),
         extensions=["jinja2.ext.i18n", "jinja2_highlight.HighlightExtension"],
     )

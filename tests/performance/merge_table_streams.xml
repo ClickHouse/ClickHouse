@@ -1,7 +1,6 @@
 <test>
 <settings>
     <max_threads>5</max_threads>
-    <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
 </settings>
 
 <!-- Create four empty tables. We will test select from Merge table involving one real table and four empty tables. 

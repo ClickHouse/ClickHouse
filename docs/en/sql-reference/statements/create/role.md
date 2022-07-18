@@ -3,7 +3,7 @@ sidebar_position: 40
 sidebar_label: ROLE
 ---
 
-# CREATE ROLE
+# CREATE ROLE {#create-role-statement}
 
 Creates new [roles](../../../operations/access-rights.md#role-management). Role is a set of [privileges](../../../sql-reference/statements/grant.md#grant-privileges). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
 
@@ -14,7 +14,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-## Managing Roles
+## Managing Roles {#managing-roles}
 
 A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](../../../sql-reference/statements/set-role.md) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it’s user account, they are also combined with the privileges granted by roles.
 
@@ -24,7 +24,7 @@ To revoke a role, use the [REVOKE](../../../sql-reference/statements/revoke.md) 
 
 To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
-## Examples
+## Examples {#create-role-examples}
 
 ``` sql
 CREATE ROLE accountant;

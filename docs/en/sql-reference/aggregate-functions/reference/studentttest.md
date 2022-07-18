@@ -3,7 +3,7 @@ sidebar_position: 300
 sidebar_label: studentTTest
 ---
 
-# studentTTest
+# studentTTest {#studentttest}
 
 Applies Student's t-test to samples from two populations.
 
