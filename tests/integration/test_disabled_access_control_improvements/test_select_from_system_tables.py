@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="select_from_system_tables")
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/disable_access_control_improvements.xml"],
