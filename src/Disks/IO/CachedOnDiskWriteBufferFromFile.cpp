@@ -120,7 +120,7 @@ void CachedOnDiskWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment
             .source_file_path = source_path,
             .file_segment_range = { file_segment_range.left, file_segment_range.right },
             .requested_range = {},
-            .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
+            .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
             .file_segment_size = file_segment_range.size(),
             .cache_attempted = false,
             .read_buffer_id = {},
@@ -133,8 +133,22 @@ void CachedOnDiskWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment
     }
 }
 
-void CachedOnDiskWriteBufferFromFile::preFinalize()
+void CachedOnDiskWriteBufferFromFile::finalizeImpl()
 {
+    try
+    {
+        next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        if (cache_writer)
+            cache_writer->finalize();
+
+        throw;
+    }
+
     if (cache_writer)
         cache_writer->finalize();
 }

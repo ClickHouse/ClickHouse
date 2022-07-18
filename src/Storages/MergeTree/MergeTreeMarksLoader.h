@@ -1,6 +1,7 @@
 #pragma once
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MarkCache.h>
+#include <IO/ReadSettings.h>
 
 namespace DB
 {
@@ -19,6 +20,7 @@ public:
         size_t marks_count_,
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         bool save_marks_in_cache_,
+        const ReadSettings & read_settings_,
         size_t columns_in_mark_ = 1);
 
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
@@ -34,6 +36,7 @@ private:
     bool save_marks_in_cache = false;
     size_t columns_in_mark;
     MarkCache::MappedPtr marks;
+    ReadSettings read_settings;
 
     void loadMarks();
     MarkCache::MappedPtr loadMarksImpl();

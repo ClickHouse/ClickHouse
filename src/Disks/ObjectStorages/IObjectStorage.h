@@ -168,6 +168,8 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
+    virtual bool supportParallelWrite() const { return false; }
+
 protected:
     /// Should be called from implementation of applyNewSettings()
     void applyRemoteThrottlingSettings(ContextPtr context);

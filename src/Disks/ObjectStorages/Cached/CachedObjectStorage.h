@@ -99,6 +99,8 @@ public:
 
     ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
 
+    bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
+
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;
 

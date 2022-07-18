@@ -133,6 +133,8 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
+    bool supportParallelWrite() const override { return true; }
+
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 

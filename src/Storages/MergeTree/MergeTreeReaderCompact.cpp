@@ -41,6 +41,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           data_part->getMarksCount(),
           data_part->index_granularity_info,
           settings.save_marks_in_cache,
+          settings.read_settings,
           data_part->getColumns().size())
 {
     try
