@@ -227,18 +227,16 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     size_t subquery_depth_,
     bool do_global,
     bool is_explain,
-    SubqueriesForSets subqueries_for_sets_,
-    PreparedSets prepared_sets_)
+    PreparedSetsPtr prepared_sets_)
     : WithContext(context_)
     , query(query_), settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
 {
     /// Cache prepared sets because we might run analysis multiple times
-    subqueries_for_sets = std::move(subqueries_for_sets_);
-    prepared_sets = std::move(prepared_sets_);
+    prepared_sets = prepared_sets_;
 
-    /// external_tables, subqueries_for_sets for global subqueries.
+    /// external_tables, sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
     initGlobalSubqueriesAndExternalTables(do_global, is_explain);
 
@@ -502,7 +500,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(
-            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, subqueries_for_sets, has_global_subqueries);
+            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, prepared_sets, has_global_subqueries);
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
@@ -510,14 +508,17 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
 
 void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options)
 {
+    if (!prepared_sets)
+        return;
+
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets.contains(set_key))
+    if (prepared_sets->getSet(set_key))
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
     {
-        prepared_sets.insert({set_key, set_ptr_from_storage_set});
+        prepared_sets->setSet(set_key, set_ptr_from_storage_set);
         return;
     }
 
@@ -541,7 +542,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     set->finishInsert();
 
-    prepared_sets[set_key] = std::move(set);
+    prepared_sets->setSet(set_key, std::move(set));
 }
 
 SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
@@ -597,8 +598,8 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 auto temp_actions = std::make_shared<ActionsDAG>(columns_after_join);
                 getRootActions(left_in_operand, true, temp_actions);
 
-                if (temp_actions->tryFindInIndex(left_in_operand->getColumnName()))
-                    makeExplicitSet(func, *temp_actions, true, getContext(), settings.size_limits_for_set, prepared_sets);
+                if (prepared_sets && temp_actions->tryFindInIndex(left_in_operand->getColumnName()))
+                    makeExplicitSet(func, *temp_actions, true, getContext(), settings.size_limits_for_set, *prepared_sets);
             }
         }
     }
@@ -615,7 +616,6 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         sourceColumns(),
         std::move(actions),
         prepared_sets,
-        subqueries_for_sets,
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
@@ -635,7 +635,6 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         sourceColumns(),
         std::move(actions),
         prepared_sets,
-        subqueries_for_sets,
         true /* no_makeset_for_subqueries, no_makeset implies no_makeset_for_subqueries */,
         true /* no_makeset */,
         only_consts,
@@ -657,7 +656,6 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         sourceColumns(),
         std::move(actions),
         prepared_sets,
-        subqueries_for_sets,
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
@@ -678,7 +676,6 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
         sourceColumns(),
         std::move(actions),
         prepared_sets,
-        subqueries_for_sets,
         no_makeset_for_subqueries,
         false /* no_makeset */,
         false /*only_consts */,

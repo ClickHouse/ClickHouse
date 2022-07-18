@@ -28,6 +28,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/PreparedSets.h>
 
 
 namespace DB
@@ -911,13 +912,13 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             }
         }
 
-        SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
-        if (!subqueries_for_sets.empty())
+        PreparedSetsPtr prepared_sets = stage.analyzer->getPreparedSets();
+        if (prepared_sets && !prepared_sets->empty())
         {
             const Settings & settings = context->getSettingsRef();
             SizeLimits network_transfer_limits(
                     settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-            addCreatingSetsStep(plan, std::move(subqueries_for_sets), network_transfer_limits, context);
+            addCreatingSetsStep(plan, *prepared_sets, network_transfer_limits, context);
         }
     }
 

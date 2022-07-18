@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
@@ -43,9 +42,6 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 
 struct MergeTreeDataSelectAnalysisResult;
 using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
-
-struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct PrewhereInfo
 {
@@ -166,7 +162,7 @@ struct SelectQueryInfoBase
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
-    PreparedSets sets;
+    PreparedSetsPtr sets;
 
     /// Cached value of ExpressionAnalysisResult::has_window
     bool has_window = false;
@@ -189,8 +185,8 @@ struct SelectQueryInfo : SelectQueryInfoBase
     SelectQueryInfo() = default;
     SelectQueryInfo(const SelectQueryInfo & other) : SelectQueryInfoBase(other) {}
 
-    /// Make subquery_for_sets reusable across different interpreters.
-    SubqueriesForSets subquery_for_sets;
+    /// Make sets reusable across different interpreters.
+    PreparedSetsPtr prepared_sets;
 };
 
 }
