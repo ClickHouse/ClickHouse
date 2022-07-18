@@ -16,8 +16,6 @@
 #include <capnp/schema-parser.h>
 #include <fcntl.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -531,7 +529,7 @@ static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type)
 NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema)
 {
     if (checkIfStructContainsUnnamedUnion(schema))
-        throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Unnamed union is not supported 2");
+        throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Unnamed union is not supported");
 
     NamesAndTypesList names_and_types;
     for (auto field : schema.getNonUnionFields())
