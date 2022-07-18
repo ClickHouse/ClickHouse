@@ -12,6 +12,8 @@ extern "C" {
 #include <unistd.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/mman.h>
+#include <stdio.h>
 
 long int syscall(long int __sysno, ...) __THROW;
 
@@ -100,7 +102,7 @@ int __dprintf_chk (int d, int unused, const char *format, ...)
   return ret;
 }
 
-size_t fread(void *ptr, size_t size, size_t nmemb, void *stream);
+//size_t fread(void *ptr, size_t size, size_t nmemb, void *stream);
 
 size_t __fread_chk(void *ptr, size_t unused, size_t size, size_t nmemb, void *stream)
 {
@@ -133,6 +135,72 @@ int __open_2(const char *path, int oflag)
     return open(path, oflag);
 }
 
+#include <stdatomic.h>
+
+atomic_int_fast64_t mmap_allocated_bytes_total = 0;
+
+static size_t alignToPageSize(size_t size)
+{
+    /// We don't need to be precise here.
+    static size_t page_size_mask = 4096 - 1;
+    return (size + page_size_mask) & (~page_size_mask);
+}
+
+void * __mmap(void * addr, size_t length, int prot, int flags, int fd, off_t offset);
+
+void * mmap(void * addr, size_t length, int prot, int flags, int fd, off_t offset)
+{
+    void * res =  __mmap(addr, length, prot, flags, fd, offset);
+    //char is_executable_file = (flags & MAP_ANONYMOUS) == 0 && (flags & PROT_EXEC) != 0;
+    if (res != (void *) -1)
+    {
+        // size_t prev = atomic_load(&mmap_allocated_bytes_total) & 4095;
+        // fprintf( stderr, "++++++ %zu\n", prev);
+        atomic_fetch_add_explicit(&mmap_allocated_bytes_total, alignToPageSize(length), memory_order_relaxed);
+    }
+    return res;
+}
+
+int __munmap(void * addr, size_t length);
+
+int munmap(void * addr, size_t length)
+{
+    int res = __munmap(addr, length);
+    if (res == 0)
+    {
+
+        // size_t prev = atomic_load(&mmap_allocated_bytes_total) & 4095;
+        atomic_fetch_sub_explicit(&mmap_allocated_bytes_total, alignToPageSize(length), memory_order_relaxed);
+        // fprintf( stderr, "------ %zu\n", prev);
+    }
+    return res;
+}
+
+void * mremap(void *old_addr, size_t old_len, size_t new_len, int flags, ...)
+{
+	va_list ap;
+	void *new_addr;
+
+	va_start(ap, flags);
+	new_addr = va_arg(ap, void *);
+	va_end(ap);
+
+	void * res = (void *)syscall(SYS_mremap, old_addr, old_len, new_len, flags, new_addr);
+
+    if (res != (void *) -1)
+    {
+        // size_t prev = atomic_load(&mmap_allocated_bytes_total) & 4095;
+        // fprintf( stderr, "========= %zu\n", prev);
+        atomic_fetch_sub_explicit(&mmap_allocated_bytes_total, alignToPageSize(old_len), memory_order_relaxed);
+        atomic_fetch_add_explicit(&mmap_allocated_bytes_total, alignToPageSize(new_len), memory_order_relaxed);
+    }
+    return res;
+}
+
+extern int_fast64_t getTotalMemoryMappedBytes()
+{
+    return atomic_load_explicit(&mmap_allocated_bytes_total, memory_order_relaxed);
+}
 
 #include <pthread.h>
 
