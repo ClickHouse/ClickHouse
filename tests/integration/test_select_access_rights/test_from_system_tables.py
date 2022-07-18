@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-cluster = ClickHouseCluster(__file__, name="from_system_tables")
+cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     user_configs=[
