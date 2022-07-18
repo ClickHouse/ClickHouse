@@ -39,11 +39,12 @@ function thread_select()
         # Result of `uniq | wc -l` must be 1 if the first and the last queries got the same result
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt;
+        SET throw_on_unsupported_query_inside_transaction=0;
+        CREATE TEMPORARY TABLE tmp AS SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt FORMAT Null;
         SELECT throwIf((SELECT sum(n) FROM mt) != 0) FORMAT Null;
         SELECT throwIf((SELECT count() FROM mt) % 2 != 0) FORMAT Null;
-        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt;
-        COMMIT;" | uniq | wc -l | grep -v "^1$" ||:
+        select throwIf((SELECT * FROM tmp) != (SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt)) FORMAT Null;
+        COMMIT;"
     done
 }
 
