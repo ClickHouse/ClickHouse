@@ -1,5 +1,5 @@
 -- { echoOn }
-EXPLAIN AST rewrite=0 SELECT * FROM numbers(0);
+EXPLAIN AST optimize=0 SELECT * FROM numbers(0);
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
   SelectQuery (children 2)
@@ -11,7 +11,7 @@ SelectWithUnionQuery (children 1)
       Function numbers (children 1)
        ExpressionList (children 1)
         Literal UInt64_0
-EXPLAIN AST rewrite=1 SELECT * FROM numbers(0);
+EXPLAIN AST optimize=1 SELECT * FROM numbers(0);
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
   SelectQuery (children 2)
@@ -23,7 +23,7 @@ SelectWithUnionQuery (children 1)
       Function numbers (children 1)
        ExpressionList (children 1)
         Literal UInt64_0
-EXPLAIN AST rewrite=0 SELECT countDistinct(number) FROM numbers(0);
+EXPLAIN AST optimize=0 SELECT countDistinct(number) FROM numbers(0);
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
   SelectQuery (children 2)
@@ -37,7 +37,7 @@ SelectWithUnionQuery (children 1)
       Function numbers (children 1)
        ExpressionList (children 1)
         Literal UInt64_0
-EXPLAIN AST rewrite=1 SELECT countDistinct(number) FROM numbers(0);
+EXPLAIN AST optimize=1 SELECT countDistinct(number) FROM numbers(0);
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
   SelectQuery (children 2)
