@@ -1078,17 +1078,24 @@ void ZooKeeper::initApiVersion()
 
     get(keeper_api_version_path, std::move(callback), {});
     if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
+    {
+        LOG_TRACE(&Poco::Logger::get("ZooKeeper"), "Failed to get API version: timeout");
         return;
+    }
 
     auto response = future.get();
 
     if (response.error != Coordination::Error::ZOK)
+    {
+        LOG_TRACE(&Poco::Logger::get("ZooKeeper"), "Failed to get API version");
         return;
+    }
 
     uint8_t keeper_version{0};
     DB::ReadBufferFromOwnString buf(response.data);
     DB::readIntText(keeper_version, buf);
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
+    LOG_TRACE(&Poco::Logger::get("ZooKeeper"), "Detected server's API version: {}", keeper_api_version);
 }
 
 
