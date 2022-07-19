@@ -165,15 +165,17 @@ struct QueryASTSettings
 struct QueryTreeSettings
 {
     bool run_passes = false;
+    bool dump_passes = false;
+    bool dump_ast = false;
     Int64 passes = -1;
-    bool ast = false;
 
-    constexpr static char name[] = "QUERYTREE";
+    constexpr static char name[] = "QUERY TREE";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"run_passes", run_passes},
-        {"ast", ast}
+        {"dump_passes", dump_passes},
+        {"dump_ast", dump_ast}
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings =
@@ -381,30 +383,25 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto query_tree_pass_manager = QueryTreePassManager(getContext());
                 addQueryTreePasses(query_tree_pass_manager);
 
-                if (settings.passes < 0)
+                size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
+
+                if (settings.dump_passes)
                 {
-                    query_tree_pass_manager.dump(buf);
-                    buf << '\n';
-                    query_tree_pass_manager.run(query_tree);
-                }
-                else
-                {
-                    size_t pass_index = static_cast<size_t>(settings.passes);
                     query_tree_pass_manager.dump(buf, pass_index);
                     if (pass_index > 0)
                         buf << '\n';
-
-                    query_tree_pass_manager.run(query_tree, pass_index);
                 }
 
-                query_tree->dumpTree(buf, 0);
+                query_tree_pass_manager.run(query_tree, pass_index);
+
+                query_tree->dumpTree(buf);
             }
             else
             {
-                query_tree->dumpTree(buf, 0);
+                query_tree->dumpTree(buf);
             }
 
-            if (settings.ast)
+            if (settings.dump_ast)
             {
                 buf << '\n';
                 query_tree->toAST()->format(IAST::FormatSettings(buf, false));

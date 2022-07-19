@@ -57,16 +57,15 @@ ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expressi
     children[expression_child_index] = std::move(expression_node_);
 }
 
-void ApplyColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void ApplyColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "APPLY COLUMN TRANSFORMER ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << toString(apply_transformer_type) << '\n';
+    buffer << std::string(indent, ' ') << "APPLY COLUMN TRANSFORMER id: " << format_state.getNodeId(this);
+    buffer << ", apply_transformer_type: " << toString(apply_transformer_type);
 
-    buffer << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
 
     const auto & expression_node = getExpressionNode();
-    expression_node->dumpTree(buffer, indent + 4);
+    expression_node->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
 bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
@@ -136,25 +135,28 @@ const char * toString(ExceptColumnTransformerType type)
     }
 }
 
-void ExceptColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void ExceptColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "EXCEPT COLUMN TRANSFORMER ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << toString(except_transformer_type) << ' ';
+    buffer << std::string(indent, ' ') << "EXCEPT COLUMN TRANSFORMER id: " << format_state.getNodeId(this);
+    buffer << ", except_transformer_type: " << toString(except_transformer_type);
 
     if (column_matcher)
     {
-        buffer << column_matcher->pattern();
+        buffer << ", pattern: " << column_matcher->pattern();
         return;
     }
-
-    size_t except_column_names_size = except_column_names.size();
-    for (size_t i = 0; i < except_column_names_size; ++i)
+    else
     {
-        buffer << except_column_names[i];
+        buffer << ", identifiers: ";
 
-        if (i + 1 != except_column_names_size)
-            buffer << ", ";
+        size_t except_column_names_size = except_column_names.size();
+        for (size_t i = 0; i < except_column_names_size; ++i)
+        {
+            buffer << except_column_names[i];
+
+            if (i + 1 != except_column_names_size)
+                buffer << ", ";
+        }
     }
 }
 
@@ -259,15 +261,13 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const s
     return replacement_expressions_nodes[replacement_index];
 }
 
-void ReplaceColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void ReplaceColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "REPLACE TRANSFORMER ";
-    writePointerHex(this, buffer);
-    buffer << '\n';
+    buffer << std::string(indent, ' ') << "REPLACE COLUMN TRANSFORMER id: " << format_state.getNodeId(this);
 
     auto & replacements_nodes = getReplacements().getNodes();
     size_t replacements_size = replacements_nodes.size();
-    buffer << std::string(indent + 2, ' ') << "REPLACEMENTS " << replacements_size << '\n';
+    buffer << '\n' << std::string(indent + 2, ' ') << "REPLACEMENTS " << replacements_size << '\n';
 
     for (size_t i = 0; i < replacements_size; ++i)
     {
@@ -275,7 +275,7 @@ void ReplaceColumnTransformerNode::dumpTree(WriteBuffer & buffer, size_t indent)
         buffer << std::string(indent + 4, ' ') << "REPLACEMENT NAME " << replacement_name;
         buffer << " EXPRESSION" << '\n';
         const auto & expression_node = replacements_nodes[i];
-        expression_node->dumpTree(buffer, indent + 6);
+        expression_node->dumpTreeImpl(buffer, format_state, indent + 6);
 
         if (i + 1 != replacements_size)
             buffer << '\n';

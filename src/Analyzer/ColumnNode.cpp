@@ -28,13 +28,18 @@ QueryTreeNodePtr ColumnNode::getColumnSource() const
     return lock;
 }
 
-void ColumnNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "COLUMN ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << column.name << " : " << column.type->getName() << " source ";
+    buffer << std::string(indent, ' ') << "COLUMN id: " << state.getNodeId(this);
+
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
+    buffer << ", column_name: " << column.name << ", result_type: " << column.type->getName();
+
     auto column_source_ptr = column_source.lock();
-    writePointerHex(column_source_ptr.get(), buffer);
+    if (column_source_ptr)
+        buffer << ", source_id: " << state.getNodeId(column_source_ptr.get());
 }
 
 bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const

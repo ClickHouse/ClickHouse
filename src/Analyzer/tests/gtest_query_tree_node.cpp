@@ -16,10 +16,8 @@ public:
         return QueryTreeNodeType::TABLE;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override
+    void dumpTreeImpl(WriteBuffer &, FormatState &, size_t) const override
     {
-        (void)(buffer);
-        (void)(indent);
     }
 
     bool isEqualImpl(const IQueryTreeNode &) const override
@@ -27,9 +25,8 @@ public:
         return true;
     }
 
-    void updateTreeHashImpl(HashState & hash_state) const override
+    void updateTreeHashImpl(HashState &) const override
     {
-        (void)(hash_state);
     }
 
     ASTPtr toASTImpl() const override
