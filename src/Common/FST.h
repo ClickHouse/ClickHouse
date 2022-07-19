@@ -69,13 +69,15 @@ struct State
 
     UInt64 id{ 0 };
     UInt64 state_index{ 0 };
+    struct Flag_Values
+    {
+        unsigned int is_final : 1;
+        unsigned int encoding_method : 2;
+    };
+
     union
     {
-        struct
-        {
-            unsigned int is_final : 1;
-            unsigned int encoding_method : 2;
-        } flag_values;
+        Flag_Values flag_values;
         uint8_t flag{0};
     };
     std::map<char, Arc> arcs;
