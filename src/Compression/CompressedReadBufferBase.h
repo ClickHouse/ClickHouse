@@ -42,7 +42,7 @@ protected:
     /// Read compressed data into compressed_buffer for asynchronous decompression to avoid the situation of "read compressed block across the compressed_in".
     ///
     /// Compressed block may not be completely contained in "compressed_in" buffer which means compressed block may be read across the "compressed_in".
-    /// For native LZ4/ZSTD, it has no probem in facing situation above because they are sychronous.
+    /// For native LZ4/ZSTD, it has no problem in facing situation above because they are synchronous.
     /// But for asynchronous decompression, such as QPL deflate, it requires source and target buffer for decompression can not be overwritten until execution complete.
     ///
     /// Returns number of compressed bytes read.
