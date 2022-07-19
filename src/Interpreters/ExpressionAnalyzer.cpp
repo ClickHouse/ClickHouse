@@ -2028,6 +2028,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 {
                     auto * ast = child->as<ASTOrderByElement>();
                     ASTPtr order_expression = ast->children.at(0);
+                    if (auto * function = order_expression->as<ASTFunction>();
+                        function && (function->is_window_function || function->compute_after_window_functions))
+                        continue;
                     const String & column_name = order_expression->getColumnName();
                     chain.getLastStep().addRequiredOutput(column_name);
                 }
