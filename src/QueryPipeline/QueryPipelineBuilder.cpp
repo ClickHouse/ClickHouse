@@ -348,8 +348,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-
-    if (left->pipe.output_ports.size() != 1 || right->pipe.output_ports.size() != 1)
+    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
         throw Exception("Join is supported only for pipelines with one output port", ErrorCodes::LOGICAL_ERROR);
 
     if (left->hasTotals() || right->hasTotals())
@@ -359,8 +358,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
 
-    auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
-    return result;
+    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
