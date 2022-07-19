@@ -79,6 +79,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         LOG_ERROR(log, "Unable to load replicated tables list");
         throw;
     }
@@ -110,7 +111,16 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
-    replication_handler->startup(/* delayed */false);
+
+    try
+    {
+        replication_handler->startup(/* delayed */false);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
+    }
 }
 
 
