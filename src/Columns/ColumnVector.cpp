@@ -12,17 +12,23 @@
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
+#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
 
+#include <bit>
 #include <cmath>
 #include <cstring>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
+#endif
+
+#if USE_MULTITARGET_CODE
+#    include <immintrin.h>
 #endif
 
 #if USE_EMBEDDED_COMPILER
@@ -471,6 +477,65 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
+
+DECLARE_AVX512VBMI2_SPECIFIC_CODE(
+template <size_t ELEMENT_SIZE>
+inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
+{
+    __m512i vsrc = _mm512_loadu_si512(src);
+    if (ELEMENT_SIZE == 1)
+        _mm512_mask_compressstoreu_epi8(dst, static_cast<__mmask64>(mask), vsrc);
+    else if (ELEMENT_SIZE == 2)
+        _mm512_mask_compressstoreu_epi16(dst, static_cast<__mmask32>(mask), vsrc);
+    else if (ELEMENT_SIZE == 4)
+        _mm512_mask_compressstoreu_epi32(dst, static_cast<__mmask16>(mask), vsrc);
+    else if (ELEMENT_SIZE == 8)
+        _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
+}
+
+template <typename T, typename Container, size_t SIMD_BYTES>
+inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+{
+    static constexpr size_t VEC_LEN = 64;
+    static constexpr size_t ELEMENT_SIZE = sizeof(T);
+    static constexpr size_t ELEMENT_PER_VEC = VEC_LEN / ELEMENT_SIZE;
+    static constexpr UInt64 kmask = 0xffffffffffffffff >> (64 - ELEMENT_PER_VEC);
+    while (filt_pos < filt_end_aligned)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            res_data.insert(data_pos, data_pos + SIMD_BYTES);
+        }
+        else
+        {
+            if (mask)
+            {
+                size_t current_offset = res_data.size();
+                int count = std::popcount(mask);
+                /// reserve and resize for later writing
+                res_data.resize(current_offset + count);
+                for (int i = 0; i < 64; i += ELEMENT_PER_VEC)
+                {
+                    compressStoreAVX512<ELEMENT_SIZE>(reinterpret_cast<const void *>(data_pos + i),
+                            reinterpret_cast<void *>(&res_data[current_offset]), mask & kmask);
+                    /// prepare for next iter, if ELEMENT_PER_VEC = 64, no next iter
+                    if (ELEMENT_PER_VEC < 64)
+                    {
+                        mask >>= ELEMENT_PER_VEC;
+                        current_offset += std::popcount(mask & kmask);
+                    }
+                }
+            }
+        }
+
+        filt_pos += SIMD_BYTES;
+        data_pos += SIMD_BYTES;
+    }
+}
+)
+
 template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
@@ -495,6 +560,14 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
       */
     static constexpr size_t SIMD_BYTES = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+
+#if USE_MULTITARGET_CODE
+    if (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
+    {
+        if (isArchSupported(TargetArch::AVX512VBMI2))
+            TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+    }
+#endif
 
     while (filt_pos < filt_end_aligned)
     {
