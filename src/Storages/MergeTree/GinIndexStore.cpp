@@ -29,7 +29,7 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
     if (useRoaring())
         return bmp.contains(row_id);
 
-    const auto it(std::find(lst.begin(), lst.begin()+lst_length, row_id));
+    const auto *const it(std::find(lst.begin(), lst.begin()+lst_length, row_id));
     return it != lst.begin()+lst_length;
 }
 

@@ -208,13 +208,14 @@ bool GinFilter::contains(const GinFilter & af, PostingsCacheForStore &cache_stor
     if (postings_cache == nullptr)
     {
         GinIndexStoreReader reader(cache_store.store);
-
         postings_cache = reader.loadPostingsIntoCache(af.getTerms());
         cache_store.cache[af.getMatchString()] = postings_cache;
     }
 
     if (match(postings_cache))
+    {
         return true;
+    }
 
     return false;
 }
