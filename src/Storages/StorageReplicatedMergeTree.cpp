@@ -7953,6 +7953,11 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
         while (true)
         {
+            /// We should be careful when creating an empty part, because we are not sure that this part is still needed.
+            /// For example, it's possible that part (or partition) was dropped (or replaced) concurrently.
+            /// We can enqueue part for check from DataPartExchange or SelectProcessor
+            /// and it's hard to synchronize it with ReplicatedMergeTreeQueue and PartCheckThread...
+            /// But at least we can ignore parts that are definitely not needed according to virtual parts and drop ranges.
             auto pred = queue.getMergePredicate(zookeeper);
             String covering_virtual = pred.getCoveringVirtualPart(lost_part_name);
             if (covering_virtual.empty())
