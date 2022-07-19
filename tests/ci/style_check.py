@@ -89,13 +89,10 @@ def checkout_head(pr_info: PRInfo):
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
-    remote_url = f"git@github.com:{pr_info.head_name}"
+    remote_url = remote_head_url(pr_info)
     git_prefix = (  # All commits to remote are done as robot-clickhouse
         "git -c user.email=robot-clickhouse@clickhouse.com "
         "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-                  "-c core.sshCommand="
-
-                  "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
     )
     fetch_cmd = (
         f"{git_prefix} fetch --depth=1 "
@@ -116,13 +113,10 @@ def commit_push_staged(pr_info: PRInfo):
     git_staged = git_runner("git diff --cached --name-only")
     if not git_staged:
         return
-    remote_url = f"git@github.com:{pr_info.head_name}"
+    remote_url = remote_head_url(pr_info)
     git_prefix = (  # All commits to remote are done as robot-clickhouse
         "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-                  "-c core.sshCommand="
-
-                  "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+        "-c user.name=robot-clickhouse -c commit.gpgsign=false"
     )
     git_runner(f"{git_prefix} commit -m 'Automatic style fix'")
     push_cmd = (
@@ -133,6 +127,19 @@ def commit_push_staged(pr_info: PRInfo):
             git_runner(push_cmd)
     else:
         git_runner(push_cmd)
+
+
+def remote_head_url(pr_info: PRInfo) -> str:
+    # The function search for pr_info.base_name and returns remote with
+    # replaced base_name by head_name
+    # lines of "origin	git@github.com:ClickHouse/ClickHouse.git (fetch)"
+    remotes = git_runner("git remote -v").split("\n")
+    remote = tuple(
+        remote.split()[1] for remote in remotes
+                if f"github.com/{pr_info.base_name}" in remote  # https
+                or f"github.com:{pr_info.base_name}" in remote  # ssh
+    )[0]
+    return remote.replace(pr_info.base_name, pr_info.head_name)
 
 
 if __name__ == "__main__":
