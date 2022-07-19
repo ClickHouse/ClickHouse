@@ -25,6 +25,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [one-ck](https://github.com/lizhichao/one-ck)
     -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
     -   [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
+    -   [Clickhousy - high performance PHP client](https://github.com/mrcrypster/clickhousy)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
