@@ -6,7 +6,13 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/remote_servers.xml'])
+
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/remote_servers.xml", "configs/another_remote_servers.xml"],
+    stay_alive=True,
+)
+
 
 cluster_param = pytest.mark.parametrize("cluster", [
     ('test_cluster_internal_replication'),
@@ -108,3 +114,37 @@ def test_single_file_old(started_cluster, cluster):
     assert out == '1\ta\n2\tbb\n3\tccc\n'
 
     node.query("drop table test.distr_3")
+
+
+def test_remove_replica(started_cluster):
+    node.query(
+        "create table test.local_4 (x UInt64, s String) engine = MergeTree order by x"
+    )
+    node.query(
+        "create table test.distr_4 (x UInt64, s String) engine = Distributed('test_cluster_remove_replica1', test, local_4)"
+    )
+    node.query(
+        "insert into test.distr_4 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd')"
+    )
+    node.query("detach table test.distr_4")
+
+    node.exec_in_container(
+        [
+            "sed",
+            "-i",
+            "s/test_cluster_remove_replica1/test_cluster_remove_replica_tmp/g",
+            "/etc/clickhouse-server/config.d/another_remote_servers.xml",
+        ]
+    )
+    node.exec_in_container(
+        [
+            "sed",
+            "-i",
+            "s/test_cluster_remove_replica2/test_cluster_remove_replica1/g",
+            "/etc/clickhouse-server/config.d/another_remote_servers.xml",
+        ]
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+    node.query("attach table test.distr_4", ignore_error=True)
+    node.query("SYSTEM FLUSH DISTRIBUTED test.distr_4", ignore_error=True)
+    assert node.query("select 1") == "1\n"
