@@ -401,6 +401,7 @@ void CompressionCodecDeflateQpl::flushAsynchronousDecompressRequests()
 {
     if (DeflateQplJobHWPool::instance().isJobPoolReady())
         hw_codec->flushAsynchronousDecompressRequests();
+    /// After flush previous all async requests, we must restore mode to be synchronous by default.
     setDecompressMode(CodecMode::Synchronous);
 }
 void registerCodecDeflateQpl(CompressionCodecFactory & factory)
