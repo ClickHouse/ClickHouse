@@ -23,8 +23,9 @@ class IBackupWriter /// BackupWriterFile, BackupWriterDisk, BackupWriterS3
 public:
     virtual ~IBackupWriter() = default;
     virtual bool fileExists(const String & file_name) = 0;
+    virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents) = 0;
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
-    virtual void removeFilesAfterFailure(const Strings & file_names) = 0;
+    virtual void removeFiles(const Strings & file_names) = 0;
 };
 
 }

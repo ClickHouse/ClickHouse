@@ -60,7 +60,7 @@ void registerFunctionsTimeWindow(FunctionFactory &);
 void registerFunctionToBool(FunctionFactory &);
 void registerFunctionMinSampleSize(FunctionFactory &);
 
-// meilisearch
+/// For Meilisearch
 void registerFunctionMeiliMatch(FunctionFactory & factory);
 
 #if USE_SSL
@@ -126,8 +126,11 @@ void registerFunctions()
     registerFunctionsTimeWindow(factory);
     registerFunctionToBool(factory);
     registerFunctionMinSampleSize(factory);
+    registerFunctionTid(factory);
+    registerFunctionLogTrace(factory);
+    registerFunctionHashID(factory);
 
-    //meilisearch
+    /// For Meilisearch
     registerFunctionMeiliMatch(factory);
 
 #if USE_SSL
@@ -137,9 +140,6 @@ void registerFunctions()
     registerFunctionAESDecryptMysql(factory);
     registerFunctionShowCertificate(factory);
 #endif
-    registerFunctionTid(factory);
-    registerFunctionLogTrace(factory);
-    registerFunctionHashID(factory);
 }
 
 }
