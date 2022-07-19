@@ -151,4 +151,3 @@ ALTER TABLE id_val_join DELETE WHERE id = 3;
 └────┴─────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/join/) <!--hide-->

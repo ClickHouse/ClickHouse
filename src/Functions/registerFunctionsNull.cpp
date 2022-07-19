@@ -11,6 +11,7 @@ void registerFunctionNullIf(FunctionFactory & factory);
 void registerFunctionAssumeNotNull(FunctionFactory & factory);
 void registerFunctionToNullable(FunctionFactory & factory);
 void registerFunctionIsZeroOrNull(FunctionFactory & factory);
+void registerFunctionIsNullable(FunctionFactory & factory);
 
 
 void registerFunctionsNull(FunctionFactory & factory)
@@ -23,6 +24,7 @@ void registerFunctionsNull(FunctionFactory & factory)
     registerFunctionAssumeNotNull(factory);
     registerFunctionToNullable(factory);
     registerFunctionIsZeroOrNull(factory);
+    registerFunctionIsNullable(factory);
 }
 
 }

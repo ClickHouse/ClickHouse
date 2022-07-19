@@ -1,8 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <cerrno>
 
-#include <map>
 #include <optional>
 
 #include <Common/escapeForFileName.h>
@@ -12,7 +10,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
@@ -21,11 +18,8 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Columns/ColumnArray.h>
-
 #include <Interpreters/Context.h>
 
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
@@ -55,6 +49,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 
@@ -270,14 +265,15 @@ StorageStripeLog::StorageStripeLog(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool attach,
-    size_t max_compress_block_size_)
+    ContextMutablePtr context_)
     : IStorage(table_id_)
+    , WithMutableContext(context_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
     , data_file_path(table_path + "data.bin")
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(max_compress_block_size_)
+    , max_compress_block_size(context_->getSettings().max_compress_block_size)
     , log(&Poco::Logger::get("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -335,9 +331,9 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 }
 
 
-static std::chrono::seconds getLockTimeout(ContextPtr context)
+static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 {
-    const Settings & settings = context->getSettingsRef();
+    const Settings & settings = local_context->getSettingsRef();
     Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
     if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
         lock_timeout = settings.max_execution_time.totalSeconds();
@@ -349,14 +345,14 @@ Pipe StorageStripeLog::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     unsigned num_streams)
 {
     storage_snapshot->check(column_names);
 
-    auto lock_timeout = getLockTimeout(context);
+    auto lock_timeout = getLockTimeout(local_context);
     loadIndices(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -374,7 +370,7 @@ Pipe StorageStripeLog::read(
     if (num_streams > size)
         num_streams = size;
 
-    ReadSettings read_settings = context->getReadSettings();
+    ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
 
     for (size_t stream = 0; stream < num_streams; ++stream)
@@ -395,9 +391,9 @@ Pipe StorageStripeLog::read(
 }
 
 
-SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    WriteLock lock{rwlock, getLockTimeout(context)};
+    WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -405,9 +401,9 @@ SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const Storage
 }
 
 
-CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr context)
+CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
 {
-    ReadLock lock{rwlock, getLockTimeout(context)};
+    ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -425,6 +421,7 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
     indices_loaded = true;
     num_indices_saved = 0;
+    getContext()->dropMMappedFileCache();
 }
 
 
@@ -527,11 +524,8 @@ std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 }
 
 
-void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        BackupEntriesCollector::throwPartitionsNotSupported(getStorageID(), getName());
-
     auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
     loadIndices(lock_timeout);
 
@@ -543,7 +537,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
-    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
     fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
 
@@ -589,13 +583,13 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         data_path_in_backup_fs / "count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
 }
 
-void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (partitions)
-        RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
-
     auto backup = restorer.getBackup();
-    if (!restorer.isNonEmptyTableAllowed() && total_bytes && backup->hasFiles(data_path_in_backup))
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed() && total_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     auto lock_timeout = getLockTimeout(restorer.getContext());
@@ -624,6 +618,9 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         auto old_data_size = file_checker.getFileSize(data_file_path);
         {
             String file_path_in_backup = data_path_in_backup_fs / fileName(data_file_path);
+            if (!backup->fileExists(file_path_in_backup))
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
+
             auto backup_entry = backup->readFile(file_path_in_backup);
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
@@ -634,6 +631,9 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         {
             String index_path_in_backup = data_path_in_backup_fs / fileName(index_file_path);
             IndexForNativeFormat extra_indices;
+            if (!backup->fileExists(index_path_in_backup))
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_path_in_backup);
+
             auto backup_entry = backup->readFile(index_path_in_backup);
             auto index_in = backup_entry->getReadBuffer();
             CompressedReadBuffer index_compressed_in{*index_in};
@@ -688,7 +688,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.attach,
-            args.getContext()->getSettings().max_compress_block_size);
+            args.getContext());
     }, features);
 }
 
