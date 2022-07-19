@@ -1632,7 +1632,7 @@ kafka_topic_list = 'topic1',
 kafka_group_name = 'group1',
 kafka_format = 'AvroConfluent';
 
--- for debug purposes you can set format_avro_schema_registry_url in session.
+-- for debug purposes you can set format_avro_schema_registry_url in a session.
 -- this way cannot be used in production
 SET format_avro_schema_registry_url = 'http://schema-registry';
 
