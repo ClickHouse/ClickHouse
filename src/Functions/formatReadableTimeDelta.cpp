@@ -122,7 +122,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected value of maximum unit argument ({}) for function {}, the only allowed values are:"
                 " 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-                std::string(maximum_unit_str), getName());
+                maximum_unit_str, getName());
 
         auto col_to = ColumnString::create();
 
