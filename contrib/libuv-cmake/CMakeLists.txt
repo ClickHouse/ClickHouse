@@ -76,6 +76,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_libraries rt)
   list(APPEND uv_sources
        src/unix/linux-core.c
+       src/unix/epoll.c
        src/unix/linux-inotify.c
        src/unix/linux-syscalls.c
        src/unix/procfs-exepath.c
@@ -111,7 +112,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OS/390")
        src/unix/pthread-fixes.c
        src/unix/pthread-barrier.c
        src/unix/os390.c
-       src/unix/os390-syscalls.c)
+       src/unix/os390-syscalls.c
+       src/unix/os390-proctitle.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
