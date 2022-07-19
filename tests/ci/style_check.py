@@ -93,7 +93,7 @@ def checkout_head(pr_info: PRInfo):
     git_prefix = (  # All commits to remote are done as robot-clickhouse
         "git -c user.email=robot-clickhouse@clickhouse.com "
         "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-                  "-c core.sshCommand "
+                  "-c core.sshCommand="
 
                   "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
     )
@@ -120,7 +120,7 @@ def commit_push_staged(pr_info: PRInfo):
     git_prefix = (  # All commits to remote are done as robot-clickhouse
         "git -c user.email=robot-clickhouse@clickhouse.com "
         "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-                  "-c core.sshCommand "
+                  "-c core.sshCommand="
 
                   "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
     )
