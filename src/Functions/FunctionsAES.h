@@ -182,7 +182,7 @@ private:
 
         const auto mode = arguments[0].column->getDataAt(0);
 
-        if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
+        if (mode.size == 0 || !mode.toView().starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         const auto * evp_cipher = getCipherByName(mode);
@@ -453,7 +453,7 @@ private:
         using namespace OpenSSLDetails;
 
         const auto mode = arguments[0].column->getDataAt(0);
-        if (mode.size == 0 || !std::string_view(mode).starts_with("aes-"))
+        if (mode.size == 0 || !mode.toView().starts_with("aes-"))
             throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         const auto * evp_cipher = getCipherByName(mode);

@@ -112,10 +112,10 @@ String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
-        || CurrentThread::getQueryId().size == 0)
+        || CurrentThread::getQueryId().empty())
         return "None:" + toString(getThreadId());
 
-    return CurrentThread::getQueryId().toString() + ":" + toString(getThreadId());
+    return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
 }
 
 String FileSegment::getOrSetDownloader()

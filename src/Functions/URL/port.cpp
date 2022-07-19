@@ -94,13 +94,13 @@ private:
         const char * p = reinterpret_cast<const char *>(buf.data()) + offset;
         const char * end = p + size;
 
-        StringRef host = getURLHost(p, size);
-        if (!host.size)
+        std::string_view host = getURLHost(p, size);
+        if (host.empty())
             return default_port;
-        if (host.size == size)
+        if (host.size() == size)
             return default_port;
 
-        p = host.data + host.size;
+        p = host.data() + host.size();
         if (*p++ != ':')
             return default_port;
 

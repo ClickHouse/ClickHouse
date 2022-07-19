@@ -115,7 +115,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
             cache,
             implementation_buffer_creator,
             modified_read_settings,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "",
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             file_size.value(),
             /* allow_seeks */true,
             /* use_external_buffer */false);
@@ -155,7 +155,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             cache,
             implementation_buffer_creator,
             read_settings,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "",
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             file_size.value(),
             /* allow_seeks */true,
             /* use_external_buffer */false);
@@ -193,7 +193,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             implementation_buffer->getFileName(),
             key,
             modified_write_settings.is_file_cache_persistent,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "",
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings);
     }
 
