@@ -12,7 +12,8 @@ class Logger;
 namespace DB
 {
 
-/// DeflateQplJobHWPool is resource pool for provide the job objects which is required to save context infomation during offload asynchronous compression to IAA.
+/// DeflateQplJobHWPool is resource pool to provide the job objects.
+/// Job object is used for storing context information during offloading compression job to HW Accelerator.
 class DeflateQplJobHWPool
 {
 public:

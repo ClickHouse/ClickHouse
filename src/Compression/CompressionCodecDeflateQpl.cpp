@@ -109,11 +109,11 @@ bool DeflateQplJobHWPool::tryLockJob(UInt32 index)
     return hw_job_ptr_locks[index].compare_exchange_strong(expected, true);
 }
 
- void DeflateQplJobHWPool::unLockJob(UInt32 index)
- {
+void DeflateQplJobHWPool::unLockJob(UInt32 index)
+{
     assert(index < MAX_HW_JOB_NUMBER);
     hw_job_ptr_locks[index].store(false);
- }
+}
 
 //HardwareCodecDeflateQpl
 HardwareCodecDeflateQpl::HardwareCodecDeflateQpl()
@@ -374,7 +374,7 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
             if (DeflateQplJobHWPool::instance().isJobPoolReady())
             {
                 res = hw_codec->doDecompressDataSynchronous(source, source_size, dest, uncompressed_size);
-                if(res == HardwareCodecDeflateQpl::RET_ERROR)
+                if (res == HardwareCodecDeflateQpl::RET_ERROR)
                     sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             }
             else

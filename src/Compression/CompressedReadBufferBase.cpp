@@ -151,8 +151,6 @@ static void readHeaderAndGetCodecAndSize(
     if (size_compressed_without_checksum < header_size)
         throw Exception("Can't decompress data: the compressed data size (" + toString(size_compressed_without_checksum)
             + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);
-
-    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
 }
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
@@ -199,6 +197,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
     }
 
+    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
     return size_compressed_without_checksum + sizeof(Checksum);
 }
 
@@ -231,11 +230,14 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         compressed_in->position() -= header_size;
         compressed_buffer = compressed_in->position();
         compressed_in->position() += size_compressed_without_checksum;
+
         if (!disable_checksum)
         {
             Checksum & checksum = *reinterpret_cast<Checksum *>(own_compressed_buffer.data());
             validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
         }
+
+        ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
         return size_compressed_without_checksum + sizeof(Checksum);
     }
     else
@@ -273,13 +275,11 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
     }
 }
 
-
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
 }
-
 
 void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
