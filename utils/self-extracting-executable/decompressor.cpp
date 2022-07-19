@@ -1,6 +1,6 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#if defined __APPLE__
+#if defined OS_DARWIN
 #include <sys/mount.h>
 #else
 #include <sys/statfs.h>
@@ -12,7 +12,18 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#if defined OS_DARWIN
+
+// dependencies
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
+
+// define 64 bit macros
+#define le64toh(x) OSSwapLittleToHostInt64(x)
+
+#else
 #include <endian.h>
+#endif
 
 #include "types.h"
 
