@@ -20,7 +20,7 @@ class QueryPlan;
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
-struct SubqueryForSet;
+class SubqueryForSet;
 
 struct SizeLimits;
 

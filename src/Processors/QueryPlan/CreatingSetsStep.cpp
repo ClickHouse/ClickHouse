@@ -133,11 +133,10 @@ void addCreatingSetsStep(
 
     for (auto & [description, subquery_for_set] : prepared_sets.moveSubqueries())
     {
-        if (!subquery_for_set.source)
+        if (!subquery_for_set.hasSource())
             continue;
 
-        auto plan = std::move(subquery_for_set.source);
-        subquery_for_set.source = nullptr;
+        auto plan = subquery_for_set.moveSource();
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),

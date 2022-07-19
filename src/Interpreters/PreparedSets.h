@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -14,25 +15,36 @@ class QueryPlan;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
+class InterpreterSelectWithUnionQuery;
 
 /// Information on how to build set for the [GLOBAL] IN section.
-struct SubqueryForSet
+class SubqueryForSet
 {
-    explicit SubqueryForSet(SetPtr & set_);
+public:
+    SubqueryForSet();
     ~SubqueryForSet();
 
     SubqueryForSet(SubqueryForSet &&) noexcept;
     SubqueryForSet & operator=(SubqueryForSet &&) noexcept;
 
-    /// The source is obtained using the InterpreterSelectQuery subquery.
-    std::unique_ptr<QueryPlan> source;
+    void setSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_ = nullptr);
+
+    bool hasSource() const;
+
+    /// Returns query plan for the source of the set
+    /// It would be removed from SubqueryForSet
+    std::unique_ptr<QueryPlan> moveSource();
 
     /// Build this set from the result of the subquery.
-    SetPtr & set;
+    SetPtr set;
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.
     StoragePtr table;
+
+private:
+    /// The source is obtained using the InterpreterSelectQuery subquery.
+    std::unique_ptr<QueryPlan> source;
 };
 
 struct PreparedSetKey
@@ -62,7 +74,8 @@ class PreparedSets
 public:
     using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
-    SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key);
+    SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key, SetPtr set);
+    SubqueryForSet & getSubquery(const String & subquery_id);
 
     void setSet(const PreparedSetKey & key, SetPtr set_);
     SetPtr & getSet(const PreparedSetKey & key);
@@ -70,8 +83,9 @@ public:
     /// Get subqueries and clear them
     SubqueriesForSets moveSubqueries();
 
+    /// Returns all sets that match the given ast hash not checking types
     /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey
-    const std::unordered_map<PreparedSetKey, SetPtr, PreparedSetKey::Hash> & getSetsMap() const { return sets; }
+    std::vector<SetPtr> getByTreeHash(IAST::Hash ast_hash);
 
     bool empty() const;
 

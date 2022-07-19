@@ -1312,11 +1312,9 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
         String set_id = right_in_operand->getColumnName();
-
-        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(set_id, set_key);
-
-        if (subquery_for_set.set)
-            return subquery_for_set.set;
+        bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
+        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(
+            set_id, set_key, std::make_shared<Set>(data.set_size_limit, false, transform_null_in));
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1326,14 +1324,12 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (!subquery_for_set.source && data.create_source_for_in)
+        if (data.create_source_for_in && !subquery_for_set.hasSource())
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            subquery_for_set.source = std::make_unique<QueryPlan>();
-            interpreter->buildQueryPlan(*subquery_for_set.source);
+            subquery_for_set.setSource(*interpreter);
         }
 
-        subquery_for_set.set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
         return subquery_for_set.set;
     }
     else
