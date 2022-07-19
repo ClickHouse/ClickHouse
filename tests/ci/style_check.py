@@ -164,7 +164,9 @@ if __name__ == "__main__":
     )
 
     if args.push:
-        commit_push_staged(pr_info)
+        commit_push_staged(
+            pr_info
+        )
 
     state, description, test_results, additional_files = process_result(temp_path)
     ch_helper = ClickHouseHelper()
