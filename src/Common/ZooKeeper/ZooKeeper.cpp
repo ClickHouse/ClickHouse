@@ -905,7 +905,7 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-Coordination::KeeperApiVersion ZooKeeper::getApiVersion()
+DB::KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return impl->getApiVersion();
 }

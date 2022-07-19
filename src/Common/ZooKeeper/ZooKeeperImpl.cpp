@@ -1061,7 +1061,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-Coordination::KeeperApiVersion ZooKeeper::getApiVersion()
+KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return keeper_api_version;
 }
@@ -1076,7 +1076,7 @@ void ZooKeeper::initApiVersion()
         promise->set_value(response);
     };
 
-    get(Coordination::keeper_api_version_path, std::move(callback), {});
+    get(keeper_api_version_path, std::move(callback), {});
     if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
         return;
 
@@ -1088,7 +1088,7 @@ void ZooKeeper::initApiVersion()
     uint8_t keeper_version{0};
     DB::ReadBufferFromOwnString buf(response.data);
     DB::readIntText(keeper_version, buf);
-    keeper_api_version = static_cast<Coordination::KeeperApiVersion>(keeper_version);
+    keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
 }
 
 

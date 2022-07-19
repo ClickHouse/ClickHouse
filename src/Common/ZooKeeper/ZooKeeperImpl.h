@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -181,7 +182,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    Coordination::KeeperApiVersion getApiVersion() override;
+    DB::KeeperApiVersion getApiVersion() override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -282,7 +283,7 @@ private:
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
 
-    Coordination::KeeperApiVersion keeper_api_version{Coordination::KeeperApiVersion::V0};
+    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::V0};
 };
 
 }
