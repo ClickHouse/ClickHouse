@@ -40,7 +40,7 @@ public:
 
     size_t size() const { return rowid_range_container.size(); }
 
-    bool contains(const GinFilter& af, PostingsCacheForStore &store);
+    bool contains(const GinFilter& af, PostingsCacheForStore &store) const;
 
     const RowIDRangeContainer& getFilter() const { return rowid_range_container; }
 
@@ -77,7 +77,7 @@ private:
 private:
     static bool hasEmptyPostingsList(const PostingsCachePtr& postings_cache);
 
-    bool matchInRange(const PostingsCachePtr& postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end) const;
+    static bool matchInRange(const PostingsCachePtr& postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end);
 };
 
 using GinFilterPtr = std::shared_ptr<GinFilter>;

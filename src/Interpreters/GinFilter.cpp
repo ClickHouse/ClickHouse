@@ -57,7 +57,7 @@ void GinFilter::add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr
 
 void GinFilter::addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd)
 {
-    if (rowid_range_container.size() > 0)
+    if (!rowid_range_container.empty())
     {
         /// Try to merge the rowID range with the last one in the container
         if (rowid_range_container.back().segment_id == segmentID &&
@@ -98,9 +98,9 @@ void dumpPostingsCache(const PostingsCache& postings_cache)
         {
             printf("-----segment id = %d ---------\n", segment_id);
             printf("-----postings-list: ");
-            for (auto it = postings_list->begin(); it != postings_list->end(); ++it)
+            for (unsigned int it : *postings_list)
             {
-                printf("%d ", *it);
+                printf("%d ", it);
             }
             printf("\n");
         }
@@ -120,19 +120,19 @@ void dumpPostingsCacheForStore(const PostingsCacheForStore& cache_store)
 
 bool GinFilter::hasEmptyPostingsList(const PostingsCachePtr& postings_cache)
 {
-    if (postings_cache->size() == 0)
+    if (postings_cache->empty())
         return true;
 
     for (const auto& term_postings : *postings_cache)
     {
         const SegmentedPostingsListContainer& container = term_postings.second;
-        if (container.size() == 0)
+        if (container.empty())
             return true;
     }
     return false;
 }
 
-bool GinFilter::matchInRange(const PostingsCachePtr& postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end) const
+bool GinFilter::matchInRange(const PostingsCachePtr& postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each terms
     GinIndexPostingsList intersection_result;
@@ -187,7 +187,7 @@ bool GinFilter::match(const PostingsCachePtr& postings_cache) const
 
 bool GinFilter::needsFilter() const
 {
-    if (getTerms().size() == 0)
+    if (getTerms().empty())
         return false;
 
     for (const auto & term: getTerms())
@@ -199,7 +199,7 @@ bool GinFilter::needsFilter() const
     return true;
 }
 
-bool GinFilter::contains(const GinFilter & af, PostingsCacheForStore &cache_store)
+bool GinFilter::contains(const GinFilter & af, PostingsCacheForStore &cache_store) const
 {
     if (!af.needsFilter())
         return true;
@@ -213,10 +213,10 @@ bool GinFilter::contains(const GinFilter & af, PostingsCacheForStore &cache_stor
         cache_store.cache[af.getMatchString()] = postings_cache;
     }
 
-    if (!match(postings_cache))
-        return false;
+    if (match(postings_cache))
+        return true;
 
-    return true;
+    return false;
 }
 
 const String& GinFilter::getName()

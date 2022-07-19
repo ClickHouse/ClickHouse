@@ -47,7 +47,7 @@ void ArcsBitmap::addArc(char label)
 
 int ArcsBitmap::getIndex(char label) const
 {
-    int bitCount = 0;
+    int bit_count = 0;
 
     uint8_t index = label;
     int which_int64 = 0;
@@ -57,26 +57,27 @@ int ArcsBitmap::getIndex(char label) const
         {
             UInt64 mask = index == 63 ? (-1) : (1ULL << (index+1)) - 1;
 
-            bitCount += PopCountImpl(mask & data.items[which_int64]);
+            bit_count += PopCountImpl(mask & data.items[which_int64]);
             break;
         }
         index -= 64;
-        bitCount += PopCountImpl(data.items[which_int64]);
+        bit_count += PopCountImpl(data.items[which_int64]);
 
         which_int64++;
     }
-    return bitCount;
+    return bit_count;
 }
 
 int ArcsBitmap::getArcNum() const
 {
-    int bitCount = 0;
+    int bit_count = 0;
     for (size_t i = 0; i < 4; i++)
+    for (unsigned long item : data.items)
     {
-        if (data.items[i])
-            bitCount += PopCountImpl(data.items[i]);
+        if (item)
+            bit_count += PopCountImpl(item);
     }
-    return bitCount;
+    return bit_count;
 }
 
 bool ArcsBitmap::hasArc(char label) const
@@ -110,10 +111,10 @@ UInt64 State::hash() const
     values.push_back('C');
     values.push_back('H');
 
-    for (auto& label_arc : arcs)
+    for (const auto& label_arc : arcs)
     {
         values.push_back(label_arc.first);
-        auto ptr = reinterpret_cast<const char*>(&label_arc.second.output);
+        const auto * ptr = reinterpret_cast<const char*>(&label_arc.second.output);
         std::copy(ptr, ptr + sizeof(Output), std::back_inserter(values));
 
         ptr = reinterpret_cast<const char*>(&label_arc.second.target->id);
@@ -125,7 +126,7 @@ UInt64 State::hash() const
 
 bool operator== (const State& state1, const State& state2)
 {
-    for (auto& label_arc : state1.arcs)
+    for (const auto& label_arc : state1.arcs)
     {
         auto it(state2.arcs.find(label_arc.first));
         if (it == state2.arcs.cend())
@@ -206,9 +207,9 @@ UInt64 State::serialize(WriteBuffer& write_buffer)
 
 FSTBuilder::FSTBuilder(WriteBuffer& write_buffer_) : write_buffer(write_buffer_)
 {
-    for (size_t i = 0; i < temp_states.size(); ++i)
+    for (auto & temp_state : temp_states)
     {
-        temp_states[i] = std::make_shared<State>();
+        temp_state = std::make_shared<State>();
     }
 }
 
@@ -293,7 +294,7 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
     /// Adjust outputs on the arcs
     for (size_t j = 1; j <= prefix_length_plus1 - 1; ++j)
     {
-        auto arc_ptr = temp_states[j - 1]->getArc(current_word[j-1]);
+        auto * arc_ptr = temp_states[j - 1]->getArc(current_word[j-1]);
         assert(arc_ptr != nullptr);
 
         auto common_prefix = std::min(arc_ptr->output, current_output);
@@ -314,7 +315,7 @@ void FSTBuilder::add(const std::string& current_word, Output current_output)
     }
 
     /// Set last temp state's output
-    auto arc = temp_states[prefix_length_plus1 - 1]->getArc(current_word[prefix_length_plus1-1]);
+    auto * arc = temp_states[prefix_length_plus1 - 1]->getArc(current_word[prefix_length_plus1-1]);
     assert(arc != nullptr);
     arc->output = current_output;
 

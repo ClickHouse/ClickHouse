@@ -73,13 +73,13 @@ void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeT
     for (auto & gin_filter : gin_filters)
     {
         size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr);
-        size_t filterSize = field_rows.get<size_t>();
+        size_t filter_size = field_rows.get<size_t>();
 
-        if (filterSize == 0)
+        if (filter_size == 0)
             continue;
 
-        gin_filter.getFilter().assign(filterSize, {});
-        istr.read(reinterpret_cast<char*>(gin_filter.getFilter().data()), filterSize * sizeof(RowIDRange));
+        gin_filter.getFilter().assign(filter_size, {});
+        istr.read(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(RowIDRange));
     }
     has_elems = true;
 }
