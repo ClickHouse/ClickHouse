@@ -60,7 +60,7 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline UInt32 getDecimalScale(const IDataType & data_type) //, UInt32 default_value = std::numeric_limits<UInt32>::max())
+inline UInt32 getDecimalScale(const IDataType & data_type)
 {
     if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
