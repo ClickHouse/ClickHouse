@@ -90,8 +90,15 @@ def checkout_head(pr_info: PRInfo):
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
     remote_url = f"git@github.com:{pr_info.head_name}"
+    git_prefix = (  # All commits to remote are done as robot-clickhouse
+        "git -c user.email=robot-clickhouse@clickhouse.com "
+        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+                  "-c core.sshCommand "
+
+                  "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+    )
     fetch_cmd = (
-        f"git fetch --depth=1 "
+        f"{git_prefix} fetch --depth=1 "
         f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
     )
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
@@ -112,7 +119,10 @@ def commit_push_staged(pr_info: PRInfo):
     remote_url = f"git@github.com:{pr_info.head_name}"
     git_prefix = (  # All commits to remote are done as robot-clickhouse
         "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false"
+        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+                  "-c core.sshCommand "
+
+                  "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
     )
     git_runner(f"{git_prefix} commit -m 'Automatic style fix'")
     push_cmd = (
