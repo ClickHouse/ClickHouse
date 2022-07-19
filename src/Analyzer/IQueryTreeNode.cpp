@@ -38,8 +38,20 @@ const char * toString(QueryTreeNodeType type)
 String IQueryTreeNode::dumpTree() const
 {
     WriteBufferFromOwnString buff;
-    dumpTree(buff, 0);
+    dumpTree(buff);
     return buff.str();
+}
+
+size_t IQueryTreeNode::FormatState::getNodeId(const IQueryTreeNode * node)
+{
+    auto [it, _] = node_to_id.emplace(node, node_to_id.size());
+    return it->second;
+}
+
+void IQueryTreeNode::dumpTree(WriteBuffer & buffer) const
+{
+    FormatState state;
+    dumpTreeImpl(buffer, state, 0);
 }
 
 bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const

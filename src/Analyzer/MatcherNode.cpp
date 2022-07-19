@@ -119,23 +119,22 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name)
     return columns_identifiers_set.find(column_name) != columns_identifiers_set.end();
 }
 
-void MatcherNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "MATCHER ";
-    writePointerHex(this, buffer);
+    buffer << std::string(indent, ' ') << "MATCHER id: " << format_state.getNodeId(this);
+
+    buffer << ", matcher_type: " << toString(matcher_type);
 
     if (!qualified_identifier.empty())
-        buffer << ' ' << qualified_identifier.getFullName();
-
-    buffer << ' ' << toString(matcher_type);
+        buffer << ", qualified_identifier: " << qualified_identifier.getFullName();
 
     if (columns_matcher)
     {
-        buffer << ' ' << columns_matcher->pattern();
+        buffer << ", columns_pattern: " << columns_matcher->pattern();
     }
     else if (matcher_type == MatcherNodeType::COLUMNS_LIST)
     {
-        buffer << ' ';
+        buffer << ", columns_identifiers: ";
         size_t columns_identifiers_size = columns_identifiers.size();
         for (size_t i = 0; i < columns_identifiers_size; ++i)
         {
@@ -150,7 +149,7 @@ void MatcherNode::dumpTree(WriteBuffer & buffer, size_t indent) const
     if (!column_transformers_list.getNodes().empty())
     {
         buffer << '\n';
-        column_transformers_list.dumpTree(buffer, indent + 2);
+        column_transformers_list.dumpTreeImpl(buffer, format_state, indent + 2);
     }
 }
 
