@@ -23,3 +23,15 @@ SELECT count() OVER (ORDER BY number + 1) FROM numbers(10) ORDER BY number;
 8
 9
 10
+SELECT count() OVER (ORDER BY number + 1) + 1 as foo FROM numbers(10)
+ORDER BY foo;
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
