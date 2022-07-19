@@ -39,7 +39,7 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
 
 void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
 
     if (!settings->allows_query_when_mysql_lost && exception)
     {
@@ -59,7 +59,7 @@ void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 
 void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exception_)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     exception = exception_;
 }
 
@@ -80,10 +80,10 @@ void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & 
     DatabaseAtomic::createTable(context_, name, table, query);
 }
 
-void DatabaseMaterializedMySQL::dropTable(ContextPtr context_, const String & name, bool sync)
+void DatabaseMaterializedMySQL::dropTable(ContextPtr context_, const String & name, bool no_delay)
 {
     checkIsInternalQuery(context_, "DROP TABLE");
-    DatabaseAtomic::dropTable(context_, name, sync);
+    DatabaseAtomic::dropTable(context_, name, no_delay);
 }
 
 void DatabaseMaterializedMySQL::attachTable(ContextPtr context_, const String & name, const StoragePtr & table, const String & relative_table_path)

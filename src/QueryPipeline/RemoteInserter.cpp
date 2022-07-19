@@ -1,7 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
@@ -47,26 +47,10 @@ RemoteInserter::RemoteInserter(
         }
     }
 
-    Settings settings = settings_;
-    /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
-    ///
-    /// RemoteInserter send Data blocks/packets to the remote shard,
-    /// while remote side can send Log packets to the initiator (this RemoteInserter instance).
-    ///
-    /// But it is not enough to pull Log packets just before writing the next block
-    /// since there is no way to ensure that all Log packets had been consumed.
-    ///
-    /// And if enough Log packets will be queued by the remote side,
-    /// it will wait send_timeout until initiator will consume those packets,
-    /// while initiator already starts writing Data blocks,
-    /// and will not consume Log packets.
-    ///
-    /// So that is why send_logs_level had been disabled here.
-    settings.send_logs_level = "none";
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
+    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info, false);
 
     while (true)
     {
@@ -94,10 +78,8 @@ RemoteInserter::RemoteInserter(
             /// client's already got this information for remote table. Ignore.
         }
         else
-            throw NetException(
-                ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected Data or Exception, got {})",
-                Protocol::Server::toString(packet.type));
+            throw NetException("Unexpected packet from server (expected Data or Exception, got "
+                + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
 }
 
@@ -149,10 +131,8 @@ void RemoteInserter::onFinish()
             // Do nothing
         }
         else
-            throw NetException(
-                ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected EndOfStream or Exception, got {})",
-                Protocol::Server::toString(packet.type));
+            throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
+            + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
 
     finished = true;

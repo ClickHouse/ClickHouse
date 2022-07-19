@@ -1,9 +1,5 @@
 #!/usr/bin/expect -f
 
-set basedir [file dirname $argv0]
-set basename [file tail $argv0]
-exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
-
 log_user 0
 set timeout 60
 set uuid ""
@@ -15,6 +11,7 @@ expect_after {
     timeout { exit 1 }
 }
 
+set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
 expect ":) "
 
@@ -47,9 +44,13 @@ expect -re TSV.*TSV.*begin-(.*)-end.*
 set uuid $expect_out(1,string)
 expect ":) "
 
-# CREATE DATABASE
+# Create
 send -- "create database new_${uuid}_database\r"
 expect ":) "
+send -- "create table new_${uuid}_table (new_${uuid}_column Int) engine=Null()\r"
+expect ":) "
+
+# Check completion
 send -- "new_${uuid}_data"
 expect "new_${uuid}_data"
 send -- "\t"
@@ -58,9 +59,6 @@ expect "base"
 send -- "\3"
 expect ":) "
 
-# CREATE TABLE
-send -- "create table new_${uuid}_table (new_${uuid}_column Int) engine=Null()\r"
-expect ":) "
 send -- "new_${uuid}_ta"
 expect "new_${uuid}_ta"
 send -- "\t"
@@ -69,7 +67,6 @@ expect "ble"
 send -- "\3"
 expect ":) "
 
-# Column from table
 send -- "new_${uuid}_col"
 expect "new_${uuid}_col"
 send -- "\t"
@@ -78,23 +75,10 @@ expect "umn"
 send -- "\3"
 expect ":) "
 
-# CREATE FUNCTION
-send -- "create function new_${uuid}_function as x -> x\r"
-expect ":) "
-send -- "new_${uuid}_func"
-expect "new_${uuid}_func"
-send -- "\t"
-expect "tion"
-# Ctrl-C
-send -- "\3"
-expect ":) "
-
 # Cleanup
 send -- "drop database new_${uuid}_database\r"
 expect ":) "
 send -- "drop table new_${uuid}_table\r"
-expect ":) "
-send -- "drop function new_${uuid}_function\r"
 expect ":) "
 
 # Ctrl-D

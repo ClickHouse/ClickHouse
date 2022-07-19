@@ -65,28 +65,14 @@ def test_dynamic_query_handler():
             ).status_code
         )
 
-        res_default = cluster.instance.http_request(
-            "test_dynamic_handler_get?max_threads=1&get_dynamic_handler_query="
-            + test_query,
-            method="GET",
-            headers={"XXX": "xxx"},
-        )
-        assert 200 == res_default.status_code
         assert (
-            "text/tab-separated-values; charset=UTF-8"
-            == res_default.headers["content-type"]
-        )
-
-        res_custom_ct = cluster.instance.http_request(
-            "test_dynamic_handler_get_custom_content_type?max_threads=1&get_dynamic_handler_query="
-            + test_query,
-            method="GET",
-            headers={"XXX": "xxx"},
-        )
-        assert 200 == res_custom_ct.status_code
-        assert (
-            "application/whatever; charset=cp1337"
-            == res_custom_ct.headers["content-type"]
+            200
+            == cluster.instance.http_request(
+                "test_dynamic_handler_get?max_threads=1&get_dynamic_handler_query="
+                + test_query,
+                method="GET",
+                headers={"XXX": "xxx"},
+            ).status_code
         )
 
 
@@ -130,22 +116,22 @@ def test_predefined_query_handler():
             ).status_code
         )
 
-        res1 = cluster.instance.http_request(
-            "test_predefined_handler_get?max_threads=1&setting_name=max_threads",
-            method="GET",
-            headers={"XXX": "xxx"},
-        )
-        assert b"max_threads\t1\n" == res1.content
         assert (
-            "text/tab-separated-values; charset=UTF-8" == res1.headers["content-type"]
+            b"max_threads\t1\n"
+            == cluster.instance.http_request(
+                "test_predefined_handler_get?max_threads=1&setting_name=max_threads",
+                method="GET",
+                headers={"XXX": "xxx"},
+            ).content
         )
 
-        res2 = cluster.instance.http_request(
-            "query_param_with_url/max_threads?max_threads=1&max_final_threads=1",
-            headers={"XXX": "max_final_threads"},
+        assert (
+            b"max_final_threads\t1\nmax_threads\t1\n"
+            == cluster.instance.http_request(
+                "query_param_with_url/max_threads?max_threads=1&max_final_threads=1",
+                headers={"XXX": "max_final_threads"},
+            ).content
         )
-        assert b"max_final_threads\t1\nmax_threads\t1\n" == res2.content
-        assert "application/generic+one" == res2.headers["content-type"]
 
 
 def test_fixed_static_handler():

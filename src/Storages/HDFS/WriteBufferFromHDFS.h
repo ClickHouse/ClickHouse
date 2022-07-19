@@ -4,7 +4,6 @@
 
 #if USE_HDFS
 #include <IO/WriteBuffer.h>
-#include <IO/WriteSettings.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <fcntl.h>
@@ -25,7 +24,6 @@ public:
         const String & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_,
         int replication_,
-        const WriteSettings & write_settings_ = {},
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = O_WRONLY);
 

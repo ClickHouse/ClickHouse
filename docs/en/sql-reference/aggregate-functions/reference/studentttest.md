@@ -1,9 +1,9 @@
 ---
-sidebar_position: 300
-sidebar_label: studentTTest
+toc_priority: 300
+toc_title: studentTTest
 ---
 
-# studentTTest
+# studentTTest {#studentttest}
 
 Applies Student's t-test to samples from two populations.
 

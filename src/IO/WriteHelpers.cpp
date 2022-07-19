@@ -1,5 +1,5 @@
 #include <IO/WriteHelpers.h>
-#include <cinttypes>
+#include <inttypes.h>
 #include <Common/hex.h>
 
 
@@ -52,7 +52,7 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 {
     writeBinary(e.code(), buf);
     writeBinary(String(e.name()), buf);
-    writeBinary(e.displayText() + getExtraExceptionInfo(e), buf);
+    writeBinary(e.displayText(), buf);
 
     if (with_stack_trace)
         writeBinary(e.getStackTraceString(), buf);

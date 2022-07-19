@@ -21,13 +21,10 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 }
 
 FinishSortingTransform::FinishSortingTransform(
-    const Block & header,
-    const SortDescription & description_sorted_,
+    const Block & header, const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
-    size_t max_merged_block_size_,
-    UInt64 limit_,
-    bool increase_sort_description_compile_attempts)
-    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
+    size_t max_merged_block_size_, UInt64 limit_)
+    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
@@ -37,8 +34,7 @@ FinishSortingTransform::FinishSortingTransform(
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
     size_t prefix_size = description_sorted_.size();
-    for (size_t i = 0; i < prefix_size; ++i)
-        description_with_positions.emplace_back(description[i], header_without_constants.getPositionByName(description[i].column_name));
+    description_sorted.assign(description.begin(), description.begin() + prefix_size);
 }
 
 void FinishSortingTransform::consume(Chunk chunk)
@@ -66,7 +62,7 @@ void FinishSortingTransform::consume(Chunk chunk)
         while (high - low > 1)
         {
             ssize_t mid = (low + high) / 2;
-            if (!less(last_chunk.getColumns(), chunk.getColumns(), last_chunk.getNumRows() - 1, mid, description_with_positions))
+            if (!less(last_chunk.getColumns(), chunk.getColumns(), last_chunk.getNumRows() - 1, mid, description_sorted))
                 low = mid;
             else
                 high = mid;
@@ -104,8 +100,7 @@ void FinishSortingTransform::generate()
 {
     if (!merge_sorter)
     {
-        merge_sorter
-            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+        merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
         generated_prefix = true;
     }
 

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 200
+toc_priority: 200
 ---
 
 # quantile {#quantile}

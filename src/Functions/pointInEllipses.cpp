@@ -151,21 +151,21 @@ private:
                 }
 
                 return dst;
-        }
-        else if (const_cnt == 2)
-        {
-            const auto * col_const_x = assert_cast<const ColumnConst *> (col_x);
-            const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
-            size_t start_index = 0;
-            UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
-            return DataTypeUInt8().createColumnConst(size, res);
-        }
-        else
-        {
-            throw Exception(
-                "Illegal types " + col_x->getName() + ", " + col_y->getName() + " of arguments 1, 2 of function " + getName() + ". Both must be either const or vector",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
+            }
+            else if (const_cnt == 2)
+            {
+                const auto * col_const_x = assert_cast<const ColumnConst *> (col_x);
+                const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
+                size_t start_index = 0;
+                UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
+                return DataTypeUInt8().createColumnConst(size, res);
+            }
+            else
+            {
+                throw Exception(
+                    "Illegal types " + col_x->getName() + ", " + col_y->getName() + " of arguments 1, 2 of function " + getName() + ". Both must be either const or vector",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
     }
 
     static bool isPointInEllipses(Float64 x, Float64 y, const Ellipse * ellipses, size_t ellipses_count, size_t & start_index)

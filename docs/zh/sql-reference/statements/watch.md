@@ -1,4 +1,4 @@
 ---
-sidebar_position: 53
-sidebar_label: WATCH
+toc_priority: 53
+toc_title: WATCH
 ---

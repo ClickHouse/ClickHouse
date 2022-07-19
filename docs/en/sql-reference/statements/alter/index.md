@@ -1,9 +1,9 @@
 ---
-sidebar_position: 35
-sidebar_label: ALTER
+toc_priority: 35
+toc_title: ALTER
 ---
 
-# ALTER
+## ALTER {#query_language_queries_alter}
 
 Most `ALTER TABLE` queries modify table settings or data:
 
@@ -16,9 +16,8 @@ Most `ALTER TABLE` queries modify table settings or data:
 -   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
-:::note    
-Most `ALTER TABLE` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
-:::
+!!! note "Note"
+    Most `ALTER TABLE` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
 
 These `ALTER` statements manipulate views:
 
@@ -35,7 +34,7 @@ These `ALTER` statements modify entities related to role-based access control:
 
 [ALTER TABLE ... MODIFY COMMENT](../../../sql-reference/statements/alter/comment.md) statement adds, modifies, or removes comments to the table, regardless if it was set before or not.
 
-## Mutations
+## Mutations {#mutations}
 
 `ALTER` queries that are intended to manipulate table data are implemented with a mechanism called “mutations”, most notably [ALTER TABLE … DELETE](../../../sql-reference/statements/alter/delete.md) and [ALTER TABLE … UPDATE](../../../sql-reference/statements/alter/update.md). They are asynchronous background processes similar to merges in [MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables that to produce new “mutated” versions of parts.
 
@@ -47,7 +46,7 @@ A mutation query returns immediately after the mutation entry is added (in case 
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
-## Synchronicity of ALTER Queries
+## Synchronicity of ALTER Queries {#synchronicity-of-alter-queries}
 
 For non-replicated tables, all `ALTER` queries are performed synchronously. For replicated tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
@@ -55,8 +54,7 @@ For all `ALTER` queries, you can use the [replication_alter_partitions_sync](../
 
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
 
-:::note    
-For all `ALTER` queries, if `replication_alter_partitions_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
-:::
+!!! info "Note"
+    For all `ALTER` queries, if `replication_alter_partitions_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 
 For `ALTER TABLE ... UPDATE|DELETE` queries the synchronicity is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting.

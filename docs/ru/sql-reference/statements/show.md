@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: SHOW
+toc_priority: 37
+toc_title: SHOW
 ---
 
 # SHOW Queries {#show-queries}
@@ -366,7 +366,7 @@ SHOW ACCESS
 
 Возвращает список кластеров. Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
 
-:::info "Note"
+!!! info "Note"
     По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
 
 ### Синтаксис {#show-cluster-syntax}

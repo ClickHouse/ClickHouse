@@ -1,9 +1,4 @@
 <clickhouse>
-    <profiles>
-        <default>
-            <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
-        </default>
-    </profiles>
     <users>
         <default>
             <password></password>

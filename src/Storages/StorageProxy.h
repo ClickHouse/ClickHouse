@@ -41,7 +41,7 @@ public:
         /// TODO: Find a way to support projections for StorageProxy
         info.ignore_projections = true;
         const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
-        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
+        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata), info);
     }
 
     Pipe watch(
@@ -55,8 +55,7 @@ public:
         return getNested()->watch(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -65,7 +64,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override
     {
-        return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        return getNested()->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
@@ -150,6 +149,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query , ContextPtr context) override { return getNested()->checkData(query, context); }
     void checkTableCanBeDropped() const override { getNested()->checkTableCanBeDropped(); }
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override { getNested()->checkPartitionCanBeDropped(partition); }
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }

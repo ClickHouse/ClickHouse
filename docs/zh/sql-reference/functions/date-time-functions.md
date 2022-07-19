@@ -12,60 +12,15 @@ SELECT
     toString(time, 'US/Samoa') AS time_samoa
 ```
 
-``` text
-┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
-│ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
-└─────────────────────┴────────────┴────────────┴─────────────────────┘
-```
+    ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
+    │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
+    └─────────────────────┴────────────┴────────────┴─────────────────────┘
 
 仅支持与UTC相差一整小时的时区。
-
-## timeZone {#timezone}
-
-返回服务器的时区。
-如果它在分布式表的上下文中执行，那么它会生成一个普通列，其中包含与每个分片相关的值。否则它会产生一个常数值。
-
-**语法**
-
-``` sql
-timeZone()
-```
-
-别名：`timezone`。
-
-**返回值**
-
--   时区。
-
-类型为： [String](../../sql-reference/data-types/string.md)。
-
 
 ## toTimeZone {#totimezone}
 
 将Date或DateTime转换为指定的时区。 时区是Date/DateTime类型的属性。 表字段或结果集的列的内部值（秒数）不会更改，列的类型会更改，并且其字符串表示形式也会相应更改。
-
-**语法**
-
-``` sql
-toTimezone(value, timezone)
-```
-
-别名：`toTimezone`。
-
-**参数**
-
--   `value` — 时间或日期和时间。类型为[DateTime64](../../sql-reference/data-types/datetime64.md)。
--   `timezone` — 返回值的时区。类型为 [String](../../sql-reference/data-types/string.md)。 这个参数是一个常量，因为 `toTimezone` 改变了列的时区（时区是 `DateTime` 类型的属性）。
-
-**返回值**
-
--   日期和时间。
-
-类型为： [DateTime](../../sql-reference/data-types/datetime.md)。
-
-**示例**
-
-查询语句：
 
 ```sql
 SELECT
@@ -97,137 +52,43 @@ int32samoa: 1546300800
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` 把 `DateTime('UTC')` 类型转换为 `DateTime('Asia/Yekaterinburg')`. 内部值 (Unixtimestamp) 1546300800 保持不变, 但是字符串表示(toString() 函数的结果值) 由 `time_utc:   2019-01-01 00:00:00` 转换为o `time_yekat: 2019-01-01 05:00:00`.
 
-## timeZoneOf {#timezoneof}
-
-返回[DateTime](../../sql-reference/data-types/datetime.md)或者[DateTime64](../../sql-reference/data-types/datetime64.md)数据类型的时区名称。
-
-**语法**
-
-``` sql
-timeZoneOf(value)
-```
-
-别名： `timezoneOf`。
-
-**参数**
-
--   `value` — 日期和时间。类型为[DateTime](../../sql-reference/data-types/datetime.md)或者[DateTime64](../../sql-reference/data-types/datetime64.md)。
-
-**返回值**
-
--   时区名称。
-
-类型为：[String](../../sql-reference/data-types/string.md)。
-
-**示例**
-
-查询语句:
-``` sql
-SELECT timezoneOf(now());
-```
-
-结果:
-``` text
-┌─timezoneOf(now())─┐
-│ Etc/UTC           │
-└───────────────────┘
-```
-
-## timeZoneOffset {#timezoneoffset}
-
-返回从[UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time)开始到现在以秒为单位的时区偏移量。该函数考虑到[夏时令](https://en.wikipedia.org/wiki/Daylight_saving_time)并在指定日期和时间更改历史时区。
-[IANA timezone database](https://www.iana.org/time-zones)用于计算偏移量。
-
-**语法**
-
-``` sql
-timeZoneOffset(value)
-```
-
-别名： `timezoneOffset`。
-
-**参数**
-
--   `value` — 日期和时间。类型为[DateTime](../../sql-reference/data-types/datetime.md)或者[DateTime64](../../sql-reference/data-types/datetime64.md)。
-
-**返回值**
-
--   以秒为单位的UTC偏移量。
-
-类型为： [Int32](../../sql-reference/data-types/int-uint.md)。
-
-**示例**
-
-查询语句:
-
-``` sql
-SELECT toDateTime('2021-04-21 10:20:30', 'America/New_York') AS Time, toTypeName(Time) AS Type,
-       timeZoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
-```
-
-结果:
-
-``` text
-┌────────────────Time─┬─Type─────────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
-│ 2021-04-21 10:20:30 │ DateTime('America/New_York') │            -14400 │              -4 │
-└─────────────────────┴──────────────────────────────┴───────────────────┴─────────────────┘
-```
-
 ## toYear {#toyear}
 
 将Date或DateTime转换为包含年份编号（AD）的UInt16类型的数字。
-
-别名为：`YEAR`。
 
 ## toQuarter {#toquarter}
 
 将Date或DateTime转换为包含季度编号的UInt8类型的数字。
 
-别名为：`QUARTER`。
-
 ## toMonth {#tomonth}
 
 将Date或DateTime转换为包含月份编号（1-12）的UInt8类型的数字。
-
-别名为：`MONTH`。
 
 ## toDayOfYear {#todayofyear}
 
 将Date或DateTime转换为包含一年中的某一天的编号的UInt16（1-366）类型的数字。
 
-别名为: `DAYOFYEAR`。
-
 ## toDayOfMonth {#todayofmonth}
 
 将Date或DateTime转换为包含一月中的某一天的编号的UInt8（1-31）类型的数字。
 
-别名为：`DAYOFMONTH`，`DAY`。
-
 ## toDayOfWeek {#todayofweek}
 
 将Date或DateTime转换为包含一周中的某一天的编号的UInt8（周一是1, 周日是7）类型的数字。
-
-别名为：`DAYOFWEEK`。
 
 ## toHour {#tohour}
 
 将DateTime转换为包含24小时制（0-23）小时数的UInt8数字。
 这个函数假设如果时钟向前移动，它是一个小时，发生在凌晨2点，如果时钟被移回，它是一个小时，发生在凌晨3点（这并非总是如此 - 即使在莫斯科时钟在不同的时间两次改变）。
 
-别名为： `HOUR`。
-
 ## toMinute {#tominute}
 
 将DateTime转换为包含一小时中分钟数（0-59）的UInt8数字。
-
-别名为： `MINUTE`。
 
 ## toSecond {#tosecond}
 
 将DateTime转换为包含一分钟中秒数（0-59）的UInt8数字。
 闰秒不计算在内。
-
-别名为： `SECOND`。
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
@@ -262,10 +123,6 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 │     1509836867 │
 └────────────────┘
 ```
-
-:::注意    
-下面描述的返回类型 `toStartOf` 函数是 `Date` 或 `DateTime`。尽管这些函数可以将 `DateTime64` 作为参数，但将超出正常范围（1925年-2283年）的 `DateTime64` 传递给它们会给出不正确的结果。
-:::
 
 ## toStartOfYear {#tostartofyear}
 
@@ -370,7 +227,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 
 -   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) 服务器配置选项。
 
-## toStartOfFiveMinutes {#tostartoffiveminutes}
+## toStartOfFiveMinute {#tostartoffiveminute}
 
 将DateTime以五分钟为单位向前取整到最接近的时间点。
 
@@ -572,263 +429,6 @@ SELECT now(), date_trunc('hour', now(), 'Asia/Istanbul');
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
-## date_add {#date_add}
-
-将时间间隔或日期间隔添加到提供的日期或带时间的日期。
-
-**语法**
-
-``` sql
-date_add(unit, value, date)
-```
-
-别名为：`dateAdd`, `DATE_ADD`。
-
-**参数**
-
--   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
-    可能的值：
-
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
-
--   `value` — 要添加的间隔值。类型为[Int](../../sql-reference/data-types/int-uint.md)。
--   `date` — 添加`value`的日期或日期。类型为[Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
-
-**返回值**
-
-通过将 `value` 以`unit` 表示，添加到`date` 获得的日期或带时间的日期。
-
-类型为： [Date](../../sql-reference/data-types/date.md)或[DateTime](../../sql-reference/data-types/datetime.md)。
-
-**示例**
-
-查询语句：
-
-```sql
-SELECT date_add(YEAR, 3, toDate('2018-01-01'));
-```
-
-结果：
-
-```text
-┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
-│                                    2021-01-01 │
-└───────────────────────────────────────────────┘
-```
-
-## date_diff {#date_diff}
-
-返回两个日期或具有时间值的日期之间的差值。
-
-**语法**
-
-``` sql
-date_diff('unit', startdate, enddate, [timezone])
-```
-
-别名为： `dateDiff`, `DATE_DIFF`。
-
-**参数**
-
--   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
-    可能的值：
-
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
-
--   `startdate` — 要减去的第一个时间值（减数）。类型为[Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
-
--   `enddate` — 要减去的第二个时间值（被减数）。类型为[Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
-
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (可选项)。如果指定，它适用于 `startdate` 和 `enddate`。如果未指定，则使用 `startdate` 和 `enddate` 的时区。如果它们不相同，则结果未指定。类型为[String](../../sql-reference/data-types/string.md)。
-
-**返回值**
-
-以 `unit` 表示的 `enddate` 和 `startdate` 之间的区别。
-
-类型为: [Int](../../sql-reference/data-types/int-uint.md)。
-
-**示例**
-
-查询语句：
-
-``` sql
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
-```
-
-结果：
-
-``` text
-┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                     25 │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-## date_sub {#date_sub}
-
-从提供的日期或带时间的日期中减去时间间隔或日期间隔。
-
-**语法**
-
-``` sql
-date_sub(unit, value, date)
-```
-
-别名为： `dateSub`, `DATE_SUB`.
-
-**参数**
-
--   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
-    可能的值：
-
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
-
--   `value` — 要减去的时间。类型为[Int](../../sql-reference/data-types/int-uint.md)。
--   `date` — 被减去`value`的日期或日期。类型为[Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
-
-**返回值**
-
-从 `date` 中减去以`unit` 表示的`value` 得到的日期或带时间的日期。
-
-类型为：[Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md)。
-
-**示例**
-
-查询语句：
-
-``` sql
-SELECT date_sub(YEAR, 3, toDate('2018-01-01'));
-```
-
-结果：
-
-``` text
-┌─minus(toDate('2018-01-01'), toIntervalYear(3))─┐
-│                                     2015-01-01 │
-└────────────────────────────────────────────────┘
-```
-
-## timestamp_add {#timestamp_add}
-
-将指定的时间值与提供的日期或日期时间值相加。
-
-**语法**
-
-``` sql
-timestamp_add(date, INTERVAL value unit)
-```
-
-别名为： `timeStampAdd`, `TIMESTAMP_ADD`.
-
-**参数**
-
--   `date` — 日期或日期与时间。类型为[Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
--   `value` — 要添加的间隔值。类型为[Int](../../sql-reference/data-types/int-uint.md)。
--   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
-    可能的值：
-
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
-
-**返回值**
-
-以`unit`表示的指定`value`的日期或带时间的日期添加到`date`。
-
-类型为：[Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
-
-**示例**
-
-查询语句：
-
-```sql
-select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
-```
-
-结果：
-
-```text
-┌─plus(toDate('2018-01-01'), toIntervalMonth(3))─┐
-│                                     2018-04-01 │
-└────────────────────────────────────────────────┘
-```
-
-## timestamp_sub {#timestamp_sub}
-
-从提供的日期或带时间的日期中减去时间间隔。
-
-**语法**
-
-``` sql
-timestamp_sub(unit, value, date)
-```
-
-别名为： `timeStampSub`, `TIMESTAMP_SUB`。
-
-**参数**
-
--   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
-    可能的值:
-
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
-
--   `value` — 要减去的间隔值。类型为[Int](../../sql-reference/data-types/int-uint.md)。
--   `date` — 日期或日期与时间。类型为[Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
-
-**返回值**
-
-从 `date` 中减去以`unit` 表示的`value` 得到的日期或带时间的日期。
-
-类型为： [Date](../../sql-reference/data-types/date.md)或者[DateTime](../../sql-reference/data-types/datetime.md)。
-
-**示例**
-
-查询语句：
-
-```sql
-select timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
-```
-
-结果：
-
-```text
-┌─minus(toDateTime('2018-12-18 01:02:03'), toIntervalMonth(5))─┐
-│                                          2018-07-18 01:02:03 │
-└──────────────────────────────────────────────────────────────┘
-```
-
 # now {#now}
 
 返回当前日期和时间。
@@ -940,6 +540,50 @@ SELECT
     │               2018-01-01 │           2018-01-01 00:00:00 │
     └──────────────────────────┴───────────────────────────────┘
 
+## dateDiff {#datediff}
+
+返回两个Date或DateTime类型之间的时差。
+
+**语法**
+
+``` sql
+dateDiff('unit', startdate, enddate, [timezone])
+```
+
+**参数**
+
+-   `unit` — 返回结果的时间单位。 [String](../../sql-reference/syntax.md#syntax-string-literal).
+
+        支持的时间单位: second, minute, hour, day, week, month, quarter, year.
+
+-   `startdate` — 第一个待比较值。 [Date](../../sql-reference/data-types/date.md) 或 [DateTime](../../sql-reference/data-types/datetime.md).
+
+-   `enddate` — 第二个待比较值。 [Date](../../sql-reference/data-types/date.md) 或 [DateTime](../../sql-reference/data-types/datetime.md).
+
+-   `timezone` — 可选参数。 如果指定了，则同时适用于`startdate`和`enddate`。如果不指定，则使用`startdate`和`enddate`的时区。如果两个时区不一致，则结果不可预料。
+
+**返回值**
+
+以`unit`为单位的`startdate`和`enddate`之间的时差。
+
+类型: `int`.
+
+**示例**
+
+查询:
+
+``` sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+结果:
+
+``` text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## timeSlots(StartTime, Duration,\[, Size\]) {#timeslotsstarttime-duration-size}
 
 它返回一个时间数组，其中包括从从«StartTime»开始到«StartTime + Duration 秒»内的所有符合«size»（以秒为单位）步长的时间点。其中«size»是一个可选参数，默认为1800。
@@ -1008,44 +652,7 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g')
 └────────────────────────────────────────────┘
 ```
 
-## dateName {#dataname}
-
-返回日期的指定部分。
-
-**语法**
-
-``` sql
-dateName(date_part, date)
-```
-
-**参数**
-
--   `date_part` — 日期部分。可能的值为：'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'。类型为[String](../../sql-reference/data-types/string.md)。
--   `date` — 日期。类型为[Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md)或者[DateTime64](../../sql-reference/data-types/datetime64.md)。
--   `timezone` — 时区（可选项）。类型为[String](../../sql-reference/data-types/string.md)。
-
-**返回值**
-
--   日期的指定部分。
-
-类型为： [String](../../sql-reference/data-types/string.md#string)。
-
-**示例**
-
-查询语句：
-
-```sql
-WITH toDateTime('2021-04-14 11:22:33') AS date_value
-SELECT dateName('year', date_value), dateName('month', date_value), dateName('day', date_value);
-```
-
-结果：
-
-```text
-┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
-│ 2021                         │ April                         │ 14                          │
-└──────────────────────────────┴───────────────────────────────┴─────────────────────────────
-```
+[Original article](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->
 
 ## FROM_UNIXTIME
 
@@ -1076,149 +683,3 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
 ```
-
-## toModifiedJulianDay {#tomodifiedjulianday}
-
-将文本形式 `YYYY-MM-DD` 的 [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) 日期转换为 Int32 中的 [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) 数字。此功能支持从`0000-01-01`到`9999-12-31`的日期。如果无法将参数解析为日期或日期无效，则会引发异常。
-
-**语法**
-
-``` sql
-toModifiedJulianDay(date)
-```
-
-**参数**
-
--   `date` — 文本形式的日期。类型为[String](../../sql-reference/data-types/string.md)或者[FixedString](../../sql-reference/data-types/fixedstring.md)。
-
-**返回值**
-
--   转换的儒略日数。
-
-类型为： [Int32](../../sql-reference/data-types/int-uint.md)。
-
-**示例**
-
-查询语句：
-
-``` sql
-SELECT toModifiedJulianDay('2020-01-01');
-```
-
-结果：
-
-``` text
-┌─toModifiedJulianDay('2020-01-01')─┐
-│                             58849 │
-└───────────────────────────────────┘
-```
-
-## toModifiedJulianDayOrNull {#tomodifiedjuliandayornull}
-
-类似于[toModifiedJulianDay()](#tomodifiedjulianday)，但它不会引发异常，而是返回 `NULL`。
-
-**语法**
-
-``` sql
-toModifiedJulianDayOrNull(date)
-```
-
-**参数**
-
--   `date` — 文本形式的日期。类型为[String](../../sql-reference/data-types/string.md)或者[FixedString](../../sql-reference/data-types/fixedstring.md)。
-
-**返回值**
-
--   转换的儒略日数。
-
-类型为： [Nullable(Int32)](../../sql-reference/data-types/int-uint.md)。
-
-**示例**
-
-查询语句：
-
-``` sql
-SELECT toModifiedJulianDayOrNull('2020-01-01');
-```
-
-结果：
-
-``` text
-┌─toModifiedJulianDayOrNull('2020-01-01')─┐
-│                                   58849 │
-└─────────────────────────────────────────┘
-```
-
-## fromModifiedJulianDay {#frommodifiedjulianday}
-
-将 [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) 数字转换为 `YYYY-MM-DD` 文本格式的 [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) 日期。该函数支持从 `-678941` 到 `2973119` 的天数（分别代表 0000-01-01 和 9999-12-31）。如果天数超出支持范围，则会引发异常。
-
-**语法**
-
-``` sql
-fromModifiedJulianDay(day)
-```
-
-**参数**
-
--   `day` — 需要转换的儒略日数。类型为[Any integral types](../../sql-reference/data-types/int-uint.md)。
-
-**返回值**
-
--   文本形式的日期。
-
-类型为： [String](../../sql-reference/data-types/string.md)。
-
-**示例**
-
-查询语句：
-
-``` sql
-SELECT fromModifiedJulianDay(58849);
-```
-
-结果：
-
-``` text
-┌─fromModifiedJulianDay(58849)─┐
-│ 2020-01-01                   │
-└──────────────────────────────┘
-```
-
-## fromModifiedJulianDayOrNull {#frommodifiedjuliandayornull}
-
-类似于[fromModifiedJulianDayOrNull()](#frommodifiedjuliandayornull)，但它不会引发异常，而是返回 `NULL`。
-
-**语法**
-
-``` sql
-fromModifiedJulianDayOrNull(day)
-```
-
-**参数**
-
--   `day` —  需要转换的儒略日数。类型为[Any integral types](../../sql-reference/data-types/int-uint.md)。
-
-**返回值**
-
--   文本形式的日期。
-
-类型为： [Nullable(String)](../../sql-reference/data-types/string.md)。
-
-**示例**
-
-查询语句：
-
-``` sql
-SELECT fromModifiedJulianDayOrNull(58849);
-```
-
-结果：
-
-``` text
-┌─fromModifiedJulianDayOrNull(58849)─┐
-│ 2020-01-01                         │
-└────────────────────────────────────┘
-```
-
-[Original article](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->

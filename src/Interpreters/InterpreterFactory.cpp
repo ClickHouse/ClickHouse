@@ -3,9 +3,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
-#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -21,7 +19,6 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
-#include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
@@ -37,19 +34,15 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
-#include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterBackupQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
-#include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
-#include <Interpreters/InterpreterDropIndexQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -69,7 +62,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
@@ -206,10 +198,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterDescribeQuery>(query, context);
     }
-    else if (query->as<ASTDescribeCacheQuery>())
-    {
-        return std::make_unique<InterpreterDescribeCacheQuery>(query, context);
-    }
     else if (query->as<ASTExplainQuery>())
     {
         return std::make_unique<InterpreterExplainQuery>(query, context);
@@ -290,10 +278,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterExternalDDLQuery>(query, context);
     }
-    else if (query->as<ASTTransactionControl>())
-    {
-        return std::make_unique<InterpreterTransactionControlQuery>(query, context);
-    }
     else if (query->as<ASTCreateFunctionQuery>())
     {
         return std::make_unique<InterpreterCreateFunctionQuery>(query, context, true /*persist_function*/);
@@ -301,14 +285,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDropFunctionQuery>())
     {
         return std::make_unique<InterpreterDropFunctionQuery>(query, context);
-    }
-    else if (query->as<ASTCreateIndexQuery>())
-    {
-        return std::make_unique<InterpreterCreateIndexQuery>(query, context);
-    }
-    else if (query->as<ASTDropIndexQuery>())
-    {
-        return std::make_unique<InterpreterDropIndexQuery>(query, context);
     }
     else if (query->as<ASTBackupQuery>())
     {

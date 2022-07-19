@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
-import argparse
-import csv
-import json
-import logging
 import os
-import subprocess
+import logging
 import sys
+import json
+import subprocess
+import csv
 
 from github import Github
 
@@ -15,14 +14,9 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
-from download_release_packets import download_last_release
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
-from commit_status_helper import (
-    post_commit_status,
-    override_status,
-    post_commit_status_to_file,
-)
+from commit_status_helper import post_commit_status
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -122,23 +116,6 @@ def process_results(result_folder):
     return state, description, test_results, additional_files
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("check_name")
-    parser.add_argument(
-        "--validate-bugfix",
-        action="store_true",
-        help="Check that added tests failed on latest stable",
-    )
-    parser.add_argument(
-        "--post-commit-status",
-        default="commit_status",
-        choices=["commit_status", "file"],
-        help="Where to public post commit status",
-    )
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -148,9 +125,7 @@ if __name__ == "__main__":
     repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
-    args = parse_args()
-    check_name = args.check_name
-    validate_bugix_check = args.validate_bugfix
+    check_name = sys.argv[1]
 
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM"))
@@ -167,18 +142,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     is_flaky_check = "flaky" in check_name
-    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugix_check)
-
-    if validate_bugix_check and "pr-bugfix" not in pr_info.labels:
-        if args.post_commit_status == "file":
-            post_commit_status_to_file(
-                os.path.join(temp_path, "post_commit_status.tsv"),
-                "Skipped (no pr-bugfix)",
-                "success",
-                "null",
-            )
-        logging.info("Skipping '%s' (no pr-bugfix)", check_name)
-        sys.exit(0)
+    pr_info = PRInfo(need_changed_files=is_flaky_check)
 
     gh = Github(get_best_robot_token())
 
@@ -201,10 +165,7 @@ if __name__ == "__main__":
     if not os.path.exists(build_path):
         os.makedirs(build_path)
 
-    if validate_bugix_check:
-        download_last_release(build_path)
-    else:
-        download_all_deb_packages(check_name, reports_path, build_path)
+    download_all_deb_packages(check_name, reports_path, build_path)
 
     my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
 
@@ -225,7 +186,7 @@ if __name__ == "__main__":
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
-    run_command = f"sudo -E {runner_path}"
+    run_command = f"sudo -E {runner_path} | tee {output_path_log}"
     logging.info("Going to run command: `%s`", run_command)
     logging.info(
         "ENV parameters for runner:\n%s",
@@ -244,7 +205,6 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     state, description, test_results, additional_logs = process_results(result_path)
-    state = override_status(state, check_name, validate_bugix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
@@ -259,23 +219,10 @@ if __name__ == "__main__":
         check_name_with_group,
         False,
     )
-
-    print(f"::notice:: {check_name} Report url: {report_url}")
-    if args.post_commit_status == "commit_status":
-        post_commit_status(
-            gh, pr_info.sha, check_name_with_group, description, state, report_url
-        )
-    elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            os.path.join(temp_path, "post_commit_status.tsv"),
-            description,
-            state,
-            report_url,
-        )
-    else:
-        raise Exception(
-            f'Unknown post_commit_status option "{args.post_commit_status}"'
-        )
+    print(f"::notice ::Report url: {report_url}")
+    post_commit_status(
+        gh, pr_info.sha, check_name_with_group, description, state, report_url
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -286,8 +233,4 @@ if __name__ == "__main__":
         report_url,
         check_name_with_group,
     )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "error":
-        sys.exit(1)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

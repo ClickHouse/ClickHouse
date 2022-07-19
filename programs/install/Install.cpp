@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
     #include <syscall.h>
     #include <linux/capability.h>
 #endif
@@ -68,7 +68,6 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_KILL;
-    extern const int BAD_ARGUMENTS;
 }
 
 }
@@ -240,12 +239,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         uint32_t path_length = 0;
         _NSGetExecutablePath(nullptr, &path_length);
         if (path_length <= 1)
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         std::string path(path_length, std::string::value_type());
         auto res = _NSGetExecutablePath(&path[0], &path_length);
         if (res != 0)
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         if (path.back() == '\0')
             path.pop_back();
@@ -368,7 +367,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-extract-from-config",
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
-            "clickhouse-disks",
         };
 
         for (const auto & tool : tools)
@@ -790,13 +788,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
           *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
           */
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
             " && command -v capsh >/dev/null"
-            " && capsh --has-p=cap_net_admin,cap_ipc_lock,cap_sys_nice,cap_net_bind_service+ep >/dev/null 2>&1"
-            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice,cap_net_bind_service+ep' {0}"
-            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' or 'net_bind_service' capability for clickhouse binary."
+            " && capsh --has-p=cap_net_admin,cap_ipc_lock,cap_sys_nice+ep >/dev/null 2>&1"
+            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0}"
+            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
             fs::canonical(main_bin_path).string());
@@ -926,7 +924,24 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-            command = fmt::format("clickhouse su '{}' {}", user, command);
+        {
+#if defined(OS_FREEBSD)
+            command = fmt::format("su -m '{}' -c '{}'", user, command);
+#else
+            bool may_need_sudo = geteuid() != 0;
+            if (may_need_sudo)
+            {
+                struct passwd *p = getpwuid(geteuid());
+                // Only use sudo when we are not the given user
+                if (p == nullptr || std::string(p->pw_name) != user)
+                    command = fmt::format("sudo -u '{}' {}", user, command);
+            }
+            else
+            {
+                command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
+            }
+#endif
+        }
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);
@@ -1047,11 +1062,8 @@ namespace
         return pid;
     }
 
-    int stop(const fs::path & pid_file, bool force, bool do_not_kill)
+    int stop(const fs::path & pid_file, bool force)
     {
-        if (force && do_not_kill)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
-
         UInt64 pid = isRunning(pid_file);
 
         if (!pid)
@@ -1080,15 +1092,9 @@ namespace
 
         if (try_num == num_tries)
         {
-            if (do_not_kill)
-            {
-                fmt::print("Process (pid = {}) is still running. Will not try to kill it.\n", pid);
-                return 1;
-            }
-
-            fmt::print("Will terminate forcefully (pid = {}).\n", pid);
+            fmt::print("Will terminate forcefully.\n", pid);
             if (0 == kill(pid, 9))
-                fmt::print("Sent kill signal (pid = {}).\n", pid);
+                fmt::print("Sent kill signal.\n", pid);
             else
                 throwFromErrno("Cannot send kill signal", ErrorCodes::SYSTEM_ERROR);
 
@@ -1169,7 +1175,6 @@ int mainEntryClickHouseStop(int argc, char ** argv)
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
-            ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
         ;
 
         po::variables_map options;
@@ -1184,9 +1189,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
 
-        bool force = options["force"].as<bool>();
-        bool do_not_kill = options["do-not-kill"].as<bool>();
-        return stop(pid_file, force, do_not_kill);
+        return stop(pid_file, options["force"].as<bool>());
     }
     catch (...)
     {
@@ -1244,7 +1247,6 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
             ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
-            ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
         ;
 
         po::variables_map options;
@@ -1263,9 +1265,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
 
-        bool force = options["force"].as<bool>();
-        bool do_not_kill = options["do-not-kill"].as<bool>();
-        if (int res = stop(pid_file, force, do_not_kill))
+        if (int res = stop(pid_file, options["force"].as<bool>()))
             return res;
 
         return start(user, executable, config, pid_file);

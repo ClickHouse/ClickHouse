@@ -1,5 +1,6 @@
 ---
-sidebar_label: GitHub Events
+toc_priority: 11
+toc_title: GitHub Events
 ---
 
 # GitHub Events Dataset

@@ -16,31 +16,21 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
+
+from cassandra.policies import RoundRobinPolicy
+import cassandra.cluster
+import psycopg2
+import pymongo
+import pymysql
 import requests
-
-try:
-    # Please, add modules that required for specific tests only here.
-    # So contributors will be able to run most tests locally
-    # without installing tons of unneeded packages that may be not so easy to install.
-    import asyncio
-    from cassandra.policies import RoundRobinPolicy
-    import cassandra.cluster
-    import psycopg2
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-    import pymongo
-    import pymysql
-    import nats
-    import meilisearch
-    from confluent_kafka.avro.cached_schema_registry_client import (
-        CachedSchemaRegistryClient,
-    )
-except Exception as e:
-    logging.warning(f"Cannot import some modules, some tests may not work: {e}")
-
+from confluent_kafka.avro.cached_schema_registry_client import (
+    CachedSchemaRegistryClient,
+)
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
@@ -50,8 +40,6 @@ import docker
 
 from .client import Client
 from .hdfs_api import HDFSApi
-
-from .config_cluster import *
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -215,11 +203,6 @@ def check_rabbitmq_is_available(rabbitmq_id):
     return p.returncode == 0
 
 
-async def check_nats_is_available(nats_ip):
-    nc = await nats.connect("{}:4444".format(nats_ip), user="click", password="house")
-    return nc.is_connected
-
-
 def enable_consistent_hash_plugin(rabbitmq_id):
     p = subprocess.Popen(
         (
@@ -343,7 +326,6 @@ class ClickHouseCluster:
         self.base_kafka_cmd = []
         self.base_kerberized_kafka_cmd = []
         self.base_rabbitmq_cmd = []
-        self.base_nats_cmd = []
         self.base_cassandra_cmd = []
         self.base_jdbc_bridge_cmd = []
         self.base_redis_cmd = []
@@ -360,13 +342,11 @@ class ClickHouseCluster:
         self.with_kafka = False
         self.with_kerberized_kafka = False
         self.with_rabbitmq = False
-        self.with_nats = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_mongo_secure = False
-        self.with_meili = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -429,12 +409,6 @@ class ClickHouseCluster:
         self.mongo_no_cred_host = "mongo2"
         self.mongo_no_cred_port = get_free_port()
 
-        # available when with_meili == True
-        self.meili_host = "meili1"
-        self.meili_port = get_free_port()
-        self.meili_secure_host = "meili_secure"
-        self.meili_secure_port = get_free_port()
-
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
         self.cassandra_port = 9042
@@ -447,11 +421,6 @@ class ClickHouseCluster:
         self.rabbitmq_port = 5672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
-
-        self.nats_host = "nats1"
-        self.nats_ip = None
-        self.nats_port = 4444
-        self.nats_docker_id = None
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -716,19 +685,10 @@ class ClickHouseCluster:
         )
 
         binary_path = self.server_bin_path
-        binary_dir = os.path.dirname(self.server_bin_path)
-
-        # always prefer clickhouse-keeper standalone binary
-        if os.path.exists(os.path.join(binary_dir, "clickhouse-keeper")):
-            binary_path = os.path.join(binary_dir, "clickhouse-keeper")
-            keeper_cmd_prefix = "clickhouse-keeper"
-        else:
-            if binary_path.endswith("-server"):
-                binary_path = binary_path[: -len("-server")]
-            keeper_cmd_prefix = "clickhouse keeper"
+        if binary_path.endswith("-server"):
+            binary_path = binary_path[: -len("-server")]
 
         env_variables["keeper_binary"] = binary_path
-        env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
         env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
@@ -1026,26 +986,6 @@ class ClickHouseCluster:
         ]
         return self.base_rabbitmq_cmd
 
-    def setup_nats_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_nats = True
-        env_variables["NATS_HOST"] = self.nats_host
-        env_variables["NATS_INTERNAL_PORT"] = "4444"
-        env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
-
-        self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
-        )
-        self.base_nats_cmd = [
-            "docker-compose",
-            "--env-file",
-            instance.env_file,
-            "--project-name",
-            self.project_name,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_nats.yml"),
-        ]
-        return self.base_nats_cmd
-
     def setup_mongo_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = self.with_mongo_secure = True
         env_variables["MONGO_HOST"] = self.mongo_host
@@ -1089,30 +1029,6 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_mongo.yml"),
         ]
         return self.base_mongo_cmd
-
-    def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_meili = True
-        env_variables["MEILI_HOST"] = self.meili_host
-        env_variables["MEILI_EXTERNAL_PORT"] = str(self.meili_port)
-        env_variables["MEILI_INTERNAL_PORT"] = "7700"
-
-        env_variables["MEILI_SECURE_HOST"] = self.meili_secure_host
-        env_variables["MEILI_SECURE_EXTERNAL_PORT"] = str(self.meili_secure_port)
-        env_variables["MEILI_SECURE_INTERNAL_PORT"] = "7700"
-
-        self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_meili.yml")]
-        )
-        self.base_meili_cmd = [
-            "docker-compose",
-            "--env-file",
-            instance.env_file,
-            "--project-name",
-            self.project_name,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_meili.yml"),
-        ]
-        return self.base_meili_cmd
 
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_minio = True
@@ -1236,7 +1152,6 @@ class ClickHouseCluster:
         with_kafka=False,
         with_kerberized_kafka=False,
         with_rabbitmq=False,
-        with_nats=False,
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
@@ -1245,7 +1160,6 @@ class ClickHouseCluster:
         with_kerberized_hdfs=False,
         with_mongo=False,
         with_mongo_secure=False,
-        with_meili=False,
         with_nginx=False,
         with_redis=False,
         with_minio=False,
@@ -1326,11 +1240,9 @@ class ClickHouseCluster:
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
-            with_nats=with_nats,
             with_nginx=with_nginx,
             with_kerberized_hdfs=with_kerberized_hdfs,
             with_mongo=with_mongo or with_mongo_secure,
-            with_meili=with_meili,
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
@@ -1463,11 +1375,6 @@ class ClickHouseCluster:
                 self.setup_rabbitmq_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if with_nats and not self.with_nats:
-            cmds.append(
-                self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
-            )
-
         if with_nginx and not self.with_nginx:
             cmds.append(
                 self.setup_nginx_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -1500,11 +1407,6 @@ class ClickHouseCluster:
                         instance, env_variables, docker_compose_yml_dir
                     )
                 )
-
-        if with_meili and not self.with_meili:
-            cmds.append(
-                self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir)
-            )
 
         if self.with_net_trics:
             for cmd in cmds:
@@ -1755,8 +1657,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql_user,
-                    password=mysql_pass,
+                    user="root",
+                    password="clickhouse",
                     host=self.mysql_ip,
                     port=self.mysql_port,
                 )
@@ -1777,8 +1679,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql8_user,
-                    password=mysql8_pass,
+                    user="root",
+                    password="clickhouse",
                     host=self.mysql8_ip,
                     port=self.mysql8_port,
                 )
@@ -1802,8 +1704,8 @@ class ClickHouseCluster:
             try:
                 for ip in [self.mysql2_ip, self.mysql3_ip, self.mysql4_ip]:
                     conn = pymysql.connect(
-                        user=mysql_user,
-                        password=mysql_pass,
+                        user="root",
+                        password="clickhouse",
                         host=ip,
                         port=self.mysql_port,
                     )
@@ -1826,9 +1728,9 @@ class ClickHouseCluster:
                 self.postgres_conn = psycopg2.connect(
                     host=self.postgres_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres_conn.autocommit = True
@@ -1850,9 +1752,9 @@ class ClickHouseCluster:
                 self.postgres2_conn = psycopg2.connect(
                     host=self.postgres2_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres2_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres2_conn.autocommit = True
@@ -1866,9 +1768,9 @@ class ClickHouseCluster:
                 self.postgres3_conn = psycopg2.connect(
                     host=self.postgres3_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres3_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres3_conn.autocommit = True
@@ -1882,9 +1784,9 @@ class ClickHouseCluster:
                 self.postgres4_conn = psycopg2.connect(
                     host=self.postgres4_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres4_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres4_conn.autocommit = True
@@ -1915,18 +1817,6 @@ class ClickHouseCluster:
         if throw:
             raise Exception("Cannot wait RabbitMQ container")
         return False
-
-    def wait_nats_is_available(self, nats_ip, max_retries=5):
-        retries = 0
-        while True:
-            if asyncio.run(check_nats_is_available(nats_ip)):
-                break
-            else:
-                retries += 1
-                if retries > max_retries:
-                    raise Exception("NATS is not available")
-                logging.debug("Waiting for NATS to start up")
-                time.sleep(1)
 
     def wait_nginx_to_start(self, timeout=60):
         self.nginx_ip = self.get_instance_ip(self.nginx_host)
@@ -2048,7 +1938,7 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=mongo_pass
+            host="localhost", port=self.mongo_port, user="root", password="clickhouse"
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -2063,30 +1953,6 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
-    def wait_meili_to_start(self, timeout=30):
-        connection_str = "http://{host}:{port}".format(
-            host="localhost", port=self.meili_port
-        )
-        client = meilisearch.Client(connection_str)
-
-        connection_str_secure = "http://{host}:{port}".format(
-            host="localhost", port=self.meili_secure_port
-        )
-        client_secure = meilisearch.Client(connection_str_secure, "password")
-
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                client.get_all_stats()
-                client_secure.get_all_stats()
-                logging.debug(
-                    f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}"
-                )
-                return
-            except Exception as ex:
-                logging.debug("Can't connect to MeiliSearch " + str(ex))
-                time.sleep(1)
-
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
@@ -2096,8 +1962,8 @@ class ClickHouseCluster:
         )
         minio_client = Minio(
             f"{self.minio_ip}:{self.minio_port}",
-            access_key=minio_access_key,
-            secret_key=minio_secret_key,
+            access_key="minio",
+            secret_key="minio123",
             secure=secure,
             http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
         )  # disable SSL check as we test ClickHouse and not Python library
@@ -2400,14 +2266,6 @@ class ClickHouseCluster:
                     if self.wait_rabbitmq_to_start(throw=(i == 4)):
                         break
 
-            if self.with_nats and self.base_nats_cmd:
-                logging.debug("Setup NATS")
-                subprocess_check_call(self.base_nats_cmd + common_opts)
-                self.nats_docker_id = self.get_instance_docker_id("nats1")
-                self.up_called = True
-                self.nats_ip = self.get_instance_ip("nats1")
-                self.wait_nats_is_available(self.nats_ip)
-
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug("Setup HDFS")
                 os.makedirs(self.hdfs_logs_dir)
@@ -2441,12 +2299,6 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
-            if self.with_meili and self.base_meili_cmd:
-                logging.debug("Setup MeiliSearch")
-                run_and_check(self.base_meili_cmd + common_opts)
-                self.up_called = True
-                self.wait_meili_to_start()
-
             if self.with_redis and self.base_redis_cmd:
                 logging.debug("Setup Redis")
                 subprocess_check_call(self.base_redis_cmd + common_opts)
@@ -2457,7 +2309,7 @@ class ClickHouseCluster:
                 logging.debug("Setup hive")
                 subprocess_check_call(self.base_hive_cmd + common_opts)
                 self.up_called = True
-                time.sleep(30)
+                time.sleep(300)
 
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs
@@ -2769,11 +2621,9 @@ class ClickHouseInstance:
         with_kafka,
         with_kerberized_kafka,
         with_rabbitmq,
-        with_nats,
         with_nginx,
         with_kerberized_hdfs,
         with_mongo,
-        with_meili,
         with_redis,
         with_minio,
         with_azurite,
@@ -2851,11 +2701,9 @@ class ClickHouseInstance:
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
-        self.with_nats = with_nats
         self.with_nginx = with_nginx
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_mongo = with_mongo
-        self.with_meili = with_meili
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
@@ -2939,16 +2787,10 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
-        host=None,
         ignore_error=False,
         query_id=None,
     ):
-        sql_for_log = ""
-        if len(sql) > 1000:
-            sql_for_log = sql[:1000]
-        else:
-            sql_for_log = sql
-        logging.debug("Executing query %s on %s", sql_for_log, self.name)
+        logging.debug("Executing query %s on %s", sql, self.name)
         return self.client.query(
             sql,
             stdin=stdin,
@@ -2959,7 +2801,6 @@ class ClickHouseInstance:
             database=database,
             ignore_error=ignore_error,
             query_id=query_id,
-            host=host,
         )
 
     def query_with_retry(
@@ -2971,7 +2812,6 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
-        host=None,
         ignore_error=False,
         retry_count=20,
         sleep_time=0.5,
@@ -2989,7 +2829,6 @@ class ClickHouseInstance:
                     user=user,
                     password=password,
                     database=database,
-                    host=host,
                     ignore_error=ignore_error,
                 )
                 if check_callback(result):
@@ -3057,7 +2896,6 @@ class ClickHouseInstance:
         self,
         sql,
         data=None,
-        method=None,
         params=None,
         user=None,
         password=None,
@@ -3072,8 +2910,7 @@ class ClickHouseInstance:
         else:
             params = params.copy()
 
-        if sql is not None:
-            params["query"] = sql
+        params["query"] = sql
 
         auth = None
         if user and password:
@@ -3089,11 +2926,10 @@ class ClickHouseInstance:
             requester = requests.Session()
             requester.mount("https://", adapter)
             requester.mount("http://", adapter)
-
-        if method is None:
-            method = "POST" if data else "GET"
-
-        r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        if data:
+            r = requester.post(url, data, auth=auth, timeout=timeout)
+        else:
+            r = requester.get(url, auth=auth, timeout=timeout)
 
         def http_code_and_message():
             code = r.status_code
@@ -3459,6 +3295,14 @@ class ClickHouseInstance:
             user="root",
         )
         self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse",
+            ],
+            user="root",
+        )
+        self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
         )
@@ -3471,11 +3315,7 @@ class ClickHouseInstance:
             self.wait_start(time_left)
 
     def restart_with_latest_version(
-        self,
-        stop_start_wait_sec=300,
-        callback_onstop=None,
-        signal=15,
-        fix_metadata=False,
+        self, stop_start_wait_sec=300, callback_onstop=None, signal=15
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -3522,23 +3362,14 @@ class ClickHouseInstance:
                 "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version",
             ]
         )
-        if fix_metadata:
-            # Versions older than 20.7 might not create .sql file for system and default database
-            # Create it manually if upgrading from older version
-            self.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
-                ],
-            )
-            self.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
-                ],
-            )
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse",
+            ],
+            user="root",
+        )
         self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
             user=str(os.getuid()),
@@ -3650,16 +3481,16 @@ class ClickHouseInstance:
                 "MySQL": {
                     "DSN": "mysql_odbc",
                     "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc.so",
-                    "Database": odbc_mysql_db,
-                    "Uid": odbc_mysql_uid,
-                    "Pwd": odbc_mysql_pass,
+                    "Database": "clickhouse",
+                    "Uid": "root",
+                    "Pwd": "clickhouse",
                     "Server": self.cluster.mysql_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
-                    "Database": odbc_psql_db,
-                    "UserName": odbc_psql_user,
-                    "Password": odbc_psql_pass,
+                    "Database": "postgres",
+                    "UserName": "postgres",
+                    "Password": "mysecretpassword",
                     "Port": str(self.cluster.postgres_port),
                     "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",
@@ -3839,9 +3670,6 @@ class ClickHouseInstance:
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")
 
-        if self.with_nats:
-            depends_on.append("nats1")
-
         if self.with_zookeeper:
             depends_on.append("zoo1")
             depends_on.append("zoo2")
@@ -3918,10 +3746,10 @@ class ClickHouseInstance:
         if self.external_dirs:
             for external_dir in self.external_dirs:
                 external_dir_abs_path = p.abspath(
-                    p.join(self.cluster.instances_dir, external_dir.lstrip("/"))
+                    p.join(self.path, external_dir.lstrip("/"))
                 )
                 logging.info(f"external_dir_abs_path={external_dir_abs_path}")
-                os.makedirs(external_dir_abs_path, exist_ok=True)
+                os.mkdir(external_dir_abs_path)
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )

@@ -1,9 +1,9 @@
 ---
-sidebar_position: 39
-sidebar_label: USER
+toc_priority: 39
+toc_title: USER
 ---
 
-# CREATE USER
+# CREATE USER {#create-user-statement}
 
 Creates [user accounts](../../../operations/access-rights.md#user-account-management).
 
@@ -22,22 +22,20 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-## Identification
+## Identification {#identification}
 
 There are multiple ways of user identification:
 
 -   `IDENTIFIED WITH no_password`
 -   `IDENTIFIED WITH plaintext_password BY 'qwerty'`
 -   `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
--   `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
+-   `IDENTIFIED WITH sha256_hash BY 'hash'`
 -   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 -   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
 -   `IDENTIFIED WITH ldap SERVER 'server_name'`
 -   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 
-For identification with sha256_hash using `SALT` - hash must be calculated from concatination of 'password' and 'salt'.
-
-## User Host
+## User Host {#user-host}
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:
 
@@ -54,11 +52,11 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 -   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
 -   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
-:::warning    
-ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
-:::
+!!! info "Warning"
+    ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 
-## GRANTEES Clause
+
+## GRANTEES Clause {#grantees}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#grant-privigele-syntax). Options of the `GRANTEES` clause:
 
@@ -69,7 +67,7 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 
-## Examples
+## Examples {#create-user-examples}
 
 Create the user account `mira` protected by the password `qwerty`:
 

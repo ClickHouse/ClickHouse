@@ -1,6 +1,6 @@
 ---
-sidebar_position: 33
-sidebar_label: Log
+toc_priority: 33
+toc_title: Log
 ---
 
 # Log {#log}

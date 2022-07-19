@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
 <graphite_rollup>
 	<pattern>
         <rule_type>plain</rule_type>
@@ -164,4 +164,4 @@
  		</retention>
  	</default>
 </graphite_rollup>
-</clickhouse>
+</yandex>

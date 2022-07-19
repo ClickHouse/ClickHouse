@@ -113,7 +113,7 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(StringRef{s}, buf);
 }
 
-inline void writeStringBinary(std::string_view s, WriteBuffer & buf)
+inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
 {
     writeStringBinary(StringRef{s}, buf);
 }
@@ -365,7 +365,7 @@ inline void writeJSONString(const StringRef & s, WriteBuffer & buf, const Format
     writeJSONString(s.data, s.data + s.size, buf, settings);
 }
 
-inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const std::string_view & s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(StringRef{s}, buf, settings);
 }
@@ -440,7 +440,7 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
     writeEscapedString(ref.data, ref.size, buf);
 }
 
-inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
+inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
 {
     writeEscapedString(ref.data(), ref.size(), buf);
 }
@@ -478,7 +478,7 @@ inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
+inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
 }
@@ -493,7 +493,7 @@ inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-inline void writeDoubleQuotedString(std::string_view s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
@@ -805,23 +805,6 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     scale = scale > MaxScale ? MaxScale : scale;
 
     auto components = DecimalUtils::split(datetime64, scale);
-    /// Case1:
-    /// -127914467.877
-    /// => whole = -127914467, fraction = 877(After DecimalUtils::split)
-    /// => new whole = -127914468(1965-12-12 12:12:12), new fraction = 1000 - 877 = 123(.123)
-    /// => 1965-12-12 12:12:12.123
-    ///
-    /// Case2:
-    /// -0.877
-    /// => whole = 0, fractional = -877(After DecimalUtils::split)
-    /// => whole = -1(1969-12-31 23:59:59), fractional = 1000 + (-877) = 123(.123)
-    using T = typename DateTime64::NativeType;
-    if (datetime64.value < 0 && components.fractional)
-    {
-        components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
-        --components.whole;
-    }
-
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(LocalDateTime(components.whole, time_zone), buf);
 
     if (scale > 0)
@@ -886,12 +869,12 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
 
 /// Methods for output in binary format.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -999,23 +982,18 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     {
         part = DecimalUtils::getFractionalPart(x, scale);
         if (part || trailing_zeros)
-        {
-            if (part < 0)
-                part *= T(-1);
-
             writeDecimalFractional(part, scale, ostr, trailing_zeros);
-        }
     }
 }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
-inline void writeQuoted(std::string_view x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
 inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
@@ -1043,12 +1021,12 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
-inline void writeDoubleQuoted(std::string_view x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
@@ -1076,8 +1054,8 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
@@ -1146,8 +1124,8 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 }
 
 template <typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     if constexpr (sizeof(x) == 2)
         x = __builtin_bswap16(x);
@@ -1160,8 +1138,8 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little 
 }
 
 template <typename T>
-requires is_big_int_v<T>
-inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline std::enable_if_t<is_big_int_v<T>, void>
+writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
@@ -1185,19 +1163,3 @@ struct PcgSerializer
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 }
-
-template<>
-struct fmt::formatter<DB::UUID>
-{
-    template<typename ParseContext>
-    constexpr auto parse(ParseContext & context)
-    {
-        return context.begin();
-    }
-
-    template<typename FormatContext>
-    auto format(const DB::UUID & uuid, FormatContext & context)
-    {
-        return fmt::format_to(context.out(), "{}", toString(uuid));
-    }
-};

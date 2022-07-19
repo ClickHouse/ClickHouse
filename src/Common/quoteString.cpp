@@ -43,5 +43,4 @@ String backQuoteIfNeed(const StringRef & x)
     }
     return res;
 }
-
 }

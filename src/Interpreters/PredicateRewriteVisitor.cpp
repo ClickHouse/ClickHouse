@@ -96,8 +96,8 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     size_t alias_index = 0;
     for (auto & ref_select : temp_select_query->refSelect()->children)
     {
-        if (!ref_select->as<ASTAsterisk>() && !ref_select->as<ASTQualifiedAsterisk>() && !ref_select->as<ASTColumnsListMatcher>()
-            && !ref_select->as<ASTColumnsRegexpMatcher>() && !ref_select->as<ASTIdentifier>())
+        if (!ref_select->as<ASTAsterisk>() && !ref_select->as<ASTQualifiedAsterisk>() && !ref_select->as<ASTColumnsMatcher>() &&
+            !ref_select->as<ASTIdentifier>())
         {
             if (const auto & alias = ref_select->tryGetAlias(); alias.empty())
                 ref_select->setAlias("--predicate_optimizer_" + toString(alias_index++));

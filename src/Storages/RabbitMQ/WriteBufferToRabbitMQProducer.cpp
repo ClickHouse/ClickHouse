@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <amqpcpp.h>
 #include <uv.h>
 #include <boost/algorithm/string/split.hpp>

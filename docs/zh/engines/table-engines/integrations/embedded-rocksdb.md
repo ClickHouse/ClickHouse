@@ -1,6 +1,6 @@
 ---
-sidebar_position: 9
-sidebar_label: EmbeddedRocksDB
+toc_priority: 9
+toc_title: EmbeddedRocksDB
 ---
 
 # EmbeddedRocksDB 引擎 {#EmbeddedRocksDB-engine}

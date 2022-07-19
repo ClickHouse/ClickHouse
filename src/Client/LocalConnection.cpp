@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -63,13 +62,9 @@ void LocalConnection::updateProgress(const Progress & value)
     state->progress.incrementPiecewiseAtomically(value);
 }
 
-void LocalConnection::sendProfileEvents()
+void LocalConnection::getProfileEvents(Block & block)
 {
-    Block profile_block;
-    state->after_send_profile_events.restart();
-    next_packet_type = Protocol::Server::ProfileEvents;
-    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
-    state->block.emplace(std::move(profile_block));
+    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, block, last_sent_snapshots);
 }
 
 void LocalConnection::sendQuery(
@@ -78,19 +73,14 @@ void LocalConnection::sendQuery(
     const String & query_id,
     UInt64 stage,
     const Settings *,
-    const ClientInfo * client_info,
-    bool,
-    std::function<void(const Progress &)> process_progress_callback)
+    const ClientInfo *,
+    bool)
 {
-    /// Suggestion comes without client_info.
-    if (client_info)
-        query_context = session.makeQueryContext(*client_info);
-    else
-        query_context = session.makeQueryContext();
+    query_context = session.makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     if (send_progress)
     {
-        query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
+        query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
         query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
     }
     if (!current_database.empty())
@@ -153,19 +143,6 @@ void LocalConnection::sendQuery(
         else if (state->io.pipeline.completed())
         {
             CompletedPipelineExecutor executor(state->io.pipeline);
-            if (process_progress_callback)
-            {
-                auto callback = [this, &process_progress_callback]()
-                {
-                    if (state->is_cancelled)
-                        return true;
-
-                    process_progress_callback(state->progress.fetchAndResetPiecewiseAtomically());
-                    return false;
-                };
-
-                executor.setCancelCallback(callback, query_context->getSettingsRef().interactive_delay / 1000);
-            }
             executor.execute();
         }
 
@@ -177,17 +154,17 @@ void LocalConnection::sendQuery(
     catch (const Exception & e)
     {
         state->io.onException();
-        state->exception.reset(e.clone());
+        state->exception.emplace(e);
     }
     catch (const std::exception & e)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
     }
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -197,19 +174,17 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
         return;
 
     if (state->pushing_async_executor)
+    {
         state->pushing_async_executor->push(block);
+    }
     else if (state->pushing_executor)
+    {
         state->pushing_executor->push(block);
-    else
-        throw Exception("Unknown executor", ErrorCodes::LOGICAL_ERROR);
-
-    if (send_profile_events)
-        sendProfileEvents();
+    }
 }
 
 void LocalConnection::sendCancel()
 {
-    state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
 }
@@ -226,6 +201,9 @@ void LocalConnection::finishQuery()
 {
     next_packet_type = Protocol::Server::EndOfStream;
 
+    if (!state)
+        return;
+
     if (state->executor)
     {
         state->executor.reset();
@@ -241,7 +219,6 @@ void LocalConnection::finishQuery()
 
     state->io.onFinish();
     state.reset();
-    last_sent_snapshots.clear();
 }
 
 bool LocalConnection::poll(size_t)
@@ -270,7 +247,11 @@ bool LocalConnection::poll(size_t)
 
         if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
         {
-            sendProfileEvents();
+            Block block;
+            state->after_send_profile_events.restart();
+            next_packet_type = Protocol::Server::ProfileEvents;
+            getProfileEvents(block);
+            state->block.emplace(std::move(block));
             return true;
         }
 
@@ -281,17 +262,17 @@ bool LocalConnection::poll(size_t)
         catch (const Exception & e)
         {
             state->io.onException();
-            state->exception.reset(e.clone());
+            state->exception.emplace(e);
         }
         catch (const std::exception & e)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+            state->exception.emplace(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -341,17 +322,6 @@ bool LocalConnection::poll(size_t)
         {
             next_packet_type = Protocol::Server::ProfileInfo;
             state->profile_info = state->executor->getProfileInfo();
-            return true;
-        }
-    }
-
-    if (state->is_finished && !state->sent_profile_events)
-    {
-        state->sent_profile_events = true;
-
-        if (send_profile_events && state->executor)
-        {
-            sendProfileEvents();
             return true;
         }
     }
@@ -409,9 +379,9 @@ Packet LocalConnection::receivePacket()
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
     {
-        case Protocol::Server::Totals:
-        case Protocol::Server::Extremes:
-        case Protocol::Server::Log:
+        case Protocol::Server::Totals: [[fallthrough]];
+        case Protocol::Server::Extremes: [[fallthrough]];
+        case Protocol::Server::Log: [[fallthrough]];
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
@@ -427,7 +397,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->profile_info)
             {
-                packet.profile_info = *state->profile_info;
+                packet.profile_info = std::move(*state->profile_info);
                 state->profile_info.reset();
             }
             next_packet_type.reset();
@@ -451,13 +421,13 @@ Packet LocalConnection::receivePacket()
         }
         case Protocol::Server::Exception:
         {
-            packet.exception.reset(state->exception->clone());
+            packet.exception = std::make_unique<Exception>(*state->exception);
             next_packet_type.reset();
             break;
         }
         case Protocol::Server::Progress:
         {
-            packet.progress = state->progress.fetchAndResetPiecewiseAtomically();
+            packet.progress = std::move(state->progress);
             state->progress.reset();
             next_packet_type.reset();
             break;

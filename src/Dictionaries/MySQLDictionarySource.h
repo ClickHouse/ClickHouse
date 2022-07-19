@@ -52,13 +52,13 @@ public:
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    Pipe loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -71,7 +71,7 @@ public:
     std::string toString() const override;
 
 private:
-    QueryPipeline loadFromQuery(const String & query);
+    Pipe loadFromQuery(const String & query);
 
     std::string getUpdateFieldAndDate();
 

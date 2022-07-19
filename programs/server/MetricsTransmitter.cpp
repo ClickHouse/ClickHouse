@@ -6,7 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
-#include <Daemon/BaseDaemon.h>
+#include <daemon/BaseDaemon.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>

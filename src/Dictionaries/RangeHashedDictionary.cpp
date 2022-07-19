@@ -104,7 +104,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
 
     /// Cast range column to storage type
     Columns modified_key_columns = key_columns;
-    const ColumnPtr & range_storage_column = key_columns.back();
+    auto range_storage_column = key_columns.back();
     ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types.back(), ""};
     modified_key_columns.back() = castColumnAccurate(column_to_cast, dict_struct.range_min->type);
 
@@ -314,7 +314,7 @@ ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type>::hasKeys(const Colum
     }
 
     /// Cast range column to storage type
-    const ColumnPtr & range_storage_column = key_columns.back();
+    auto range_storage_column = key_columns.back();
     ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types.back(), ""};
     auto range_column_updated = castColumnAccurate(column_to_cast, dict_struct.range_min->type);
     auto key_columns_copy = key_columns;
@@ -513,7 +513,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
     size_t keys_found = 0;
 
-    const ColumnPtr & range_column = key_columns.back();
+    auto range_column = key_columns.back();
     auto key_columns_copy = key_columns;
     key_columns_copy.pop_back();
 
@@ -984,7 +984,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         Columns result;
         result.reserve(attribute_names_size);
 
-        const ColumnPtr & key_column = key_columns.back();
+        auto key_column = key_columns.back();
 
         const auto * key_to_index_column = typeid_cast<const ColumnUInt64 *>(key_column.get());
         if (!key_to_index_column)
@@ -1005,7 +1005,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         return result;
     };
 
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(
+    auto coordinator = DictionarySourceCoordinator::create(
         dictionary,
         column_names,
         std::move(key_columns),

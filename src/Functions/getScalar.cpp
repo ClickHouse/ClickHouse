@@ -78,7 +78,7 @@ public:
 
     static ColumnWithTypeAndName createScalar(ContextPtr context_)
     {
-        if (const auto * block = context_->tryGetSpecialScalar(Scalar::scalar_name))
+        if (const auto * block = context_->tryGetLocalScalar(Scalar::scalar_name))
             return block->getByPosition(0);
         else if (context_->hasQueryContext())
         {

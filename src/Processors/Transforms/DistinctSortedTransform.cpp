@@ -9,24 +9,13 @@ namespace ErrorCodes
 }
 
 DistinctSortedTransform::DistinctSortedTransform(
-    Block header_, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
-    : ISimpleTransform(header_, header_, true)
-    , header(std::move(header_))
+    const Block & header, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
+    : ISimpleTransform(header, header, true)
     , description(std::move(sort_description))
-    , column_names(columns)
+    , columns_names(columns)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
 {
-    /// pre-calculate column positions to use during chunk transformation
-    const size_t num_columns = column_names.empty() ? header.columns() : column_names.size();
-    column_positions.reserve(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto pos = column_names.empty() ? i : header.getPositionByName(column_names[i]);
-        const auto & col = header.getByPosition(pos).column;
-        if (col && !isColumnConst(*col))
-            column_positions.emplace_back(pos);
-    }
 }
 
 void DistinctSortedTransform::transform(Chunk & chunk)
@@ -35,7 +24,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         if (column_ptrs.empty())
             return;
 
-        ColumnRawPtrs clearing_hint_columns(getClearingColumns(column_ptrs));
+        ColumnRawPtrs clearing_hint_columns(getClearingColumns(chunk, column_ptrs));
 
         if (data.type == ClearableSetVariants::Type::EMPTY)
             data.init(ClearableSetVariants::chooseMethod(column_ptrs, key_sizes));
@@ -129,23 +118,34 @@ bool DistinctSortedTransform::buildFilter(
 
 ColumnRawPtrs DistinctSortedTransform::getKeyColumns(const Chunk & chunk) const
 {
+    size_t columns = columns_names.empty() ? chunk.getNumColumns() : columns_names.size();
+
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(column_positions.size());
-    for (const auto pos : column_positions)
+    column_ptrs.reserve(columns);
+
+    for (size_t i = 0; i < columns; ++i)
     {
+        auto pos = i;
+        if (!columns_names.empty())
+            pos = input.getHeader().getPositionByName(columns_names[i]);
+
         const auto & column = chunk.getColumns()[pos];
-        column_ptrs.emplace_back(column.get());
+
+        /// Ignore all constant columns.
+        if (!isColumnConst(*column))
+            column_ptrs.emplace_back(column.get());
     }
+
     return column_ptrs;
 }
 
-ColumnRawPtrs DistinctSortedTransform::getClearingColumns(const ColumnRawPtrs & key_columns) const
+ColumnRawPtrs DistinctSortedTransform::getClearingColumns(const Chunk & chunk, const ColumnRawPtrs & key_columns) const
 {
     ColumnRawPtrs clearing_hint_columns;
     clearing_hint_columns.reserve(description.size());
     for (const auto & sort_column_description : description)
     {
-        const auto * sort_column_ptr = header.getByName(sort_column_description.column_name).column.get();
+        const auto * sort_column_ptr = chunk.getColumns().at(sort_column_description.column_number).get();
         const auto it = std::find(key_columns.cbegin(), key_columns.cend(), sort_column_ptr);
         if (it != key_columns.cend()) /// if found in key_columns
             clearing_hint_columns.emplace_back(sort_column_ptr);

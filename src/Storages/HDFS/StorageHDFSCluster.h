@@ -7,6 +7,8 @@
 #include <memory>
 #include <optional>
 
+#include <base/shared_ptr_helper.h>
+
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
@@ -16,19 +18,10 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorage
+class StorageHDFSCluster : public shared_ptr_helper<StorageHDFSCluster>, public IStorage
 {
+    friend struct shared_ptr_helper<StorageHDFSCluster>;
 public:
-    StorageHDFSCluster(
-        ContextPtr context_,
-        String cluster_name_,
-        const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & compression_method_);
-
     std::string getName() const override { return "HDFSCluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
@@ -38,6 +31,16 @@ public:
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
+
+protected:
+    StorageHDFSCluster(
+        String cluster_name_,
+        const String & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & compression_method_);
 
 private:
     String cluster_name;

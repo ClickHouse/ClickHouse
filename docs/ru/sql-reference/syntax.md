@@ -1,6 +1,6 @@
 ---
-sidebar_position: 31
-sidebar_label: "Синтаксис"
+toc_priority: 31
+toc_title: "Синтаксис"
 ---
 
 # Синтаксис {#syntax}
@@ -102,7 +102,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 В запросах можно проверить `NULL` с помощью операторов [IS NULL](operators/index.md#operator-is-null) и [IS NOT NULL](operators/index.md), а также соответствующих функций `isNull` и `isNotNull`.
 
-### Heredoc {#heredoc}
+### Heredoc {#heredeoc}
 
 Синтаксис [heredoc](https://ru.wikipedia.org/wiki/Heredoc-синтаксис) — это способ определения строк с сохранением исходного формата (часто с переносом строки). `Heredoc` задается как произвольный строковый литерал между двумя символами `$`, например `$heredoc$`. Значение между двумя `heredoc` обрабатывается "как есть".
 
@@ -150,7 +150,7 @@ expr AS alias
 
         Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        В функции [CAST](../sql-reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](../sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
 -   `expr` — любое выражение, которое поддерживает ClickHouse.
 

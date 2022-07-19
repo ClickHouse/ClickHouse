@@ -24,9 +24,6 @@ namespace ErrorCodes
 class IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
-class DictionaryHierarchicalParentToChildIndex;
-using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHierarchicalParentToChildIndex>;
-
 /** DictionaryKeyType provides IDictionary client information about
   * which key type is supported by dictionary.
   *
@@ -62,26 +59,26 @@ public:
 
     std::string getFullName() const
     {
-        std::lock_guard lock{mutex};
-        return dictionary_id.getNameForLogs();
+        std::lock_guard lock{name_mutex};
+        return dictionary_id.getInternalDictionaryName();
     }
 
     StorageID getDictionaryID() const
     {
-        std::lock_guard lock{mutex};
+        std::lock_guard lock{name_mutex};
         return dictionary_id;
     }
 
     void updateDictionaryName(const StorageID & new_name) const
     {
-        std::lock_guard lock{mutex};
+        std::lock_guard lock{name_mutex};
         assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
         dictionary_id = new_name;
     }
 
-    std::string getLoadableName() const final
+    std::string getLoadableName() const override final
     {
-        std::lock_guard lock{mutex};
+        std::lock_guard lock{name_mutex};
         return dictionary_id.getInternalDictionaryName();
     }
 
@@ -92,8 +89,6 @@ public:
 
     std::string getDatabaseOrNoDatabaseTag() const
     {
-        std::lock_guard lock{mutex};
-
         if (!dictionary_id.database_name.empty())
             return dictionary_id.database_name;
 
@@ -233,23 +228,10 @@ public:
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getHierarchicalIndex is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
-    }
-
-    virtual size_t getHierarchicalIndexBytesAllocated() const
-    {
-        return 0;
-    }
-
     virtual ColumnPtr getDescendants(
         ColumnPtr key_column [[maybe_unused]],
         const DataTypePtr & key_type [[maybe_unused]],
-        size_t level [[maybe_unused]],
-        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+        size_t level [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method getDescendants is not supported for {} dictionary.",
@@ -280,20 +262,22 @@ public:
 
     void setDictionaryComment(String new_comment)
     {
-        std::lock_guard lock{mutex};
+        std::lock_guard lock{name_mutex};
         dictionary_comment = std::move(new_comment);
     }
 
     String getDictionaryComment() const
     {
-        std::lock_guard lock{mutex};
+        std::lock_guard lock{name_mutex};
         return dictionary_comment;
     }
 
 private:
-    mutable std::mutex mutex;
-    mutable StorageID dictionary_id TSA_GUARDED_BY(mutex);
-    String dictionary_comment TSA_GUARDED_BY(mutex);
+    mutable std::mutex name_mutex;
+    mutable StorageID dictionary_id;
+
+protected:
+    String dictionary_comment;
 };
 
 }

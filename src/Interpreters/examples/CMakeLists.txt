@@ -1,35 +1,35 @@
-clickhouse_add_executable (hash_map hash_map.cpp)
+add_executable (hash_map hash_map.cpp)
 target_link_libraries (hash_map PRIVATE dbms ch_contrib::sparsehash)
 
-clickhouse_add_executable (hash_map_lookup hash_map_lookup.cpp)
+add_executable (hash_map_lookup hash_map_lookup.cpp)
 target_link_libraries (hash_map_lookup PRIVATE dbms)
 
-clickhouse_add_executable (hash_map3 hash_map3.cpp)
+add_executable (hash_map3 hash_map3.cpp)
 target_link_libraries (hash_map3 PRIVATE dbms ch_contrib::farmhash ch_contrib::metrohash)
 
-clickhouse_add_executable (hash_map_string hash_map_string.cpp)
+add_executable (hash_map_string hash_map_string.cpp)
 target_link_libraries (hash_map_string PRIVATE dbms ch_contrib::sparsehash)
 
-clickhouse_add_executable (hash_map_string_2 hash_map_string_2.cpp)
+add_executable (hash_map_string_2 hash_map_string_2.cpp)
 target_link_libraries (hash_map_string_2 PRIVATE dbms)
 
-clickhouse_add_executable (hash_map_string_3 hash_map_string_3.cpp)
+add_executable (hash_map_string_3 hash_map_string_3.cpp)
 target_link_libraries (hash_map_string_3 PRIVATE dbms ch_contrib::farmhash ch_contrib::metrohash)
 
-clickhouse_add_executable (hash_map_string_small hash_map_string_small.cpp)
+add_executable (hash_map_string_small hash_map_string_small.cpp)
 target_link_libraries (hash_map_string_small PRIVATE dbms ch_contrib::sparsehash)
 
-clickhouse_add_executable (string_hash_map string_hash_map.cpp)
+add_executable (string_hash_map string_hash_map.cpp)
 target_link_libraries (string_hash_map PRIVATE dbms ch_contrib::sparsehash)
 
-clickhouse_add_executable (string_hash_map_aggregation string_hash_map.cpp)
+add_executable (string_hash_map_aggregation string_hash_map.cpp)
 target_link_libraries (string_hash_map_aggregation PRIVATE dbms)
 
-clickhouse_add_executable (string_hash_set string_hash_set.cpp)
+add_executable (string_hash_set string_hash_set.cpp)
 target_link_libraries (string_hash_set PRIVATE dbms)
 
-clickhouse_add_executable (two_level_hash_map two_level_hash_map.cpp)
+add_executable (two_level_hash_map two_level_hash_map.cpp)
 target_link_libraries (two_level_hash_map PRIVATE dbms ch_contrib::sparsehash)
 
-clickhouse_add_executable (jit_example jit_example.cpp)
+add_executable (jit_example jit_example.cpp)
 target_link_libraries (jit_example PRIVATE dbms)

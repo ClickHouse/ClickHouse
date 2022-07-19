@@ -59,7 +59,7 @@
 
 
 /** This hash function is not the most optimal, but UniquesHashSet states counted with it,
-  * stored in many places on disks (in many companies), so it continues to be used.
+  * stored in many places on disks (in the Yandex.Metrika), so it continues to be used.
   */
 struct UniquesHashSetDefaultHash
 {

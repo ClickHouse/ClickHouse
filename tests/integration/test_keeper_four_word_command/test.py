@@ -6,6 +6,7 @@ import string
 import os
 import time
 from multiprocessing.dummy import Pool
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from io import StringIO
 import csv
@@ -294,7 +295,7 @@ def test_cmd_conf(started_cluster):
         assert "tcp_port_secure" not in result
         assert "superdigest" not in result
 
-        assert result["four_letter_word_allow_list"] == "*"
+        assert result["four_letter_word_white_list"] == "*"
         assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
         assert (
             result["snapshot_storage_path"]

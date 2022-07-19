@@ -48,7 +48,7 @@ void UserDefinedSQLFunctionFactory::registerFunction(ContextPtr context, const S
         if (if_not_exists)
             return;
 
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
+        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "User defined executable function '{}'", function_name);
     }
 
     std::lock_guard lock(mutex);

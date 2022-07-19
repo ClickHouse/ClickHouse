@@ -1,6 +1,6 @@
 ---
-sidebar_position: 29
-sidebar_label: "[experimental] MaterializedMySQL"
+toc_priority: 29
+toc_title: "[experimental] MaterializedMySQL"
 ---
 
 # [экспериментальный] MaterializedMySQL {#materialized-mysql}
@@ -48,9 +48,9 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 - `default_authentication_plugin = mysql_native_password` — `MaterializedMySQL` может авторизоваться только с помощью этого метода.
 - `gtid_mode = on` — ведение журнала на основе GTID является обязательным для обеспечения правильной репликации.
 
-    :::note "Внимание"
+!!! attention "Внимание"
     При включении `gtid_mode` вы также должны указать `enforce_gtid_consistency = on`.
-    :::
+
 ## Виртуальные столбцы {#virtual-columns}
 
 При работе с движком баз данных `MaterializedMySQL` используются таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) с виртуальными столбцами `_sign` и `_version`.
@@ -96,7 +96,7 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 
 ### DDL-запросы {#ddl-queries}
 
-DDL-запросы в MySQL конвертируются в соответствующие DDL-запросы в ClickHouse ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop), [RENAME](../../sql-reference/statements/rename.md)). Если ClickHouse не может конвертировать какой-либо DDL-запрос, он его игнорирует.
+DDL-запросы в MySQL конвертируются в соответствующие DDL-запросы в ClickHouse ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). Если ClickHouse не может конвертировать какой-либо DDL-запрос, он его игнорирует.
 
 ### Репликация данных {#data-replication}
 

@@ -1,6 +1,7 @@
 ---
-sidebar_label: "域"
-sidebar_position: 56
+toc_folder_title: "\u57DF"
+toc_title: "域"
+toc_priority: 56
 ---
 
 # 域 {#domains}

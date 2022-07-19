@@ -1,6 +1,6 @@
 ---
-sidebar_position: 33
-sidebar_label: Distributed
+toc_priority: 33
+toc_title: Distributed
 ---
 
 # Distributed {#distributed}
@@ -140,9 +140,9 @@ logs - имя кластера в конфигурационном файле с
 
 -   `_shard_num` — содержит значение `shard_num` из таблицы `system.clusters`. Тип: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
-    :::note "Примечание"
+!!! note "Примечание"
     Так как табличные функции [remote](../../../sql-reference/table-functions/remote.md) и [cluster](../../../sql-reference/table-functions/cluster.md) создают временную таблицу на движке `Distributed`, то в ней также доступен столбец `_shard_num`.
-    :::
+
 **См. также**
 
 -   общее описание [виртуальных столбцов](../../../engines/table-engines/index.md#table_engines-virtual_columns)

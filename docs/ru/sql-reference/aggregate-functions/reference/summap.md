@@ -1,5 +1,5 @@
 ---
-sidebar_position: 141
+toc_priority: 141
 ---
 
 ## sumMap(key, value), sumMap(Tuple(key, value)) {#agg_functions-summap}

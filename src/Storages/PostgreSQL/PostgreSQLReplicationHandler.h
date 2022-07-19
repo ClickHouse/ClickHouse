@@ -13,7 +13,7 @@ namespace DB
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
 
-class PostgreSQLReplicationHandler : WithContext
+class PostgreSQLReplicationHandler
 {
 friend class TemporaryReplicationSlot;
 
@@ -98,6 +98,7 @@ private:
     std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
 
     Poco::Logger * log;
+    ContextPtr context;
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
