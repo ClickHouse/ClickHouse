@@ -35,8 +35,10 @@ RUN apt-get update -y \
             wget \
             zstd \
             file \
+            linux-tools-generic \
     && apt-get clean
 
+RUN ln -s /usr/lib/linux-tools/5.4.0-122-generic/perf /usr/local/bin/perf
 
 RUN pip3 install numpy scipy pandas Jinja2
 
