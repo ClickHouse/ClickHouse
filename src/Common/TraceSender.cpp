@@ -48,7 +48,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
     if (CurrentThread::isInitialized())
     {
         query_id = CurrentThread::getQueryId();
-        query_id = std::string_view(query_id.data(), std::min(query_id.size(), QUERY_ID_MAX_LEN));
+        if (query_id.size() > QUERY_ID_MAX_LEN)
+            query_id.remove_suffix(query_id.size() - QUERY_ID_MAX_LEN);
 
         thread_id = CurrentThread::get().thread_id;
     }
