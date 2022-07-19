@@ -42,7 +42,8 @@ def test_memory_tracking_total():
             "bash",
             "-c",
             "clickhouse local -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') from numbers(10000)\" > data.json",
-        ]
+        ],
+        user="root"
     )
 
     for it in range(0, 20):
