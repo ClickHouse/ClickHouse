@@ -33,15 +33,15 @@ public:
         return QueryTreeNodeType::LIST;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
-
     String getName() const override;
 
-protected:
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState &) const override;
 
+protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;

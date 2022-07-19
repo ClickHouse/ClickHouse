@@ -30,24 +30,30 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
     function_name = aggregate_function->getName();
 }
 
-void FunctionNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "FUNCTION ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << function_name << (result_type ? (" : " + result_type->getName()) : "");
+    buffer << std::string(indent, ' ') << "FUNCTION id: " << format_state.getNodeId(this);
+
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
+    buffer << ", function_name: " << function_name;
+
+    if (result_type)
+        buffer << ", result_type: " + result_type->getName();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "PARAMETERS\n";
-        parameters.dumpTree(buffer, indent + 4);
+        parameters.dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     const auto & arguments = getArguments();
     if (!arguments.getNodes().empty())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
-        arguments.dumpTree(buffer, indent + 4);
+        arguments.dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }
 

@@ -152,8 +152,6 @@ public:
         return QueryTreeNodeType::FUNCTION;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
-
     DataTypePtr getResultType() const override
     {
         return result_type;
@@ -161,11 +159,13 @@ public:
 
     String getName() const override;
 
-protected:
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState & hash_state) const override;
 
+protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;

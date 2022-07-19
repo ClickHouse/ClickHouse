@@ -11,17 +11,17 @@
 namespace DB
 {
 
-void ListNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void ListNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
+    buffer << std::string(indent, ' ') << "LIST id: " << format_state.getNodeId(this);
+
     size_t children_size = children.size();
-    buffer << std::string(indent, ' ') << "LIST ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << children_size << '\n';
+    buffer << ", nodes: " << children_size << '\n';
 
     for (size_t i = 0; i < children_size; ++i)
     {
         const auto & node = children[i];
-        node->dumpTree(buffer, indent + 2);
+        node->dumpTreeImpl(buffer, format_state, indent + 2);
 
         if (i + 1 != children_size)
             buffer << '\n';

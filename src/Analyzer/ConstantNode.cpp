@@ -26,11 +26,15 @@ ConstantNode::ConstantNode(Field value_)
     , type(applyVisitor(FieldToDataType(), value))
 {}
 
-void ConstantNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "CONSTANT ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << value.dump() << " : " << type->getName();
+    buffer << std::string(indent, ' ') << "CONSTANT id: " << format_state.getNodeId(this);
+
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
+    buffer << ", value: " << value.dump();
+    buffer << ", result_type: " << type->getName();
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const

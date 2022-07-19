@@ -67,8 +67,6 @@ public:
         return QueryTreeNodeType::COLUMN;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
-
     String getName() const override
     {
         return column.name;
@@ -79,11 +77,13 @@ public:
         return column.type;
     }
 
-protected:
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
+
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState & hash_state) const override;
 
+protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;

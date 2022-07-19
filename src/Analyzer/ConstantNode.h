@@ -34,8 +34,6 @@ public:
         return QueryTreeNodeType::CONSTANT;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
-
     String getName() const override
     {
         return value_string_dump;
@@ -47,6 +45,8 @@ public:
     }
 
 protected:
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState & hash_state) const override;

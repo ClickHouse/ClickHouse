@@ -88,8 +88,6 @@ public:
         return QueryTreeNodeType::LAMBDA;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
-
     String getName() const override;
 
     DataTypePtr getResultType() const override
@@ -97,11 +95,13 @@ public:
         return getExpression()->getResultType();
     }
 
-protected:
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState & state) const override;
 
+protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;

@@ -129,13 +129,13 @@ public:
         return ColumnTransfomerType::APPLY;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
 
+protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;
@@ -218,13 +218,13 @@ public:
         return ColumnTransfomerType::EXCEPT;
     }
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
 
+protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;
@@ -294,13 +294,13 @@ public:
       */
     QueryTreeNodePtr findReplacementExpression(const std::string & expression_name);
 
-    void dumpTree(WriteBuffer & buffer, size_t indent) const override;
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
 
+protected:
     ASTPtr toASTImpl() const override;
 
     QueryTreeNodePtr cloneImpl() const override;

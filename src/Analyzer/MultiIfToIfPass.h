@@ -15,7 +15,7 @@ public:
 
     String getName() override { return "MultiIfToIf"; }
 
-    String getDescription() override { return "Optimize multiIf to if for single argument"; }
+    String getDescription() override { return "Optimize multiIf to if for single argument."; }
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 

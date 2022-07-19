@@ -22,44 +22,45 @@ QueryNode::QueryNode()
     children[projection_child_index] = std::make_shared<ListNode>();
 }
 
-void QueryNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "QUERY ";
-    writePointerHex(this, buffer);
+    buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);
 
     if (hasAlias())
-        buffer << " alias : " << getAlias();
+        buffer << ", alias: " << getAlias();
 
-    buffer << " subquery : " << is_subquery;
-    buffer << " cte : " << is_cte;
-    buffer << " cte_name : " << cte_name;
+    buffer << ", is_subquery: " << is_subquery;
+    buffer << ", is_cte: " << is_cte;
+
+    if (!cte_name.empty())
+        buffer << ", cte_name: " << cte_name;
 
     if (!getWith().getNodes().empty())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "WITH\n";
-        getWith().dumpTree(buffer, indent + 4);
+        getWith().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     buffer << '\n';
     buffer << std::string(indent + 2, ' ') << "PROJECTION\n";
-    getProjection().dumpTree(buffer, indent + 4);
+    getProjection().dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (getFrom())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "JOIN TREE\n";
-        getFrom()->dumpTree(buffer, indent + 4);
+        getFrom()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (getPrewhere())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "PREWHERE\n";
-        getPrewhere()->dumpTree(buffer, indent + 4);
+        getPrewhere()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (getWhere())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "WHERE\n";
-        getWhere()->dumpTree(buffer, indent + 4);
+        getWhere()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }
 

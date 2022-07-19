@@ -19,7 +19,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_ast("AST");
     ParserKeyword s_explain("EXPLAIN");
     ParserKeyword s_syntax("SYNTAX");
-    ParserKeyword s_query_tree("QUERYTREE");
+    ParserKeyword s_query_tree("QUERY TREE");
     ParserKeyword s_pipeline("PIPELINE");
     ParserKeyword s_plan("PLAN");
     ParserKeyword s_estimates("ESTIMATE");

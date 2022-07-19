@@ -27,21 +27,27 @@ LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_)
     children[expression_child_index] = std::move(expression_);
 }
 
-void LambdaNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     auto result_type = getExpression()->getResultType();
 
-    buffer << std::string(indent, ' ') << "LAMBDA ";
-    writePointerHex(this, buffer);
-    buffer << (result_type ? (" : " + result_type->getName()) : "") << '\n';
+    buffer << std::string(indent, ' ') << "LAMBDA id: " << format_state.getNodeId(this);
 
-    buffer << std::string(indent + 2, ' ') << "ARGUMENTS " << '\n';
-    getArguments().dumpTree(buffer, indent + 4);
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
 
-    buffer << '\n';
+    if (result_type)
+        buffer << ", result_type: " << result_type->getName();
 
-    buffer << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
-    getExpression()->dumpTree(buffer, indent + 4);
+    const auto & arguments = getArguments();
+    if (!arguments.getNodes().empty())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS " << '\n';
+        getArguments().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
+    getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
 String LambdaNode::getName() const

@@ -10,11 +10,14 @@
 namespace DB
 {
 
-void IdentifierNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "IDENTIFIER ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << identifier.getFullName();
+    buffer << std::string(indent, ' ') << "IDENTIFIER id: " << format_state.getNodeId(this);
+
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
+    buffer << ", identifier: " << identifier.getFullName();
 }
 
 bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs) const

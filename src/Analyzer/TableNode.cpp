@@ -21,11 +21,14 @@ TableNode::TableNode(StoragePtr storage_, ContextPtr context)
 {
 }
 
-void TableNode::dumpTree(WriteBuffer & buffer, size_t indent) const
+void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "TABLE ";
-    writePointerHex(this, buffer);
-    buffer << ' ' << storage_id.getFullNameNotQuoted();
+    buffer << std::string(indent, ' ') << "TABLE id: " << format_state.getNodeId(this);
+
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
+    buffer << ", table_name: " << storage_id.getFullNameNotQuoted();
 }
 
 bool TableNode::isEqualImpl(const IQueryTreeNode & rhs) const

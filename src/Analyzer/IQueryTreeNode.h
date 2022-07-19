@@ -84,13 +84,7 @@ public:
     String dumpTree() const;
 
     /// Dump query tree to buffer
-    void dumpTree(WriteBuffer & buffer) const
-    {
-        dumpTree(buffer, 0);
-    }
-
-    /// Dump query tree to buffer starting with indent
-    virtual void dumpTree(WriteBuffer & buffer, size_t indent) const = 0;
+    void dumpTree(WriteBuffer & buffer) const;
 
     /** Is tree equal to other tree with node root.
       *
@@ -179,7 +173,7 @@ public:
         if (original_ast)
             return formatOriginalASTForErrorMessage();
 
-        return  formatConvertedASTForErrorMessage();
+        return formatConvertedASTForErrorMessage();
     }
 
       /// Get query tree node children
@@ -194,11 +188,26 @@ public:
         return children;
     }
 
+    class FormatState
+    {
+    public:
+        size_t getNodeId(const IQueryTreeNode * node);
+
+    private:
+        std::unordered_map<const IQueryTreeNode *, size_t> node_to_id;
+    };
+
+    /** Dump query tree to buffer starting with indent.
+      *
+      * Node must also dump its children.
+      */
+    virtual void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const = 0;
+
     /** Subclass must compare its internal state with rhs node and do not compare its children with rhs node children.
       * Caller must compare node and rhs node children.
       *
       * This method is not protected because if subclass node has weak pointers to other query tree nodes it must use it
-      * as part of its isEqualImpl method. In child classes this method should be protected.
+      * as part of its isEqualImpl method.
       */
     virtual bool isEqualImpl(const IQueryTreeNode & rhs) const = 0;
 
@@ -206,11 +215,12 @@ public:
       * Caller must update tree hash for node children.
       *
       * This method is not protected because if subclass node has weak pointers to other query tree nodes it must use it
-      * as part of its updateTreeHashImpl method. In child classes this method should be protected.
+      * as part of its updateTreeHashImpl method.
       */
     virtual void updateTreeHashImpl(HashState & hash_state) const = 0;
 
 protected:
+
     /** Subclass node must convert itself to AST.
       * Subclass must convert children to AST.
       */
