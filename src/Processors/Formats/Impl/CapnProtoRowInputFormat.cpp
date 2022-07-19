@@ -267,13 +267,7 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     try
     {
         auto array = readMessage();
-
-#if CAPNP_VERSION >= 7000 && CAPNP_VERSION < 8000
-        capnp::UnalignedFlatArrayMessageReader msg(array);
-#else
         capnp::FlatArrayMessageReader msg(array);
-#endif
-
         auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
         for (size_t i = 0; i != columns.size(); ++i)
         {
