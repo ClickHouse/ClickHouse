@@ -842,7 +842,7 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
 
     if (!files.empty())
         throw Exception(
-            REMOTE_FS_OBJECT_CACHE_ERROR, 
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, 
             "Cache initialization is partially made. "
             "This can be a result of a failed first attempt to initialize cache. "
             "Please, check log for error messages");
