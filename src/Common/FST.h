@@ -24,7 +24,7 @@ struct Arc
     Output output{0};
     StatePtr target;
 
-    UInt16 serialize(WriteBuffer& write_buffer);
+    UInt16 serialize(WriteBuffer& write_buffer) const;
 };
 
 class ArcsBitmap

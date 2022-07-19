@@ -32,7 +32,7 @@ public:
 
     explicit GinFilter(const GinFilterParameters& params);
 
-    void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store);
+    static void add(const char* data, size_t len, UInt32 rowID, GinIndexStorePtr& store);
 
     void addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd);
 

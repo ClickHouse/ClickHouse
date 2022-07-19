@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
-UInt16 Arc::serialize(WriteBuffer& write_buffer)
+UInt16 Arc::serialize(WriteBuffer& write_buffer) const
 {
     UInt16 written_bytes = 0;
     bool has_output = output != 0;
@@ -71,8 +71,7 @@ int ArcsBitmap::getIndex(char label) const
 int ArcsBitmap::getArcNum() const
 {
     int bit_count = 0;
-    for (size_t i = 0; i < 4; i++)
-    for (unsigned long item : data.items)
+    for (uint64_t item : data.items)
     {
         if (item)
             bit_count += PopCountImpl(item);
