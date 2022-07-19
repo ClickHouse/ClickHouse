@@ -1257,7 +1257,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
-    ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
+    ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
     if (!select_query->prewhere())
@@ -1293,14 +1293,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto required_columns = tmp_actions_dag->getRequiredColumnsNames();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
         required_source_columns.insert(first_action_names.begin(), first_action_names.end());
-
-        /// Add required columns to required output in order not to remove them after prewhere execution.
-        /// TODO: add sampling and final execution to common chain.
-        for (const auto & column : additional_required_columns)
-        {
-            if (required_source_columns.contains(column))
-                step.addRequiredOutput(column);
-        }
 
         auto names = step.actions()->getNames();
         NameSet name_set(names.begin(), names.end());
@@ -1523,6 +1515,25 @@ void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & befor
     step.actions() = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position);
 }
 
+void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node)
+{
+    if (auto * function = node->as<ASTFunction>())
+    {
+        // Skip window function columns here -- they are calculated after
+        // other SELECT expressions by a special step.
+        // Also skipping lambda functions because they can't be explicitly evaluated.
+        if (function->is_window_function || function->name == "lambda")
+            return;
+        if (function->compute_after_window_functions)
+        {
+            for (auto & arg : function->arguments->children)
+                appendSelectSkipWindowExpressions(step, arg);
+            return;
+        }
+    }
+    step.addRequiredOutput(node->getColumnName());
+}
+
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -1547,18 +1558,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
     getRootActions(select_query->select(), only_types, step.actions());
 
     for (const auto & child : select_query->select()->children)
-    {
-        if (const auto * function = typeid_cast<const ASTFunction *>(child.get());
-            function
-            && (function->is_window_function || function->compute_after_window_functions))
-        {
-            // Skip window function columns here -- they are calculated after
-            // other SELECT expressions by a special step.
-            continue;
-        }
-
-        step.addRequiredOutput(child->getColumnName());
-    }
+        appendSelectSkipWindowExpressions(step, child);
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
@@ -1862,12 +1862,28 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const Settings & settings = context->getSettingsRef();
     const ConstStoragePtr & storage = query_analyzer.storage();
 
+    Names additional_required_columns_after_prewhere;
     ssize_t prewhere_step_num = -1;
     ssize_t where_step_num = -1;
     ssize_t having_step_num = -1;
 
     auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
+        if (prewhere_step_num >= 0)
+        {
+            ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
+
+            auto required_columns = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            NameSet required_source_columns(required_columns.begin(), required_columns.end());
+            /// Add required columns to required output in order not to remove them after prewhere execution.
+            /// TODO: add sampling and final execution to common chain.
+            for (const auto & column : additional_required_columns_after_prewhere)
+            {
+                if (required_source_columns.contains(column))
+                    step.addRequiredOutput(column);
+            }
+        }
+
         chain.finalize();
 
         finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
@@ -1877,7 +1893,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     {
         ExpressionActionsChain chain(context);
-        Names additional_required_columns_after_prewhere;
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
@@ -1899,7 +1914,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             filter_info->do_remove_column = true;
         }
 
-        if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
+        if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage))
         {
             /// Prewhere is always the first one.
             prewhere_step_num = 0;
@@ -1996,6 +2011,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             && !query_analyzer.hasWindow()
             && !query.final()
             && join_allow_read_in_order;
+
+        if (storage && optimize_read_in_order)
+        {
+            Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sorting_key.begin(), columns_for_sorting_key.end());
+        }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
