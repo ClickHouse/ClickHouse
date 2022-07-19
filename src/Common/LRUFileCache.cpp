@@ -841,7 +841,9 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
     /// cache_base_path / key_prefix / key / offset
 
     if (!files.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache already initialized");
+        throw Exception(
+            REMOTE_FS_OBJECT_CACHE_ERROR, 
+            "Cache already initialized: this can be result of a first attempt during cache initialization. Please, check log for error messages");
 
     fs::directory_iterator key_prefix_it{cache_base_path};
     for (; key_prefix_it != fs::directory_iterator(); ++key_prefix_it)
