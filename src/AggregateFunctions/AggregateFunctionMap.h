@@ -132,7 +132,7 @@ public:
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
 #ifdef __cpp_lib_generic_unordered_lookup
-                key = static_cast<std::string_view>(key_ref);
+                key = key_ref.toView();
 #else
                 key = key_ref.toString();
 #endif
