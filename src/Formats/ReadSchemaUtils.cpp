@@ -81,6 +81,8 @@ ColumnsDescription readSchemaFromFormat(
             try
             {
                 buf = read_buffer_iterator();
+                if (!buf)
+                    break;
                 is_eof = buf->eof();
             }
             catch (...)
