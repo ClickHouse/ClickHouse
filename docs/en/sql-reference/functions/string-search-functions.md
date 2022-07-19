@@ -374,7 +374,7 @@ The same as `multiMatchAny`, but returns any index that matches the haystack.
 
 ## multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
 
-The same as `multiMatchAny`, but returns the array of all indicies that match the haystack in any order.
+The same as `multiMatchAny`, but returns the array of all indices that match the haystack in any order.
 
 ## multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
 
