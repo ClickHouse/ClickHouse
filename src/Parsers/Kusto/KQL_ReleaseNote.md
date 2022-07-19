@@ -55,6 +55,15 @@ The config setting to allow modify dialect setting.
  - [make_set_if()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makesetif-aggfunction)  
    `Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName`
    `Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName`
+# July XX, 2022
+
+## IP functions
+
+The following functions now support arbitrary expressions as their argument.
+
+- [ipv4_is_private](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-privatefunction)
+- [ipv4_is_in_range](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-in-range-function)
+- [ipv4_netmask_suffix](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-netmask-suffix-function)
 
       
 # July 17, 2022
