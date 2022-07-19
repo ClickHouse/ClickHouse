@@ -266,7 +266,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                     ErrorCodes::INCORRECT_QUERY,
                     "Failed to rewrite comma join to INNER. "
                     "Please, try to simplify WHERE section "
-                    "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case"
+                    "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case "
                     "(cannot rewrite '{} WHERE {}' to INNER JOIN)",
                     query_before, queryToString(select.where()));
             }
