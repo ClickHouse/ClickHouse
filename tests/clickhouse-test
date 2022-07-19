@@ -353,9 +353,7 @@ def stacktraces_collector() -> None:
         while True:
             perf_process = start_perf_recording()
             sleep(210)
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
-            os.killpg(os.getpgid(os.getpid()), signal.SIGINT)
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            os.kill(perf_process.pid, signal.SIGINT)
             perf_process.join()
             if not stop_stacktraces_collection.is_set():
                 print("\nStarting to collect stacktraces at", datetime.now(), "\n", file=traces_file)
