@@ -45,7 +45,7 @@ void LRUFileCache::initialize()
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-                return;
+                throw;
             }
         }
         else
