@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 
 namespace DB
@@ -13,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DECIMAL_OVERFLOW;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Implements Decimal(P, S), where P is precision, S is scale.
@@ -58,7 +60,7 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value = std::numeric_limits<UInt32>::max())
+inline UInt32 getDecimalScale(const IDataType & data_type) //, UInt32 default_value = std::numeric_limits<UInt32>::max())
 {
     if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
@@ -68,7 +70,10 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
         return decimal_type->getScale();
     if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
         return decimal_type->getScale();
-    return default_value;
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
+        return date_time_type->getScale();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal scale from type {}", data_type.getName());
 }
 
 inline UInt32 getDecimalPrecision(const IDataType & data_type)
@@ -81,7 +86,10 @@ inline UInt32 getDecimalPrecision(const IDataType & data_type)
         return decimal_type->getPrecision();
     if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
         return decimal_type->getPrecision();
-    return 0;
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
+        return date_time_type->getPrecision();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal precision from type {}", data_type.getName());
 }
 
 template <typename T>
