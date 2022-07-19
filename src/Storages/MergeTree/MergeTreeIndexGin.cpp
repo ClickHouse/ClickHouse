@@ -56,9 +56,9 @@ void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
 
     for (const auto & gin_filter : gin_filters)
     {
-        size_t filterSize = gin_filter.getFilter().size();
-        size_serialization->serializeBinary(filterSize, ostr);
-        ostr.write(reinterpret_cast<const char*>(&gin_filter.getFilter()[0]), filterSize * sizeof(RowIDRange));
+        size_t filter_size = gin_filter.getFilter().size();
+        size_serialization->serializeBinary(filter_size, ostr);
+        ostr.write(reinterpret_cast<const char*>(gin_filter.getFilter().data()), filter_size * sizeof(RowIDRange));
     }
 }
 
@@ -79,7 +79,7 @@ void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeT
             continue;
 
         gin_filter.getFilter().assign(filterSize, {});
-        istr.read(reinterpret_cast<char*>(&gin_filter.getFilter()[0]), filterSize * sizeof(RowIDRange));
+        istr.read(reinterpret_cast<char*>(gin_filter.getFilter().data()), filterSize * sizeof(RowIDRange));
     }
     has_elems = true;
 }
@@ -132,8 +132,8 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
                 + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
-    auto rowID = store->getNextRowIDRange(rows_read);
-    auto startRowID = rowID;
+    auto row_id = store->getNextRowIDRange(rows_read);
+    auto start_row_id = row_id;
 
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
@@ -156,11 +156,11 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    addToGinFilter(rowID, ref.data, ref.size, granule->gin_filters[col]);
+                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
                     store->addSize(ref.size);
                 }
                 current_position += 1;
-                rowID++;
+                row_id++;
 
                 if (store->needToWrite())
                     need_to_write = true;
@@ -171,14 +171,14 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                addToGinFilter(rowID, ref.data, ref.size, granule->gin_filters[col]);
+                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
                 store->addSize(ref.size);
-                rowID++;
+                row_id++;
                 if (store->needToWrite())
                     need_to_write = true;
             }
         }
-        granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), startRowID, startRowID + rows_read - 1);
+        granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, start_row_id + rows_read - 1);
         if (need_to_write)
         {
             store->writeSegment();
@@ -257,7 +257,7 @@ bool MergeTreeConditionGinFilter::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
-bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore &cache_in_store) const
+bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore &cache_store) const
 {
     std::shared_ptr<MergeTreeIndexGranuleGinFilter> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleGinFilter>(idx_granule);
@@ -277,7 +277,7 @@ bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranule
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
              || element.function == RPNElement::FUNCTION_HAS)
         {
-            rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_in_store), true);
+            rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -293,7 +293,7 @@ bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranule
 
                 const auto & gin_filters = element.set_gin_filters[column];
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = result[row] && granule->gin_filters[key_idx].contains(gin_filters[row], cache_in_store);
+                    result[row] = result[row] && granule->gin_filters[key_idx].contains(gin_filters[row], cache_store);
             }
 
             rpn_stack.emplace_back(
@@ -308,7 +308,7 @@ bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranule
             const auto & gin_filters = element.set_gin_filters[0];
 
             for (size_t row = 0; row < gin_filters.size(); ++row)
-                result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_in_store);
+                result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
             rpn_stack.emplace_back(
                     std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
@@ -732,7 +732,7 @@ MergeTreeIndexPtr ginIndexCreator(
 {
     if (index.type == GinFilter::getName())
     {
-        size_t n = index.arguments.size() == 0 ? 0 : index.arguments[0].get<size_t>();
+        size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
         GinFilterParameters params(n);
 
         /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
@@ -783,7 +783,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.arguments.size() == 1 and index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception("Gin index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
 
-    size_t ngrams = index.arguments.size() == 0 ? 0 : index.arguments[0].get<size_t>();
+    size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
 
     /// Just validate
     GinFilterParameters params(ngrams);

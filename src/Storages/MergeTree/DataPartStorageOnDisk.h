@@ -113,7 +113,7 @@ public:
     void moveFile(const String & from_name, const String & to_name) override;
     void replaceFile(const String & from_name, const String & to_name) override;
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const String & path,
+        const String & name,
         size_t buf_size,
         DB::WriteMode mode,
         const WriteSettings & settings) override;

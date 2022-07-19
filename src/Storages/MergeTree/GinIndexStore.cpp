@@ -29,7 +29,7 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
     if (useRoaring())
         return bmp.contains(row_id);
 
-    auto it(std::find(lst.begin(), lst.begin()+lst_length, row_id));
+    const auto it(std::find(lst.begin(), lst.begin()+lst_length, row_id));
     return it != lst.begin()+lst_length;
 }
 
@@ -116,8 +116,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer &buffer)
 
         buffer.readStrict(reinterpret_cast<char*>(buf.get()), size);
 
-        GinIndexPostingsListPtr postings_list = std::shared_ptr<GinIndexPostingsList>
-                                            (new GinIndexPostingsList(GinIndexPostingsList::read(buf.get())));
+        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.get()));
 
         return postings_list;
     }
@@ -207,7 +206,7 @@ bool GinIndexStore::needToWrite() const
 
 void GinIndexStore::finalize()
 {
-    if (current_postings.size() > 0)
+    if (!current_postings.empty())
     {
         writeSegment();
     }
@@ -266,8 +265,8 @@ void GinIndexStore::writeSegment()
     current_index = 0;
     for (const auto& [token, postings_list] : token_postings_list_pairs)
     {
-        String strToken{token};
-        builder.add(strToken, offset);
+        String str_token{token};
+        builder.add(str_token, offset);
         offset += encoding_lengths[current_index++];
     }
 
@@ -315,7 +314,7 @@ void GinIndexStoreReader::readSegments()
     {
         init_file_streams();
     }
-    segment_file_stream->read(reinterpret_cast<char*>(&segments[0]), segment_num * sizeof(GinIndexSegment));
+    segment_file_stream->read(reinterpret_cast<char*>(segments.data()), segment_num * sizeof(GinIndexSegment));
     for (size_t i = 0; i < segment_num; ++i)
     {
         auto seg_id = segments[i].segment_id;
@@ -393,9 +392,9 @@ GinIndexStoreFactory& GinIndexStoreFactory::instance()
 
 GinIndexStorePtr GinIndexStoreFactory::get(const String& name, DataPartStoragePtr storage_)
 {
-    const String& part_path_ = storage_->getRelativePath();
+    const String& part_path = storage_->getRelativePath();
     std::lock_guard lock(stores_mutex);
-    String key = name + String(":")+part_path_;
+    String key = name + String(":")+part_path;
 
     GinIndexStores::const_iterator it = stores.find(key);
 
