@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Coordination/pathUtils.h>
+#include <Coordination/KeeperConstants.h>
 #include <sstream>
 #include <iomanip>
 #include <mutex>
@@ -229,9 +230,30 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
 KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const bool digest_enabled_)
     : session_expiry_queue(tick_time_ms), digest_enabled(digest_enabled_), superdigest(superdigest_)
 {
+
     Node root_node;
     container.insert("/", root_node);
-    nodes_digest += root_node.getDigest("/");
+    addDigest(root_node, "/");
+
+    const auto insert_node = [&](const auto & path, auto data)
+    {
+        // we update numChildren during preprocessing so and createNode is called during
+        // commit so we need to update it manually here
+        container.updateValue(
+                parentPath(path),
+                [](KeeperStorage::Node & parent)
+                {
+                    ++parent.stat.numChildren;
+                }
+        );
+        createNode(path, std::move(data), {}, false, {});
+    };
+
+    insert_node(keeper_system_path, "");
+
+    assert(Coordination::keeper_api_version_path.starts_with(keeper_system_path));
+    auto api_version_data = toString(static_cast<uint8_t>(DB::current_keeper_api_version));
+    insert_node(keeper_api_version_path, std::move(api_version_data));
 }
 
 template <class... Ts>
@@ -924,9 +946,9 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
-        if (request.path == Coordination::keeper_api_version_path)
+        if (request.path.starts_with(keeper_system_path))
         {
-            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to delete an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to delete an internal Keeper path ({}) which is not allowed", request.path);
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
@@ -1076,9 +1098,9 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
-        if (request.path == Coordination::keeper_api_version_path)
+        if (request.path.starts_with(keeper_system_path))
         {
-            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", request.path);
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
@@ -1343,9 +1365,9 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
     {
         Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
 
-        if (request.path == Coordination::keeper_api_version_path)
+        if (request.path.starts_with(keeper_system_path))
         {
-            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", Coordination::keeper_api_version_path);
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to update an internal Keeper path ({}) which is not allowed", request.path);
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 

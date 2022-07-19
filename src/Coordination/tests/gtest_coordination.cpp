@@ -2125,13 +2125,13 @@ TEST_P(CoordinationTest, TestCurrentApiVersion)
     using namespace Coordination;
     KeeperStorage storage{500, "", true};
     auto request = std::make_shared<ZooKeeperGetRequest>();
-    request->path = Coordination::keeper_api_version_path;
+    request->path = DB::keeper_api_version_path;
     auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
     const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
     uint8_t keeper_version{0};
     DB::ReadBufferFromOwnString buf(get_response.data);
     DB::readIntText(keeper_version, buf);
-    EXPECT_EQ(keeper_version, current_keeper_api_version);
+    EXPECT_EQ(keeper_version, static_cast<uint8_t>(current_keeper_api_version));
 }
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,

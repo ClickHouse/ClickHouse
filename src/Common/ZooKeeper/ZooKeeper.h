@@ -127,7 +127,7 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
-    Coordination::KeeperApiVersion getApiVersion();
+    DB::KeeperApiVersion getApiVersion();
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
