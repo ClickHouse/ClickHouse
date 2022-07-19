@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import csv
 import logging
 import os
@@ -16,9 +17,11 @@ from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
+from git_helper import git_runner
 from pr_info import PRInfo
 from rerun_helper import RerunHelper
 from s3_helper import S3Helper
+from ssh import SSHKey
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
@@ -64,8 +67,77 @@ def process_result(result_folder):
         return state, description, test_results, additional_files
 
 
+def parse_args():
+    parser = argparse.ArgumentParser("Check and report style issues in the repository")
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--no-push",
+        action="store_false",
+        dest="push",
+        help="do not commit and push automatic fixes",
+        default=argparse.SUPPRESS,
+    )
+    return parser.parse_args()
+
+
+def checkout_head(pr_info: PRInfo):
+    # It works ONLY for PRs, and only over ssh, so either
+    # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
+    assert pr_info.number
+    if not pr_info.head_name == pr_info.base_name:
+        # We can't push to forks, sorry folks
+        return
+    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
+    git_prefix = (  # All commits to remote are done as robot-clickhouse
+        "git -c user.email=robot-clickhouse@clickhouse.com "
+        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+        "-c core.sshCommand="
+        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+    )
+    fetch_cmd = (
+        f"{git_prefix} fetch --depth=1 "
+        f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
+    )
+    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+            git_runner(fetch_cmd)
+    else:
+        git_runner(fetch_cmd)
+    git_runner(f"git checkout -f head-{pr_info.head_ref}")
+
+
+def commit_push_staged(pr_info: PRInfo):
+    # It works ONLY for PRs, and only over ssh, so either
+    # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
+    assert pr_info.number
+    if not pr_info.head_name == pr_info.base_name:
+        # We can't push to forks, sorry folks
+        return
+    git_staged = git_runner("git diff --cached --name-only")
+    if not git_staged:
+        return
+    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
+    git_prefix = (  # All commits to remote are done as robot-clickhouse
+        "git -c user.email=robot-clickhouse@clickhouse.com "
+        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+        "-c core.sshCommand="
+        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+    )
+    git_runner(f"{git_prefix} commit -m 'Automatic style fix'")
+    push_cmd = (
+        f"{git_prefix} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
+    )
+    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+            git_runner(push_cmd)
+    else:
+        git_runner(push_cmd)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("git_helper").setLevel(logging.DEBUG)
+    args = parse_args()
 
     stopwatch = Stopwatch()
 
@@ -73,6 +145,8 @@ if __name__ == "__main__":
     temp_path = os.path.join(RUNNER_TEMP, "style_check")
 
     pr_info = PRInfo()
+    if args.push:
+        checkout_head(pr_info)
 
     gh = GitHub(get_best_robot_token())
 
@@ -98,6 +172,9 @@ if __name__ == "__main__":
         cmd,
         shell=True,
     )
+
+    if args.push:
+        commit_push_staged(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
     ch_helper = ClickHouseHelper()
