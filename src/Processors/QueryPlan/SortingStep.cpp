@@ -38,7 +38,8 @@ SortingStep::SortingStep(
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
-    size_t min_free_disk_space_)
+    size_t min_free_disk_space_,
+    bool optimize_sorting_for_input_stream_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::Auto)
     , result_description(description_)
@@ -50,6 +51,7 @@ SortingStep::SortingStep(
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
     , tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
+    , optimize_sorting_for_input_stream(optimize_sorting_for_input_stream_)
 {
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
@@ -249,15 +251,18 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     LOG_DEBUG(getLogger(), "Prefix({}): {}", prefix_description.size(), dumpSortDescription(prefix_description));
     LOG_DEBUG(getLogger(), "Result({}): {}", result_description.size(), dumpSortDescription(result_description));
 
-    if (input_sort_mode == DataStream::SortMode::Stream && input_sort_desc.hasPrefix(result_description))
-        return;
-
-    /// merge sorted
-    if (input_sort_mode == DataStream::SortMode::Port && input_sort_desc.hasPrefix(result_description))
+    if (optimize_sorting_for_input_stream)
     {
-        LOG_DEBUG(getLogger(), "MergingSorted, SortMode::Port");
-        mergingSorted(pipeline, result_description, limit);
-        return;
+        if (input_sort_mode == DataStream::SortMode::Stream && input_sort_desc.hasPrefix(result_description))
+            return;
+
+        /// merge sorted
+        if (input_sort_mode == DataStream::SortMode::Port && input_sort_desc.hasPrefix(result_description))
+        {
+            LOG_DEBUG(getLogger(), "MergingSorted, SortMode::Port");
+            mergingSorted(pipeline, result_description, limit);
+            return;
+        }
     }
 
     if (type == Type::MergingSorted)
@@ -277,20 +282,12 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
-    if (input_sort_mode == DataStream::SortMode::Chunk)
+    if (optimize_sorting_for_input_stream && input_sort_mode == DataStream::SortMode::Chunk)
     {
         if (input_sort_desc.hasPrefix(result_description))
         {
             LOG_DEBUG(getLogger(), "Almost FullSort");
             fullSort(pipeline, result_description, limit, true);
-            return;
-        }
-        if (result_description.hasPrefix(input_sort_desc))
-        {
-            LOG_DEBUG(getLogger(), "FinishSorting, SortMode::Chunk");
-            mergeSorting(pipeline, input_sort_desc, 0);
-            mergingSorted(pipeline, input_sort_desc, 0);
-            finishSorting(pipeline, input_sort_desc, result_description, limit);
             return;
         }
     }
