@@ -5,8 +5,8 @@ echo "Configure to use Yandex dockerhub-proxy"
 mkdir -p /etc/docker/
 cat > /etc/docker/daemon.json << EOF
 {
-    "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
-    "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
+    "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
+    "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
 }
 EOF
 

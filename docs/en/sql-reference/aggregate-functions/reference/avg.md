@@ -1,8 +1,8 @@
 ---
-toc_priority: 5
+sidebar_position: 5
 ---
 
-# avg {#agg_function-avg}
+# avg
 
 Calculates the arithmetic mean.
 
@@ -47,7 +47,7 @@ Query:
 CREATE table test (t UInt8) ENGINE = Memory;
 ```
 
-Get the arithmetic mean: 
+Get the arithmetic mean:
 
 Query:
 
@@ -63,4 +63,4 @@ Result:
 └────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->

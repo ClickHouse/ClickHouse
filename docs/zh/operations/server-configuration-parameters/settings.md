@@ -1,6 +1,6 @@
 ---
-toc_priority: 57
-toc_title: "\u670D\u52A1\u5668\u8BBE\u7F6E"
+sidebar_position: 57
+sidebar_label: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
 
 # 服务器配置 {#server-settings}
@@ -282,12 +282,12 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典 “on the fly
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-ClickHouse在关闭连接之前等待传入请求的秒数。 默认为3秒。
+ClickHouse在关闭连接之前等待传入请求的秒数。默认为10秒。
 
 **示例**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -462,7 +462,7 @@ SSL客户端/服务器配置。
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
@@ -668,7 +668,7 @@ SSL客户端/服务器配置。
 **示例**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -846,7 +846,7 @@ ZooKeeper中数据部分头的存储方法。
 
 如果 `use_minimalistic_part_header_in_zookeeper = 1`，然后 [复制](../../engines/table-engines/mergetree-family/replication.md) 表存储的数据部分的头紧凑使用一个单一的 `znode`. 如果表包含许多列，则此存储方法显着减少了Zookeeper中存储的数据量。
 
-!!! attention "注意"
+    :::info "注意"
     申请后 `use_minimalistic_part_header_in_zookeeper = 1`，您不能将ClickHouse服务器降级到不支持此设置的版本。 在集群中的服务器上升级ClickHouse时要小心。 不要一次升级所有服务器。 在测试环境中或在集群的几台服务器上测试ClickHouse的新版本更安全。
 
       Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
@@ -867,4 +867,4 @@ ZooKeeper中数据部分头的存储方法。
 
 **默认值**: 15.
 
-[原始文章](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

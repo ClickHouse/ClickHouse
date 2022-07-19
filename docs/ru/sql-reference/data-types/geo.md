@@ -1,13 +1,13 @@
 ---
-toc_priority: 62
-toc_title: Географические структуры
+sidebar_position: 62
+sidebar_label: Географические структуры
 ---
 
 # Типы данных для работы с географическими структурами {#geo-data-types}
 
 ClickHouse поддерживает типы данных для отображения географических объектов — точек (местоположений), территорий и т.п.
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     Сейчас использование типов данных для работы с географическими структурами является экспериментальной возможностью. Чтобы использовать эти типы данных, включите настройку `allow_experimental_geo_types = 1`.
 
 **См. также**
@@ -28,7 +28,7 @@ CREATE TABLE geo_point (p Point) ENGINE = Memory();
 INSERT INTO geo_point VALUES((10, 10));
 SELECT p, toTypeName(p) FROM geo_point;
 ```
-Результат: 
+Результат:
 
 ``` text
 ┌─p─────┬─toTypeName(p)─┐
@@ -50,7 +50,7 @@ CREATE TABLE geo_ring (r Ring) ENGINE = Memory();
 INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
 SELECT r, toTypeName(r) FROM geo_ring;
 ```
-Результат: 
+Результат:
 
 ``` text
 ┌─r─────────────────────────────┬─toTypeName(r)─┐
@@ -73,7 +73,7 @@ INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 
 SELECT pg, toTypeName(pg) FROM geo_polygon;
 ```
 
-Результат: 
+Результат:
 
 ``` text
 ┌─pg────────────────────────────────────────────────────────────┬─toTypeName(pg)─┐
@@ -83,7 +83,7 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 
 ## MultiPolygon {#multipolygon-data-type}
 
-Тип `MultiPolygon` описывает элемент, состоящий из нескольких простых многоугольников (полигональную сетку). Он хранится в виде массива многоугольников: [Array](array.md)([Polygon](#polygon-data-type)). 
+Тип `MultiPolygon` описывает элемент, состоящий из нескольких простых многоугольников (полигональную сетку). Он хранится в виде массива многоугольников: [Array](array.md)([Polygon](#polygon-data-type)).
 
 **Пример**
 
@@ -95,7 +95,7 @@ CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
 INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
 SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 ```
-Result: 
+Result:
 
 ``` text
 ┌─mpg─────────────────────────────────────────────────────────────────────────────────────────────┬─toTypeName(mpg)─┐

@@ -45,6 +45,7 @@ com
 /?query=hello world+foo+bar
 /?query=hello world+foo+bar
 /?query=hello world+foo+bar
+/?query=hello world foo+bar
 
 /a/b/c
 /a/b/c
@@ -57,6 +58,15 @@ query=hello world+foo+bar
 query=hello world+foo+bar
 query=hello world+foo+bar
 query=hello world+foo+bar
+query=hello world foo+bar
+
+
+\N
+\N
+hello%20world%20foo%2Bbar
+hello+world+foo%2Bbar
+http://paul@127.0.0.1/?query=hello world foo+bar
+http://paul@127.0.0.1/?query=hello world foo+bar
 ====FRAGMENT====
 
 
@@ -71,6 +81,11 @@ query=hello world+foo+bar#a=b
 query=hello world+foo+bar#a=b
 query=hello world+foo+bar#a=b
 #a=b
+query=hello world foo+bar#a=b
+hello%20world%20foo%2Bbar%23a%3Db
+hello+world+foo%2Bbar%23a%3Db
+http://paul@127.0.0.1/?query=hello world foo+bar#a=b
+http://paul@127.0.0.1/?query=hello world foo+bar#a=b
 ====CUT TO FIRST SIGNIFICANT SUBDOMAIN====
 example.com
 example.com

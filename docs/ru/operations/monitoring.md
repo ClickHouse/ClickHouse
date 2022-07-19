@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: "Мониторинг"
+sidebar_position: 45
+sidebar_label: "Мониторинг"
 ---
 
 # Мониторинг {#monitoring}
@@ -37,7 +37,7 @@ ClickHouse собирает:
 
 Можно настроить экспорт метрик из ClickHouse в [Graphite](https://github.com/graphite-project). Смотрите секцию [graphite](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Graphite, как указано в [официальном руководстве](https://graphite.readthedocs.io/en/latest/install.html).
 
-Можно настроить экспорт метрик из ClickHouse в [Prometheus](https://prometheus.io). Смотрите [prometheus](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Prometheus, как указано в [официальном руководстве](https://prometheus.io/docs/prometheus/latest/installation/).
+Можно настроить экспорт метрик из ClickHouse в [Prometheus](https://prometheus.io). Смотрите секцию [prometheus](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Prometheus, как указано в [официальном руководстве](https://prometheus.io/docs/prometheus/latest/installation/).
 
 Также, можно отслеживать доступность сервера через HTTP API. Отправьте `HTTP GET` к ресурсу `/ping`. Если сервер доступен, он отвечает `200 OK`.
 

@@ -1,7 +1,13 @@
-# docker build -t yandex/clickhouse-test-base .
-FROM ubuntu:20.04
+# rebuild in #33610
+# docker build -t clickhouse/test-base .
+ARG FROM_TAG=latest
+FROM clickhouse/test-util:$FROM_TAG
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=14
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -24,12 +30,14 @@ RUN apt-get update \
         software-properties-common \
         --yes --no-install-recommends
 
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
-    && chmod +x dpkg-deb \
-    && cp dpkg-deb /usr/bin
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /usr/bin/dpkg-deb https://github.com/ClickHouse-Extras/dpkg/releases/download/1.21.1-clickhouse/dpkg-deb-${arch}
 
 RUN apt-get update \
     && apt-get install \
@@ -50,15 +58,22 @@ RUN apt-get update \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)
-RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
+# Set resident memory limit for TSAN to 45GiB (46080MiB) to avoid OOMs in Stress tests
+# and MEMORY_LIMIT_EXCEEDED exceptions in Functional tests (total memory limit in Functional tests is ~55.24 GiB).
+# TSAN will flush shadow memory when reaching this limit.
+# It may cause false-negatives, but it's better than OOM.
+RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7 memory_limit_mb=46080'" >> /etc/environment; \
   echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
   echo "MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'" >> /etc/environment; \
   echo "LSAN_OPTIONS='suppressions=/usr/share/clickhouse-test/config/lsan_suppressions.txt'" >> /etc/environment; \
   ln -s /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
 # Sanitizer options for current shell (not current, but the one that will be spawned on "docker run")
 # (but w/o verbosity for TSAN, otherwise test.reference will not match)
-ENV TSAN_OPTIONS='halt_on_error=1 history_size=7'
+ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
+
+ENV TZ=Europe/Moscow
+RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 CMD sleep 1

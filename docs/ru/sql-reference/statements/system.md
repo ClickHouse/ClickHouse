@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: SYSTEM
+sidebar_position: 36
+sidebar_label: SYSTEM
 ---
 
 # Запросы SYSTEM {#query-language-system}
@@ -10,6 +10,8 @@ toc_title: SYSTEM
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 -   [RELOAD MODELS](#query_language-system-reload-models)
 -   [RELOAD MODEL](#query_language-system-reload-model)
+-   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
+-   [RELOAD FUNCTION](#query_language-system-reload-functions)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -28,6 +30,7 @@ toc_title: SYSTEM
 -   [START TTL MERGES](#query_language-start-ttl-merges)
 -   [STOP MOVES](#query_language-stop-moves)
 -   [START MOVES](#query_language-start-moves)
+-   [SYSTEM UNFREEZE](#query_language-system-unfreeze)
 -   [STOP FETCHES](#query_language-system-stop-fetches)
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
@@ -36,6 +39,7 @@ toc_title: SYSTEM
 -   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
 -   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [RESTART REPLICA](#query_language-system-restart-replica)
+-   [RESTORE REPLICA](#query_language-system-restore-replica)
 -   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
 ## RELOAD EMBEDDED DICTIONARIES] {#query_language-system-reload-emdedded-dictionaries}
@@ -77,6 +81,17 @@ SYSTEM RELOAD MODELS
 
 ```sql
 SYSTEM RELOAD MODEL <model_name>
+```
+
+## RELOAD FUNCTIONS {#query_language-system-reload-functions}
+
+Перезагружает все зарегистрированные [исполняемые пользовательские функции](../functions/index.md#executable-user-defined-functions) или одну из них из файла конфигурации.
+
+**Синтаксис**
+
+```sql
+RELOAD FUNCTIONS
+RELOAD FUNCTION function_name
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
@@ -124,7 +139,7 @@ Cкомпилированные выражения используются ко
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
-Перечитывает конфигурацию настроек ClickHouse. Используется при хранении конфигурации в zookeeeper.
+Перечитывает конфигурацию настроек ClickHouse. Используется при хранении конфигурации в zookeeper.
 
 ## SHUTDOWN {#query_language-system-shutdown}
 
@@ -174,9 +189,9 @@ ClickHouse может управлять фоновыми процессами �
 SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-!!! note "Note"
+    :::note
     `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
-
+    :::
 ### START MERGES {#query_language-system-start-merges}
 
 Включает фоновые мержи для таблиц семейства MergeTree:
@@ -219,6 +234,14 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ``` sql
 SYSTEM START MOVES [[db.]merge_tree_family_table_name]
+```
+
+### SYSTEM UNFREEZE {#query_language-system-unfreeze}
+
+Удаляет с диска все "замороженные" партиции данного бэкапа. Про удаление партиций по отдельности смотрите запрос [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.md#alter_unfreeze-partition)
+
+``` sql
+SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
@@ -287,11 +310,64 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Реинициализация состояния Zookeeper-сессий для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с тем, что хранится в Zookeeper, как источник правды, и добавляет задачи в очередь репликации в Zookeeper, если необходимо.
-Инициализация очереди репликации на основе данных ZooKeeper происходит так же, как при attach table. На короткое время таблица станет недоступной для любых операций.
+Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с состоянием в Zookeeper (как с эталоном) и при необходимости добавляет задачи в очередь репликации в Zookeeper. 
+Инициализация очереди репликации на основе данных ZooKeeper происходит так же, как при `ATTACH TABLE`. Некоторое время таблица будет недоступна для любых операций.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
+```
+
+### RESTORE REPLICA {#query_language-system-restore-replica}
+
+Восстанавливает реплику, если метаданные в Zookeeper потеряны, но сами данные возможно существуют.
+
+Работает только с таблицами семейства `ReplicatedMergeTree` и только если таблица находится в readonly-режиме.
+
+Запрос можно выполнить если:
+
+  - потерян корневой путь ZooKeeper `/`;
+  - потерян путь реплик `/replicas`;
+  - потерян путь конкретной реплики `/replicas/replica_name/`.
+
+К реплике прикрепляются локально найденные куски, информация о них отправляется в Zookeeper.
+Если присутствующие в реплике до потери метаданных данные не устарели, они не скачиваются повторно с других реплик. Поэтому восстановление реплики не означает повторную загрузку всех данных по сети.
+
+:::danger "Предупреждение"
+    Потерянные данные в любых состояниях перемещаются в папку `detached/`. Куски, активные до потери данных (находившиеся в состоянии Committed), прикрепляются.
+
+**Синтаксис**
+
+```sql
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+```
+
+Альтернативный синтаксис:
+
+```sql
+SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+**Пример**
+
+Создание таблицы на нескольких серверах. После потери корневого пути реплики таблица будет прикреплена только для чтения, так как метаданные отсутствуют. Последний запрос необходимо выполнить на каждой реплике.
+
+```sql
+CREATE TABLE test(n UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+ORDER BY n PARTITION BY n % 10;
+
+INSERT INTO test SELECT * FROM numbers(1000);
+
+-- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
+
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
+```
+
+Альтернативный способ:
+
+```sql
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}

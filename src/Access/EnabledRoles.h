@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -41,14 +42,23 @@ public:
 
 private:
     friend class RoleCache;
-    EnabledRoles(const Params & params_);
+    explicit EnabledRoles(const Params & params_);
 
-    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard & notifications);
+    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard * notifications);
 
     const Params params;
-    mutable std::shared_ptr<const EnabledRolesInfo> info;
-    mutable std::list<OnChangeHandler> handlers;
-    mutable std::mutex mutex;
+
+    std::shared_ptr<const EnabledRolesInfo> info;
+    mutable std::mutex info_mutex;
+
+    struct Handlers
+    {
+        std::list<OnChangeHandler> list;
+        std::mutex mutex;
+    };
+
+    /// shared_ptr is here for safety because EnabledRoles can be destroyed before all subscriptions are removed.
+    std::shared_ptr<Handlers> handlers;
 };
 
 }

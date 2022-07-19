@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <logger>
         <!-- Possible levels [1]:
 
@@ -38,18 +38,21 @@
 
             <coordination_settings>
                 <operation_timeout_ms>10000</operation_timeout_ms>
-                <session_timeout_ms>30000</session_timeout_ms>
+                <min_session_timeout_ms>10000</min_session_timeout_ms>
+                <session_timeout_ms>100000</session_timeout_ms>
                 <raft_logs_level>information</raft_logs_level>
                 <!-- All settings listed in https://github.com/ClickHouse/ClickHouse/blob/master/src/Coordination/CoordinationSettings.h -->
             </coordination_settings>
 
+            <!-- enable sanity hostname checks for cluster configuration (e.g. if localhost is used with remote endpoints) -->
+            <hostname_checks_enabled>true</hostname_checks_enabled>
             <raft_configuration>
                 <server>
                     <id>1</id>
 
                     <!-- Internal port and hostname -->
                     <hostname>localhost</hostname>
-                    <port>44444</port>
+                    <port>9234</port>
                 </server>
 
                 <!-- Add more servers here -->
@@ -78,4 +81,4 @@
         </server>
     </openSSL>
 
-</yandex>
+</clickhouse>

@@ -23,7 +23,7 @@ select toMinute(x1) from t1; -- { serverError 43 }
 select '-------toSecond---------';
 select toSecond(x1) from t1; -- { serverError 43 }
 select '-------toStartOfDay---------';
-select toStartOfDay(x1) from t1;
+select toStartOfDay(x1, 'Asia/Istanbul') from t1;
 select '-------toMonday---------';
 select toMonday(x1) from t1;
 select '-------toISOWeek---------';
@@ -46,8 +46,8 @@ select '-------toStartOfSecond---------';
 select toStartOfSecond(x1) from t1; -- { serverError 43 }
 select '-------toStartOfMinute---------';
 select toStartOfMinute(x1) from t1; -- { serverError 43 }
-select '-------toStartOfFiveMinute---------';
-select toStartOfFiveMinute(x1) from t1; -- { serverError 43 }
+select '-------toStartOfFiveMinutes---------';
+select toStartOfFiveMinutes(x1) from t1; -- { serverError 43 }
 select '-------toStartOfTenMinutes---------';
 select toStartOfTenMinutes(x1) from t1; -- { serverError 43 }
 select '-------toStartOfFifteenMinutes---------';
@@ -57,21 +57,21 @@ select toStartOfHour(x1) from t1; -- { serverError 43 }
 select '-------toStartOfISOYear---------';
 select toStartOfISOYear(x1) from t1;
 select '-------toRelativeYearNum---------';
-select toRelativeYearNum(x1) from t1;
+select toRelativeYearNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeQuarterNum---------';
-select toRelativeQuarterNum(x1) from t1;
+select toRelativeQuarterNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeMonthNum---------';
-select toRelativeMonthNum(x1) from t1;
+select toRelativeMonthNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeWeekNum---------';
-select toRelativeWeekNum(x1) from t1;
+select toRelativeWeekNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeDayNum---------';
-select toRelativeDayNum(x1) from t1;
+select toRelativeDayNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeHourNum---------';
-select toRelativeHourNum(x1) from t1;
+select toRelativeHourNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeMinuteNum---------';
-select toRelativeMinuteNum(x1) from t1;
+select toRelativeMinuteNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeSecondNum---------';
-select toRelativeSecondNum(x1) from t1;
+select toRelativeSecondNum(x1, 'Asia/Istanbul') from t1;
 select '-------toTime---------';
 select toTime(x1) from t1; -- { serverError 43 }
 select '-------toYYYYMM---------';
@@ -85,7 +85,7 @@ select addSeconds(x1, 3600) from t1;
 select '-------addMinutes---------';
 select addMinutes(x1, 60) from t1;
 select '-------addHours---------';
-select addHours(x1, 12) from t1;
+select addHours(x1, 1) from t1;
 select '-------addDays---------';
 select addDays(x1, 7) from t1;
 select '-------addWeeks---------';
@@ -115,4 +115,18 @@ select subtractYears(x1, 1) from t1;
 select '-------toDate32---------';
 select toDate32('1925-01-01'), toDate32(toDate('2000-01-01'));
 select toDate32OrZero('1924-01-01'), toDate32OrNull('1924-01-01');
+select toDate32OrZero(''), toDate32OrNull('');
+select (select toDate32OrZero(''));
+select (select toDate32OrNull(''));
+SELECT toString(T.d) dateStr
+FROM
+    (
+    SELECT '1925-01-01'::Date32 d
+    UNION ALL SELECT '1969-12-31'::Date32
+    UNION ALL SELECT '1970-01-01'::Date32
+    UNION ALL SELECT '2149-06-06'::Date32
+    UNION ALL SELECT '2149-06-07'::Date32
+    UNION ALL SELECT '2283-11-11'::Date32
+    ) AS T
+ORDER BY T.d
 

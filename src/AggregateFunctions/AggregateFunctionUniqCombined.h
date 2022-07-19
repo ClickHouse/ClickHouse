@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/SipHash.h>
@@ -70,9 +70,9 @@ namespace detail
 }
 
 // Unlike HashTableGrower always grows to power of 2.
-struct UniqCombinedHashTableGrower : public HashTableGrower<>
+struct UniqCombinedHashTableGrower : public HashTableGrowerWithPrecalculation<>
 {
-    void increaseSize() { ++size_degree; }
+    void increaseSize() { increaseSizeDegree(1); }
 };
 
 template <typename Key, UInt8 K>
@@ -162,12 +162,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).set.read(buf);
     }
@@ -226,12 +226,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         this->data(place).set.read(buf);
     }

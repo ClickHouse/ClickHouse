@@ -4,7 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/queryNormalization.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
 
@@ -75,6 +75,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {

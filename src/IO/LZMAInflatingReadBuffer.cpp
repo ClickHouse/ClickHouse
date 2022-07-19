@@ -1,14 +1,14 @@
 #include <IO/LZMAInflatingReadBuffer.h>
 
-#if !defined(ARCADIA_BUILD)
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LZMA_STREAM_DECODER_FAILED;
 }
+
 LZMAInflatingReadBuffer::LZMAInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_)), eof(false)
+    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment), eof_flag(false)
 {
     lstr = LZMA_STREAM_INIT;
     lstr.allocator = nullptr;
@@ -37,35 +37,41 @@ LZMAInflatingReadBuffer::~LZMAInflatingReadBuffer()
 
 bool LZMAInflatingReadBuffer::nextImpl()
 {
-    if (eof)
+    if (eof_flag)
         return false;
 
     lzma_action action = LZMA_RUN;
+    lzma_ret ret;
 
-    if (!lstr.avail_in)
+    do
     {
-        in->nextIfAtEnd();
-        lstr.next_in = reinterpret_cast<unsigned char *>(in->position());
-        lstr.avail_in = in->buffer().end() - in->position();
+        if (!lstr.avail_in)
+        {
+            in->nextIfAtEnd();
+            lstr.next_in = reinterpret_cast<unsigned char *>(in->position());
+            lstr.avail_in = in->buffer().end() - in->position();
+        }
+
+        if (in->eof())
+        {
+            action = LZMA_FINISH;
+        }
+
+        lstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
+        lstr.avail_out = internal_buffer.size();
+
+        ret = lzma_code(&lstr, action);
+        in->position() = in->buffer().end() - lstr.avail_in;
     }
+    while (ret == LZMA_OK && lstr.avail_out == internal_buffer.size());
 
-    if (in->eof())
-    {
-        action = LZMA_FINISH;
-    }
-
-    lstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
-    lstr.avail_out = internal_buffer.size();
-
-    lzma_ret ret = lzma_code(&lstr, action);
-    in->position() = in->buffer().end() - lstr.avail_in;
     working_buffer.resize(internal_buffer.size() - lstr.avail_out);
 
     if (ret == LZMA_STREAM_END)
     {
         if (in->eof())
         {
-            eof = true;
+            eof_flag = true;
             return !working_buffer.empty();
         }
         else
@@ -88,4 +94,3 @@ bool LZMAInflatingReadBuffer::nextImpl()
     return true;
 }
 }
-#endif

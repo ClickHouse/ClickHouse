@@ -1,7 +1,13 @@
 dict	NOT_LOADED
 _	Memory
 dict	Dictionary
-dict1	NOT_LOADED
+t	Memory
+t	NOT_LOADED
+_	Memory
+dict	Memory
+t	Dictionary
+test
+dict1	LOADED
 _	Memory
 dict1	Dictionary
 test

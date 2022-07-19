@@ -1,9 +1,9 @@
 ---
-toc_priority: 5
-toc_title: MongoDB
+sidebar_position: 5
+sidebar_label: MongoDB
 ---
 
-# MongoDB {#mongodb}
+# MongoDB
 
 MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. Engine supports only non-nested data types. `INSERT` queries are not supported.
 
@@ -15,7 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = MongoDB(host:port, database, collection, user, password);
+) ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
 ```
 
 **Engine Parameters**
@@ -30,16 +30,28 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 -   `password` — User password.
 
+-   `options` — MongoDB connection string options (optional parameter).
+
 ## Usage Example {#usage-example}
 
-Table in ClickHouse which allows to read data from MongoDB collection:
+Create a table in ClickHouse which allows to read data from MongoDB collection:
 
-``` text
+``` sql
 CREATE TABLE mongo_table
 (
-    key UInt64, 
+    key UInt64,
     data String
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
+```
+
+To read from an SSL secured MongoDB server:
+
+``` sql
+CREATE TABLE mongo_table_ssl
+(
+    key UInt64,
+    data String
+) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'ssl=true');
 ```
 
 Query:
@@ -54,4 +66,14 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->
+You can also adjust connection timeout:
+
+``` sql
+CREATE TABLE mongo_table
+(
+    key UInt64,
+    data String
+) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'connectTimeoutMS=100000');
+```
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->

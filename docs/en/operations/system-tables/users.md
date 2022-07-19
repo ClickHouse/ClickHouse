@@ -1,4 +1,4 @@
-# system.users {#system_tables-users}
+# users
 
 Contains a list of [user accounts](../../operations/access-rights.md#user-account-management) configured at the server.
 
@@ -7,7 +7,7 @@ Columns:
 
 -    `id` ([UUID](../../sql-reference/data-types/uuid.md)) — User ID.
 
--    `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of users. Configured in the `access_control_path` parameter. 
+-    `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of users. Configured in the `access_control_path` parameter.
 
 -    `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)('no_password' = 0,'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3)) — Shows the authentication type. There are multiple ways of user identification: with no password, with plain text password, with [SHA256](https://ru.wikipedia.org/wiki/SHA-2)-encoded password or with [double SHA-1](https://ru.wikipedia.org/wiki/SHA-1)-encoded password.
 
@@ -31,4 +31,4 @@ Columns:
 
 -   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/users) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/users) <!--hide-->

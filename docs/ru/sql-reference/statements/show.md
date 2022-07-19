@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: SHOW
+sidebar_position: 37
+sidebar_label: SHOW
 ---
 
 # SHOW Queries {#show-queries}
@@ -8,10 +8,10 @@ toc_title: SHOW
 ## SHOW CREATE TABLE {#show-create-table}
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Возвращает один столбец типа `String` с именем statement, содержащий одно значение — запрос `CREATE TABLE`, с помощью которого был создан указанный объект.
+Возвращает один столбец типа `String` с именем statement, содержащий одно значение — запрос `CREATE`, с помощью которого был создан указанный объект.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -91,7 +91,7 @@ SHOW DATABASES LIMIT 2
 
 ### Смотрите также {#see-also}
 
--   [CREATE DATABASE](https://clickhouse.tech/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.com/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -190,8 +190,8 @@ SHOW TABLES FROM system LIMIT 2
 
 ### Смотрите также {#see-also}
 
--   [Create Tables](https://clickhouse.tech/docs/ru/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/ru/sql-reference/statements/show/#show-create-table)
+-   [Create Tables](https://clickhouse.com/docs/ru/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.com/docs/ru/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -301,7 +301,7 @@ SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ``` sql
 SHOW USERS
 ```
- 
+
 ## SHOW ROLES {#show-roles-statement}
 
 Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
@@ -340,8 +340,8 @@ SHOW [ROW] POLICIES [ON [db.]table]
 
 ``` sql
 SHOW QUOTAS
-```  
-    
+```
+
 ## SHOW QUOTA {#show-quota-statement}
 
 Выводит потребление [квоты](../../operations/quotas.md) для всех пользователей или только для текущего пользователя. Для просмотра других параметров, см. системные таблицы [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) и [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
@@ -366,7 +366,7 @@ SHOW ACCESS
 
 Возвращает список кластеров. Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
 
-!!! info "Note"
+:::info "Note"
     По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
 
 ### Синтаксис {#show-cluster-syntax}

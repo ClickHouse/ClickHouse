@@ -68,4 +68,4 @@ SELECT * FROM url_engine_table
     -   索引。
     -   副本。
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/url/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

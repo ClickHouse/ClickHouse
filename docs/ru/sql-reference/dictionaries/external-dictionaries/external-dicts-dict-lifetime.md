@@ -1,6 +1,6 @@
 ---
-toc_priority: 42
-toc_title: "Обновление словарей"
+sidebar_position: 42
+sidebar_label: "Обновление словарей"
 ---
 
 # Обновление словарей {#obnovlenie-slovarei}
@@ -86,7 +86,7 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-Для словарей `Cache`, `ComplexKeyCache`, `SSDCache` и `SSDComplexKeyCache` поддерживается как синхронное, так и асинхронное обновление. 
+Для словарей `Cache`, `ComplexKeyCache`, `SSDCache` и `SSDComplexKeyCache` поддерживается как синхронное, так и асинхронное обновление.
 
 Словари `Flat`, `Hashed` и `ComplexKeyHashed` могут запрашивать только те данные, которые были изменены после предыдущего обновления. Если `update_field` указано как часть конфигурации источника словаря, к запросу данных будет добавлено время предыдущего обновления в секундах. В зависимости от типа источника (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, ODBC) к `update_field` будет применена соответствующая логика перед запросом данных из внешнего источника.
 

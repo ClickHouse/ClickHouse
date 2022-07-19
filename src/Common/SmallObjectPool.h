@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Arena.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 
 namespace DB
@@ -18,7 +18,7 @@ private:
     char * free_list = nullptr;
 
 public:
-    SmallObjectPool(size_t object_size_)
+    explicit SmallObjectPool(size_t object_size_)
         : object_size{std::max(object_size_, sizeof(char *))}
     {
     }

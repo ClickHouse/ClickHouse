@@ -1,29 +1,12 @@
-#include <Core/Defines.h>
-
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
-
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-
 #include <Core/Field.h>
 
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/VarInt.h>
-
-#ifdef __SSE2__
-    #include <emmintrin.h>
-#endif
-
 
 namespace DB
 {
@@ -108,5 +91,8 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("NCHAR LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BINARY LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("VARBINARY", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("GEOMETRY", "String", DataTypeFactory::CaseInsensitive); //mysql
+
 }
 }

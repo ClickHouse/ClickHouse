@@ -1,5 +1,5 @@
 ---
-toc_priority: 125
+sidebar_position: 125
 ---
 
 # groupBitAnd {#groupbitand}

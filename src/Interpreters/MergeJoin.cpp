@@ -1,19 +1,20 @@
 #include <limits>
 
-#include <Core/NamesAndTypes.h>
-#include <Core/SortCursor.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
+
+#include <Core/SortCursor.h>
+#include <Formats/TemporaryFileStream.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/sortBlock.h>
 #include <Interpreters/join_common.h>
-#include <DataStreams/materializeBlock.h>
-#include <DataStreams/TemporaryFileStream.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/QueryPipeline.h>
+#include <Interpreters/sortBlock.h>
+#include <Processors/Sources/BlocksListSource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <DataStreams/BlocksListBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace DB
@@ -23,11 +24,52 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
+
+String deriveTempName(const String & name, JoinTableSide block_side)
+{
+    if (block_side == JoinTableSide::Left)
+        return "--pmj_cond_left_" + name;
+    else
+        return "--pmj_cond_right_" + name;
+}
+
+/*
+ * Convert column with conditions for left or right table to join to joining key.
+ * Input column type is UInt8 output is Nullable(UInt8).
+ * 0 converted to NULL and such rows won't be joined,
+ * 1 converted to 0 (any constant non-NULL value to join)
+ */
+ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name, JoinTableSide block_side)
+{
+    size_t res_size = block.rows();
+    auto data_col = ColumnUInt8::create(res_size, 0);
+    auto null_map = ColumnUInt8::create(res_size, 0);
+
+    if (!src_column_name.empty())
+    {
+        auto join_mask = JoinCommon::getColumnAsMask(block, src_column_name);
+        if (!join_mask.isConstant())
+        {
+            for (size_t i = 0; i < res_size; ++i)
+                null_map->getData()[i] = join_mask.isRowFiltered(i);
+        }
+    }
+
+    ColumnPtr res_col = ColumnNullable::create(std::move(data_col), std::move(null_map));
+    DataTypePtr res_col_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+    String res_name = deriveTempName(src_column_name, block_side);
+
+    if (block.has(res_name))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Conflicting column name '{}' in block {}", res_name, block.dumpStructure());
+
+    return {res_col, res_col_type, res_name};
+}
 
 template <bool has_left_nulls, bool has_right_nulls>
 int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
@@ -180,7 +222,7 @@ class MergeJoinCursor
 {
 public:
     MergeJoinCursor(const Block & block, const SortDescription & desc_)
-        : impl(SortCursorImpl(block, desc_))
+        : impl(block, desc_)
     {
         /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
         if (impl.permutation)
@@ -320,14 +362,17 @@ MutableColumns makeMutableColumns(const Block & block, size_t rows_to_reserve = 
 void makeSortAndMerge(const Names & keys, SortDescription & sort, SortDescription & merge)
 {
     NameSet unique_keys;
+    for (const auto & sd: merge)
+        unique_keys.insert(sd.column_name);
+
     for (const auto & key_name : keys)
     {
-        merge.emplace_back(SortColumnDescription(key_name, 1, 1));
+        merge.emplace_back(key_name);
 
-        if (!unique_keys.count(key_name))
+        if (!unique_keys.contains(key_name))
         {
             unique_keys.insert(key_name);
-            sort.emplace_back(SortColumnDescription(key_name, 1, 1));
+            sort.emplace_back(key_name);
         }
     }
 }
@@ -423,8 +468,6 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     : table_join(table_join_)
     , size_limits(table_join->sizeLimits())
     , right_sample_block(right_sample_block_)
-    , nullable_right_side(table_join->forceNullableRight())
-    , nullable_left_side(table_join->forceNullableLeft())
     , is_any_join(table_join->strictness() == ASTTableJoin::Strictness::Any)
     , is_all_join(table_join->strictness() == ASTTableJoin::Strictness::All)
     , is_semi_join(table_join->strictness() == ASTTableJoin::Strictness::Semi)
@@ -435,6 +478,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
+    , log(&Poco::Logger::get("MergeJoin"))
 {
     switch (table_join->strictness())
     {
@@ -464,48 +508,66 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
-    for (const auto & right_key : table_join->keyNamesRight())
+    if (!table_join->oneDisjunct())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoin does not support OR in JOIN ON section");
+
+    const auto & onexpr = table_join->getOnlyClause();
+    std::tie(mask_column_name_left, mask_column_name_right) = onexpr.condColumnNames();
+
+    /// Add auxiliary joining keys to join only rows where conditions from JOIN ON sections holds
+    /// Input boolean column converted to nullable and only rows with non NULLS value will be joined
+    if (!mask_column_name_left.empty() || !mask_column_name_right.empty())
+    {
+        JoinCommon::checkTypesOfMasks({}, "", right_sample_block, mask_column_name_right);
+
+        key_names_left.push_back(deriveTempName(mask_column_name_left, JoinTableSide::Left));
+        key_names_right.push_back(deriveTempName(mask_column_name_right, JoinTableSide::Right));
+    }
+
+    key_names_left.insert(key_names_left.end(), onexpr.key_names_left.begin(), onexpr.key_names_left.end());
+    key_names_right.insert(key_names_right.end(), onexpr.key_names_right.begin(), onexpr.key_names_right.end());
+
+    addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
+    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
+
+    for (const auto & right_key : key_names_right)
     {
         if (right_sample_block.getByName(right_key).type->lowCardinality())
             lowcard_right_keys.push_back(right_key);
     }
 
-    table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
-    JoinCommon::removeLowCardinalityInplace(right_table_keys);
-    JoinCommon::removeLowCardinalityInplace(right_sample_block, table_join->keyNamesRight());
+    JoinCommon::convertToFullColumnsInplace(right_table_keys);
+    JoinCommon::convertToFullColumnsInplace(right_sample_block, key_names_right);
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
-        if (required_right_keys.count(column.name))
+        if (required_right_keys.contains(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
 
     JoinCommon::createMissedColumns(right_columns_to_add);
 
-    if (nullable_right_side)
-        JoinCommon::convertColumnsToNullable(right_columns_to_add);
+    makeSortAndMerge(key_names_left, left_sort_description, left_merge_description);
+    makeSortAndMerge(key_names_right, right_sort_description, right_merge_description);
 
-    makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
-    makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
+    LOG_DEBUG(log, "Joining keys: left [{}], right [{}]", fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "));
 
-    /// Temporary disable 'partial_merge_join_left_table_buffer_bytes' without 'partial_merge_join_optimizations'
-    if (table_join->enablePartialMergeJoinOptimizations())
-        if (size_t max_bytes = table_join->maxBytesInLeftBuffer())
-            left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
+    if (size_t max_bytes = table_join->maxBytesInLeftBuffer(); max_bytes > 0)
+    {
+        /// Disabled due to https://github.com/ClickHouse/ClickHouse/issues/31009
+        // left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
+        LOG_WARNING(log, "`partial_merge_join_left_table_buffer_bytes` is disabled in current version of ClickHouse");
+        UNUSED(left_blocks_buffer);
+    }
 }
 
 /// Has to be called even if totals are empty
 void MergeJoin::setTotals(const Block & totals_block)
 {
-    totals = totals_block;
+    IJoin::setTotals(totals_block);
     mergeRightBlocks();
 
     if (is_right || is_full)
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
-}
-
-void MergeJoin::joinTotals(Block & block) const
-{
-    JoinCommon::joinTotals(totals, right_columns_to_add, *table_join, block);
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -518,24 +580,26 @@ void MergeJoin::mergeRightBlocks()
 
 void MergeJoin::mergeInMemoryRightBlocks()
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (right_blocks.empty())
         return;
 
-    auto stream = std::make_shared<BlocksListBlockInputStream>(std::move(right_blocks.blocks));
-    Pipe source(std::make_shared<SourceFromInputStream>(std::move(stream)));
+    Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(source));
+    QueryPipelineBuilder builder;
+    builder.init(std::move(source));
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
+    builder.addTransform(std::make_shared<MergeSortingTransform>(
+        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, false, 0, 0, 0, nullptr, 0));
 
-    auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    PullingPipelineExecutor executor(pipeline);
 
-    while (Block block = sorted_input.read())
+    Block block;
+    while (executor.pull(block))
     {
         if (!block.rows())
             continue;
@@ -549,7 +613,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
 void MergeJoin::mergeFlushedRightBlocks()
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     auto callback = [&](const Block & block)
     {
@@ -574,7 +638,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 {
     if (is_in_memory)
     {
-        std::unique_lock lock(rwlock);
+        std::lock_guard lock(rwlock);
 
         if (!is_in_memory)
         {
@@ -599,7 +663,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight());
+    JoinCommon::convertToFullColumnsInplace(block, table_join->getOnlyClause().key_names_right);
     return block;
 }
 
@@ -607,8 +671,16 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 {
     Block block = modifyRightBlock(src_block);
 
+    addConditionJoinColumn(block, JoinTableSide::Right);
     sortBlock(block, right_sort_description);
     return saveRightBlock(std::move(block));
+}
+
+void MergeJoin::checkTypesOfKeys(const Block & block) const
+{
+    /// Do not check auxailary column for extra conditions, use original key names
+    const auto & onexpr = table_join->getOnlyClause();
+    JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_table_keys, onexpr.key_names_right);
 }
 
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
@@ -616,21 +688,26 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     Names lowcard_keys = lowcard_right_keys;
     if (block)
     {
-        JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+        /// We need to check type of masks before `addConditionJoinColumn`, because it assumes that types is correct
+        JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
+
+        /// Add auxiliary column, will be removed after joining
+        addConditionJoinColumn(block, JoinTableSide::Left);
+
+        /// Types of keys can be checked only after `checkTypesOfKeys`
+        JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
+
         materializeBlockInplace(block);
 
-        for (const auto & column_name : table_join->keyNamesLeft())
+        for (const auto & column_name : key_names_left)
         {
             if (block.getByName(column_name).type->lowCardinality())
                 lowcard_keys.push_back(column_name);
         }
 
-        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
+        JoinCommon::convertToFullColumnsInplace(block, key_names_left, false);
 
         sortBlock(block, left_sort_description);
-
-        if (nullable_left_side)
-            JoinCommon::convertColumnsToNullable(block);
     }
 
     if (!not_processed && left_blocks_buffer)
@@ -660,15 +737,10 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     if (!not_processed && left_blocks_buffer)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
 
-    for (const auto & column_name : lowcard_keys)
-    {
-        if (!block.has(column_name))
-            continue;
-        if (auto & col = block.getByName(column_name); !col.type->lowCardinality())
-            JoinCommon::changeLowCardinalityInplace(col);
-    }
+    if (needConditionJoinColumn())
+        block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
 
-    JoinCommon::restoreLowCardinalityInplace(block);
+    JoinCommon::restoreLowCardinalityInplace(block, lowcard_keys);
 }
 
 template <bool in_memory, bool is_all>
@@ -702,7 +774,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
@@ -735,7 +807,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
@@ -812,6 +884,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
             {
                 right_cursor.nextN(range.right_length);
                 right_block_info.skip = right_cursor.position();
+                left_cursor.nextN(range.left_length);
                 return false;
             }
         }
@@ -836,7 +909,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 }
 
 bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
+                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -972,52 +1045,16 @@ void MergeJoin::initRightTableWriter()
 }
 
 /// Stream from not joined earlier rows of the right table.
-class NonMergeJoinedBlockInputStream : private NotJoined, public IBlockInputStream
+class NotJoinedMerge final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
-    NonMergeJoinedBlockInputStream(const MergeJoin & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
-        : NotJoined(*parent_.table_join,
-                    parent_.modifyRightBlock(parent_.right_sample_block),
-                    parent_.right_sample_block,
-                    result_sample_block_)
-        , parent(parent_)
-        , max_block_size(max_block_size_)
+    NotJoinedMerge(const MergeJoin & parent_, UInt64 max_block_size_)
+        : parent(parent_), max_block_size(max_block_size_)
     {}
 
-    String getName() const override { return "NonMergeJoined"; }
-    Block getHeader() const override { return result_sample_block; }
+    Block getEmptyBlock() override { return parent.modifyRightBlock(parent.right_sample_block).cloneEmpty(); }
 
-protected:
-    Block readImpl() override
-    {
-        if (parent.getRightBlocksCount())
-            return createBlock();
-        return {};
-    }
-
-private:
-    const MergeJoin & parent;
-    size_t max_block_size;
-    size_t block_number = 0;
-
-    Block createBlock()
-    {
-        MutableColumns columns_right = saved_block_sample.cloneEmptyColumns();
-
-        size_t rows_added = fillColumns(columns_right);
-        if (!rows_added)
-            return {};
-
-        correctLowcardAndNullability(columns_right);
-
-        Block res = result_sample_block.cloneEmpty();
-        addLeftColumns(res, rows_added);
-        addRightColumns(res, columns_right);
-        copySameKeys(res);
-        return res;
-    }
-
-    size_t fillColumns(MutableColumns & columns_right)
+    size_t fillColumns(MutableColumns & columns_right) override
     {
         const RowBitmaps & bitmaps = *parent.used_rows_bitmap;
         size_t rows_added = 0;
@@ -1053,19 +1090,49 @@ private:
             }
 
             if (rows_added >= max_block_size)
+            {
+                ++block_number;
                 break;
+            }
         }
 
         return rows_added;
     }
+
+private:
+    const MergeJoin & parent;
+    size_t max_block_size;
+    size_t block_number = 0;
 };
 
 
-BlockInputStreamPtr MergeJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
+std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(
+    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
-        return std::make_shared<NonMergeJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
-    return {};
+    {
+        size_t left_columns_count = left_sample_block.columns();
+        assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
+        auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
+        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+    }
+    return nullptr;
+}
+
+bool MergeJoin::needConditionJoinColumn() const
+{
+    return !mask_column_name_left.empty() || !mask_column_name_right.empty();
+}
+
+void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) const
+{
+    if (needConditionJoinColumn())
+    {
+        if (block_side == JoinTableSide::Left)
+            block.insert(condtitionColumnToJoinable(block, mask_column_name_left, block_side));
+        else
+            block.insert(condtitionColumnToJoinable(block, mask_column_name_right, block_side));
+    }
 }
 
 

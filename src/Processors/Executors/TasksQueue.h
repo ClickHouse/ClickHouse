@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <queue>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ public:
     size_t getAnyThreadWithTasks(size_t from_thread = 0)
     {
         if (num_tasks == 0)
-            throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("TaskQueue is empty", ErrorCodes::LOGICAL_ERROR);
 
         for (size_t i = 0; i < queues.size(); ++i)
         {
@@ -36,7 +37,7 @@ public:
                 from_thread = 0;
         }
 
-        throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("TaskQueue is empty", ErrorCodes::LOGICAL_ERROR);
     }
 
     Task * pop(size_t thread_num)

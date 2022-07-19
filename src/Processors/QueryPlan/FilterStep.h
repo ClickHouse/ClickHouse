@@ -18,9 +18,7 @@ public:
         bool remove_filter_column_);
 
     String getName() const override { return "Filter"; }
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
-
-    void updateInputStream(DataStream input_stream, bool keep_header);
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
@@ -30,6 +28,8 @@ public:
     bool removesFilterColumn() const { return remove_filter_column; }
 
 private:
+    void updateOutputStream() override;
+
     ActionsDAGPtr actions_dag;
     String filter_column_name;
     bool remove_filter_column;

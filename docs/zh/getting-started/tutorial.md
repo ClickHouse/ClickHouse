@@ -1,6 +1,6 @@
 ---
-toc_priority: 12
-toc_title: 使用教程
+sidebar_position: 12
+sidebar_label: 使用教程
 ---
 
 # ClickHouse教程 {#clickhouse-tutorial}
@@ -16,7 +16,14 @@ toc_title: 使用教程
 例如，您选择`deb`安装包，执行:
 
 ``` bash
-{% include 'install/deb.sh' %}
+sudo apt-get install -y apt-transport-https ca-certificates dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+
+echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+    /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install -y clickhouse-server clickhouse-client
 ```
 
 在我们安装的软件中包含这些包:
@@ -85,8 +92,8 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 ### 下载并提取表数据 {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 提取的文件大小约为10GB。
@@ -520,7 +527,7 @@ WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartU
 ClickHouse集群是一个同质集群。 设置步骤:
 
 1.  在群集的所有机器上安装ClickHouse服务端
-2.  在配置文件中设置群集配置
+2.  在配置文件中设置集群配置
 3.  在每个实例上创建本地表
 4.  创建一个[分布式表](../engines/table-engines/special/distributed.md)
 
@@ -659,4 +666,4 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 
 复制在多主机模式下运行。数据可以加载到任何副本中，然后系统自动将其与其他实例同步。复制是异步的，因此在给定时刻，并非所有副本都可能包含最近插入的数据。至少应该有一个副本允许数据摄入。另一些则会在重新激活后同步数据并修复一致性。请注意，这种方法允许最近插入的数据丢失的可能性很低。
 
-[原始文章](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->

@@ -1,6 +1,6 @@
 ---
-toc_priority: 30
-toc_title: MySQL
+sidebar_position: 30
+sidebar_label: MySQL
 ---
 
 # MySQL {#mysql}
@@ -53,13 +53,13 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 ## Использование глобальных переменных {#global-variables-support}
 
-Для лучшей совместимости к глобальным переменным можно обращаться в формате MySQL, как `@@identifier`. 
+Для лучшей совместимости к глобальным переменным можно обращаться в формате MySQL, как `@@identifier`.
 
 Поддерживаются следующие переменные:
 - `version`
 - `max_allowed_packet`
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     В настоящее время эти переменные реализованы только как "заглушки" и не содержат актуальных данных.
 
 Пример:

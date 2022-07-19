@@ -1,4 +1,4 @@
-# system.crash_log {#system-tables_crash_log}
+# crash_log
 
 Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.
 
@@ -45,4 +45,4 @@ build_id:
 **See also**
 -   [trace_log](../../operations/system-tables/trace_log.md) system table
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/crash-log)
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/crash-log)

@@ -1,41 +1,39 @@
 #include "Keeper.h"
 
-#include <sys/stat.h>
-#include <pwd.h>
 #include <Common/ClickHouseRevision.h>
-#include <Server/ProtocolServerAdapter.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Coordination/Defines.h>
+#include <Common/Config/ConfigReloader.h>
+#include <Server/TCPServer.h>
+#include <filesystem>
+#include <IO/UseSSL.h>
+#include <Core/ServerUUID.h>
+#include <Common/logger_useful.h>
+#include <Common/ErrorHandlers.h>
+#include <base/scope_guard.h>
+#include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/scope_guard.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <filesystem>
-#include <IO/UseSSL.h>
+#include <sys/stat.h>
+#include <pwd.h>
+#include <Coordination/FourLetterCommand.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#endif
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
+#include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
-
-#if defined(OS_LINUX)
-#    include <unistd.h>
-#    include <sys/syscall.h>
-#endif
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
@@ -64,6 +62,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int FAILED_TO_GETPWUID;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -123,18 +122,6 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
         throw;
     }
     return socket_address;
-}
-
-[[noreturn]] void forceShutdown()
-{
-#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
-    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
-    /// while connection handling threads are still run.
-    (void)syscall(SYS_exit_group, 0);
-    __builtin_unreachable();
-#else
-    _exit(0);
-#endif
 }
 
 std::string getUserName(uid_t user_id)
@@ -253,6 +240,18 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
+void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] const std::string & value) // NOLINT
+{
+    if (arg == "force-recovery")
+    {
+        assert(value.empty());
+        config().setBool("keeper_server.force_recovery", true);
+        return;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid argument {} provided", arg);
+}
+
 void Keeper::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
@@ -265,6 +264,12 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
             .required(false)
             .repeatable(false)
             .binding("version"));
+    options.addOption(
+        Poco::Util::Option("force-recovery", "force-recovery", "Force recovery mode allowing Keeper to overwrite cluster configuration without quorum")
+        .required(false)
+        .repeatable(false)
+        .noArgument()
+        .callback(Poco::Util::OptionCallback<Keeper>(this, &Keeper::handleCustomArguments)));
     BaseDaemon::defineOptions(options);
 }
 
@@ -284,24 +289,17 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     LOG_WARNING(log, "Keeper was built with sanitizer. It will work slowly.");
 #endif
 
-    auto shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
-
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::KEEPER);
-
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
-
 
     std::string path;
 
     if (config().has("keeper_server.storage_path"))
         path = config().getString("keeper_server.storage_path");
     else if (config().has("keeper_server.log_storage_path"))
-        path = config().getString("keeper_server.log_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
     else if (config().has("keeper_server.snapshot_storage_path"))
-        path = config().getString("keeper_server.snapshot_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
     else
         path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
@@ -322,13 +320,19 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
         else
         {
-            LOG_WARNING(log, message);
+            LOG_WARNING(log, fmt::runtime(message));
         }
     }
 
-    const Settings & settings = global_context->getSettingsRef();
+    DB::ServerUUID::load(path + "/uuid", log);
 
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
+    std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 100),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -355,8 +359,15 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-    /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-    global_context->initializeKeeperStorageDispatcher();
+    /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
+    tiny_context.initializeKeeperDispatcher(/* start_async = */ true);
+    FourLetterCommandFactory::registerCommands(*tiny_context.getKeeperDispatcher());
+
+    auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+    {
+        return tiny_context.getConfigRef();
+    };
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
@@ -365,14 +376,17 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
+                listen_host,
                 port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
-
-            LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+                "Keeper (tcp): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(
+                        config_getter, tiny_context.getKeeperDispatcher(),
+                            config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
+                            config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -381,13 +395,17 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
+                listen_host,
                 secure_port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
-            LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+                "Keeper with secure protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(
+                        config_getter, tiny_context.getKeeperDispatcher(),
+                        config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
+                        config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -397,12 +415,30 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     }
 
     for (auto & server : *servers)
+    {
         server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
+
+    zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
+    zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
+    /// ConfigReloader have to strict parameters which are redundant in our case
+    auto main_config_reloader = std::make_unique<ConfigReloader>(
+        config_path,
+        include_from_path,
+        config().getString("path", ""),
+        std::move(unused_cache),
+        unused_event,
+        [&](ConfigurationPtr config, bool /* initial_loading */)
+        {
+            if (config->has("keeper_server"))
+                tiny_context.updateKeeperConfiguration(*config);
+        },
+        /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
-
-        global_context->shutdown();
+        main_config_reloader.reset();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         int current_connections = 0;
@@ -425,28 +461,23 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperStorageDispatcher();
+        tiny_context.shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context.reset();
-        shared_context.reset();
 
         LOG_DEBUG(log, "Destroyed global context.");
 
         if (current_connections)
         {
             LOG_INFO(log, "Will shutdown forcefully.");
-            forceShutdown();
+            safeExit(0);
         }
     });
 
 
     buildLoggers(config(), logger());
+    main_config_reloader->start();
 
     LOG_INFO(log, "Ready for connections.");
 

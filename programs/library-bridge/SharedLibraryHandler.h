@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Common/SharedLibrary.h>
-#include <common/logger_useful.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Common/logger_useful.h>
 #include "LibraryUtils.h"
 
 
@@ -27,11 +26,11 @@ public:
 
     ~SharedLibraryHandler();
 
-    BlockInputStreamPtr loadAll();
+    Block loadAll();
 
-    BlockInputStreamPtr loadIds(const std::vector<uint64_t> & ids);
+    Block loadIds(const std::vector<uint64_t> & ids);
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns);
+    Block loadKeys(const Columns & key_columns);
 
     bool isModified();
 

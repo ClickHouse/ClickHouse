@@ -9,11 +9,14 @@ namespace DB
 void registerFunctionsHashing(FunctionFactory & factory)
 {
 #if USE_SSL
+    factory.registerFunction<FunctionMD4>();
     factory.registerFunction<FunctionHalfMD5>();
     factory.registerFunction<FunctionMD5>();
     factory.registerFunction<FunctionSHA1>();
     factory.registerFunction<FunctionSHA224>();
     factory.registerFunction<FunctionSHA256>();
+    factory.registerFunction<FunctionSHA384>();
+    factory.registerFunction<FunctionSHA512>();
 #endif
     factory.registerFunction<FunctionSipHash64>();
     factory.registerFunction<FunctionSipHash128>();
@@ -27,18 +30,16 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionJavaHash>();
     factory.registerFunction<FunctionJavaHashUTF16LE>();
     factory.registerFunction<FunctionHiveHash>();
-#if !defined(ARCADIA_BUILD)
     factory.registerFunction<FunctionMurmurHash2_32>();
     factory.registerFunction<FunctionMurmurHash2_64>();
     factory.registerFunction<FunctionMurmurHash3_32>();
     factory.registerFunction<FunctionMurmurHash3_64>();
     factory.registerFunction<FunctionMurmurHash3_128>();
     factory.registerFunction<FunctionGccMurmurHash>();
-#endif
 
-#if USE_XXHASH
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
-#endif
+
+    factory.registerFunction<FunctionWyHash64>();
 }
 }

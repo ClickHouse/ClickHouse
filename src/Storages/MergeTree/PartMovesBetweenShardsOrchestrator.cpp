@@ -1,13 +1,21 @@
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <boost/range/adaptor/map.hpp>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
 PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , zookeeper_path(storage.zookeeper_path)
@@ -27,16 +35,17 @@ void PartMovesBetweenShardsOrchestrator::run()
     if (need_stop)
         return;
 
-    auto sleep_ms = 10;
+    /// Don't poll ZooKeeper too often.
+    auto sleep_ms = 3 * 1000;
 
     try
     {
-        fetchStateFromZK();
+        syncStateFromZK();
 
+        /// Schedule for immediate re-execution as likely there is more work
+        /// to be done.
         if (step())
-            fetchStateFromZK();
-        else
-            sleep_ms = 3 * 1000;
+            task->schedule();
     }
     catch (...)
     {
@@ -54,11 +63,11 @@ void PartMovesBetweenShardsOrchestrator::shutdown()
     LOG_TRACE(log, "PartMovesBetweenShardsOrchestrator thread finished");
 }
 
-void PartMovesBetweenShardsOrchestrator::fetchStateFromZK()
+void PartMovesBetweenShardsOrchestrator::syncStateFromZK()
 {
     std::lock_guard lock(state_mutex);
 
-    entries.clear();
+    std::vector<Entry> new_entries;
 
     auto zk = storage.getZooKeeper();
 
@@ -76,8 +85,11 @@ void PartMovesBetweenShardsOrchestrator::fetchStateFromZK()
         e.version = stat.version;
         e.znode_name = task_name;
 
-        entries[task_name] = std::move(e);
+        new_entries.push_back(std::move(e));
     }
+
+    // Replace in-memory state.
+    entries = new_entries;
 }
 
 bool PartMovesBetweenShardsOrchestrator::step()
@@ -93,7 +105,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
     {
         std::lock_guard lock(state_mutex);
 
-        for (auto const & entry : entries | boost::adaptors::map_values)
+        for (auto const & entry : entries)
         {
             if (entry.state.value == EntryState::DONE || entry.state.value == EntryState::CANCELLED)
                 continue;
@@ -128,11 +140,21 @@ bool PartMovesBetweenShardsOrchestrator::step()
         throw;
     }
 
+    LOG_DEBUG(log, "stepEntry on task {} from state {} (rollback: {}), try: {}",
+              entry_to_process->znode_name,
+              entry_to_process->state.toString(),
+              entry_to_process->rollback,
+              entry_to_process->num_tries);
+
     try
     {
         /// Use the same ZooKeeper connection. If we'd lost the lock then connection
         /// will become expired and all consequent operations will fail.
-        stepEntry(entry_to_process.value(), zk);
+        Entry new_entry = stepEntry(entry_to_process.value(), zk);
+        new_entry.last_exception_msg = "";
+        new_entry.num_tries = 0;
+        new_entry.update_time = std::time(nullptr);
+        zk->set(new_entry.znode_path, new_entry.toString(), new_entry.version);
     }
     catch (...)
     {
@@ -140,6 +162,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
 
         Entry entry_copy = entry_to_process.value();
         entry_copy.last_exception_msg = getCurrentExceptionMessage(false);
+        entry_copy.num_tries += 1;
         entry_copy.update_time = std::time(nullptr);
         zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
 
@@ -149,276 +172,537 @@ bool PartMovesBetweenShardsOrchestrator::step()
     return true;
 }
 
-void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk)
+PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(Entry entry, zkutil::ZooKeeperPtr zk)
 {
     switch (entry.state.value)
     {
-        case EntryState::DONE:
-            break;
-
+        case EntryState::DONE: [[fallthrough]];
         case EntryState::CANCELLED:
-            break;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stepEntry after terminal state. This is a bug.");
 
         case EntryState::TODO:
         {
-            /// State transition.
-            Entry entry_copy = entry;
-            entry_copy.state = EntryState::SYNC_SOURCE;
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            if (entry.rollback)
+            {
+                removePins(entry, zk);
+                entry.state = EntryState::CANCELLED;
+                return entry;
+            }
+            /// The forward transition happens implicitly when task is created by `StorageReplicatedMergeTree::movePartitionToShard`.
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected entry state ({}) in stepEntry. This is a bug.", entry.state.toString());
         }
-        break;
 
         case EntryState::SYNC_SOURCE:
         {
+            if (entry.rollback)
             {
-                /// Log entry.
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
-
-                ReplicatedMergeTreeLogEntryData log_entry;
-                log_entry.type = ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS;
-                log_entry.create_time = std::time(nullptr);
-                log_entry.source_replica = storage.replica_name;
-                ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));
-                ops.emplace_back(zkutil::makeCreateRequest(
-                    zookeeper_path + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-                Coordination::Responses responses;
-                Coordination::Error rc = zk->tryMulti(ops, responses);
-                zkutil::KeeperMultiException::check(rc, ops, responses);
-
-                String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-                log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-                /// This wait in background schedule pool is useless. It'd be
-                /// better to have some notification which will call `step`
-                /// function when all replicated will finish. TODO.
-                storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
+                entry.state = EntryState::TODO;
+                return entry;
             }
-
+            else
             {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::SYNC_DESTINATION;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                ReplicatedMergeTreeLogEntryData sync_source_log_entry;
+
+                String sync_source_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString());
+                Coordination::Stat sync_source_log_entry_stat;
+                String sync_source_log_entry_str;
+                if (zk->tryGet(sync_source_log_entry_barrier_path, sync_source_log_entry_str, &sync_source_log_entry_stat))
+                {
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
+
+                    sync_source_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_source_log_entry_str, sync_source_log_entry_stat);
+                }
+                else
+                {
+                    /// Log entry.
+                    Coordination::Requests ops;
+                    ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
+                    sync_source_log_entry.type = ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS;
+                    sync_source_log_entry.log_entry_id = sync_source_log_entry_barrier_path;
+                    sync_source_log_entry.create_time = std::time(nullptr);
+                    sync_source_log_entry.source_replica = storage.replica_name;
+
+                    ops.emplace_back(zkutil::makeCreateRequest(sync_source_log_entry_barrier_path, sync_source_log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(
+                        zookeeper_path + "/log/log-", sync_source_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                    sync_source_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
+                }
+
+                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, sync_source_log_entry, 1);
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
+
+                entry.state = EntryState::SYNC_DESTINATION;
+                return entry;
             }
         }
-        break;
 
         case EntryState::SYNC_DESTINATION:
         {
+            if (entry.rollback)
             {
-                /// Log entry.
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
-
-                ReplicatedMergeTreeLogEntryData log_entry;
-                log_entry.type = ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS;
-                log_entry.create_time = std::time(nullptr);
-                log_entry.source_replica = storage.replica_name;
-                log_entry.source_shard = zookeeper_path;
-
-                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
-                ops.emplace_back(zkutil::makeCreateRequest(
-                    entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-                Coordination::Responses responses;
-                Coordination::Error rc = zk->tryMulti(ops, responses);
-                zkutil::KeeperMultiException::check(rc, ops, responses);
-
-                String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-                log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
-            }
-
-            {
-                /// State transition.
                 Entry entry_copy = entry;
-                entry_copy.state = EntryState::DESTINATION_FETCH;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                entry_copy.state = EntryState::SYNC_SOURCE;
+                return entry_copy;
+            }
+            else
+            {
+                ReplicatedMergeTreeLogEntryData sync_destination_log_entry;
+
+                String sync_destination_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString());
+                Coordination::Stat sync_destination_log_entry_stat;
+                String sync_destination_log_entry_str;
+                if (zk->tryGet(sync_destination_log_entry_barrier_path, sync_destination_log_entry_str, &sync_destination_log_entry_stat))
+                {
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
+
+                    sync_destination_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_destination_log_entry_str, sync_destination_log_entry_stat);
+                }
+                else
+                {
+                    /// Log entry.
+                    Coordination::Requests ops;
+                    ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
+                    sync_destination_log_entry.type = ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS;
+                    sync_destination_log_entry.log_entry_id = sync_destination_log_entry_barrier_path;
+                    sync_destination_log_entry.create_time = std::time(nullptr);
+                    sync_destination_log_entry.source_replica = storage.replica_name;
+                    sync_destination_log_entry.source_shard = zookeeper_path;
+
+                    ops.emplace_back(zkutil::makeCreateRequest(sync_destination_log_entry_barrier_path, sync_destination_log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(
+                        entry.to_shard + "/log/log-", sync_destination_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                    sync_destination_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
+                }
+
+                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, sync_destination_log_entry, 1);
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
+
+                entry.state = EntryState::DESTINATION_FETCH;
+                return entry;
             }
         }
-        break;
 
         case EntryState::DESTINATION_FETCH:
         {
-            /// Make sure table structure doesn't change when there are part movements in progress.
+
+            if (entry.rollback)
             {
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+                // TODO(nv): Do we want to cleanup fetched data on the destination?
+                //   Maybe leave it there and make sure a background cleanup will take
+                //   care of it sometime later.
 
-                /// Log entry.
-                ReplicatedMergeTreeLogEntryData log_entry;
-                log_entry.type = ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD;
-                log_entry.create_time = std::time(nullptr);
-                log_entry.new_part_name = entry.part_name;
-                log_entry.source_replica = storage.replica_name;
-                log_entry.source_shard = zookeeper_path;
-                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
-                ops.emplace_back(zkutil::makeCreateRequest(
-                    entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-                Coordination::Responses responses;
-                Coordination::Error rc = zk->tryMulti(ops, responses);
-                zkutil::KeeperMultiException::check(rc, ops, responses);
-
-                String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-                log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                entry.state = EntryState::SYNC_DESTINATION;
+                return entry;
             }
-
+            else
             {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::DESTINATION_ATTACH;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                /// Note: Table structure shouldn't be changed while there are part movements in progress.
+
+                ReplicatedMergeTreeLogEntryData fetch_log_entry;
+
+                String fetch_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString());
+                Coordination::Stat fetch_log_entry_stat;
+                String fetch_log_entry_str;
+                if (zk->tryGet(fetch_log_entry_barrier_path, fetch_log_entry_str, &fetch_log_entry_stat))
+                {
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
+
+                    fetch_log_entry = *ReplicatedMergeTreeLogEntry::parse(fetch_log_entry_str, fetch_log_entry_stat);
+                }
+                else
+                {
+                    Coordination::Requests ops;
+                    ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
+                    fetch_log_entry.type = ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD;
+                    fetch_log_entry.log_entry_id = fetch_log_entry_barrier_path;
+                    fetch_log_entry.create_time = std::time(nullptr);
+                    fetch_log_entry.new_part_name = entry.part_name;
+                    fetch_log_entry.source_replica = storage.replica_name;
+                    fetch_log_entry.source_shard = zookeeper_path;
+                    ops.emplace_back(zkutil::makeCreateRequest(fetch_log_entry_barrier_path, fetch_log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(
+                        entry.to_shard + "/log/log-", fetch_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                    fetch_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
+                }
+
+                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, 1);
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
+
+                entry.state = EntryState::DESTINATION_ATTACH;
+                return entry;
             }
         }
-        break;
 
         case EntryState::DESTINATION_ATTACH:
         {
-            /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
+            String attach_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString());
+
+            if (entry.rollback)
             {
+                Coordination::Stat attach_log_entry_stat;
+                String attach_log_entry_str;
+                if (!zk->tryGet(attach_log_entry_barrier_path, attach_log_entry_str, &attach_log_entry_stat))
+                {
+                    LOG_DEBUG(log, "Log entry for DESTINATION_ATTACH not found. Not sending DROP_RANGE log entry.");
+
+                    // ATTACH_PART wasn't issued, nothing to revert.
+                    entry.state = EntryState::DESTINATION_FETCH;
+                    return entry;
+                }
+                else
+                {
+                    // Need to remove ATTACH_PART from the queue or drop data.
+                    // Similar to `StorageReplicatedMergeTree::dropPart` without extra
+                    // checks as we know drop shall be possible.
+                    ReplicatedMergeTreeLogEntryData attach_rollback_log_entry;
+
+                    String attach_rollback_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString() + "_rollback");
+                    Coordination::Stat attach_rollback_log_entry_stat;
+                    String attach_rollback_log_entry_str;
+                    if (zk->tryGet(attach_rollback_log_entry_barrier_path, attach_rollback_log_entry_str, &attach_rollback_log_entry_stat))
+                    {
+                        LOG_DEBUG(log, "Log entry was already created will check the existing one.");
+
+                        attach_rollback_log_entry = *ReplicatedMergeTreeLogEntry::parse(attach_rollback_log_entry_str, attach_rollback_log_entry_stat);
+                    }
+                    else
+                    {
+                        const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat);
+
+                        Coordination::Requests ops;
+                        ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
+                        auto drop_part_info = MergeTreePartInfo::fromPartName(attach_log_entry->new_part_name, storage.format_version);
+
+                        storage.getClearBlocksInPartitionOps(
+                            ops, *zk, drop_part_info.partition_id, drop_part_info.min_block, drop_part_info.max_block);
+                        size_t clear_block_ops_size = ops.size();
+
+                        attach_rollback_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
+                        attach_rollback_log_entry.log_entry_id = attach_rollback_log_entry_barrier_path;
+                        attach_rollback_log_entry.source_replica = storage.replica_name;
+                        attach_rollback_log_entry.source_shard = zookeeper_path;
+
+                        attach_rollback_log_entry.new_part_name = getPartNamePossiblyFake(storage.format_version, drop_part_info);
+                        attach_rollback_log_entry.create_time = time(nullptr);
+
+                        ops.emplace_back(zkutil::makeCreateRequest(attach_rollback_log_entry_barrier_path, attach_rollback_log_entry.toString(), -1));
+                        ops.emplace_back(zkutil::makeCreateRequest(
+                            entry.to_shard + "/log/log-", attach_rollback_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+                        ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                        Coordination::Responses responses;
+                        Coordination::Error rc = zk->tryMulti(ops, responses);
+                        zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                        String log_znode_path
+                            = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size]).path_created;
+                        attach_rollback_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                        LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
+                    }
+
+                    Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1);
+                    if (!unwaited.empty())
+                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
+
+                    entry.state = EntryState::DESTINATION_FETCH;
+                    return entry;
+                }
+            }
+            else
+            {
+                /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
+
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
                 auto part = storage.getActiveContainingPart(entry.part_name);
+
                 /// Allocating block number in other replicas zookeeper path
                 /// TODO Maybe we can do better.
-                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, "", entry.to_shard);
-                auto block_number = block_number_lock->getNumber();
+                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, attach_log_entry_barrier_path, entry.to_shard);
 
-                auto part_info = part->info;
-                part_info.min_block = block_number;
-                part_info.max_block = block_number;
-                part_info.level = 0;
-                part_info.mutation = 0;
-
-                /// Attach log entry (all replicas already fetched part)
                 ReplicatedMergeTreeLogEntryData log_entry;
-                log_entry.type = ReplicatedMergeTreeLogEntryData::ATTACH_PART;
-                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
-                log_entry.create_time = std::time(nullptr);
-                log_entry.new_part_name = part_info.getPartName();
-                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
-                ops.emplace_back(zkutil::makeCreateRequest(
-                    entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-                Coordination::Responses responses;
-                Coordination::Error rc = zk->tryMulti(ops, responses);
-                zkutil::KeeperMultiException::check(rc, ops, responses);
+                if (block_number_lock)
+                {
+                    auto block_number = block_number_lock->getNumber();
 
-                String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-                log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+                    auto part_info = part->info;
+                    part_info.min_block = block_number;
+                    part_info.max_block = block_number;
+                    part_info.level = 0;
+                    part_info.mutation = 0;
 
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
-            }
+                    /// Attach log entry (all replicas already fetched part)
+                    log_entry.type = ReplicatedMergeTreeLogEntryData::ATTACH_PART;
+                    log_entry.log_entry_id = attach_log_entry_barrier_path;
+                    log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+                    log_entry.create_time = std::time(nullptr);
+                    log_entry.new_part_name = part_info.getPartName();
 
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::SOURCE_DROP_PRE_DELAY;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                    ops.emplace_back(zkutil::makeCreateRequest(attach_log_entry_barrier_path, log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(
+                        entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                    log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
+                }
+                else
+                {
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
+
+                    Coordination::Stat stat;
+                    String log_entry_str = zk->get(attach_log_entry_barrier_path, &stat);
+                    log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat);
+                }
+
+                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, 1);
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
+
+
+                entry.dst_part_name = log_entry.new_part_name;
+                entry.state = EntryState::SOURCE_DROP_PRE_DELAY;
+                return entry;
             }
         }
-        break;
 
         case EntryState::SOURCE_DROP_PRE_DELAY:
         {
-            std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
-
-            /// State transition.
-            Entry entry_copy = entry;
-            entry_copy.state = EntryState::SOURCE_DROP;
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            if (entry.rollback)
+            {
+                entry.state = EntryState::DESTINATION_ATTACH;
+                return entry;
+            }
+            else
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
+                entry.state = EntryState::SOURCE_DROP;
+                return entry;
+            }
         }
-        break;
 
         case EntryState::SOURCE_DROP:
         {
+            if (entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+            else
             {
-                ReplicatedMergeTreeLogEntry log_entry;
-                if (storage.dropPartImpl(zk, entry.part_name, log_entry, false, false))
-                    storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
-            }
+                // Can't use dropPartImpl directly as we need additional zk ops to remember the log entry
+                // for subsequent retries.
 
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::SOURCE_DROP_POST_DELAY;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                ReplicatedMergeTreeLogEntryData source_drop_log_entry;
+
+                String source_drop_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString());
+                Coordination::Stat source_drop_log_entry_stat;
+                String source_drop_log_entry_str;
+                if (zk->tryGet(source_drop_log_entry_barrier_path, source_drop_log_entry_str, &source_drop_log_entry_stat))
+                {
+                    LOG_DEBUG(log, "Log entry was already created will check the existing one.");
+
+                    source_drop_log_entry = *ReplicatedMergeTreeLogEntry::parse(source_drop_log_entry_str, source_drop_log_entry_stat);
+                }
+                else
+                {
+                    auto source_drop_part_info = MergeTreePartInfo::fromPartName(entry.part_name, storage.format_version);
+
+                    Coordination::Requests ops;
+                    ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
+                    storage.getClearBlocksInPartitionOps(ops, *zk, source_drop_part_info.partition_id, source_drop_part_info.min_block, source_drop_part_info.max_block);
+
+                    source_drop_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
+                    source_drop_log_entry.log_entry_id = source_drop_log_entry_barrier_path;
+                    source_drop_log_entry.create_time = std::time(nullptr);
+                    source_drop_log_entry.new_part_name = getPartNamePossiblyFake(storage.format_version, source_drop_part_info);
+                    source_drop_log_entry.source_replica = storage.replica_name;
+
+                    ops.emplace_back(zkutil::makeCreateRequest(source_drop_log_entry_barrier_path, source_drop_log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(
+                        zookeeper_path + "/log/log-", source_drop_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                    source_drop_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
+                }
+
+                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, source_drop_log_entry, 1);
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
+
+                entry.state = EntryState::SOURCE_DROP_POST_DELAY;
+                return entry;
             }
         }
-        break;
 
         case EntryState::SOURCE_DROP_POST_DELAY:
         {
-            std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
-
-            /// State transition.
-            Entry entry_copy = entry;
-            entry_copy.state = EntryState::REMOVE_UUID_PIN;
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            if (entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+            else
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
+                entry.state = EntryState::REMOVE_UUID_PIN;
+                return entry;
+            }
         }
-        break;
 
         case EntryState::REMOVE_UUID_PIN:
         {
+            if (entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+            else
             {
-                PinnedPartUUIDs src_pins;
-                PinnedPartUUIDs dst_pins;
+                removePins(entry, zk);
 
-                {
-                    String s = zk->get(zookeeper_path + "/pinned_part_uuids", &src_pins.stat);
-                    src_pins.fromString(s);
-                }
-
-                {
-                    String s = zk->get(entry.to_shard + "/pinned_part_uuids", &dst_pins.stat);
-                    dst_pins.fromString(s);
-                }
-
-                src_pins.part_uuids.erase(entry.part_uuid);
-                dst_pins.part_uuids.erase(entry.part_uuid);
-
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
-                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
-
-                zk->multi(ops);
+                entry.state = EntryState::DONE;
+                return entry;
             }
-
-            /// State transition.
-            Entry entry_copy = entry;
-            entry_copy.state = EntryState::DONE;
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
         }
-        break;
+    }
+
+    __builtin_unreachable();
+}
+
+void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil::ZooKeeperPtr zk)
+{
+    PinnedPartUUIDs src_pins;
+    PinnedPartUUIDs dst_pins;
+
+    {
+        String s = zk->get(zookeeper_path + "/pinned_part_uuids", &src_pins.stat);
+        src_pins.fromString(s);
+    }
+
+    {
+        String s = zk->get(entry.to_shard + "/pinned_part_uuids", &dst_pins.stat);
+        dst_pins.fromString(s);
+    }
+
+    dst_pins.part_uuids.erase(entry.part_uuid);
+    src_pins.part_uuids.erase(entry.part_uuid);
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
+    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
+
+    zk->multi(ops);
+}
+
+CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const UUID & task_uuid)
+{
+    while (true)
+    {
+        auto entry = getEntryByUUID(task_uuid);
+
+        // If the task is in this state or any that follows it is too late to rollback
+        // since we can't be sure if the source data still exists.
+        auto not_possible_to_rollback_after_state = EntryState(EntryState::SOURCE_DROP);
+        if (entry.state.value >= not_possible_to_rollback_after_state.value)
+        {
+            LOG_DEBUG(log, "Can't kill move part between shards entry {} ({}) after state {}. Current state: {}.",
+                      toString(entry.task_uuid), entry.znode_name, not_possible_to_rollback_after_state.toString(), entry.state.toString());
+            return CancellationCode::CancelCannotBeSent;
+        }
+
+        LOG_TRACE(log, "Will try to mark move part between shards entry {} ({}) for rollback.",
+                  toString(entry.task_uuid), entry.znode_name);
+
+        auto zk = storage.getZooKeeper();
+
+        // State transition.
+        entry.rollback = true;
+        entry.update_time = std::time(nullptr);
+        entry.num_tries = 0;
+        entry.last_exception_msg = "";
+
+        auto code = zk->trySet(entry.znode_path, entry.toString(), entry.version);
+        if (code == Coordination::Error::ZOK)
+        {
+            // Orchestrator will process it in background.
+            return CancellationCode::CancelSent;
+        }
+        else if (code == Coordination::Error::ZBADVERSION)
+        {
+            /// Node was updated meanwhile. We must re-read it and repeat all the actions.
+            continue;
+        }
+        else
+            throw Coordination::Exception(code, entry.znode_path);
     }
 }
 
-std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries() const
+std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries()
 {
+    // Force sync. Also catches parsing errors.
+    syncStateFromZK();
+
     std::lock_guard lock(state_mutex);
 
-    std::vector<Entry> res;
+    return entries;
+}
 
-    for (const auto & e : entries)
-        res.push_back(e.second);
+PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::getEntryByUUID(const UUID & task_uuid)
+{
+    /// Need latest state in case user tries to kill a move observed on a different replica.
+    syncStateFromZK();
 
-    return res;
+    std::lock_guard lock(state_mutex);
+    for (auto const & entry : entries)
+    {
+        if (entry.task_uuid == task_uuid)
+            return entry;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", toString(task_uuid));
 }
 
 String PartMovesBetweenShardsOrchestrator::Entry::toString() const
@@ -431,12 +715,19 @@ String PartMovesBetweenShardsOrchestrator::Entry::toString() const
     json.set(JSON_KEY_PART_NAME, part_name);
     json.set(JSON_KEY_PART_UUID, DB::toString(part_uuid));
     json.set(JSON_KEY_TO_SHARD, to_shard);
+    json.set(JSON_KEY_DST_PART_NAME, dst_part_name);
     json.set(JSON_KEY_STATE, state.toString());
+    json.set(JSON_KEY_ROLLBACK, DB::toString(rollback));
     json.set(JSON_KEY_LAST_EX_MSG, last_exception_msg);
+    json.set(JSON_KEY_NUM_TRIES, DB::toString(num_tries));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
-    json.stringify(oss);
+
+    // Always escape unicode to make last_exception_msg json safe.
+    // It may contain random binary data when exception is a parsing error
+    // of unexpected contents.
+    Poco::JSON::Stringifier::stringify(json, oss, 0, -1, Poco::JSON_WRAP_STRINGS | Poco::JSON_ESCAPE_UNICODE);
 
     return oss.str();
 }
@@ -452,8 +743,11 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
     part_name = json->getValue<std::string>(JSON_KEY_PART_NAME);
     part_uuid = parseFromString<UUID>(json->getValue<std::string>(JSON_KEY_PART_UUID));
     to_shard = json->getValue<std::string>(JSON_KEY_TO_SHARD);
+    dst_part_name = json->getValue<std::string>(JSON_KEY_DST_PART_NAME);
     state.value = EntryState::fromString(json->getValue<std::string>(JSON_KEY_STATE));
+    rollback = json->getValue<bool>(JSON_KEY_ROLLBACK);
     last_exception_msg = json->getValue<std::string>(JSON_KEY_LAST_EX_MSG);
+    num_tries = json->getValue<UInt64>(JSON_KEY_NUM_TRIES);
 }
 
 }

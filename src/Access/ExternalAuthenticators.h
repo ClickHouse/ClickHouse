@@ -3,7 +3,8 @@
 #include <Access/LDAPClient.h>
 #include <Access/Credentials.h>
 #include <Access/GSSAcceptor.h>
-#include <common/types.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <chrono>
 #include <map>
@@ -21,7 +22,6 @@ namespace Poco
         class AbstractConfiguration;
     }
 }
-
 
 namespace DB
 {
@@ -51,11 +51,12 @@ private:
     using LDAPCaches = std::map<String, LDAPCache>;               // server name -> cache
     using LDAPParams = std::map<String, LDAPClient::Params>;      // server name -> params
 
-private:
-    mutable std::recursive_mutex mutex;
-    LDAPParams ldap_client_params_blueprint;
-    mutable LDAPCaches ldap_caches;
-    std::optional<GSSAcceptorContext::Params> kerberos_params;
+    mutable std::mutex mutex;
+    LDAPParams ldap_client_params_blueprint TSA_GUARDED_BY(mutex) ;
+    mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
+    std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;
+
+    void resetImpl() TSA_REQUIRES(mutex);
 };
 
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix);

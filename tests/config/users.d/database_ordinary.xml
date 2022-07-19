@@ -1,7 +1,7 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
-            <default_database_engine>Ordinary</default_database_engine>
+            <allow_deprecated_database_ordinary>1</allow_deprecated_database_ordinary>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

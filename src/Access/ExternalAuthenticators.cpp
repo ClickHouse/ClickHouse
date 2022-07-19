@@ -231,18 +231,23 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
         params.prefix = config.getString(prefix + ".prefix");
 }
 
-void ExternalAuthenticators::reset()
+void ExternalAuthenticators::resetImpl()
 {
-    std::scoped_lock lock(mutex);
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
 }
 
+void ExternalAuthenticators::reset()
+{
+    std::scoped_lock lock(mutex);
+    resetImpl();
+}
+
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
     std::scoped_lock lock(mutex);
-    reset();
+    resetImpl();
 
     Poco::Util::AbstractConfiguration::Keys all_keys;
     config.keys("", all_keys);
@@ -270,12 +275,21 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
-    for (const auto & ldap_server_name : ldap_server_names)
+    ldap_client_params_blueprint.clear();
+    for (auto ldap_server_name : ldap_server_names)
     {
         try
         {
-            ldap_client_params_blueprint.erase(ldap_server_name);
-            parseLDAPServer(ldap_client_params_blueprint.emplace(ldap_server_name, LDAPClient::Params{}).first->second, config, ldap_server_name);
+            const auto bracket_pos = ldap_server_name.find('[');
+            if (bracket_pos != std::string::npos)
+                ldap_server_name.resize(bracket_pos);
+
+            if (ldap_client_params_blueprint.contains(ldap_server_name))
+                throw Exception("Multiple LDAP servers with the same name are not allowed", ErrorCodes::BAD_ARGUMENTS);
+
+            LDAPClient::Params ldap_client_params_tmp;
+            parseLDAPServer(ldap_client_params_tmp, config, ldap_server_name);
+            ldap_client_params_blueprint.emplace(std::move(ldap_server_name), std::move(ldap_client_params_tmp));
         }
         catch (...)
         {
@@ -283,10 +297,15 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         }
     }
 
+    kerberos_params.reset();
     try
     {
         if (kerberos_keys_count > 0)
-            parseKerberosParams(kerberos_params.emplace(), config);
+        {
+            GSSAcceptorContext::Params kerberos_params_tmp;
+            parseKerberosParams(kerberos_params_tmp, config);
+            kerberos_params = std::move(kerberos_params_tmp);
+        }
     }
     catch (...)
     {

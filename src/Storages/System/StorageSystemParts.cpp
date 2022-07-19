@@ -12,6 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Common/hex.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 
 namespace DB
 {
@@ -30,6 +31,9 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>()},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>()},
         {"marks_bytes",                                 std::make_shared<DataTypeUInt64>()},
+        {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>()},
+        {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>()},
+        {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>()},
         {"modification_time",                           std::make_shared<DataTypeDateTime>()},
         {"remove_time",                                 std::make_shared<DataTypeDateTime>()},
         {"refcount",                                    std::make_shared<DataTypeUInt32>()},
@@ -75,14 +79,23 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())}
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+
+        {"visible",                                     std::make_shared<DataTypeUInt8>()},
+        {"creation_tid",                                getTransactionIDDataType()},
+        {"removal_tid_lock",                            std::make_shared<DataTypeUInt64>()},
+        {"removal_tid",                                 getTransactionIDDataType()},
+        {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
+        {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
     }
     )
 {
 }
 
 void StorageSystemParts::processNextStorage(
-    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -96,6 +109,7 @@ void StorageSystemParts::processNextStorage(
         auto part_state = all_parts_state[part_number];
 
         ColumnSize columns_size = part->getTotalColumnsSize();
+        ColumnSize secondary_indexes_size = part->getTotalSeconaryIndicesSize();
 
         size_t src_index = 0, res_index = 0;
         if (columns_mask[src_index++])
@@ -111,7 +125,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getTypeName());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part_state == State::Committed);
+            columns[res_index++]->insert(part_state == State::Active);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
@@ -124,6 +138,12 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(columns_size.data_uncompressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(secondary_indexes_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(secondary_indexes_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(secondary_indexes_size.marks);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 
@@ -175,9 +195,9 @@ void StorageSystemParts::processNextStorage(
         if (part->isStoredOnDisk())
         {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
         }
         else
         {
@@ -253,10 +273,42 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
 
+        Array projections;
+        for (const auto & [name, _] : part->getProjectionParts())
+            projections.push_back(name);
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(projections);
+
+        if (columns_mask[src_index++])
+        {
+            auto txn = context->getCurrentTransaction();
+            if (txn)
+                columns[res_index++]->insert(part->version.isVisible(*txn));
+            else
+                columns[res_index++]->insert(part_state == State::Active);
+        }
+
+        auto get_tid_as_field = [](const TransactionID & tid) -> Field
+        {
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
+        };
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(get_tid_as_field(part->version.creation_tid));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->version.removal_tid_lock.load(std::memory_order_relaxed));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(get_tid_as_field(part->version.getRemovalTID()));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
+
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
-            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
+            columns[res_index++]->insert(IMergeTreeDataPart::stateString(part_state));
     }
 }
 

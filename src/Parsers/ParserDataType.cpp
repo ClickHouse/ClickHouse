@@ -1,7 +1,7 @@
 #include <Parsers/ParserDataType.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -97,6 +97,20 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             type_name_suffix = "SIGNED";
         else if (ParserKeyword("UNSIGNED").ignore(pos))
             type_name_suffix = "UNSIGNED";
+        else if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            if (pos->type == TokenType::Number)
+                ++pos;
+            if (pos->type != TokenType::ClosingRoundBracket)
+               return false;
+            ++pos;
+            if (ParserKeyword("SIGNED").ignore(pos))
+                type_name_suffix = "SIGNED";
+            else if (ParserKeyword("UNSIGNED").ignore(pos))
+                type_name_suffix = "UNSIGNED";
+        }
+
     }
 
     if (!type_name_suffix.empty())

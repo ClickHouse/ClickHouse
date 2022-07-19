@@ -16,7 +16,7 @@
                <value>toISOYear</value>
 
                <value>toStartOfMinute</value>
-               <value>toStartOfFiveMinute</value>
+               <value>toStartOfFiveMinutes</value>
                <value>toStartOfFifteenMinutes</value>
                <value>toStartOfHour</value>
                <value>toStartOfDay</value>
@@ -83,7 +83,7 @@
             <name>time_zone</name>
             <values>
                <value>UTC</value>
-               <value>Europe/Moscow</value>
+               <value>Asia/Istanbul</value>
                <value>Asia/Kolkata</value>
             </values>
         </substitution>

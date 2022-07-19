@@ -21,7 +21,7 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr) override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return hyperrectangle.empty(); }
 
@@ -68,7 +68,7 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexMinMax(const IndexDescription & index_)
+    explicit MergeTreeIndexMinMax(const IndexDescription & index_)
         : IMergeTreeIndex(index_)
     {}
 
@@ -81,6 +81,9 @@ public:
         const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
+
+    const char* getSerializedFileExtension() const override { return ".idx2"; }
+    MergeTreeIndexFormat getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & path_prefix) const override; /// NOLINT
 };
 
 }

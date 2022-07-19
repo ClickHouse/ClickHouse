@@ -1,6 +1,9 @@
+-- Tags: replica
+
 DROP TABLE IF EXISTS parallel_replicas;
 DROP TABLE IF EXISTS parallel_replicas_backup;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE parallel_replicas (d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = MergeTree(d, cityHash64(u, s), (x, d, cityHash64(u, s)), 8192);
 INSERT INTO parallel_replicas (x, u, s) VALUES (1, 2, 'A'),(3, 4, 'B'),(5, 6, 'C'),(7, 8, 'D'),(9,10,'E');
 INSERT INTO parallel_replicas (x, u, s) VALUES (11, 12, 'F'),(13, 14, 'G'),(15, 16, 'H'),(17, 18, 'I'),(19,20,'J');

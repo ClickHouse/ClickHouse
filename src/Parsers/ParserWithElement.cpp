@@ -1,5 +1,5 @@
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/CommonParsers.h>

@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: UUID
+sidebar_position: 46
+sidebar_label: UUID
 ---
 
 
@@ -75,4 +75,4 @@ SELECT * FROM t_uuid
 
 Тип данных UUID не поддерживается арифметическими операциями (например, [abs](../../sql-reference/data-types/uuid.md#arithm_func-abs)) или агрегатными функциями, такими как [sum](../../sql-reference/data-types/uuid.md#agg_function-sum) и [avg](../../sql-reference/data-types/uuid.md#agg_function-avg).
 
-[Original article](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/uuid/) <!--hide-->

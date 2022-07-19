@@ -13,7 +13,7 @@ struct NameNotEmpty
 {
     static constexpr auto name = "notEmpty";
 };
-using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8>;
+using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8, false>;
 
 }
 

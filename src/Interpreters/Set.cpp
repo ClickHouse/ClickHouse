@@ -7,8 +7,6 @@
 
 #include <Common/typeid_cast.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -26,8 +24,10 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <common/range.h>
+#include <base/range.h>
+#include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
 
 namespace DB
 {
@@ -101,14 +101,14 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-void Set::setHeader(const Block & header)
+void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (!data.empty())
         return;
 
-    keys_size = header.columns();
+    keys_size = header.size();
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
@@ -120,10 +120,10 @@ void Set::setHeader(const Block & header)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(header.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        materialized_columns.emplace_back(header.at(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
-        data_types.emplace_back(header.safeGetByPosition(i).type);
-        set_elements_types.emplace_back(header.safeGetByPosition(i).type);
+        data_types.emplace_back(header.at(i).type);
+        set_elements_types.emplace_back(header.at(i).type);
 
         /// Convert low cardinality column to full.
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -163,9 +163,9 @@ void Set::setHeader(const Block & header)
 }
 
 
-bool Set::insertFromBlock(const Block & block)
+bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard<std::shared_mutex> lock(rwlock);
 
     if (data.empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
@@ -179,11 +179,11 @@ bool Set::insertFromBlock(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = block.rows();
+    size_t rows = columns.at(0).column->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -194,7 +194,7 @@ bool Set::insertFromBlock(const Block & block)
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
     if (fill_set_elements)
-        filter = ColumnUInt8::create(block.rows());
+        filter = ColumnUInt8::create(rows);
 
     switch (data.type)
     {
@@ -217,6 +217,8 @@ bool Set::insertFromBlock(const Block & block)
                 set_elements[i] = filtered_column;
             else
                 set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+            if (transform_null_in && null_map_holder)
+                set_elements[i]->insert(Null{});
         }
     }
 
@@ -224,16 +226,16 @@ bool Set::insertFromBlock(const Block & block)
 }
 
 
-ColumnPtr Set::execute(const Block & block, bool negative) const
+ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
-    size_t num_key_columns = block.columns();
+    size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
         throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
-    vec_res.resize(block.safeGetByPosition(0).column->size());
+    vec_res.resize(columns.at(0).column->size());
 
     if (vec_res.empty())
         return res;
@@ -264,7 +266,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     {
         ColumnPtr result;
 
-        const auto & column_before_cast = block.safeGetByPosition(i);
+        const auto & column_before_cast = columns.at(i);
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
@@ -281,7 +283,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 
-    /// We will check existence in Set only for keys, where all components are not NULL.
+    /// We will check existence in Set only for keys whose components do not contain any NULL value.
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
@@ -402,13 +404,13 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
-    : indexes_mapping(std::move(index_mapping_))
+MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+    : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
-    std::sort(indexes_mapping.begin(), indexes_mapping.end(),
+    ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
-            return std::forward_as_tuple(l.key_index, l.tuple_index) < std::forward_as_tuple(r.key_index, r.tuple_index);
+            return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
@@ -428,8 +430,8 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     SortDescription sort_description;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        block_to_sort.insert({ ordered_set[i], nullptr, "" });
-        sort_description.emplace_back(i, 1, 1);
+        block_to_sort.insert({ordered_set[i], nullptr, ordered_set[i]->getName()});
+        sort_description.emplace_back(ordered_set[i]->getName(), 1, 1);
     }
 
     sortBlock(block_to_sort, sort_description);
@@ -443,12 +445,12 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
-    ColumnsWithInfinity left_point;
-    ColumnsWithInfinity right_point;
+    FieldValues left_point;
+    FieldValues right_point;
     left_point.reserve(tuple_size);
     right_point.reserve(tuple_size);
 
@@ -458,61 +460,43 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         right_point.emplace_back(ordered_set[i]->cloneEmpty());
     }
 
-    bool invert_left_infinities = false;
-    bool invert_right_infinities = false;
+    bool left_included = true;
+    bool right_included = true;
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].key_index]);
+            data_types[indexes_mapping[i].key_index],
+            single_point);
 
         if (!new_range)
             return {true, true};
 
-        /** A range that ends in (x, y, ..., +inf) exclusive is the same as a range
-          * that ends in (x, y, ..., -inf) inclusive and vice versa for the left bound.
-          */
-        if (new_range->left_bounded)
-        {
-            if (!new_range->left_included)
-                invert_left_infinities = true;
-
-            left_point[i].update(new_range->left);
-        }
-        else
-        {
-            if (invert_left_infinities)
-                left_point[i].update(ValueWithInfinity::PLUS_INFINITY);
-            else
-                left_point[i].update(ValueWithInfinity::MINUS_INFINITY);
-        }
-
-        if (new_range->right_bounded)
-        {
-            if (!new_range->right_included)
-                invert_right_infinities = true;
-
-            right_point[i].update(new_range->right);
-        }
-        else
-        {
-            if (invert_right_infinities)
-                right_point[i].update(ValueWithInfinity::MINUS_INFINITY);
-            else
-                right_point[i].update(ValueWithInfinity::PLUS_INFINITY);
-        }
+        left_point[i].update(new_range->left);
+        left_included &= new_range->left_included;
+        right_point[i].update(new_range->right);
+        right_included &= new_range->right_included;
     }
 
-    auto compare = [](const IColumn & lhs, const ValueWithInfinity & rhs, size_t row)
+    /// lhs < rhs return -1
+    /// lhs == rhs return 0
+    /// lhs > rhs return 1
+    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
     {
-        auto type = rhs.getType();
-        /// Return inverted infinity sign, because in 'lhs' all values are finite.
-        if (type != ValueWithInfinity::NORMAL)
-            return -static_cast<int>(type);
-
-        return lhs.compareAt(row, 0, rhs.getColumnIfFinite(), 1);
+        if (rhs.isNegativeInfinity())
+            return 1;
+        if (rhs.isPositiveInfinity())
+        {
+            Field f;
+            lhs.get(row, f);
+            if (f.isNull())
+                return 0; // +Inf == +Inf
+            else
+                return -1;
+        }
+        return lhs.compareAt(row, 0, *rhs.column, 1);
     };
 
     auto less = [this, &compare, tuple_size](size_t row, const auto & point)
@@ -535,30 +519,31 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 
     /** Because each hyperrectangle maps to a contiguous sequence of elements
-     * laid out in the lexicographically increasing order, the set intersects the range
-     * if and only if either bound coincides with an element or at least one element
-     * is between the lower bounds
-     */
+      * laid out in the lexicographically increasing order, the set intersects the range
+      * if and only if either bound coincides with an element or at least one element
+      * is between the lower bounds
+      */
     auto indices = collections::range(0, size());
     auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, less);
     auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, less);
 
-    /// A special case of 1-element KeyRange. It's useful for partition pruning
+    /// A special case of 1-element KeyRange. It's useful for partition pruning.
     bool one_element_range = true;
     for (size_t i = 0; i < tuple_size; ++i)
     {
         auto & left = left_point[i];
         auto & right = right_point[i];
-        if (left.getType() == right.getType())
+        if (left.isNormal() && right.isNormal())
         {
-            if (left.getType() == ValueWithInfinity::NORMAL)
+            if (0 != left.column->compareAt(0, 0, *right.column, 1))
             {
-                if (0 != left.getColumnIfFinite().compareAt(0, 0, right.getColumnIfFinite(), 1))
-                {
-                    one_element_range = false;
-                    break;
-                }
+                one_element_range = false;
+                break;
             }
+        }
+        else if ((left.isPositiveInfinity() && right.isPositiveInfinity()) || (left.isNegativeInfinity() && right.isNegativeInfinity()))
+        {
+            /// Special value equality.
         }
         else
         {
@@ -566,24 +551,45 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             break;
         }
     }
-    if (one_element_range)
+    if (one_element_range && has_all_keys)
     {
         /// Here we know that there is one element in range.
         /// The main difference with the normal case is that we can definitely say that
-        /// condition in this range always TRUE (can_be_false = 0) xor always FALSE (can_be_true = 0).
-        if (left_lower != indices.end() && equals(*left_lower, left_point))
+        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
+
+        /// Check if it's an empty range
+        if (!left_included || !right_included)
+            return {false, true};
+        else if (left_lower != indices.end() && equals(*left_lower, left_point))
             return {true, false};
         else
             return {false, true};
     }
 
-    return
+    /// If there are more than one element in the range, it can always be false. Thus we only need to check if it may be true or not.
+    /// Given left_lower >= left_point, right_lower >= right_point, find if there may be a match in between left_lower and right_lower.
+    if (left_lower + 1 < right_lower)
     {
-        left_lower != right_lower
-            || (left_lower != indices.end() && equals(*left_lower, left_point))
-            || (right_lower != indices.end() && equals(*right_lower, right_point)),
-        true
-    };
+        /// There is an point in between: left_lower + 1
+        return {true, true};
+    }
+    else if (left_lower + 1 == right_lower)
+    {
+        /// Need to check if left_lower is a valid match, as left_point <= left_lower < right_point <= right_lower.
+        /// Note: left_lower is valid.
+        if (left_included || !equals(*left_lower, left_point))
+            return {true, true};
+
+        /// We are unlucky that left_point fails to cover a point. Now we need to check if right_point can cover right_lower.
+        /// Check if there is a match at the right boundary.
+        return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
+    }
+    else // left_lower == right_lower
+    {
+        /// Need to check if right_point is a valid match, as left_point < right_point <= left_lower = right_lower.
+        /// Check if there is a match at the left boundary.
+        return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
+    }
 }
 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
@@ -594,23 +600,18 @@ bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
     return false;
 }
 
-void ValueWithInfinity::update(const Field & x)
+void FieldValue::update(const Field & x)
 {
-    /// Keep at most one element in column.
-    if (!column->empty())
-        column->popBack(1);
-    column->insert(x);
-    type = NORMAL;
-}
-
-const IColumn & ValueWithInfinity::getColumnIfFinite() const
-{
-#ifndef NDEBUG
-    if (type != NORMAL)
-        throw Exception("Trying to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
-#endif
-
-    return *column;
+    if (x.isNegativeInfinity() || x.isPositiveInfinity())
+        value = x;
+    else
+    {
+        /// Keep at most one element in column.
+        if (!column->empty())
+            column->popBack(1);
+        column->insert(x);
+        value = Field(); // Set back to normal value.
+    }
 }
 
 }

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS 01913_db;
 CREATE DATABASE 01913_db ENGINE=Atomic;
 

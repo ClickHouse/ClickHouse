@@ -1,10 +1,12 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -28,6 +30,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
+    , minmax_count_projection(
+          other.minmax_count_projection ? std::optional<ProjectionDescription>(other.minmax_count_projection->clone()) : std::nullopt)
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
@@ -49,6 +53,10 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
+    if (other.minmax_count_projection)
+        minmax_count_projection = other.minmax_count_projection->clone();
+    else
+        minmax_count_projection = std::nullopt;
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
@@ -214,7 +222,7 @@ bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
     return !table_ttl.group_by_ttl.empty();
 }
 
-ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
+ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const
 {
     if (updated_columns.empty())
         return {};
@@ -231,7 +239,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
         auto required_columns = expression->getRequiredColumns();
         for (const auto & dependency : required_columns)
         {
-            if (updated_columns.count(dependency))
+            if (updated_columns.contains(dependency))
             {
                 to_set.insert(required_columns.begin(), required_columns.end());
                 return true;
@@ -247,28 +255,38 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     for (const auto & projection : getProjections())
         add_dependent_columns(&projection, projections_columns);
 
-    if (hasRowsTTL())
+    auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
     {
-        auto rows_expression = getRowsTTL().expression;
-        if (add_dependent_columns(rows_expression, required_ttl_columns))
+        if (add_dependent_columns(expression, to_set) && include_ttl_target)
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
                 updated_ttl_columns.insert(column.name);
         }
-    }
+    };
+
+    if (hasRowsTTL())
+        add_for_rows_ttl(getRowsTTL().expression, required_ttl_columns);
+
+    for (const auto & entry : getRowsWhereTTLs())
+        add_for_rows_ttl(entry.expression, required_ttl_columns);
+
+    for (const auto & entry : getGroupByTTLs())
+        add_for_rows_ttl(entry.expression, required_ttl_columns);
 
     for (const auto & entry : getRecompressionTTLs())
         add_dependent_columns(entry.expression, required_ttl_columns);
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
-        if (add_dependent_columns(entry.expression, required_ttl_columns))
+        if (add_dependent_columns(entry.expression, required_ttl_columns) && include_ttl_target)
             updated_ttl_columns.insert(name);
     }
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression, required_ttl_columns);
+
+    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
@@ -281,6 +299,16 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     return res;
 
+}
+
+Block StorageInMemoryMetadata::getSampleBlockInsertable() const
+{
+    Block res;
+
+    for (const auto & column : getColumns().getInsertable())
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
 }
 
 Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
@@ -311,37 +339,6 @@ Block StorageInMemoryMetadata::getSampleBlock() const
 
     for (const auto & column : getColumns().getAllPhysical())
         res.insert({column.type->createColumn(), column.type, column.name});
-
-    return res;
-}
-
-Block StorageInMemoryMetadata::getSampleBlockForColumns(
-    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
-{
-    Block res;
-
-    auto all_columns = getColumns().getAllWithSubcolumns();
-    std::unordered_map<String, DataTypePtr> columns_map;
-    columns_map.reserve(all_columns.size());
-
-    for (const auto & elem : all_columns)
-        columns_map.emplace(elem.name, elem.type);
-
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : virtuals)
-        columns_map.emplace(column.name, column.type);
-
-    for (const auto & name : column_names)
-    {
-        auto it = columns_map.find(name);
-        if (it != columns_map.end())
-            res.insert({it->second->createColumn(), it->second, it->first});
-        else
-            throw Exception(
-                "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
-                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-    }
 
     return res;
 }
@@ -467,30 +464,12 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
 
 namespace
 {
-#if !defined(ARCADIA_BUILD)
-    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
-#else
-    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
-#endif
-
-    String listOfColumns(const NamesAndTypesList & available_columns)
-    {
-        WriteBufferFromOwnString ss;
-        for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
-        {
-            if (it != available_columns.begin())
-                ss << ", ";
-            ss << it->name;
-        }
-        return ss.str();
-    }
+    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
 
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
         NamesAndTypesMap res;
-        res.set_empty_key(StringRef());
 
         for (const auto & column : columns)
             res.insert({column.name, column.type.get()});
@@ -498,38 +477,34 @@ namespace
         return res;
     }
 
-    UniqueStrings initUniqueStrings()
+    /*
+     * This function checks compatibility of enums. It returns true if:
+     * 1. Both types are enums.
+     * 2. The first type can represent all possible values of the second one.
+     * 3. Both types require the same amount of memory.
+     */
+    bool isCompatibleEnumTypes(const IDataType * lhs, const IDataType * rhs)
     {
-        UniqueStrings strings;
-        strings.set_empty_key(StringRef());
-        return strings;
+        if (IDataTypeEnum const * enum_type = dynamic_cast<IDataTypeEnum const *>(lhs))
+        {
+            if (!enum_type->contains(*rhs))
+                return false;
+            return enum_type->getMaximumSizeOfValueInMemory() == rhs->getMaximumSizeOfValueInMemory();
+        }
+        return false;
     }
 }
 
-void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
+String listOfColumns(const NamesAndTypesList & available_columns)
 {
-    NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
-    available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
-
-    const String list_of_columns = listOfColumns(available_columns);
-
-    if (column_names.empty())
-        throw Exception("Empty list of columns queried. There are columns: " + list_of_columns, ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
-
-    const auto columns_map = getColumnsMap(available_columns);
-
-    auto unique_names = initUniqueStrings();
-    for (const auto & name : column_names)
+    WriteBufferFromOwnString ss;
+    for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
     {
-        if (columns_map.end() == columns_map.find(name))
-            throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + storage_id.getNameForLogs() + ". There are columns: " + list_of_columns,
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        if (unique_names.end() != unique_names.find(name))
-            throw Exception("Column " + name + " queried more than once", ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
-        unique_names.insert(name);
+        if (it != available_columns.begin())
+            ss << ", ";
+        ss << it->name;
     }
+    return ss.str();
 }
 
 void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) const
@@ -537,23 +512,35 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
     const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
     const auto columns_map = getColumnsMap(available_columns);
 
-    auto unique_names = initUniqueStrings();
+    UniqueStrings unique_names;
+
     for (const NameAndTypePair & column : provided_columns)
     {
-        auto it = columns_map.find(column.name);
+        const auto * it = columns_map.find(column.name);
         if (columns_map.end() == it)
             throw Exception(
-                "There is no column with name " + column.name + ". There are columns: " + listOfColumns(available_columns),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {}. There are columns: {}",
+                column.name,
+                listOfColumns(available_columns));
 
-        if (!column.type->equals(*it->second))
+        const auto * available_type = it->getMapped();
+
+        if (!isObject(*available_type)
+            && !column.type->equals(*available_type)
+            && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
-                "Type mismatch for column " + column.name + ". Column has type " + it->second->getName() + ", got type "
-                    + column.type->getName(),
-                ErrorCodes::TYPE_MISMATCH);
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch for column {}. Column has type {}, got type {}",
+                column.name,
+                available_type->getName(),
+                column.type->getName());
 
         if (unique_names.end() != unique_names.find(column.name))
-            throw Exception("Column " + column.name + " queried more than once", ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
+            throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
+                "Column {} queried more than once",
+                column.name);
+
         unique_names.insert(column.name);
     }
 }
@@ -569,26 +556,40 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
             "Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
             ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
-    auto unique_names = initUniqueStrings();
+    UniqueStrings unique_names;
+
     for (const String & name : column_names)
     {
-        auto it = provided_columns_map.find(name);
+        const auto * it = provided_columns_map.find(name);
         if (provided_columns_map.end() == it)
             continue;
 
-        auto jt = available_columns_map.find(name);
+        const auto * jt = available_columns_map.find(name);
         if (available_columns_map.end() == jt)
             throw Exception(
-                "There is no column with name " + name + ". There are columns: " + listOfColumns(available_columns),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {}. There are columns: {}",
+                name,
+                listOfColumns(available_columns));
 
-        if (!it->second->equals(*jt->second))
+        const auto * provided_column_type = it->getMapped();
+        const auto * available_column_type = jt->getMapped();
+
+        if (!isObject(*provided_column_type)
+            && !provided_column_type->equals(*available_column_type)
+            && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
-                "Type mismatch for column " + name + ". Column has type " + jt->second->getName() + ", got type " + it->second->getName(),
-                ErrorCodes::TYPE_MISMATCH);
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch for column {}. Column has type {}, got type {}",
+                name,
+                available_column_type->getName(),
+                provided_column_type->getName());
 
         if (unique_names.end() != unique_names.find(name))
-            throw Exception("Column " + name + " queried more than once", ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
+            throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
+                "Column {} queried more than once",
+                name);
+
         unique_names.insert(name);
     }
 }
@@ -604,29 +605,36 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
 
     for (const auto & column : block)
     {
-        if (names_in_block.count(column.name))
+        if (names_in_block.contains(column.name))
             throw Exception("Duplicate column " + column.name + " in block", ErrorCodes::DUPLICATE_COLUMN);
 
         names_in_block.insert(column.name);
 
-        auto it = columns_map.find(column.name);
+        const auto * it = columns_map.find(column.name);
         if (columns_map.end() == it)
             throw Exception(
-                "There is no column with name " + column.name + ". There are columns: " + listOfColumns(available_columns),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {}. There are columns: {}",
+                column.name,
+                listOfColumns(available_columns));
 
-        if (!column.type->equals(*it->second))
+        const auto * available_type = it->getMapped();
+        if (!isObject(*available_type)
+            && !column.type->equals(*available_type)
+            && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
-                "Type mismatch for column " + column.name + ". Column has type " + it->second->getName() + ", got type "
-                    + column.type->getName(),
-                ErrorCodes::TYPE_MISMATCH);
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch for column {}. Column has type {}, got type {}",
+                column.name,
+                available_type->getName(),
+                column.type->getName());
     }
 
     if (need_all && names_in_block.size() < columns_map.size())
     {
         for (const auto & available_column : available_columns)
         {
-            if (!names_in_block.count(available_column.name))
+            if (!names_in_block.contains(available_column.name))
                 throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }

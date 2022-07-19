@@ -1,13 +1,13 @@
 ---
-toc_priority: 38
-toc_title: Parametric
+sidebar_position: 38
+sidebar_label: Parametric
 ---
 
-# Parametric Aggregate Functions {#aggregate_functions_parametric}
+# Parametric Aggregate Functions
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
-## histogram {#histogram}
+## histogram
 
 Calculates an adaptive histogram. It does not guarantee precise results.
 
@@ -81,7 +81,7 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, …) {#function-sequencematch}
+## sequenceMatch(pattern)(timestamp, cond1, cond2, …)
 
 Checks whether the sequence contains an event chain that matches the pattern.
 
@@ -89,8 +89,9 @@ Checks whether the sequence contains an event chain that matches the pattern.
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-!!! warning "Warning"
-    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+:::warning
+Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+:::
 
 **Arguments**
 
@@ -154,7 +155,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM 
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-In this case, the function couldn’t find the event chain matching the pattern, because the event for number 3 occured between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
+In this case, the function couldn’t find the event chain matching the pattern, because the event for number 3 occurred between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
 
 ``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
@@ -170,12 +171,13 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 -   [sequenceCount](#function-sequencecount)
 
-## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
+## sequenceCount(pattern)(time, cond1, cond2, …)
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
-!!! warning "Warning"
-    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+:::warning
+Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+:::
 
 ``` sql
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
@@ -228,7 +230,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 -   [sequenceMatch](#function-sequencematch)
 
-## windowFunnel {#windowfunnel}
+## windowFunnel
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
@@ -255,7 +257,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 -   `window` — Length of the sliding window, it is the time interval between the first and the last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 -   `mode` — It is an optional argument. One or more modes can be set.
-    -   `'strict'` — If same condition holds for sequence of events then such non-unique events would be skipped. 
+    -   `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing.
     -   `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
     -   `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
 
@@ -323,7 +325,7 @@ Result:
 └───────┴───┘
 ```
 
-## retention {#retention}
+## retention
 
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
 Any condition can be specified as an argument (as in [WHERE](../../sql-reference/statements/select/where.md#select-where)).
@@ -482,7 +484,7 @@ Where:
 -   `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
 -   `r3`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
-## uniqUpTo(N)(x) {#uniquptonx}
+## uniqUpTo(N)(x)
 
 Calculates the number of different argument values ​​if it is less than or equal to N. If the number of different argument values is greater than N, it returns N + 1.
 
@@ -503,11 +505,11 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 ```
 
 
-## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys_to_keep)(keys, values)
 
 Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
 
-## sequenceNextNode {#sequenceNextNode}
+## sequenceNextNode
 
 Returns a value of the next event that matched an event chain.
 
@@ -530,7 +532,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
     - tail — Set the base point to the last event.
     - first_match — Set the base point to the first matched `event1`.
     - last_match — Set the base point to the last matched `event1`.
-    
+
 **Arguments**
 
 -   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
@@ -553,11 +555,11 @@ The query statement searching the event following A->B:
 
 ``` sql
 CREATE TABLE test_flow (
-    dt DateTime, 
-    id int, 
+    dt DateTime,
+    id int,
     page String)
-ENGINE = MergeTree() 
-PARTITION BY toYYYYMMDD(dt) 
+ENGINE = MergeTree()
+PARTITION BY toYYYYMMDD(dt)
 ORDER BY id;
 
 INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5, 1, 'E');
@@ -585,21 +587,21 @@ INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3,
 
 ``` sql
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
- 
+
                   dt   id   page
  1970-01-01 09:00:01    1   Home // Base point, Matched with Home
  1970-01-01 09:00:02    1   Gift // Matched with Gift
- 1970-01-01 09:00:03    1   Exit // The result 
+ 1970-01-01 09:00:03    1   Exit // The result
 
  1970-01-01 09:00:01    2   Home // Base point, Matched with Home
  1970-01-01 09:00:02    2   Home // Unmatched with Gift
  1970-01-01 09:00:03    2   Gift
- 1970-01-01 09:00:04    2   Basket    
- 
+ 1970-01-01 09:00:04    2   Basket
+
  1970-01-01 09:00:01    3   Gift // Base point, Unmatched with Home
- 1970-01-01 09:00:02    3   Home      
- 1970-01-01 09:00:03    3   Gift      
- 1970-01-01 09:00:04    3   Basket    
+ 1970-01-01 09:00:02    3   Home
+ 1970-01-01 09:00:03    3   Gift
+ 1970-01-01 09:00:04    3   Basket
 ```
 
 **Behavior for `backward` and `tail`**
@@ -611,14 +613,14 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page 
 1970-01-01 09:00:01    1   Home
 1970-01-01 09:00:02    1   Gift
 1970-01-01 09:00:03    1   Exit // Base point, Unmatched with Basket
-                                     
-1970-01-01 09:00:01    2   Home 
-1970-01-01 09:00:02    2   Home // The result 
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home // The result
 1970-01-01 09:00:03    2   Gift // Matched with Gift
 1970-01-01 09:00:04    2   Basket // Base point, Matched with Basket
-                                     
+
 1970-01-01 09:00:01    3   Gift
-1970-01-01 09:00:02    3   Home // The result 
+1970-01-01 09:00:02    3   Home // The result
 1970-01-01 09:00:03    3   Gift // Base point, Matched with Gift
 1970-01-01 09:00:04    3   Basket // Base point, Matched with Basket
 ```
@@ -633,16 +635,16 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:01    1   Home
 1970-01-01 09:00:02    1   Gift // Base point
 1970-01-01 09:00:03    1   Exit // The result
-                                     
-1970-01-01 09:00:01    2   Home 
-1970-01-01 09:00:02    2   Home 
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
 1970-01-01 09:00:03    2   Gift // Base point
 1970-01-01 09:00:04    2   Basket  The result
-                                     
+
 1970-01-01 09:00:01    3   Gift // Base point
 1970-01-01 09:00:02    3   Home // The result
-1970-01-01 09:00:03    3   Gift   
-1970-01-01 09:00:04    3   Basket    
+1970-01-01 09:00:03    3   Gift
+1970-01-01 09:00:04    3   Basket
 ```
 
 ``` sql
@@ -652,16 +654,16 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:01    1   Home
 1970-01-01 09:00:02    1   Gift // Base point
 1970-01-01 09:00:03    1   Exit // Unmatched with Home
-                                     
-1970-01-01 09:00:01    2   Home 
-1970-01-01 09:00:02    2   Home 
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
 1970-01-01 09:00:03    2   Gift // Base point
 1970-01-01 09:00:04    2   Basket // Unmatched with Home
-                                     
+
 1970-01-01 09:00:01    3   Gift // Base point
 1970-01-01 09:00:02    3   Home // Matched with Home
 1970-01-01 09:00:03    3   Gift // The result
-1970-01-01 09:00:04    3   Basket    
+1970-01-01 09:00:04    3   Basket
 ```
 
 
@@ -673,17 +675,17 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
                  dt   id   page
 1970-01-01 09:00:01    1   Home // The result
 1970-01-01 09:00:02    1   Gift // Base point
-1970-01-01 09:00:03    1   Exit 
-                                     
-1970-01-01 09:00:01    2   Home 
+1970-01-01 09:00:03    1   Exit
+
+1970-01-01 09:00:01    2   Home
 1970-01-01 09:00:02    2   Home // The result
 1970-01-01 09:00:03    2   Gift // Base point
-1970-01-01 09:00:04    2   Basket    
-                                     
-1970-01-01 09:00:01    3   Gift 
+1970-01-01 09:00:04    2   Basket
+
+1970-01-01 09:00:01    3   Gift
 1970-01-01 09:00:02    3   Home // The result
-1970-01-01 09:00:03    3   Gift // Base point  
-1970-01-01 09:00:04    3   Basket    
+1970-01-01 09:00:03    3   Gift // Base point
+1970-01-01 09:00:04    3   Basket
 ```
 
 ``` sql
@@ -692,17 +694,17 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
                  dt   id   page
 1970-01-01 09:00:01    1   Home // Matched with Home, the result is null
 1970-01-01 09:00:02    1   Gift // Base point
-1970-01-01 09:00:03    1   Exit 
-                                     
+1970-01-01 09:00:03    1   Exit
+
 1970-01-01 09:00:01    2   Home // The result
 1970-01-01 09:00:02    2   Home // Matched with Home
 1970-01-01 09:00:03    2   Gift // Base point
-1970-01-01 09:00:04    2   Basket    
-                                     
+1970-01-01 09:00:04    2   Basket
+
 1970-01-01 09:00:01    3   Gift // The result
 1970-01-01 09:00:02    3   Home // Matched with Home
-1970-01-01 09:00:03    3   Gift // Base point  
-1970-01-01 09:00:04    3   Basket    
+1970-01-01 09:00:03    3   Gift // Base point
+1970-01-01 09:00:04    3   Basket
 ```
 
 
@@ -726,39 +728,39 @@ INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3
 ``` sql
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
 
-                  dt   id   page   ref 
+                  dt   id   page   ref
  1970-01-01 09:00:01    1   A      ref4 // The head can not be base point because the ref column of the head unmatched with 'ref1'.
- 1970-01-01 09:00:02    1   A      ref3 
- 1970-01-01 09:00:03    1   B      ref2 
- 1970-01-01 09:00:04    1   B      ref1 
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
+ 1970-01-01 09:00:04    1   B      ref1
  ```
 
 ``` sql
 SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
 
-                  dt   id   page   ref 
+                  dt   id   page   ref
  1970-01-01 09:00:01    1   A      ref4
- 1970-01-01 09:00:02    1   A      ref3 
- 1970-01-01 09:00:03    1   B      ref2 
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
  1970-01-01 09:00:04    1   B      ref1 // The tail can not be base point because the ref column of the tail unmatched with 'ref4'.
 ```
 
 ``` sql
 SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
 
-                  dt   id   page   ref 
+                  dt   id   page   ref
  1970-01-01 09:00:01    1   A      ref4 // This row can not be base point because the ref column unmatched with 'ref3'.
  1970-01-01 09:00:02    1   A      ref3 // Base point
  1970-01-01 09:00:03    1   B      ref2 // The result
- 1970-01-01 09:00:04    1   B      ref1 
+ 1970-01-01 09:00:04    1   B      ref1
 ```
 
 ``` sql
 SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
 
-                  dt   id   page   ref 
+                  dt   id   page   ref
  1970-01-01 09:00:01    1   A      ref4
  1970-01-01 09:00:02    1   A      ref3 // The result
  1970-01-01 09:00:03    1   B      ref2 // Base point
- 1970-01-01 09:00:04    1   B      ref1 // This row can not be base point because the ref column unmatched with 'ref2'. 
+ 1970-01-01 09:00:04    1   B      ref1 // This row can not be base point because the ref column unmatched with 'ref2'.
 ```

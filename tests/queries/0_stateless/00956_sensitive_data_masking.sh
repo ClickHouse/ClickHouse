@@ -37,7 +37,7 @@ echo 3
 # failure at before query start
 $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM non_existing_table FORMAT Null" \
-  --log_queries=1 --ignore-error --multiquery >"$tmp_file" 2>&1
+  --log_queries=1 --ignore-error --multiquery |& grep -v '^(query: ' > "$tmp_file"
 
 grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 3a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 3b'
@@ -47,7 +47,7 @@ echo 4
 # failure at the end of query
 $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET', intDiv( 100, number - 10) FROM numbers(11) FORMAT Null" \
-  --log_queries=1 --ignore-error --max_block_size=2 --multiquery >"$tmp_file" 2>&1
+  --log_queries=1 --ignore-error --max_block_size=2 --multiquery |& grep -v '^(query: ' > "$tmp_file"
 
 grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 4a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 4b'
@@ -57,7 +57,7 @@ echo 5
 rm -f "$tmp_file2" >/dev/null 2>&1
 bash -c "$CLICKHOUSE_CLIENT \
   --query=\"select sleepEachRow(1) from numbers(10) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
-  --log_queries=1 --ignore-error --multiquery >$tmp_file2 2>&1" &
+  --log_queries=1 --ignore-error --multiquery |& grep -v '^(query: ' > $tmp_file2" &
 
 rm -f "$tmp_file" >/dev/null 2>&1
 # check that executing query doesn't expose secrets in processlist

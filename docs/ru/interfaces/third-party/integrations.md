@@ -1,12 +1,12 @@
 ---
-toc_priority: 27
-toc_title: "Библиотеки для интеграции от сторонних разработчиков"
+sidebar_position: 27
+sidebar_label: "Библиотеки для интеграции от сторонних разработчиков"
 ---
 
 # Библиотеки для интеграции от сторонних разработчиков {#biblioteki-dlia-integratsii-ot-storonnikh-razrabotchikov}
 
-!!! warning "Disclaimer"
-    Яндекс не занимается поддержкой перечисленных ниже инструментов и библиотек и не проводит тщательного тестирования для проверки их качества.
+:::danger "Disclaimer"
+    ClickHouse, Inc. не занимается поддержкой перечисленных ниже инструментов и библиотек и не проводит тщательного тестирования для проверки их качества.
 
 ## Инфраструктурные продукты {#infrastrukturnye-produkty}
 
@@ -42,8 +42,8 @@ toc_title: "Библиотеки для интеграции от сторонн
         -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
 -   Мониторинг
     -   [Graphite](https://graphiteapp.org)
-        -   [graphouse](https://github.com/yandex/graphouse)
-        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        -   [graphouse](https://github.com/ClickHouse/graphouse)
+        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
         -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration)
     -   [Grafana](https://grafana.com/)
@@ -104,7 +104,7 @@ toc_title: "Библиотеки для интеграции от сторонн
 -   Ruby
     -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
-        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
-        
+

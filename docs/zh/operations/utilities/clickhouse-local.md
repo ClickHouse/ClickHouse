@@ -1,6 +1,6 @@
 ---
-toc_priority: 60
-toc_title: clickhouse-local
+sidebar_position: 60
+sidebar_label: clickhouse-local
 ---
 
 # clickhouse-local {#clickhouse-local}
@@ -29,12 +29,12 @@ clickhouse-local --structure "table_structure" --input-format "format_of_incomin
 参数:
 
 -   `-S`, `--structure` — 输入数据的表结构。
--   `-if`, `--input-format` — 输入格式化类型, 默认是`TSV`。
+-   `--input-format` — 输入格式化类型, 默认是`TSV`。
 -   `-f`, `--file` — 数据路径, 默认是`stdin`。
 -   `-q`, `--query` — 要查询的SQL语句使用`;`做分隔符。您必须指定`query`或`queries-file`选项。
--   `-qf`, `--queries-file` - 包含执行查询的文件路径。您必须指定`query`或`queries-file`选项。
+-   `--queries-file` - 包含执行查询的文件路径。您必须指定`query`或`queries-file`选项。
 -   `-N`, `--table` — 数据输出的表名，默认是`table`。
--   `-of`, `--format`, `--output-format` — 输出格式化类型, 默认是`TSV`。
+-   `--format`, `--output-format` — 输出格式化类型, 默认是`TSV`。
 -   `-d`, `--database` — 默认数据库名，默认是`_local`。
 -   `--stacktrace` — 是否在出现异常时输出栈信息。
 -   `--echo` — 执行前打印查询。
@@ -53,7 +53,7 @@ clickhouse-local --structure "table_structure" --input-format "format_of_incomin
 ## 示例 {#examples}
 
 ``` bash
-echo -e "1,2\n3,4" | clickhouse-local -S "a Int64, b Int64" -if "CSV" -q "SELECT * FROM table"
+echo -e "1,2\n3,4" | clickhouse-local -S "a Int64, b Int64" --input-format "CSV" -q "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 1 2
 3 4
@@ -98,4 +98,4 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/operations/utils/clickhouse-local/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/utils/clickhouse-local/) <!--hide-->

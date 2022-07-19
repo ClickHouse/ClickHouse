@@ -1,6 +1,6 @@
 ---
-toc_priority: 21
-toc_title: 输入/输出格式
+sidebar_position: 21
+sidebar_label: 输入/输出格式
 ---
 
 # 输入/输出格式 {#formats}
@@ -23,20 +23,19 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
-| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
+| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
 | [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
@@ -62,7 +61,7 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 
-您可以使用ClickHouse设置一些格式化参数。更多详情设置请参考[设置](../operations/settings/settings.md) 
+您可以使用ClickHouse设置一些格式化参数。更多详情设置请参考[设置](../operations/settings/settings.md)
 
 ## TabSeparated {#tabseparated}
 
@@ -128,9 +127,9 @@ world
 
 数组用方括号包裹、逗号分隔的形式表示(例如`[11,22,33]`)。数组中的数字项按上述规则进行格式化。`日期`和`日期时间`类型用单引号包裹。字符串用单引号包裹，遵循上述转义规则。
 
-[NULL](https://clickhouse.tech/docs/zh/sql-reference/syntax/)将输出为`\N`。
+[NULL](https://clickhouse.com/docs/zh/sql-reference/syntax/)将输出为`\N`。
 
-[Nested](https://clickhouse.tech/docs/zh/sql-reference/data-types/nested-data-structures/nested/)结构的每个元素都表示为数组。
+[Nested](https://clickhouse.com/docs/zh/sql-reference/data-types/nested-data-structures/nested/)结构的每个元素都表示为数组。
 
 示例：
 
@@ -465,7 +464,7 @@ ClickHouse支持[NULL](../sql-reference/syntax.md), 在JSON输出中显示为`nu
 -   [JSONEachRow](#jsoneachrow)格式
 -   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows)设置
 
-## JSONString {#jsonstring}
+## JSONStrings {#jsonstrings}
 
 与JSON的不同之处在于数据字段以字符串输出，而不是以类型化JSON值输出。
 
@@ -543,7 +542,7 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompact {#jsoncompact}
-## JSONCompactString {#jsoncompactstring}
+## JSONCompactStrings {#jsoncompactstrings}
 
 与JSON格式不同的是它以数组的方式输出结果，而不是以结构体。
 
@@ -582,7 +581,7 @@ SELECT * FROM json_as_string;
 ```
 
 ```json
-// JSONCompactString
+// JSONCompactStrings
 {
         "meta":
         [
@@ -614,9 +613,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringEachRow {#jsonstringeachrow}
+## JSONStringsEachRow {#jsonstringseachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringEachRow {#jsoncompactstringeachrow}
+## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
 使用这些格式时，ClickHouse会将行输出为用换行符分隔的JSON值，这些输出数据作为一个整体时，由于没有分隔符(,)因而不是有效的JSON文档。
 
@@ -629,9 +628,9 @@ SELECT * FROM json_as_string;
 在插入数据时，应该为每一行提供一个单独的JSON值。
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
+## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
-与`JSONEachRow`/`JSONStringEachRow`不同的是，ClickHouse还将生成作为JSON值的进度信息。
+与`JSONEachRow`/`JSONStringsEachRow`不同的是，ClickHouse还将生成作为JSON值的进度信息。
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
@@ -641,9 +640,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
+## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-与`JSONCompactEachRow`/`JSONCompactStringEachRow`不同的是，列名和类型被写入前两行。
+与`JSONCompactEachRow`/`JSONCompactStringsEachRow`不同的是，列名和类型被写入前两行。
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
@@ -686,7 +685,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   如果`input_format_defaults_for_omitted_fields = 1`, 那么`x`的默认值为`0`，但`a`的默认值为`x * 2`。
 
 !!! note "注意"
-当使用`insert_sample_with_metadata = 1`插入数据时，与使用`insert_sample_with_metadata = 0`相比，ClickHouse消耗更多的计算资源。
+当使用`input_format_defaults_for_omitted_fields = 1`插入数据时，与使用`input_format_defaults_for_omitted_fields = 0`相比，ClickHouse消耗更多的计算资源。
 
 ### Selecting Data {#selecting-data}
 
@@ -932,7 +931,7 @@ FixedString 被简单地表示为字节序列。
 
 这是 `INSERT INTO t VALUES ...` 中可以使用的格式，但您也可以将其用于查询结果。
 
-另见：[input_format_values_interpret_expressions](https://clickhouse.tech/docs/en/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](https://clickhouse.tech/docs/en/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
+另见：[input_format_values_interpret_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
 
 ## Vertical {#vertical}
 
@@ -950,31 +949,6 @@ SELECT * FROM t_null FORMAT Vertical
     y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入(将数据插入到表中)。
-
-## VerticalRaw {#verticalraw}
-
-和 `Vertical` 格式不同点在于，行是不会被转义的。
-这种格式仅仅适用于输出，但不适用于解析输入(将数据插入到表中)。
-
-示例:
-
-    :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
-    Row 1:
-    ──────
-    statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
-
-    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
-    Row 1:
-    ──────
-    test: string with 'quotes' and   with some special
-     characters
-
-和 Vertical 格式相比：
-
-    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
-    Row 1:
-    ──────
-    test: string with \'quotes\' and \t with some special \n characters
 
 ## XML {#xml}
 
@@ -1179,7 +1153,7 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 Clickhouse通过字段名称来对应架构的列名称。字段名称区分大小写。未使用的字段会被跳过。
 
-ClickHouse表列的数据类型可能与插入的Avro数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后通过 [Cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 将数据转换为相应的列类型。
+ClickHouse表列的数据类型可能与插入的Avro数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后通过 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 将数据转换为相应的列类型。
 
 ### 选择数据 {#selecting-data}
 
@@ -1266,7 +1240,8 @@ SELECT * FROM topic1_stream;
 | `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)          | `FLOAT`                    |
 | `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)          | `DOUBLE`                   |
 | `DATE32`                   | [Date](../sql-reference/data-types/date.md)              | `UINT16`                   |
-| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
+| `DATE64`                   | [DateTime](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
+| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`                 |
 | `STRING`, `BINARY`         | [String](../sql-reference/data-types/string.md)          | `STRING`                   |
 | —                          | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
 | `DECIMAL`                  | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
@@ -1275,7 +1250,7 @@ ClickHouse支持对 `Decimal` 类型设置精度。 `INSERT` 查询将 Parquet `
 
 不支持的Parquet数据类型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouse表列的数据类型可能与插入的Parquet数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 为ClickHouse表列设置的数据类型的数据。
+ClickHouse表列的数据类型可能与插入的Parquet数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 为ClickHouse表列设置的数据类型的数据。
 
 ### 插入和选择数据 {#inserting-and-selecting-data}
 
@@ -1321,7 +1296,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 | `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
 | `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
 | `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
+| `DATE64`                 | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                 |
+| `TIMESTAMP`                | [DateTime64](../sql-reference/data-types/datetime64.md) | `TIMESTAMP`        |
 | `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
 | `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
 | `-`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
@@ -1330,7 +1306,7 @@ ClickHouse支持的可配置精度的 `Decimal` 类型。 `INSERT` 查询将ORC�
 
 不支持的ORC数据类型: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 将数据转换为ClickHouse表列的数据类型集。
+ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数据时，ClickHouse根据上表解释数据类型，然后 [Cast](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 将数据转换为ClickHouse表列的数据类型集。
 
 ### 插入数据 {#inserting-data-1}
 
@@ -1351,7 +1327,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.
 要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
 ## LineAsString {#lineasstring}
-这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](https://clickhouse.tech/docs/en/sql-reference/statements/create/table/#default)、[MATERIALIZED](https://clickhouse.tech/docs/en/sql-reference/statements/create/table/#materialized)或者被忽略。
+这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#default)、[MATERIALIZED](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#materialized)或者被忽略。
 
 ### 示例：
 查询如下：
@@ -1370,14 +1346,14 @@ SELECT * FROM line_as_string;
 ## Regexp {#regexp}
 每一列输入数据根据正则表达式解析。使用`Regexp`格式时，可以使用如下设置：
 
--  `format_regexp`，[String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
-- `format_regexp_escaping_rule`，[String](https://clickhouse.tech/docs/en/sql-reference/data-types/string/)类型。支持如下转义规则：
-  - CSV(规则相同于[CSV](https://clickhouse.tech/docs/zh/interfaces/formats/#csv))
-  - JSON(相同于[JSONEachRow](https://clickhouse.tech/docs/zh/interfaces/formats/#jsoneachrow))
-  - Escaped(相同于[TSV](https://clickhouse.tech/docs/zh/interfaces/formats/#tabseparated))
-  - Quoted(相同于[Values](https://clickhouse.tech/docs/zh/interfaces/formats/#data-format-values))
+-  `format_regexp`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
+- `format_regexp_escaping_rule`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。支持如下转义规则：
+  - CSV(规则相同于[CSV](https://clickhouse.com/docs/zh/interfaces/formats/#csv))
+  - JSON(相同于[JSONEachRow](https://clickhouse.com/docs/zh/interfaces/formats/#jsoneachrow))
+  - Escaped(相同于[TSV](https://clickhouse.com/docs/zh/interfaces/formats/#tabseparated))
+  - Quoted(相同于[Values](https://clickhouse.com/docs/zh/interfaces/formats/#data-format-values))
   - Raw(将整个子匹配项进行提取，不转义)
-- `format_regexp_skip_unmatched`，[UInt8](https://clickhouse.tech/docs/zh/sql-reference/data-types/int-uint/)类型。当`format_regexp`表达式没有匹配到结果时是否抛出异常。可为0或1。
+- `format_regexp_skip_unmatched`，[UInt8](https://clickhouse.com/docs/zh/sql-reference/data-types/int-uint/)类型。当`format_regexp`表达式没有匹配到结果时是否抛出异常。可为0或1。
 
 ### 用法 {#usage-1}
 `format_regexp`设置会应用于每一行输入数据。正则表达式的子匹配项数必须等于输入数据期望得到的列数。
@@ -1417,7 +1393,7 @@ SELECT * FROM imp_regex_table;
 
 ## RawBLOB {#rawblob}
 这种格式下，所有输入数据视为一个值。该格式仅适用于仅有一String类型的列的表。输出时，使用二进制格式输出。当输出结果不唯一时，输出是有歧义的，并且不能通过该输出还原原数据。
-下面是`RawBLOB`与[TabSeparatedRaw](https://clickhouse.tech/docs/zh/interfaces/formats/#tabseparatedraw)的对比：
+下面是`RawBLOB`与[TabSeparatedRaw](https://clickhouse.com/docs/zh/interfaces/formats/#tabseparatedraw)的对比：
 
 `RawBloB`:
 
@@ -1431,7 +1407,7 @@ SELECT * FROM imp_regex_table;
 - 每行的值通过制表符分隔。
 - 每行最后的值得后面有换行符。
 
-下面是`RawBLOB`与[RowBinary](https://clickhouse.tech/docs/zh/interfaces/formats/#rowbinary)的对比：
+下面是`RawBLOB`与[RowBinary](https://clickhouse.com/docs/zh/interfaces/formats/#rowbinary)的对比：
 
 `RawBloB`:
 
@@ -1462,10 +1438,10 @@ f9725a22f9191e064120d718e26862a9  -
 格式架构为架构文件名和此文件中消息类型的组合，用冒号分隔,例如 `schemafile.proto:MessageType`.
 如果文件具有格式的标准扩展名(例如, `Protobuf`格式的架构文件标准扩展名为`.proto`),它可以被省略，在这种情况下，格式模式如下所示 `schemafile:MessageType`.
 
-如果您通过[Client](../interfaces/cli.md) 在 [交互模式](https://clickhouse.tech/docs/zh/interfaces/cli/#cli_usage)下输入或输出数据，格式架构中指定的文件名可以使用绝对路径或客户端当前目录的相对路径。
-如果在[批处理模式](https://clickhouse.tech/docs/zh/interfaces/cli/#cli_usage)下使用客户端，则由于安全原因，架构的路径必须使用相对路径。
+如果您通过[Client](../interfaces/cli.md) 在 [交互模式](https://clickhouse.com/docs/zh/interfaces/cli/#cli_usage)下输入或输出数据，格式架构中指定的文件名可以使用绝对路径或客户端当前目录的相对路径。
+如果在[批处理模式](https://clickhouse.com/docs/zh/interfaces/cli/#cli_usage)下使用客户端，则由于安全原因，架构的路径必须使用相对路径。
 
-如果您通过 HTTP接口](../interfaces/http.md)输入或输出数据，格式架构中指定的文件名应该位于服务器设置的[format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)指定的目录中。
+如果您通过 [HTTP接口](../interfaces/http.md)输入或输出数据，格式架构中指定的文件名应该位于服务器设置的[format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)指定的目录中。
 
 
 ## 跳过错误 {#skippingerrors}
@@ -1479,4 +1455,4 @@ f9725a22f9191e064120d718e26862a9  -
 
 
 
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/formats/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/interfaces/formats/) <!--hide-->

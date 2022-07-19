@@ -31,6 +31,8 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -110,7 +112,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
     {
         ssize_t src_index = src_array_offsets[i] - 1;
 
-        while (src_index >= ssize_t(src_prev_offset))
+        while (src_index >= static_cast<ssize_t>(src_prev_offset))
         {
             res_data.insertFrom(src_data, src_index);
             --src_index;

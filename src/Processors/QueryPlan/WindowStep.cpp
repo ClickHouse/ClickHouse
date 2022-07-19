@@ -2,7 +2,7 @@
 
 #include <Processors/Transforms/WindowTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -44,17 +44,13 @@ static Block addWindowFunctionResultColumns(const Block & block,
     return result;
 }
 
-WindowStep::WindowStep(const DataStream & input_stream_,
-        const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & window_functions_)
-    : ITransformingStep(
-        input_stream_,
-            addWindowFunctionResultColumns(input_stream_.header,
-                window_functions_),
-        getTraits())
+WindowStep::WindowStep(
+    const DataStream & input_stream_,
+    const WindowDescription & window_description_,
+    const std::vector<WindowFunctionDescription> & window_functions_)
+    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits())
     , window_description(window_description_)
     , window_functions(window_functions_)
-    , input_header(input_stream_.header)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -63,18 +59,19 @@ WindowStep::WindowStep(const DataStream & input_stream_,
 
 }
 
-void WindowStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
     // have resized it.
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & /*header*/)
-    {
-        return std::make_shared<WindowTransform>(input_header,
-            output_stream->header, window_description, window_functions);
-    });
+    pipeline.addSimpleTransform(
+        [&](const Block & /*header*/)
+        {
+            return std::make_shared<WindowTransform>(
+                input_streams.front().header, output_stream->header, window_description, window_functions);
+        });
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
         "WindowStep transform for '" + window_description.window_name + "'");
@@ -129,13 +126,26 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 
     if (!window_description.order_by.empty())
-        map.add("Sort Description", explainSortDescription(window_description.order_by, {}));
+        map.add("Sort Description", explainSortDescription(window_description.order_by));
 
     auto functions_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & func : window_functions)
         functions_array->add(func.column_name);
 
     map.add("Functions", std::move(functions_array));
+}
+
+void WindowStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(), addWindowFunctionResultColumns(input_streams.front().header, window_functions), getDataStreamTraits());
+
+    window_description.checkValid();
+}
+
+const WindowDescription & WindowStep::getWindowDescription() const
+{
+    return window_description;
 }
 
 }

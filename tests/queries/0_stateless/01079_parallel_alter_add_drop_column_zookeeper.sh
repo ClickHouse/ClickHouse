@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+# shellcheck source=./replication.lib
+. "$CURDIR"/replication.lib
 
 REPLICAS=3
 
@@ -77,7 +80,6 @@ timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 
-
 wait
 
 echo "Finishing alters"
@@ -100,6 +102,8 @@ echo "Equal number of columns"
 while [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_1 MODIFY COLUMN value0 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
     sleep 1
 done
+
+check_replication_consistency "concurrent_alter_add_drop_" "count(), sum(key), sum(cityHash64(value0))"
 
 for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_add_drop_$i"

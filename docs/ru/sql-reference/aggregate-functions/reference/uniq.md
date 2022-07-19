@@ -1,5 +1,5 @@
 ---
-toc_priority: 190
+sidebar_position: 190
 ---
 
 # uniq {#agg_function-uniq}

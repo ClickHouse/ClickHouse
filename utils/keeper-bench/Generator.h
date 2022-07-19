@@ -104,4 +104,23 @@ private:
     std::optional<uint64_t> paths_length;
 };
 
+class SetRequestGenerator final : public IGenerator
+{
+public:
+    explicit SetRequestGenerator(
+        std::string path_prefix_ = "/set_generator",
+        uint64_t data_size_ = 5)
+        : path_prefix(path_prefix_)
+        , data_size(data_size_)
+    {}
+
+    void startup(Coordination::ZooKeeper & zookeeper) override;
+    Coordination::ZooKeeperRequestPtr generate() override;
+
+private:
+    std::string path_prefix;
+    uint64_t data_size;
+};
+
+
 std::unique_ptr<IGenerator> getGenerator(const std::string & name);

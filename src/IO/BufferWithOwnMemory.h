@@ -48,18 +48,22 @@ struct Memory : boost::noncopyable, Allocator
         dealloc();
     }
 
-    Memory(Memory && rhs) noexcept
-    {
-        *this = std::move(rhs);
-    }
-
-    Memory & operator=(Memory && rhs) noexcept
+    void swap(Memory & rhs) noexcept
     {
         std::swap(m_capacity, rhs.m_capacity);
         std::swap(m_size, rhs.m_size);
         std::swap(m_data, rhs.m_data);
         std::swap(alignment, rhs.alignment);
+    }
 
+    Memory(Memory && rhs) noexcept
+    {
+        swap(rhs);
+    }
+
+    Memory & operator=(Memory && rhs) noexcept
+    {
+        swap(rhs);
         return *this;
     }
 
@@ -84,7 +88,11 @@ struct Memory : boost::noncopyable, Allocator
         }
         else
         {
-            size_t new_capacity = align(new_size + pad_right, alignment);
+            size_t new_capacity = align(new_size, alignment) + pad_right;
+
+            size_t diff = new_capacity - m_capacity;
+            ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
+
             m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
             m_capacity = new_capacity;
             m_size = m_capacity - pad_right;
@@ -95,6 +103,9 @@ private:
     static size_t align(const size_t value, const size_t alignment)
     {
         if (!alignment)
+            return value;
+
+        if (!(value % alignment))
             return value;
 
         return (value + alignment - 1) / alignment * alignment;
@@ -108,12 +119,10 @@ private:
             return;
         }
 
-        size_t padded_capacity = m_capacity + pad_right;
-
         ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, padded_capacity);
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
 
-        size_t new_capacity = align(padded_capacity, alignment);
+        size_t new_capacity = align(m_capacity, alignment) + pad_right;
         m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
         m_capacity = new_capacity;
         m_size = m_capacity - pad_right;
@@ -172,7 +181,7 @@ public:
     }
 
 private:
-    void nextImpl() override final
+    void nextImpl() final
     {
         const size_t prev_size = Base::position() - memory.data();
         memory.resize(2 * prev_size + 1);

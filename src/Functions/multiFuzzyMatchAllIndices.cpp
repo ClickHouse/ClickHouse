@@ -13,10 +13,7 @@ struct NameMultiFuzzyMatchAllIndices
     static constexpr auto name = "multiFuzzyMatchAllIndices";
 };
 
-using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<
-    MultiMatchAllIndicesImpl<UInt64, true>,
-    NameMultiFuzzyMatchAllIndices,
-    std::numeric_limits<UInt32>::max()>;
+using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<MultiMatchAllIndicesImpl<NameMultiFuzzyMatchAllIndices, /*ResultType*/ UInt64, /*WithEditDistance*/ true>>;
 
 }
 

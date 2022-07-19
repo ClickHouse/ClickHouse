@@ -1,17 +1,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/Serializations/SerializationTupleElement.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ConcatReadBuffer.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -61,32 +53,6 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
-}
-
-DataTypePtr DataTypeNullable::tryGetSubcolumnType(const String & subcolumn_name) const
-{
-    if (subcolumn_name == "null")
-        return std::make_shared<DataTypeUInt8>();
-
-    return nested_data_type->tryGetSubcolumnType(subcolumn_name);
-}
-
-ColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
-{
-    const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
-    if (subcolumn_name == "null")
-        return column_nullable.getNullMapColumnPtr();
-
-    return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
-}
-
-SerializationPtr DataTypeNullable::getSubcolumnSerialization(
-    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
-{
-    if (subcolumn_name == "null")
-        return std::make_shared<SerializationTupleElement>(base_serialization_getter(DataTypeUInt8()), subcolumn_name, false);
-
-    return nested_data_type->getSubcolumnSerialization(subcolumn_name, base_serialization_getter);
 }
 
 SerializationPtr DataTypeNullable::doGetDefaultSerialization() const

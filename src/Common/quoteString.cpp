@@ -5,16 +5,16 @@
 
 namespace DB
 {
-String quoteString(const StringRef & x)
+String quoteString(std::string_view x)
 {
-    String res(x.size, '\0');
+    String res(x.size(), '\0');
     WriteBufferFromString wb(res);
     writeQuotedString(x, wb);
     return res;
 }
 
 
-String doubleQuoteString(const StringRef & x)
+String doubleQuoteString(StringRef x)
 {
     String res(x.size, '\0');
     WriteBufferFromString wb(res);
@@ -23,7 +23,7 @@ String doubleQuoteString(const StringRef & x)
 }
 
 
-String backQuote(const StringRef & x)
+String backQuote(StringRef x)
 {
     String res(x.size, '\0');
     {
@@ -34,7 +34,7 @@ String backQuote(const StringRef & x)
 }
 
 
-String backQuoteIfNeed(const StringRef & x)
+String backQuoteIfNeed(StringRef x)
 {
     String res(x.size, '\0');
     {
@@ -43,4 +43,5 @@ String backQuoteIfNeed(const StringRef & x)
     }
     return res;
 }
+
 }

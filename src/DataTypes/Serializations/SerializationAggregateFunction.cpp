@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -34,7 +33,7 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
 
 void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr);
+    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr, version);
 }
 
 void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
@@ -48,7 +47,7 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     function->create(place);
     try
     {
-        function->deserialize(place, istr, &arena);
+        function->deserialize(place, istr, version, &arena);
     }
     catch (...)
     {
@@ -71,7 +70,7 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
         end = vec.end();
 
     for (; it != end; ++it)
-        function->serialize(*it, ostr);
+        function->serialize(*it, ostr, version);
 }
 
 void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
@@ -80,7 +79,7 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     ColumnAggregateFunction::Container & vec = real_column.getData();
 
     Arena & arena = real_column.createOrGetArena();
-    real_column.set(function);
+    real_column.set(function, version);
     vec.reserve(vec.size() + limit);
 
     size_t size_of_state = function->sizeOfData();
@@ -97,7 +96,7 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
 
         try
         {
-            function->deserialize(place, istr, &arena);
+            function->deserialize(place, istr, version, &arena);
         }
         catch (...)
         {
@@ -109,14 +108,14 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     }
 }
 
-static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num)
+static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num, size_t version)
 {
     WriteBufferFromOwnString buffer;
-    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
+    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer, version);
     return buffer.str();
 }
 
-static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s)
+static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s, size_t version)
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
@@ -129,7 +128,7 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     try
     {
         ReadBufferFromString istr(s);
-        function->deserialize(place, istr, &arena);
+        function->deserialize(place, istr, version, &arena);
     }
     catch (...)
     {
@@ -142,13 +141,13 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
 
 void SerializationAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeString(serializeToString(function, column, row_num), ostr);
+    writeString(serializeToString(function, column, row_num, version), ostr);
 }
 
 
 void SerializationAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(serializeToString(function, column, row_num), ostr);
+    writeEscapedString(serializeToString(function, column, row_num, version), ostr);
 }
 
 
@@ -156,13 +155,13 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
 {
     String s;
     readEscapedString(s, istr);
-    deserializeFromString(function, column, s);
+    deserializeFromString(function, column, s, version);
 }
 
 
 void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeQuotedString(serializeToString(function, column, row_num), ostr);
+    writeQuotedString(serializeToString(function, column, row_num, version), ostr);
 }
 
 
@@ -170,7 +169,7 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
 {
     String s;
     readQuotedStringWithSQLStyle(s, istr);
-    deserializeFromString(function, column, s);
+    deserializeFromString(function, column, s, version);
 }
 
 
@@ -178,13 +177,13 @@ void SerializationAggregateFunction::deserializeWholeText(IColumn & column, Read
 {
     String s;
     readStringUntilEOF(s, istr);
-    deserializeFromString(function, column, s);
+    deserializeFromString(function, column, s, version);
 }
 
 
 void SerializationAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(serializeToString(function, column, row_num), ostr, settings);
+    writeJSONString(serializeToString(function, column, row_num, version), ostr, settings);
 }
 
 
@@ -192,19 +191,19 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
 {
     String s;
     readJSONString(s, istr);
-    deserializeFromString(function, column, s);
+    deserializeFromString(function, column, s, version);
 }
 
 
 void SerializationAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(serializeToString(function, column, row_num), ostr);
+    writeXMLStringForTextElement(serializeToString(function, column, row_num, version), ostr);
 }
 
 
 void SerializationAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeCSV(serializeToString(function, column, row_num), ostr);
+    writeCSV(serializeToString(function, column, row_num, version), ostr);
 }
 
 
@@ -212,7 +211,7 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
 {
     String s;
     readCSV(s, istr, settings.csv);
-    deserializeFromString(function, column, s);
+    deserializeFromString(function, column, s, version);
 }
 
 }

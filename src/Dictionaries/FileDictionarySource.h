@@ -21,19 +21,19 @@ public:
 
     FileDictionarySource(const FileDictionarySource & other);
 
-    BlockInputStreamPtr loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockInputStreamPtr loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
     }
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override
+    QueryPipeline loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
     }
 
-    BlockInputStreamPtr loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    QueryPipeline loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }
@@ -51,7 +51,7 @@ public:
     ///Not supported for FileDictionarySource
     bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<FileDictionarySource>(*this); }
 
     std::string toString() const override;
 

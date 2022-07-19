@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Common/Throttler_fwd.h>
+
 #include <mutex>
 #include <memory>
-#include <common/sleep.h>
+#include <base/sleep.h>
 #include <atomic>
 
 namespace DB
@@ -18,7 +20,7 @@ namespace DB
 class Throttler
 {
 public:
-    Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent_ = nullptr)
+    explicit Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent_ = nullptr)
             : max_speed(max_speed_), limit_exceeded_exception_message(""), parent(parent_) {}
 
     Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
@@ -56,8 +58,5 @@ private:
     /// Used to implement a hierarchy of throttlers
     std::shared_ptr<Throttler> parent;
 };
-
-
-using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 }

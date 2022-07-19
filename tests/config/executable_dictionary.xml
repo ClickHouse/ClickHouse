@@ -123,8 +123,8 @@
 
     <source>
         <executable>
-            <command>echo "1\tValue"</command>
-            <format>TabSeparated</format>
+            <format>JSONEachRow</format>
+            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64' --query "SELECT id, 'Value' AS value FROM table"</command>
             <implicit_key>false</implicit_key>
         </executable>
     </source>
@@ -156,8 +156,8 @@
 
     <source>
         <executable>
-            <command>echo "Value"</command>
-            <format>TabSeparated</format>
+            <format>JSONEachRow</format>
+            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64' --query "SELECT 'Value' AS value FROM table"</command>
             <implicit_key>true</implicit_key>
         </executable>
     </source>
@@ -197,8 +197,8 @@
 
     <source>
         <executable>
-            <command>echo "1\tFirstKey\tValue"</command>
-            <format>TabSeparated</format>
+            <format>JSONEachRow</format>
+            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64, id_key String' --query "SELECT id, id_key, 'Value' AS value FROM table"</command>
             <implicit_key>false</implicit_key>
         </executable>
     </source>
@@ -238,8 +238,8 @@
 
     <source>
         <executable>
-            <command>echo "Value"</command>
-            <format>TabSeparated</format>
+            <format>JSONEachRow</format>
+            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64, id_key String' --query "SELECT 'Value' AS value FROM table"</command>
             <implicit_key>true</implicit_key>
         </executable>
     </source>

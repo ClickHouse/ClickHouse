@@ -1,9 +1,9 @@
 ---
-toc_priority: 45
-toc_title: FixedString(N)
+sidebar_position: 45
+sidebar_label: FixedString(N)
 ---
 
-# Fixedstring {#fixedstring}
+# Fixedstring
 
 A fixed-length string of `N` bytes (neither characters nor code points).
 
@@ -58,4 +58,4 @@ This behaviour differs from MySQL for the `CHAR` type (where strings are padded 
 
 Note that the length of the `FixedString(N)` value is constant. The [length](../../sql-reference/functions/array-functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
 
-[Original article](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/fixedstring/) <!--hide-->

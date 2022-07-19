@@ -1,7 +1,8 @@
 #pragma once
 
-#include "CompressedReadBufferBase.h"
+#include <Compression/CompressedReadBufferBase.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadSettings.h>
 #include <time.h>
 #include <memory>
 
@@ -27,16 +28,30 @@ private:
     ReadBufferFromFileBase & file_in;
     size_t size_compressed = 0;
 
+    /// This field inherited from ReadBuffer. It's used to perform "lazy" seek, so in seek() call we:
+    /// 1) actually seek only underlying compressed file_in to offset_in_compressed_file;
+    /// 2) reset current working_buffer;
+    /// 3) remember the position in decompressed block in nextimpl_working_buffer_offset.
+    /// After following ReadBuffer::next() -> nextImpl call we will read new data into working_buffer and
+    /// ReadBuffer::next() will move our position in the fresh working_buffer to nextimpl_working_buffer_offset and
+    /// reset it to zero.
+    ///
+    /// NOTE: We have independent readBig implementation, so we have to take
+    /// nextimpl_working_buffer_offset into account there as well.
+    ///
+    /* size_t nextimpl_working_buffer_offset; */
+
     bool nextImpl() override;
 
+    void prefetch() override;
+
 public:
-    CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
+    explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
-    CompressedReadBufferFromFile(
-        const std::string & path, size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, bool allow_different_codecs_ = false);
-
-    void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
+    /// Seek is lazy in some sense. We move position in compressed file_in to offset_in_compressed_file, but don't
+    /// read data into working_buffer and don't shift our position to offset_in_decompressed_block. Instead
+    /// we store this offset inside nextimpl_working_buffer_offset.
+    void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
 
     size_t readBig(char * to, size_t n) override;
 
@@ -44,6 +59,10 @@ public:
     {
         file_in.setProfileCallback(profile_callback_, clock_type_);
     }
+
+    void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
+
+    void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
 };
 
 }

@@ -1,4 +1,4 @@
-# system.roles {#system_tables-roles}
+# roles
 
 Contains information about configured [roles](../../operations/access-rights.md#role-management).
 
@@ -12,4 +12,4 @@ Columns:
 
 -   [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/roles) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/roles) <!--hide-->

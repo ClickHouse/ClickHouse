@@ -6,7 +6,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
-#include <Access/AccessType.h>
+#include <Access/Common/AccessType.h>
 #include <unordered_map>
 
 
@@ -59,6 +59,7 @@ public:
         bool supports_skipping_indices = false;
         bool supports_projections = false;
         bool supports_sort_order = false;
+        /// See also IStorage::supportsTTL()
         bool supports_ttl = false;
         /// See also IStorage::supportsReplication()
         bool supports_replication = false;
@@ -66,6 +67,7 @@ public:
         bool supports_deduplication = false;
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
+        bool supports_schema_inference = false;
         AccessType source_access_type = AccessType::NONE;
     };
 
@@ -98,6 +100,7 @@ public:
         .supports_replication = false,
         .supports_deduplication = false,
         .supports_parallel_insert = false,
+        .supports_schema_inference = false,
         .source_access_type = AccessType::NONE,
     });
 
@@ -126,6 +129,12 @@ public:
 
     AccessType getSourceAccessType(const String & table_engine) const;
 
+    bool checkIfStorageSupportsSchemaInterface(const String & storage_name)
+    {
+        if (storages.contains(storage_name))
+            return storages[storage_name].features.supports_schema_inference;
+        return false;
+    }
 private:
     Storages storages;
 };

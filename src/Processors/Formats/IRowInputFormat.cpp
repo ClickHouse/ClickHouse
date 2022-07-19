@@ -1,6 +1,8 @@
 #include <Processors/Formats/IRowInputFormat.h>
+#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
-#include <common/logger_useful.h>
+#include <IO/WithFileName.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -13,14 +15,17 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_READ_MAP_FROM_TEXT;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
 }
 
 
@@ -30,25 +35,22 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
         || code == ErrorCodes::CANNOT_PARSE_DATE
         || code == ErrorCodes::CANNOT_PARSE_DATETIME
-        || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
+        || code == ErrorCodes::CANNOT_PARSE_BOOL
+        || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+        || code == ErrorCodes::CANNOT_READ_MAP_FROM_TEXT
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
-        || code == ErrorCodes::INCORRECT_DATA;             /// For some ReadHelpers
+        || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
+        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), in_), params(params_)
+    : IInputFormat(std::move(header), in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
-    const auto & port_header = getPort().getHeader();
-    size_t num_columns = port_header.columns();
-    serializations.resize(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
 }
-
 
 Chunk IRowInputFormat::generate()
 {
@@ -60,7 +62,6 @@ Chunk IRowInputFormat::generate()
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
 
-    ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
     size_t num_rows = 0;
@@ -158,6 +159,7 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
+        e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
         e.setLineNumber(total_rows);
         e.addMessage(verbose_diagnostic);
         throw;
@@ -181,7 +183,12 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
-        e.addMessage("(at row " + toString(total_rows) + ")\n" + verbose_diagnostic);
+        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+        if (!file_name.empty())
+            e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+        e.addMessage(fmt::format("(at row {})\n", total_rows));
+        e.addMessage(verbose_diagnostic);
         throw;
     }
 
@@ -197,8 +204,8 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
+    finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
-    //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 

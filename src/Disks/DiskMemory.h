@@ -22,7 +22,7 @@ class WriteBufferFromFileBase;
 class DiskMemory : public IDisk
 {
 public:
-    DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
+    explicit DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
 
     const String & getName() const override { return name; }
 
@@ -52,7 +52,7 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void createFile(const String & path) override;
 
@@ -60,20 +60,19 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void listFiles(const String & path, std::vector<String> & file_names) override;
+    void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t direct_io_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -82,7 +81,9 @@ public:
 
     void setLastModified(const String &, const Poco::Timestamp &) override {}
 
-    Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp(); }
+    Poco::Timestamp getLastModified(const String &) const override { return Poco::Timestamp(); }
+
+    time_t getLastChanged(const String &) const override { return {}; }
 
     void setReadOnly(const String & path) override;
 
@@ -90,13 +91,15 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType::Type getType() const override { return DiskType::Type::RAM; }
+    DiskType getType() const override { return DiskType::RAM; }
+    bool isRemote() const override { return false; }
+
+    bool supportZeroCopyReplication() const override { return false; }
 
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);
 
-private:
     friend class WriteIndirectBuffer;
 
     enum class FileType
@@ -111,7 +114,7 @@ private:
         String data;
 
         FileData(FileType type_, String data_) : type(type_), data(std::move(data_)) {}
-        explicit FileData(FileType type_) : type(type_), data("") {}
+        explicit FileData(FileType type_) : type(type_) {}
     };
     using Files = std::unordered_map<String, FileData>; /// file path -> file data
 

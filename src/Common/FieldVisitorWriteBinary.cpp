@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const { }
+void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const {}
 void FieldVisitorWriteBinary::operator() (const UInt64 & x, WriteBuffer & buf) const { writeVarUInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int64 & x, WriteBuffer & buf) const { writeVarInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Float64 & x, WriteBuffer & buf) const { writeFloatBinary(x, buf); }
@@ -64,6 +64,25 @@ void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) cons
         writeBinary(type, buf);
         Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, x[i]);
     }
+}
+
+void FieldVisitorWriteBinary::operator() (const Object & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    writeBinary(size, buf);
+
+    for (const auto & [key, value] : x)
+    {
+        const UInt8 type = value.getType();
+        writeBinary(type, buf);
+        writeBinary(key, buf);
+        Field::dispatch([&buf] (const auto & val) { FieldVisitorWriteBinary()(val, buf); }, value);
+    }
+}
+
+void FieldVisitorWriteBinary::operator()(const bool & x, WriteBuffer & buf) const
+{
+    writeBinary(static_cast<UInt8>(x), buf);
 }
 
 }

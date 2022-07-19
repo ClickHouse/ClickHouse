@@ -13,6 +13,7 @@
 /build_*
 /build-*
 /tests/venv
+/obj-x86_64-linux-gnu/
 
 # logs
 *.log
@@ -32,7 +33,6 @@
 /docs/zh/single.md
 /docs/ja/single.md
 /docs/fa/single.md
-/docs/en/development/cmake-in-clickhouse.md
 
 # callgrind files
 callgrind.out.*

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <console>true</console>
+    </logger>
+
+    <tcp_port>9000</tcp_port>
+
+    <mark_cache_size>0</mark_cache_size>
+
+    <users>
+        <default>
+            <password></password>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+    </users>
+
+    <profiles>
+        <default/>
+    </profiles>
+
+    <quotas>
+        <default />
+    </quotas>
+</clickhouse>

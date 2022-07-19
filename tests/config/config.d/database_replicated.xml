@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <zookeeper>
         <node index="1">
             <host>localhost</host>
@@ -22,9 +22,9 @@
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>30000</session_timeout_ms>
             <heart_beat_interval_ms>1000</heart_beat_interval_ms>
-            <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
-            <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
-            <raft_logs_level>trace</raft_logs_level>
+            <election_timeout_lower_bound_ms>4000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>5000</election_timeout_upper_bound_ms>
+            <raft_logs_level>information</raft_logs_level>
             <force_sync>false</force_sync>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>1000000000000000</reserved_log_items>
@@ -34,14 +34,14 @@
             <server>
                 <id>1</id>
                 <hostname>localhost</hostname>
-                <port>44444</port>
+                <port>9234</port>
                 <can_become_leader>true</can_become_leader>
                 <priority>3</priority>
             </server>
             <server>
                 <id>2</id>
                 <hostname>localhost</hostname>
-                <port>44445</port>
+                <port>9235</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>2</priority>
@@ -49,7 +49,7 @@
             <server>
                 <id>3</id>
                 <hostname>localhost</hostname>
-                <port>44446</port>
+                <port>9236</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>1</priority>
@@ -79,4 +79,4 @@
     </remote_servers>
 
     <_functional_tests_helper_database_replicated_replace_args_macros>1</_functional_tests_helper_database_replicated_replace_args_macros>
-</yandex>
+</clickhouse>

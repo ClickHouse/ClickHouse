@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 #include <cstddef>
 #include <cassert>
 #include <algorithm>
@@ -8,7 +8,8 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <common/strong_typedef.h>
+#include <base/strong_typedef.h>
+#include <base/getPageSize.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
@@ -37,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_MPROTECT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 /** A dynamic array for POD types.
@@ -104,12 +106,18 @@ protected:
     char * c_end_of_storage = null;    /// Does not include pad_right.
 
     /// The amount of memory occupied by the num_elements of the elements.
-    static size_t byte_size(size_t num_elements) { return num_elements * ELEMENT_SIZE; }
+    static size_t byte_size(size_t num_elements) /// NOLINT
+    {
+        size_t amount;
+        if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        return amount;
+    }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
-    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
+    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; } /// NOLINT
 
-    void alloc_for_num_elements(size_t num_elements)
+    void alloc_for_num_elements(size_t num_elements) /// NOLINT
     {
         alloc(minimum_memory_for_elements(num_elements));
     }
@@ -189,7 +197,7 @@ protected:
     /// The operation is slow and performed only for debug builds.
     void protectImpl(int prot)
     {
-        static constexpr size_t PROTECT_PAGE_SIZE = 4096;
+        static size_t PROTECT_PAGE_SIZE = ::getPageSize();
 
         char * left_rounded_up = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_start) - pad_left + PROTECT_PAGE_SIZE - 1) / PROTECT_PAGE_SIZE * PROTECT_PAGE_SIZE);
         char * right_rounded_down = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_end_of_storage) + pad_right) / PROTECT_PAGE_SIZE * PROTECT_PAGE_SIZE);
@@ -212,7 +220,7 @@ public:
     size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
 
     /// This method is safe to use only for information about memory usage.
-    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; }
+    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; } /// NOLINT
 
     void clear() { c_end = c_start; }
 
@@ -227,7 +235,7 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params)
+    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         if (n > capacity())
             realloc(minimum_memory_for_elements(n), std::forward<TAllocatorParams>(allocator_params)...);
@@ -241,24 +249,24 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void resize_exact(size_t n, TAllocatorParams &&... allocator_params)
+    void resize_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
-    void resize_assume_reserved(const size_t n)
+    void resize_assume_reserved(const size_t n) /// NOLINT
     {
         c_end = c_start + byte_size(n);
     }
 
-    const char * raw_data() const
+    const char * raw_data() const /// NOLINT
     {
         return c_start;
     }
 
     template <typename ... TAllocatorParams>
-    void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
+    void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         size_t required_capacity = size() + ELEMENT_SIZE;
         if (unlikely(required_capacity > capacity()))
@@ -309,11 +317,11 @@ class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_r
 protected:
     using Base = PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>;
 
-    T * t_start()                      { return reinterpret_cast<T *>(this->c_start); }
-    T * t_end()                        { return reinterpret_cast<T *>(this->c_end); }
+    T * t_start()                      { return reinterpret_cast<T *>(this->c_start); } /// NOLINT
+    T * t_end()                        { return reinterpret_cast<T *>(this->c_end); } /// NOLINT
 
-    const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); }
-    const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); }
+    const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); } /// NOLINT
+    const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); } /// NOLINT
 
 public:
     using value_type = T;
@@ -327,7 +335,7 @@ public:
 
     PODArray() = default;
 
-    PODArray(size_t n)
+    explicit PODArray(size_t n)
     {
         this->alloc_for_num_elements(n);
         this->c_end += this->byte_size(n);
@@ -355,12 +363,12 @@ public:
         }
     }
 
-    PODArray(PODArray && other)
+    PODArray(PODArray && other) noexcept
     {
         this->swap(other);
     }
 
-    PODArray & operator=(PODArray && other)
+    PODArray & operator=(PODArray && other) noexcept
     {
         this->swap(other);
         return *this;
@@ -396,7 +404,7 @@ public:
     const_iterator cend() const   { return t_end(); }
 
     /// Same as resize, but zeroes new elements.
-    void resize_fill(size_t n)
+    void resize_fill(size_t n) /// NOLINT
     {
         size_t old_size = this->size();
         if (n > old_size)
@@ -407,7 +415,7 @@ public:
         this->c_end = this->c_start + this->byte_size(n);
     }
 
-    void resize_fill(size_t n, const T & value)
+    void resize_fill(size_t n, const T & value) /// NOLINT
     {
         size_t old_size = this->size();
         if (n > old_size)
@@ -419,7 +427,7 @@ public:
     }
 
     template <typename U, typename ... TAllocatorParams>
-    void push_back(U && x, TAllocatorParams &&... allocator_params)
+    void push_back(U && x, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
@@ -432,7 +440,7 @@ public:
       *  and it couldn't be used if Allocator requires custom parameters.
       */
     template <typename... Args>
-    void emplace_back(Args &&... args)
+    void emplace_back(Args &&... args) /// NOLINT
     {
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize();
@@ -441,7 +449,7 @@ public:
         this->c_end += this->byte_size(1);
     }
 
-    void pop_back()
+    void pop_back() /// NOLINT
     {
         this->c_end -= this->byte_size(1);
     }
@@ -546,7 +554,7 @@ public:
     }
 
     template <typename It1, typename It2>
-    void insert_assume_reserved(It1 from_begin, It2 from_end)
+    void insert_assume_reserved(It1 from_begin, It2 from_end) /// NOLINT
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
         this->assertNotIntersects(from_begin, from_end);

@@ -1,6 +1,6 @@
 ---
-toc_priority: 20
-toc_title: New York Taxi Data
+sidebar_position: 20
+sidebar_label: New York Taxi Data
 ---
 
 # 纽约出租车数据 {#niu-yue-shi-chu-zu-che-shu-ju}
@@ -283,7 +283,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -375,7 +375,6 @@ Q3：0.051秒。
 Q4：0.072秒。
 
 在这种情况下，查询处理时间首先由网络延迟确定。
-我们使用位于芬兰Yandex数据中心的客户机在俄罗斯的一个集群上运行查询，这增加了大约20毫秒的延迟。
 
 ## 总结 {#zong-jie}
 
@@ -385,4 +384,4 @@ Q4：0.072秒。
 | 3      | 0.212 | 0.438 | 0.733 | 1.241 |
 | 140    | 0.028 | 0.043 | 0.051 | 0.072 |
 
-[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->

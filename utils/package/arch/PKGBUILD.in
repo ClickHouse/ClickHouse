@@ -3,7 +3,7 @@ pkgver=${VERSION_STRING}
 pkgrel=1
 pkgdesc='An open-source column-oriented database management system that allows generating analytical data reports in real time'
 arch=('x86_64')
-url='https://clickhouse.yandex/'
+url='https://clickhouse.com/'
 license=('Apache')
 
 package() {

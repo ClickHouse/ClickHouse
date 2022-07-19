@@ -1,6 +1,6 @@
 ---
-toc_priority: 20
-toc_title: MySQL接口
+sidebar_position: 20
+sidebar_label: MySQL接口
 ---
 
 # MySQL接口 {#mysql-interface}
@@ -44,4 +44,4 @@ mysql>
 
 -   某些数据类型以字符串形式发送
 
-[原始文章](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/interfaces/mysql/) <!--hide-->

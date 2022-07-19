@@ -1,5 +1,5 @@
 ---
-toc_title: UNION ALL
+sidebar_label: UNION ALL
 ---
 
 # UNION ALL子句 {#union-clause}

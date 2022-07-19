@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
+# Tags: long, zookeeper, no-parallel
+
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+# shellcheck source=./replication.lib
+. "$CURDIR"/replication.lib
 
 NUM_REPLICAS=5
 
@@ -58,16 +63,17 @@ timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
 wait
-
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA ttl_table$i"
+    # disable ttl merges before checking consistency
+    $CLICKHOUSE_CLIENT --query "ALTER TABLE ttl_table$i MODIFY SETTING max_replicated_merges_with_ttl_in_queue=0"
 done
+check_replication_consistency "ttl_table" "count(), sum(toUInt64(key))"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}' and type='MERGE_PARTS' and last_exception != '' FORMAT Vertical"
 $CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}'"
 
+
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ttl_table$i" &
 done
-
 wait

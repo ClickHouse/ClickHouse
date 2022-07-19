@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <synonyms_extensions>
+        <extension>
+            <name>en</name>
+            <type>plain</type>
+            <path>/etc/clickhouse-server/dictionaries/ext-en.txt</path>
+        </extension>
+        <extension>
+            <name>ru</name>
+            <type>plain</type>
+            <path>/etc/clickhouse-server/dictionaries/ext-ru.txt</path>
+        </extension>
+    </synonyms_extensions>
+
+    <lemmatizers>
+        <lemmatizer>
+            <lang>en</lang>
+            <path>/etc/clickhouse-server/dictionaries/lem-en.bin</path>
+        </lemmatizer>
+    </lemmatizers>
+</clickhouse>

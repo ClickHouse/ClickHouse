@@ -1,11 +1,11 @@
-# system.licenses {#system-tables_system.licenses}
+# licenses 
 
-Сontains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources. 
+Сontains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources.
 
 Columns:
 
 - `library_name` ([String](../../sql-reference/data-types/string.md)) — Name of the library, which is license connected with.
-- `license_type` ([String](../../sql-reference/data-types/string.md)) — License type — e.g. Apache, MIT. 
+- `license_type` ([String](../../sql-reference/data-types/string.md)) — License type — e.g. Apache, MIT.
 - `license_path` ([String](../../sql-reference/data-types/string.md)) — Path to the file with the license text.
 - `license_text` ([String](../../sql-reference/data-types/string.md)) — License text.
 
@@ -36,4 +36,4 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/licenses) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/licenses) <!--hide-->

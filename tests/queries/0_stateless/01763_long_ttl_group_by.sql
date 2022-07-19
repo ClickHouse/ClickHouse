@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS test_ttl_group_by01763;
 CREATE TABLE test_ttl_group_by01763
 (key UInt32, ts DateTime, value UInt32, min_value UInt32 default value, max_value UInt32 default value)

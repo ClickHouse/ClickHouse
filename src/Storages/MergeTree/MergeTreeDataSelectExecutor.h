@@ -12,15 +12,7 @@ namespace DB
 {
 
 class KeyCondition;
-
-struct MergeTreeDataSelectSamplingData
-{
-    bool use_sampling = false;
-    bool read_nothing = false;
-    Float64 used_sample_factor = 1.0;
-    std::shared_ptr<ASTFunction> filter_function;
-    ActionsDAGPtr filter_expression;
-};
+struct QueryIdHolder;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
@@ -37,30 +29,32 @@ public:
 
     QueryPlanPtr read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
         QueryProcessingStage::Enum processed_stage,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
     QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot_base,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr,
+        bool enable_parallel_reading = false) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
-    size_t estimateNumMarksToRead(
+    MergeTreeDataSelectAnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot_base,
@@ -98,6 +92,21 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         size_t & total_granules,
         size_t & granules_dropped,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        Poco::Logger * log);
+
+    static MarkRanges filterMarksUsingMergedIndex(
+        MergeTreeIndices indices,
+        MergeTreeIndexMergedConditionPtr condition,
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        const Settings & settings,
+        const MergeTreeReaderSettings & reader_settings,
+        size_t & total_granules,
+        size_t & granules_dropped,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
         Poco::Logger * log);
 
     struct PartFilterCounters
@@ -174,6 +183,7 @@ public:
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
+    /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         MergeTreeData::DataPartsVector && parts,
         StorageMetadataPtr metadata_snapshot,
@@ -204,7 +214,7 @@ public:
     /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
     static std::shared_ptr<QueryIdHolder> checkLimits(
         const MergeTreeData & data,
-        const RangesInDataParts & parts_with_ranges,
+        const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
 };
 

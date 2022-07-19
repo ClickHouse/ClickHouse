@@ -46,7 +46,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class ColumnAliasesMatcher
 {
 public:
-    using Visitor = InDepthNodeVisitor<ColumnAliasesMatcher, false>;
+    using Visitor = InDepthNodeVisitor<ColumnAliasesMatcher, false, true>;
 
     struct Data
     {
@@ -57,11 +57,16 @@ public:
         NameSet array_join_source_columns;
         ContextPtr context;
 
+        const std::unordered_set<IAST *> & excluded_nodes;
+
         /// private_aliases are from lambda, so these are local names.
         NameSet private_aliases;
 
-        Data(const ColumnsDescription & columns_, const NameToNameMap & array_join_result_columns_, ContextPtr context_)
-            : columns(columns_), context(context_)
+        /// Check if query is changed by this visitor.
+        bool changed = false;
+
+        Data(const ColumnsDescription & columns_, const NameToNameMap & array_join_result_columns_, ContextPtr context_, const std::unordered_set<IAST *> & excluded_nodes_)
+            : columns(columns_), context(context_), excluded_nodes(excluded_nodes_)
         {
             for (const auto & [result, source] : array_join_result_columns_)
             {
@@ -72,7 +77,7 @@ public:
     };
 
     static void visit(ASTPtr & ast, Data & data);
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child, const Data & data);
 
 private:
     static void visit(ASTIdentifier & node, ASTPtr & ast, Data & data);

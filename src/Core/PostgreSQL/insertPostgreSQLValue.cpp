@@ -9,12 +9,13 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
-#include <pqxx/pqxx> // Y_IGNORE
+#include <pqxx/pqxx>
 
 
 namespace DB
@@ -77,14 +78,14 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
-        case ExternalResultDescription::ValueType::vtEnum8:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtEnum16:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtFixedString:[[fallthrough]];
+        case ExternalResultDescription::ValueType::vtEnum8:
+        case ExternalResultDescription::ValueType::vtEnum16:
+        case ExternalResultDescription::ValueType::vtFixedString:
         case ExternalResultDescription::ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
         case ExternalResultDescription::ValueType::vtUUID:
-            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.data(), value.size()));
             break;
         case ExternalResultDescription::ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
@@ -102,7 +103,14 @@ void insertPostgreSQLValue(
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
         }
-        case ExternalResultDescription::ValueType::vtDateTime64:[[fallthrough]];
+        case ExternalResultDescription::ValueType::vtDateTime64:
+        {
+            ReadBufferFromString in(value);
+            DateTime64 time = 0;
+            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+            assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
+            break;
+        }
         case ExternalResultDescription::ValueType::vtDecimal32: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal64: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal128: [[fallthrough]];
@@ -204,6 +212,18 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
+            if (time < 0)
+                time = 0;
+            return time;
+        };
+    else if (which.isDateTime64())
+        parser = [nested](std::string & field) -> Field
+        {
+            ReadBufferFromString in(field);
+            DateTime64 time = 0;
+            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
+            if (time < 0)
+                time = 0;
             return time;
         };
     else if (which.isDecimal32())

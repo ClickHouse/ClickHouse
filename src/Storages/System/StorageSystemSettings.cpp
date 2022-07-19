@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Access/SettingsConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 
 
 namespace DB
@@ -29,7 +29,8 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
 void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const Settings & settings = context->getSettingsRef();
-    auto settings_constraints = context->getSettingsConstraints();
+    auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
+    const auto & constraints = constraints_and_current_profiles->constraints;
     for (const auto & setting : settings.all())
     {
         const auto & setting_name = setting.getName();
@@ -40,8 +41,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
 
         Field min, max;
         bool read_only = false;
-        if (settings_constraints)
-            settings_constraints->get(setting_name, min, max, read_only);
+        constraints.get(setting_name, min, max, read_only);
 
         /// These two columns can accept strings only.
         if (!min.isNull())

@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: Memory
+sidebar_position: 44
+sidebar_label: Memory
 ---
 
 # Memory {#memory}

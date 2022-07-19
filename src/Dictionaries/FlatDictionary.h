@@ -26,13 +26,13 @@ public:
         size_t initial_array_size;
         size_t max_array_size;
         bool require_nonempty;
+        DictionaryLifetime dict_lifetime;
     };
 
     FlatDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
         Configuration configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
 
@@ -58,12 +58,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
-    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return configuration.dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -72,7 +72,7 @@ public:
         return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -92,12 +92,17 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
+    DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const override;
+
+    size_t getHierarchicalIndexBytesAllocated() const override { return hierarchical_index_bytes_allocated; }
+
     ColumnPtr getDescendants(
         ColumnPtr key_column,
         const DataTypePtr & key_type,
-        size_t level) const override;
+        size_t level,
+        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
@@ -127,20 +132,24 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
+
     void blockToAttributes(const Block & block);
+
     void updateData();
+
     void loadData();
+
+    void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
 
@@ -156,26 +165,25 @@ private:
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);
 
-    template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value);
-
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
-    const DictionaryLifetime dict_lifetime;
     const Configuration configuration;
 
     std::vector<Attribute> attributes;
     std::vector<bool> loaded_keys;
 
     size_t bytes_allocated = 0;
+    size_t hierarchical_index_bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
+    Arena string_arena;
+    DictionaryHierarchicalParentToChildIndexPtr hierarhical_index;
 };
 
 }

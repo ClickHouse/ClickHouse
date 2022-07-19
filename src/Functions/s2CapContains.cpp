@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -11,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include "s2_fwd.h"
 
@@ -22,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -56,6 +55,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (size_t index = 0; index < getNumberOfArguments(); ++index)
@@ -83,19 +84,51 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_center = arguments[0].column.get();
-        const auto * col_degrees = arguments[1].column.get();
-        const auto * col_point = arguments[2].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_center = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!col_center)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_center = col_center->getData();
+
+        const auto * col_degrees = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        if (!col_degrees)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64",
+                arguments[1].type->getName(),
+                2,
+                getName());
+        const auto & data_degrees = col_degrees->getData();
+
+
+        const auto * col_point = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
+        if (!col_point)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[2].type->getName(),
+                3,
+                getName());
+        const auto & data_point = col_point->getData();
+
 
         auto dst = ColumnUInt8::create();
         auto & dst_data = dst->getData();
         dst_data.reserve(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto center = S2CellId(col_center->getUInt(row));
-            const Float64 degrees = col_degrees->getFloat64(row);
-            const auto point = S2CellId(col_point->getUInt(row));
+            const auto center = S2CellId(data_center[row]);
+            const Float64 degrees = data_degrees[row];
+            const auto point = S2CellId(data_point[row]);
 
             if (isNaN(degrees))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");

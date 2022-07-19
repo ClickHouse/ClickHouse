@@ -1,6 +1,7 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/sort.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -110,7 +111,7 @@ public:
         cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -118,7 +119,7 @@ public:
         buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -142,7 +143,7 @@ public:
         auto & array = this->data(place).value;
 
         /// Sort by position; for equal position, sort by weight to get deterministic result.
-        std::sort(array.begin(), array.end());
+        ::sort(array.begin(), array.end());
 
         for (const auto & point_weight : array)
         {

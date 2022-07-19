@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+
 # shellcheck disable=SC2028
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

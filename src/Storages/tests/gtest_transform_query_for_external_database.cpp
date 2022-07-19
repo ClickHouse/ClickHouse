@@ -84,8 +84,9 @@ private:
             const auto & table_name = tab.table.table;
             const auto & db_name = tab.table.database;
             database->attachTable(
+                context,
                 table_name,
-                StorageMemory::create(
+                std::make_shared<StorageMemory>(
                     StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
@@ -104,12 +105,12 @@ static void check(
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
     query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, state.getColumns(), select_options, state.getTables(table_num));
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns()), select_options, state.getTables(table_num));
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, state.getColumns(), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
 
-    EXPECT_EQ(transformed_query, expected);
+    EXPECT_EQ(transformed_query, expected) << query;
 }
 
 
@@ -119,13 +120,25 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 
     check(state, 1,
           "SELECT column FROM test.table WHERE 1 IN (1)",
-          R"(SELECT "column" FROM "test"."table" WHERE 1)");
+          R"(SELECT "column" FROM "test"."table" WHERE 1 = 1)");
     check(state, 1,
           "SELECT column FROM test.table WHERE column IN (1, 2)",
           R"(SELECT "column" FROM "test"."table" WHERE "column" IN (1, 2))");
     check(state, 1,
           "SELECT column FROM test.table WHERE column NOT IN ('hello', 'world')",
           R"(SELECT "column" FROM "test"."table" WHERE "column" NOT IN ('hello', 'world'))");
+}
+
+TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT column FROM test.table WHERE (1,1) IN ((1,1))",
+          R"(SELECT "column" FROM "test"."table" WHERE 1 = 1)");
+    check(state, 1,
+          "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
 }
 
 TEST(TransformQueryForExternalDatabase, InWithTable)
@@ -206,4 +219,53 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND (apply_id = 1 OR table2.num = 1) AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+}
+
+TEST(TransformQueryForExternalDatabase, NoStrict)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)",
+          R"(SELECT "field" FROM "test"."table")");
+}
+
+TEST(TransformQueryForExternalDatabase, Strict)
+{
+    const State & state = State::instance();
+    state.context->setSetting("external_table_strict_query", true);
+
+    check(state, 1,
+          "SELECT field FROM table WHERE field = '1'",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" = '1')");
+    check(state, 1,
+          "SELECT field FROM table WHERE field IN ('1', '2')",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IN ('1', '2'))");
+    check(state, 1,
+          "SELECT field FROM table WHERE field LIKE '%test%'",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" LIKE '%test%')");
+
+    /// removeUnknownSubexpressionsFromWhere() takes place
+    EXPECT_THROW(check(state, 1, "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)", ""), Exception);
+    /// !isCompatible() takes place
+    EXPECT_THROW(check(state, 1, "SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'", ""), Exception);
+}
+
+TEST(TransformQueryForExternalDatabase, Null)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+          "SELECT field FROM table WHERE field IS NULL",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+    check(state, 1,
+          "SELECT field FROM table WHERE field IS NOT NULL",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+
+    check(state, 1,
+          "SELECT field FROM table WHERE isNull(field)",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
+    check(state, 1,
+          "SELECT field FROM table WHERE isNotNull(field)",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
 }

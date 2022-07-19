@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <thread>
 #include <atomic>
 
@@ -22,7 +22,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeRestartingThread
 {
 public:
-    ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
     void start() { task->activateAndSchedule(); }
 
@@ -36,18 +36,17 @@ private:
     Poco::Logger * log;
     std::atomic<bool> need_stop {false};
 
-    // We need it besides `storage.is_readonly`, because `shutdown()` may be called many times, that way `storage.is_readonly` will not change.
-    bool readonly_mode_was_set = false;
-
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
     BackgroundSchedulePool::TaskHolder task;
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     bool first_time = true;                 /// Activate replica for the first time.
-    bool startup_completed = false;
 
     void run();
+
+    /// Restarts table if needed, returns false if it failed to restart replica.
+    bool runImpl();
 
     /// Start or stop background threads. Used for partial reinitialization when re-creating a session in ZooKeeper.
     bool tryStartup(); /// Returns false if ZooKeeper is not available.
@@ -61,10 +60,13 @@ private:
     /// If there is an unreachable quorum, and we have a part, then add this replica to the quorum.
     void updateQuorumIfWeHavePart();
 
-    void partialShutdown();
+    void partialShutdown(bool part_of_full_shutdown = false);
 
     /// Set readonly mode for table
-    void setReadonly();
+    void setReadonly(bool on_shutdown = false);
+
+    /// Disable readonly mode for table
+    void setNotReadonly();
 };
 
 

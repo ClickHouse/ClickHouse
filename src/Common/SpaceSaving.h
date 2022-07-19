@@ -5,8 +5,11 @@
 
 #include <boost/range/adaptor/reversed.hpp>
 
+#include <base/sort.h>
+
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -33,8 +36,8 @@ namespace DB
 template <typename TKey>
 struct SpaceSavingArena
 {
-    SpaceSavingArena() {}
-    const TKey emplace(const TKey & key) { return key; }
+    SpaceSavingArena() = default;
+    TKey emplace(const TKey & key) { return key; }
     void free(const TKey & /*key*/) {}
 };
 
@@ -46,14 +49,12 @@ struct SpaceSavingArena
 template <>
 struct SpaceSavingArena<StringRef>
 {
-    const StringRef emplace(const StringRef & key)
+    StringRef emplace(StringRef key)
     {
-        auto ptr = arena.alloc(key.size);
-        std::copy(key.data, key.data + key.size, ptr);
-        return StringRef{ptr, key.size};
+        return copyStringInArena(arena, key);
     }
 
-    void free(const StringRef & key)
+    void free(StringRef key)
     {
         if (key.data)
             arena.free(const_cast<char *>(key.data), key.size);
@@ -76,8 +77,8 @@ private:
     // Round to nearest power of 2 for cheaper binning without modulo
     constexpr uint64_t nextAlphaSize(uint64_t x)
     {
-        constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
-        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
+        constexpr uint64_t alpha_map_elements_per_counter = 6;
+        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * alpha_map_elements_per_counter));
     }
 
 public:
@@ -87,7 +88,7 @@ public:
     {
         Counter() = default; //-V730
 
-        Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0, size_t h = 0)
+        explicit Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0, size_t h = 0)
           : key(k), slot(0), hash(h), count(c), error(e) {}
 
         void write(WriteBuffer & wb) const
@@ -117,7 +118,7 @@ public:
         UInt64 error;
     };
 
-    SpaceSaving(size_t c = 10) : alpha_map(nextAlphaSize(c)), m_capacity(c) {}
+    explicit SpaceSaving(size_t c = 10) : alpha_map(nextAlphaSize(c)), m_capacity(c) {}
 
     ~SpaceSaving() { destroyElements(); }
 
@@ -242,7 +243,7 @@ public:
             }
         }
 
-        std::sort(counter_list.begin(), counter_list.end(), [](Counter * l, Counter * r) { return *l > *r; });
+        ::sort(counter_list.begin(), counter_list.end(), [](Counter * l, Counter * r) { return *l > *r; });
 
         if (counter_list.size() > m_capacity)
         {

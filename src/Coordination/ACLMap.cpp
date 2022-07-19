@@ -42,11 +42,14 @@ bool ACLMap::ACLsComparator::operator()(const Coordination::ACLs & left, const C
 
 uint64_t ACLMap::convertACLs(const Coordination::ACLs & acls)
 {
-    if (acl_to_num.count(acls))
+    if (acls.empty())
+        return 0;
+
+    if (acl_to_num.contains(acls))
         return acl_to_num[acls];
 
     /// Start from one
-    auto index = acl_to_num.size() + 1;
+    auto index = max_acl_id++;
 
     acl_to_num[acls] = index;
     num_to_acl[index] = acls;
@@ -59,7 +62,7 @@ Coordination::ACLs ACLMap::convertNumber(uint64_t acls_id) const
     if (acls_id == 0)
         return Coordination::ACLs{};
 
-    if (!num_to_acl.count(acls_id))
+    if (!num_to_acl.contains(acls_id))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown ACL id {}. It's a bug", acls_id);
 
     return num_to_acl.at(acls_id);
@@ -69,6 +72,7 @@ void ACLMap::addMapping(uint64_t acls_id, const Coordination::ACLs & acls)
 {
     num_to_acl[acls_id] = acls;
     acl_to_num[acls] = acls_id;
+    max_acl_id = std::max(acls_id + 1, max_acl_id); /// max_acl_id pointer next slot
 }
 
 void ACLMap::addUsage(uint64_t acl_id)
@@ -78,7 +82,7 @@ void ACLMap::addUsage(uint64_t acl_id)
 
 void ACLMap::removeUsage(uint64_t acl_id)
 {
-    if (usage_counter.count(acl_id) == 0)
+    if (!usage_counter.contains(acl_id))
         return;
 
     usage_counter[acl_id]--;

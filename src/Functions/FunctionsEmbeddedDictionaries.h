@@ -18,9 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace DB
@@ -35,7 +33,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/** Functions using Yandex.Metrica dictionaries
+/** Functions using deprecated dictionaries
   * - dictionaries of regions, operating systems, search engines.
   *
   * Climb up the tree to a certain level.
@@ -157,6 +155,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -251,6 +250,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -389,6 +389,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -592,8 +593,10 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     /// For the purpose of query optimization, we assume this function to be injective
-    ///  even in face of fact that there are many different cities named Moscow.
+    ///  even in face of fact that there are many different cities named Paris.
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

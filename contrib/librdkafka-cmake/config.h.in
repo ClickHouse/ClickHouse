@@ -66,7 +66,7 @@
 #cmakedefine WITH_SASL_OAUTHBEARER 1
 #cmakedefine WITH_SASL_CYRUS 1
 // crc32chw
-#if !defined(__PPC__) && (!defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)) && !(defined(__aarch64__) && defined(__APPLE__))
+#if !defined(__PPC__) && !defined(__riscv) && !defined(__aarch64__)
 #define WITH_CRC32C_HW 1
 #endif
 // regex

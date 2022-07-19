@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 DROP TABLE IF EXISTS numbers_100k_log;
 CREATE TABLE numbers_100k_log ENGINE = Log AS SELECT * FROM system.numbers LIMIT 100000;
 

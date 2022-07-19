@@ -1,6 +1,6 @@
 ---
-toc_priority: 2
-toc_title: ClickHouse的特性
+sidebar_position: 2
+sidebar_label: ClickHouse的特性
 ---
 
 # ClickHouse的特性 {#clickhouse-de-te-xing}
@@ -86,4 +86,4 @@ ClickHouse使用SQL查询实现用户帐户管理，并允许[角色的访问控
 2.  缺少高频率，低延迟的修改或删除已存在数据的能力。仅能用于批量删除或修改数据，但这符合 [GDPR](https://gdpr-info.eu)。
 3.  稀疏索引使得ClickHouse不适合通过其键检索单行的点查询。
 
-[来源文章](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/introduction/distinctive_features/) <!--hide-->

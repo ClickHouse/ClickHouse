@@ -6,7 +6,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
-#include <common/getPageSize.h>
+#include <Common/filesystemHelpers.h>
+#include <base/getPageSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 
@@ -86,4 +87,8 @@ off_t MMapReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     return new_pos;
 }
 
+size_t MMapReadBufferFromFileDescriptor::getFileSize()
+{
+    return getSizeFromFileDescriptor(getFD(), getFileName());
+}
 }

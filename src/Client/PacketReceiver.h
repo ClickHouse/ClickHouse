@@ -31,19 +31,19 @@ public:
     }
 
     /// Resume packet receiving.
-    std::variant<int, Packet, Poco::Timespan> resume()
+    std::variant<int, Packet, Poco::Timespan, std::exception_ptr> resume()
     {
         /// If there is no pending data, check receive timeout.
         if (!connection->hasReadPendingData() && !checkReceiveTimeout())
         {
             /// Receive timeout expired.
-            return Poco::Timespan();
+            return connection->getSocket()->getReceiveTimeout();
         }
 
         /// Resume fiber.
         fiber = std::move(fiber).resume();
         if (exception)
-            std::rethrow_exception(std::move(exception));
+            return std::move(exception);
 
         if (is_read_in_process)
             return epoll.getFileDescriptor();
@@ -59,6 +59,11 @@ public:
     }
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
+
+    void setReceiveTimeout(const Poco::Timespan & timeout)
+    {
+        receive_timeout.setRelative(timeout);
+    }
 
 private:
     /// When epoll file descriptor is ready, check if it's an expired timeout.

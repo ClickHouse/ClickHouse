@@ -1,8 +1,8 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -16,7 +16,16 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+extern const Event ScalarSubqueriesGlobalCacheHit;
+extern const Event ScalarSubqueriesLocalCacheHit;
+extern const Event ScalarSubqueriesCacheMiss;
+}
 
 namespace DB
 {
@@ -66,8 +75,32 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 static bool worthConvertingToLiteral(const Block & scalar)
 {
     const auto * scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
-    std::set<String> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
-    return !useless_literal_types.count(scalar_type_name);
+    static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
+    return !useless_literal_types.contains(scalar_type_name);
+}
+
+static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
+{
+    auto subquery_context = Context::createCopy(data.getContext());
+    Settings subquery_settings = data.getContext()->getSettings();
+    subquery_settings.max_result_rows = 1;
+    subquery_settings.extremes = false;
+    subquery_context->setSettings(subquery_settings);
+    if (!data.only_analyze && subquery_context->hasQueryContext())
+    {
+        /// Save current cached scalars in the context before analyzing the query
+        /// This is specially helpful when analyzing CTE scalars
+        auto context = subquery_context->getQueryContext();
+        for (const auto & it : data.scalars)
+            context->addScalar(it.first, it.second);
+    }
+
+    ASTPtr subquery_select = subquery.children.at(0);
+
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
+    options.analyze(data.only_analyze);
+
+    return std::make_unique<InterpreterSelectWithUnionQuery>(subquery_select, subquery_context, options);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
@@ -75,31 +108,70 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto hash = subquery.getTreeHash();
     auto scalar_query_hash_str = toString(hash.first) + "_" + toString(hash.second);
 
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;
+    bool hit = false;
+    bool is_local = false;
+
     Block scalar;
-    if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
-        scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
-    else if (data.scalars.count(scalar_query_hash_str))
+    if (data.only_analyze)
+    {
+        /// Don't use scalar cache during query analysis
+    }
+    else if (data.local_scalars.contains(scalar_query_hash_str))
+    {
+        hit = true;
+        scalar = data.local_scalars[scalar_query_hash_str];
+        is_local = true;
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
+    }
+    else if (data.scalars.contains(scalar_query_hash_str))
+    {
+        hit = true;
         scalar = data.scalars[scalar_query_hash_str];
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+    }
     else
     {
-        auto subquery_context = Context::createCopy(data.getContext());
-        Settings subquery_settings = data.getContext()->getSettings();
-        subquery_settings.max_result_rows = 1;
-        subquery_settings.extremes = false;
-        subquery_context->setSettings(subquery_settings);
+        if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
+        {
+            if (!data.getContext()->getViewSource())
+            {
+                /// We aren't using storage views so we can safely use the context cache
+                scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
+                ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+                hit = true;
+            }
+            else
+            {
+                /// If we are under a context that uses views that means that the cache might contain values that reference
+                /// the original table and not the view, so in order to be able to check the global cache we need to first
+                /// make sure that the query doesn't use the view
+                /// Note in any case the scalar will end up cached in *data* so this won't be repeated inside this context
+                interpreter = getQueryInterpreter(subquery, data);
+                if (!interpreter->usesViewSource())
+                {
+                    scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
+                    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+                    hit = true;
+                }
+            }
+        }
+    }
 
-        ASTPtr subquery_select = subquery.children.at(0);
+    if (!hit)
+    {
+        if (!interpreter)
+            interpreter = getQueryInterpreter(subquery, data);
 
-        auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
-        options.analyze(data.only_analyze);
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+        is_local = interpreter->usesViewSource();
 
-        auto interpreter = InterpreterSelectWithUnionQuery(subquery_select, subquery_context, options);
         Block block;
 
         if (data.only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            block = interpreter.getSampleBlock();
+            block = interpreter->getSampleBlock();
             for (auto & column : block)
             {
                 if (column.column->empty())
@@ -112,15 +184,32 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            auto io = interpreter.execute();
+            auto io = interpreter->execute();
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
+            io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             while (block.rows() == 0 && executor.pull(block));
 
             if (block.rows() == 0)
             {
-                /// Interpret subquery with empty result as Null literal
-                auto ast_new = std::make_unique<ASTLiteral>(Null());
+                auto types = interpreter->getSampleBlock().getDataTypes();
+                if (types.size() != 1)
+                    types = {std::make_shared<DataTypeTuple>(types)};
+
+                auto & type = types[0];
+                if (!type->isNullable())
+                {
+                    if (!type->canBeInsideNullable())
+                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                                        "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                                        type->getName());
+
+                    type = makeNullable(type);
+                }
+
+                ASTPtr ast_new = std::make_shared<ASTLiteral>(Null());
+                ast_new = addTypeConversionToAST(std::move(ast_new), type->getName());
+
                 ast_new->setAlias(ast->tryGetAlias());
                 ast = std::move(ast_new);
                 return;
@@ -130,7 +219,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
 
             Block tmp_block;
-            while (tmp_block.rows() == 0 && executor.pull(tmp_block));
+            while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+                ;
 
             if (tmp_block.rows() != 0)
                 throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
@@ -140,14 +230,24 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         size_t columns = block.columns();
 
         if (columns == 1)
+        {
+            auto & column = block.getByPosition(0);
+            /// Here we wrap type to nullable if we can.
+            /// It is needed cause if subquery return no rows, it's result will be Null.
+            /// In case of many columns, do not check it cause tuple can't be nullable.
+            if (!column.type->isNullable() && column.type->canBeInsideNullable())
+            {
+                column.type = makeNullable(column.type);
+                column.column = makeNullable(column.column);
+            }
             scalar = block;
+        }
         else
         {
-
-            ColumnWithTypeAndName ctn;
-            ctn.type = std::make_shared<DataTypeTuple>(block.getDataTypes());
-            ctn.column = ColumnTuple::create(block.getColumns());
-            scalar.insert(ctn);
+            scalar.insert({
+                ColumnTuple::create(block.getColumns()),
+                std::make_shared<DataTypeTuple>(block.getDataTypes()),
+                "tuple"});
         }
     }
 
@@ -157,9 +257,14 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar)
         || !data.getContext()->hasQueryContext())
     {
+        /// subquery and ast can be the same object and ast will be moved.
+        /// Save these fields to avoid use after move.
+        auto alias = subquery.alias;
+        auto prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
-        lit->alias = subquery.alias;
-        lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+        lit->alias = alias;
+        lit->prefer_alias_to_column_name = prefer_alias_to_column_name;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
@@ -167,8 +272,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         {
             ast->as<ASTFunction>()->alias.clear();
             auto func = makeASTFunction("identity", std::move(ast));
-            func->alias = subquery.alias;
-            func->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+            func->alias = alias;
+            func->prefer_alias_to_column_name = prefer_alias_to_column_name;
             ast = std::move(func);
         }
     }
@@ -180,7 +285,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         ast = std::move(func);
     }
 
-    data.scalars[scalar_query_hash_str] = std::move(scalar);
+    if (is_local)
+        data.local_scalars[scalar_query_hash_str] = std::move(scalar);
+    else
+        data.scalars[scalar_query_hash_str] = std::move(scalar);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)

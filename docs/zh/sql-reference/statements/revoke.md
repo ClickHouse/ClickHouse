@@ -1,6 +1,6 @@
 ---
-toc_priority: 40
-toc_title: REVOKE
+sidebar_position: 40
+sidebar_label: REVOKE
 ---
 
 # 权限取消 {#revoke}
@@ -45,4 +45,4 @@ GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
-{## [原始文档](https://clickhouse.tech/docs/en/operations/settings/settings/) ##}
+{## [原始文档](https://clickhouse.com/docs/en/operations/settings/settings/) ##}

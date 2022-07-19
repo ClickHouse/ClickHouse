@@ -1,5 +1,4 @@
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -134,7 +133,8 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
         return this->getNameForValue(static_cast<Type>(value)).toString();
     }
     else
-        throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
 
 template <typename Type>
@@ -153,7 +153,8 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
         return value;
     }
     else
-        throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
 
 
@@ -190,6 +191,53 @@ static void checkASTStructure(const ASTPtr & child)
                         ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
+static void autoAssignNumberForEnum(const ASTPtr & arguments)
+{
+    Int64 literal_child_assign_num = 1;
+    ASTs assign_number_child;
+    assign_number_child.reserve(arguments->children.size());
+    bool is_first_child = true;
+    size_t assign_count= 0;
+
+    for (const ASTPtr & child : arguments->children)
+    {
+        if (child->as<ASTLiteral>())
+        {
+            assign_count += !is_first_child;
+            ASTPtr func = makeASTFunction("equals", child, std::make_shared<ASTLiteral>(literal_child_assign_num + assign_count));
+            assign_number_child.emplace_back(func);
+        }
+        else if (child->as<ASTFunction>())
+        {
+            if (is_first_child)
+            {
+                checkASTStructure(child);
+                const auto * func = child->as<ASTFunction>();
+                const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
+
+                if (!value_literal
+                    || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
+                    throw Exception("Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer",
+                                    ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+                literal_child_assign_num = value_literal->value.get<Int64>();
+            }
+            assign_number_child.emplace_back(child);
+        }
+        else
+            throw Exception("Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer",
+                            ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+        is_first_child = false;
+    }
+
+    if (assign_count != 0 && assign_count != arguments->children.size() - 1)
+        throw Exception("All elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer",
+                        ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+    arguments->children = assign_number_child;
+}
+
 template <typename DataTypeEnum>
 static DataTypePtr createExact(const ASTPtr & arguments)
 {
@@ -201,6 +249,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
 
     using FieldType = typename DataTypeEnum::FieldType;
 
+    autoAssignNumberForEnum(arguments);
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
@@ -214,7 +263,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
             || !value_literal
             || name_literal->value.getType() != Field::Types::String
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
-            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+            throw Exception("Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer",
                 ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
         const String & field_name = name_literal->value.get<String>();
@@ -235,6 +284,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
+    autoAssignNumberForEnum(arguments);
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
@@ -245,7 +295,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
         if (!value_literal
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
-            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+            throw Exception("Elements of Enum data type must be of form: 'name' = number or 'name', where name is string literal and number is an integer",
                     ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
         Int64 value = value_literal->value.get<Int64>();

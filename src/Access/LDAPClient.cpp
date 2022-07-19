@@ -1,7 +1,7 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
-#include <common/scope_guard.h>
-#include <common/logger_useful.h>
+#include <base/scope_guard.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -69,7 +69,7 @@ namespace
 
     std::recursive_mutex ldap_global_mutex;
 
-    auto escapeForLDAP(const String & src)
+    auto escapeForDN(const String & src)
     {
         String dest;
         dest.reserve(src.size() * 2);
@@ -91,6 +91,39 @@ namespace
                     break;
             }
             dest += ch;
+        }
+
+        return dest;
+    }
+
+    auto escapeForFilter(const String & src)
+    {
+        String dest;
+        dest.reserve(src.size() * 3);
+
+        for (auto ch : src)
+        {
+            switch (ch)
+            {
+                case '*':
+                    dest += "\\2A";
+                    break;
+                case '(':
+                    dest += "\\28";
+                    break;
+                case ')':
+                    dest += "\\29";
+                    break;
+                case '\\':
+                    dest += "\\5C";
+                    break;
+                case '\0':
+                    dest += "\\00";
+                    break;
+                default:
+                    dest += ch;
+                    break;
+            }
         }
 
         return dest;
@@ -120,7 +153,7 @@ namespace
 
 }
 
-void LDAPClient::diag(const int rc, String text)
+void LDAPClient::diag(int rc, String text)
 {
     std::scoped_lock lock(ldap_global_mutex);
 
@@ -160,7 +193,7 @@ void LDAPClient::diag(const int rc, String text)
     }
 }
 
-void LDAPClient::openConnection()
+bool LDAPClient::openConnection()
 {
     std::scoped_lock lock(ldap_global_mutex);
 
@@ -294,7 +327,7 @@ void LDAPClient::openConnection()
     if (params.enable_tls == LDAPClient::Params::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
-    final_user_name = escapeForLDAP(params.user);
+    final_user_name = escapeForDN(params.user);
     final_bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", final_user_name} });
     final_user_dn = final_bind_dn; // The default value... may be updated right after a successful bind.
 
@@ -306,7 +339,15 @@ void LDAPClient::openConnection()
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
-            diag(ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr));
+            {
+                const auto rc = ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+
+                // Handle invalid credentials gracefully.
+                if (rc == LDAP_INVALID_CREDENTIALS)
+                    return false;
+
+                diag(rc);
+            }
 
             // Once bound, run the user DN search query and update the default value, if asked.
             if (params.user_dn_detection)
@@ -322,7 +363,7 @@ void LDAPClient::openConnection()
                 final_user_dn = *user_dn_search_results.begin();
             }
 
-            break;
+            return true;
         }
 
         default:
@@ -366,10 +407,10 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
     });
 
     const auto final_search_filter = replacePlaceholders(search_params.search_filter, {
-        {"{user_name}", final_user_name},
-        {"{bind_dn}", final_bind_dn},
-        {"{user_dn}", final_user_dn},
-        {"{base_dn}", final_base_dn}
+        {"{user_name}", escapeForFilter(final_user_name)},
+        {"{bind_dn}", escapeForFilter(final_bind_dn)},
+        {"{user_dn}", escapeForFilter(final_user_dn)},
+        {"{base_dn}", escapeForFilter(final_base_dn)}
     });
 
     char * attrs[] = { const_cast<char *>(search_params.attribute.c_str()), nullptr };
@@ -448,7 +489,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                                 vals = nullptr;
                             });
 
-                            for (std::size_t i = 0; vals[i]; i++)
+                            for (size_t i = 0; vals[i]; ++i)
                             {
                                 if (vals[i]->bv_val && vals[i]->bv_len > 0)
                                     result.emplace(vals[i]->bv_val, vals[i]->bv_len);
@@ -473,7 +514,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         referrals = nullptr;
                     });
 
-                    for (std::size_t i = 0; referrals[i]; i++)
+                    for (size_t i = 0; referrals[i]; ++i)
                     {
                         LOG_WARNING(&Poco::Logger::get("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
                     }
@@ -541,8 +582,9 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search
 
     SCOPE_EXIT({ closeConnection(); });
 
-    // Will throw on any error, including invalid credentials.
-    openConnection();
+    // Will return false on invalid credentials, will throw on any other error.
+    if (!openConnection())
+        return false;
 
     // While connected, run search queries and save the results, if asked.
     if (role_search_params)
@@ -574,7 +616,7 @@ void LDAPClient::diag(const int, String)
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
 
-void LDAPClient::openConnection()
+bool LDAPClient::openConnection()
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }

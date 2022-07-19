@@ -24,9 +24,8 @@ class IColumnDummy : public IColumn
 {
 public:
     IColumnDummy() : s(0) {}
-    IColumnDummy(size_t s_) : s(s_) {}
+    explicit IColumnDummy(size_t s_) : s(s_) {}
 
-public:
     virtual MutableColumnPtr cloneDummy(size_t s_) const = 0;
 
     MutableColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
@@ -46,6 +45,7 @@ public:
     Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    bool isDefaultAt(size_t) const override { throw Exception("isDefaultAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
     StringRef getDataAt(size_t) const override
     {
@@ -100,7 +100,16 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
-        return cloneDummy(countBytesInFilter(filt));
+        size_t bytes = countBytesInFilter(filt);
+        return cloneDummy(bytes);
+    }
+
+    void expand(const IColumn::Filter & mask, bool inverted) override
+    {
+        size_t bytes = countBytesInFilter(mask);
+        if (inverted)
+            bytes = mask.size() - bytes;
+        s = bytes;
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
@@ -119,14 +128,16 @@ public:
         return cloneDummy(limit ? limit : s);
     }
 
-    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
+    void getPermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
+                    size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
     {
         res.resize(s);
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
     }
 
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const override {}
+    void updatePermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
+                    size_t, int, Permutation &, EqualRanges&) const override {}
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -150,6 +161,16 @@ public:
             res[i] = cloneResized(counts[i]);
 
         return res;
+    }
+
+    double getRatioOfDefaultRows(double) const override
+    {
+        throw Exception("Method getRatioOfDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
+    {
+        throw Exception("Method getIndicesOfNonDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void gather(ColumnGathererStream &) override

@@ -1,17 +1,17 @@
 (Expression)
-ExpressionTransform
+ExpressionTransform × 3
   (Aggregating)
-  FinalizingSimpleTransform
-    FinishAggregatingInOrderTransform 3 → 1
-      AggregatingInOrderTransform × 3
-        (Expression)
-        ExpressionTransform × 3
-          (SettingQuotaAndLimits)
+  MergingAggregatedBucketTransform × 3
+    Resize 1 → 3
+      FinishAggregatingInOrderTransform 3 → 1
+        AggregatingInOrderTransform × 3
+          (Expression)
+          ExpressionTransform × 3
             (ReadFromMergeTree)
             ExpressionTransform × 4
-              MergeTree 0 → 1
+              MergeTreeInOrder 0 → 1
                 MergingSortedTransform 2 → 1
                   ExpressionTransform × 2
-                    MergeTree × 2 0 → 1
+                    MergeTreeInOrder × 2 0 → 1
                       ExpressionTransform
-                        MergeTree 0 → 1
+                        MergeTreeInOrder 0 → 1

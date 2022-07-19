@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Parsers/queryToString.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 #include <IO/WriteHelpers.h>
@@ -17,11 +18,14 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -88,7 +92,7 @@ bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
         auto idents = IdentifiersCollector::collect(node);
         for (const auto * ident : idents)
         {
-            if (ident->isShort() && aliases.count(ident->shortName()))
+            if (ident->isShort() && aliases.contains(ident->shortName()))
                 return false;
         }
         return true;
@@ -146,71 +150,52 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     return makeASTFunction(NameAnd::name, std::move(arguments));
 }
 
-bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tables, size_t & num_comma)
+std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 {
     if (!select.tables())
-        return false;
+        return {};
 
     const auto * tables = select.tables()->as<ASTTablesInSelectQuery>();
     if (!tables)
-        return false;
+        return {};
 
     size_t num_tables = tables->children.size();
     if (num_tables < 2)
-        return false;
+        return {};
 
+    std::vector<JoinedElement> joined_tables;
     joined_tables.reserve(num_tables);
-    size_t num_array_join = 0;
-    size_t num_using = 0;
-
-    // For diagnostic messages.
-    std::vector<IAST *> tables_with_using;
-    tables_with_using.reserve(num_tables);
+    bool has_using = false;
 
     for (const auto & child : tables->children)
     {
-        auto * table_element = child->as<ASTTablesInSelectQueryElement>();
+        const auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
             throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
 
-        joined_tables.emplace_back(JoinedElement(*table_element));
-        JoinedElement & t = joined_tables.back();
+        JoinedElement & t = joined_tables.emplace_back(*table_element);
+        t.rewriteCommaToCross();
 
         if (t.arrayJoin())
-        {
-            ++num_array_join;
-            continue;
-        }
+            return {};
 
         if (t.hasUsing())
         {
-            ++num_using;
-            tables_with_using.push_back(table_element);
-            continue;
+            if (has_using)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multuple USING statements are not supported");
+            has_using = true;
         }
 
-        if (const auto * join = t.tableJoin())
+        if (const auto * join = t.tableJoin(); join && isCrossOrComma(join->kind))
         {
-            if (join->kind == ASTTableJoin::Kind::Cross ||
-                join->kind == ASTTableJoin::Kind::Comma)
-            {
-                if (!join->children.empty())
-                    throw Exception("Logical error: CROSS JOIN has expressions", ErrorCodes::LOGICAL_ERROR);
-            }
-
-            if (join->kind == ASTTableJoin::Kind::Comma)
-                ++num_comma;
+            if (!join->children.empty())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "CROSS JOIN has {} expressions: [{}, ...]",
+                    join->children.size(), queryToString(join->children[0]));
         }
     }
 
-    if (num_using && (num_tables - num_array_join) > 2)
-    {
-        throw Exception("Multiple CROSS/COMMA JOIN do not support USING (while "
-            "processing '" + IAST::formatForErrorMessage(tables_with_using) + "')",
-            ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    return !(num_array_join || num_using);
+    return joined_tables;
 }
 
 }
@@ -229,25 +214,19 @@ void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 
 void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
 {
-    size_t num_comma = 0;
-    std::vector<JoinedElement> joined_tables;
-    if (!getTables(select, joined_tables, num_comma))
+    std::vector<JoinedElement> joined_tables = getTables(select);
+    if (joined_tables.empty())
         return;
 
     /// Check if joined_tables are consistent with known tables_with_columns
     {
         if (joined_tables.size() != data.tables_with_columns.size())
-            throw Exception("Logical error: inconsistent number of tables", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Logical error: inconsistent number of tables: {} != {}",
+                            joined_tables.size(), data.tables_with_columns.size());
 
         for (size_t i = 0; i < joined_tables.size(); ++i)
             joined_tables[i].checkTableName(data.tables_with_columns[i].table, data.current_database);
-    }
-
-    /// COMMA to CROSS
-    if (num_comma)
-    {
-        for (auto & table : joined_tables)
-            table.rewriteCommaToCross();
     }
 
     /// CROSS to INNER
@@ -256,11 +235,26 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
         auto asts_to_join_on = moveExpressionToJoinOn(select.where(), joined_tables, data.tables_with_columns, data.aliases);
         for (size_t i = 1; i < joined_tables.size(); ++i)
         {
+            auto & joined = joined_tables[i];
+            if (joined.tableJoin()->kind != ASTTableJoin::Kind::Cross)
+                continue;
+
+            String query_before = queryToString(*joined.tableJoin());
+            bool rewritten = false;
             const auto & expr_it = asts_to_join_on.find(i);
             if (expr_it != asts_to_join_on.end())
             {
-                if (joined_tables[i].rewriteCrossToInner(makeOnExpression(expr_it->second)))
-                    data.done = true;
+                ASTPtr on_expr = makeOnExpression(expr_it->second);
+                if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, queryToString(*joined.tableJoin()));
+                }
+            }
+
+            if (data.cross_to_inner_join_rewrite > 1 && !rewritten)
+            {
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Failed to rewrite '{} WHERE {}' to INNER JOIN",
+                                query_before, queryToString(select.where()));
             }
         }
     }

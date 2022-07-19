@@ -4,10 +4,10 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 using namespace Coordination;
 using namespace DB;
@@ -32,14 +32,14 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
             ", numChildren: " << value.stat.numChildren <<
             ", dataLength: " << value.stat.dataLength <<
             "}" << std::endl;
-        std::cout << "\tData: " << storage.container.getValue(key).data << std::endl;
+        std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 
-        for (const auto & child : value.children)
+        for (const auto & child : value.getChildren())
         {
             if (key == "/")
-                keys.push(key + child);
+                keys.push(key + child.toString());
             else
-                keys.push(key + "/" + child);
+                keys.push(key + "/" + child.toString());
         }
     }
     std::cout << std::flush;
@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
         Poco::Logger::root().setLevel("trace");
     }
     auto * logger = &Poco::Logger::get("keeper-dumper");
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings);
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
 
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
-    DB::KeeperLogStore changelog(argv[2], 10000000, true);
+    DB::KeeperLogStore changelog(argv[2], 10000000, true, settings->compress_logs);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
     if (changelog.size() == 0)
         LOG_INFO(logger, "Changelog empty");

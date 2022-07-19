@@ -1,8 +1,8 @@
 ---
-toc_priority: 107
+sidebar_position: 107
 ---
 
-# avgWeighted {#avgweighted}
+# avgWeighted
 
 Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
 
@@ -19,7 +19,7 @@ avgWeighted(x, weight)
 
 `x` and `weight` must both be
 [Integer](../../../sql-reference/data-types/int-uint.md),
-[floating-point](../../../sql-reference/data-types/float.md), or 
+[floating-point](../../../sql-reference/data-types/float.md), or
 [Decimal](../../../sql-reference/data-types/decimal.md),
 but may have different types.
 

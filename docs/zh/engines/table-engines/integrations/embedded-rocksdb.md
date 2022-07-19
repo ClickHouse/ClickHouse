@@ -1,6 +1,6 @@
 ---
-toc_priority: 9
-toc_title: EmbeddedRocksDB
+sidebar_position: 9
+sidebar_label: EmbeddedRocksDB
 ---
 
 # EmbeddedRocksDB 引擎 {#EmbeddedRocksDB-engine}
@@ -38,5 +38,46 @@ CREATE TABLE test
 ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
 ```
+## 指标
 
-[原始文章](https://clickhouse.tech/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->
+还有一个`system.rocksdb` 表, 公开rocksdb的统计信息:
+
+```sql
+SELECT
+    name,
+    value
+FROM system.rocksdb
+
+┌─name──────────────────────┬─value─┐
+│ no.file.opens             │     1 │
+│ number.block.decompressed │     1 │
+└───────────────────────────┴───────┘
+```
+
+## 配置
+
+你能修改任何[rocksdb options](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map) 配置，使用配置文件:
+
+```xml
+<rocksdb>
+    <options>
+        <max_background_jobs>8</max_background_jobs>
+    </options>
+    <column_family_options>
+        <num_levels>2</num_levels>
+    </column_family_options>
+    <tables>
+        <table>
+            <name>TABLE</name>
+            <options>
+                <max_background_jobs>8</max_background_jobs>
+            </options>
+            <column_family_options>
+                <num_levels>2</num_levels>
+            </column_family_options>
+        </table>
+    </tables>
+</rocksdb>
+```
+
+[原始文章](https://clickhouse.com/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->

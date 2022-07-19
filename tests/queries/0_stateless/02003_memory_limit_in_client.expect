@@ -1,0 +1,64 @@
+#!/usr/bin/expect -f
+# Tags: no-parallel, no-fasttest
+
+# This is a test for system.warnings. Testing in interactive mode is necessary,
+# as we want to see certain warnings from client
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
+}
+
+#
+# Check that the query will fail in clickhouse-client
+#
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_in_client=1"
+expect ":) "
+
+send  -- "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000)\r"
+expect "Code: 241"
+
+expect ":) "
+
+# Exit.
+send -- "\4"
+expect eof
+
+#
+# Check that the query will fail in clickhouse-client
+#
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_in_client=1"
+expect ":) "
+
+send  -- "SELECT arrayMap(x -> range(x), range(number)) FROM numbers(1000)\r"
+expect "Code: 241"
+
+expect ":) "
+
+# Exit.
+send -- "\4"
+expect eof
+
+#
+# Check that the query will not fail (due to max_untracked_memory)
+#
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_in_client=1"
+expect ":) "
+
+send  -- "SELECT * FROM (SELECT * FROM system.numbers LIMIT 600000) as num WHERE num.number=60000\r"
+expect "60000"
+expect ":) "
+
+# Exit.
+send -- "\4"
+expect eof

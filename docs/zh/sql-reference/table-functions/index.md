@@ -1,7 +1,6 @@
 ---
-toc_folder_title: 表函数
-toc_priority: 34
-toc_title: "\u5BFC\u8A00"
+sidebar_label: 表函数
+sidebar_position: 34
 ---
 
 # 表函数 {#table-functions}
@@ -33,4 +32,4 @@ toc_title: "\u5BFC\u8A00"
 | [odbc](../../sql-reference/table-functions/odbc.md)             | 创建一个ODBC引擎表。 |
 | [hdfs](../../sql-reference/table-functions/hdfs.md)             | 创建一个HDFS引擎表。 |
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/) <!--hide-->

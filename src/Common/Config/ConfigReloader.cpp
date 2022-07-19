@@ -1,7 +1,7 @@
 #include "ConfigReloader.h"
 
 #include <Poco/Util/Application.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "ConfigProcessor.h"
 #include <filesystem>
@@ -36,7 +36,25 @@ ConfigReloader::ConfigReloader(
 
 void ConfigReloader::start()
 {
-    thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
+    std::lock_guard lock(reload_mutex);
+    if (!thread.joinable())
+    {
+        quit = false;
+        thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
+    }
+}
+
+
+void ConfigReloader::stop()
+{
+    std::unique_lock lock(reload_mutex);
+    if (!thread.joinable())
+        return;
+    quit = true;
+    zk_changed_event->set();
+    auto temp_thread = std::move(thread);
+    lock.unlock();
+    temp_thread.join();
 }
 
 
@@ -44,15 +62,11 @@ ConfigReloader::~ConfigReloader()
 {
     try
     {
-        quit = true;
-        zk_changed_event->set();
-
-        if (thread.joinable())
-            thread.join();
+        stop();
     }
     catch (...)
     {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 }
 

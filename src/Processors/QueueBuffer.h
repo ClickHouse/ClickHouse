@@ -7,6 +7,9 @@
 namespace DB
 {
 
+/** Reads all data into queue.
+  * After all data has been read - output it in the same order.
+  */
 class QueueBuffer : public IAccumulatingTransform
 {
 private:
@@ -14,7 +17,7 @@ private:
 public:
     String getName() const override { return "QueueBuffer"; }
 
-    QueueBuffer(Block header)
+    explicit QueueBuffer(Block header)
         : IAccumulatingTransform(header, header)
     {
     }

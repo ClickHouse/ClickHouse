@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <map>
 #include <vector>
 
@@ -22,30 +22,19 @@ using Strings = std::vector<String>;
 class ActiveDataPartSet
 {
 public:
-    ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
+    explicit ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
-    ActiveDataPartSet(const ActiveDataPartSet & other)
-        : format_version(other.format_version)
-        , part_info_to_name(other.part_info_to_name)
-    {}
+    ActiveDataPartSet(const ActiveDataPartSet & other) = default;
 
-    ActiveDataPartSet(ActiveDataPartSet && other) noexcept { swap(other); }
+    ActiveDataPartSet & operator=(const ActiveDataPartSet & other) = default;
+
+    ActiveDataPartSet(ActiveDataPartSet && other) noexcept = default;
 
     void swap(ActiveDataPartSet & other) noexcept
     {
         std::swap(format_version, other.format_version);
         std::swap(part_info_to_name, other.part_info_to_name);
-    }
-
-    ActiveDataPartSet & operator=(const ActiveDataPartSet & other)
-    {
-        if (&other != this)
-        {
-            ActiveDataPartSet tmp(other);
-            swap(tmp);
-        }
-        return *this;
     }
 
     /// Returns true if the part was actually added. If out_replaced_parts != nullptr, it will contain

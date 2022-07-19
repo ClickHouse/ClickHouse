@@ -1,5 +1,5 @@
 ---
-toc_title: JOIN
+sidebar_label: JOIN
 ---
 
 # JOIN子句 {#select-join}
@@ -51,7 +51,7 @@ ClickHouse中提供的其他联接类型:
 
 -   必须包含有序序列。
 -   可以是以下类型之一: [Int*，UInt*](../../../sql-reference/data-types/int-uint.md), [Float\*](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal\*](../../../sql-reference/data-types/decimal.md).
--   不能是`JOIN`子句中唯一的列  
+-   不能是`JOIN`子句中唯一的列
 
 语法 `ASOF JOIN ... ON`:
 

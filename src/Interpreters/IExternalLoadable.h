@@ -4,7 +4,7 @@
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <pcg_random.hpp>
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace Poco::Util
@@ -37,7 +37,7 @@ public:
 
     virtual const ExternalLoadableLifetime & getLifetime() const = 0;
 
-    virtual const std::string & getLoadableName() const = 0;
+    virtual std::string getLoadableName() const = 0;
     /// True if object can be updated when lifetime exceeded.
     virtual bool supportUpdates() const = 0;
     /// If lifetime exceeded and isModified(), ExternalLoader replace current object with the result of clone().

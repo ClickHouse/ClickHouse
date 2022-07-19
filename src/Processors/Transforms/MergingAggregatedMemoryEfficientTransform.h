@@ -137,6 +137,13 @@ private:
     void addChunk(Chunk chunk, size_t from_input);
 };
 
+struct ChunksToMerge : public ChunkInfo
+{
+    std::unique_ptr<Chunks> chunks;
+    Int32 bucket_num = -1;
+    bool is_overflows = false;
+};
+
 class Pipe;
 
 /// Adds processors to pipe which performs memory efficient merging of partially aggregated data from several sources.

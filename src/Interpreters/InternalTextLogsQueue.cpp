@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Message.h>
 
@@ -41,7 +41,7 @@ void InternalTextLogsQueue::pushBlock(Block && log_block)
     static Block sample_block = getSampleBlock();
 
     if (blocksHaveEqualStructure(sample_block, log_block))
-        emplace(log_block.mutateColumns());
+        (void)(emplace(log_block.mutateColumns()));
     else
         LOG_WARNING(&Poco::Logger::get("InternalTextLogsQueue"), "Log block have different structure");
 }
@@ -64,6 +64,21 @@ const char * InternalTextLogsQueue::getPriorityName(int priority)
     };
 
     return (priority >= 1 && priority <= 8) ? PRIORITIES[priority] : PRIORITIES[0];
+}
+
+bool InternalTextLogsQueue::isNeeded(int priority, const String & source) const
+{
+    bool is_needed = priority <= max_priority;
+
+    if (is_needed && source_regexp)
+        is_needed = re2::RE2::PartialMatch(source, *source_regexp);
+
+    return is_needed;
+}
+
+void InternalTextLogsQueue::setSourceRegexp(const String & regexp)
+{
+    source_regexp = std::make_unique<re2::RE2>(regexp);
 }
 
 }

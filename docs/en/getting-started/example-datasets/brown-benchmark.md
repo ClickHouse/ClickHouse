@@ -1,6 +1,6 @@
 ---
-toc_priority: 20
-toc_title: Brown University Benchmark
+sidebar_label: Brown University Benchmark
+description: A new analytical benchmark for machine-generated log data
 ---
 
 # Brown University Benchmark
@@ -9,7 +9,7 @@ toc_title: Brown University Benchmark
 
 Download the data:
 ```
-wget https://datasets.clickhouse.tech/mgbench{1..3}.csv.xz
+wget https://datasets.clickhouse.com/mgbench{1..3}.csv.xz
 ```
 
 Unpack the data:
@@ -17,11 +17,16 @@ Unpack the data:
 xz -v -d mgbench{1..3}.csv.xz
 ```
 
-Create tables:
-```
+Create the database and tables:
+```sql
 CREATE DATABASE mgbench;
+```
 
+```sql
+USE mgbench;
+```
 
+```sql
 CREATE TABLE mgbench.logs1 (
   log_time      DateTime,
   machine_name  LowCardinality(String),
@@ -47,8 +52,10 @@ CREATE TABLE mgbench.logs1 (
 )
 ENGINE = MergeTree()
 ORDER BY (machine_group, machine_name, log_time);
+```
 
 
+```sql
 CREATE TABLE mgbench.logs2 (
   log_time    DateTime,
   client_ip   IPv4,
@@ -58,8 +65,10 @@ CREATE TABLE mgbench.logs2 (
 )
 ENGINE = MergeTree()
 ORDER BY log_time;
+```
 
 
+```sql
 CREATE TABLE mgbench.logs3 (
   log_time     DateTime64,
   device_id    FixedString(15),
@@ -82,8 +91,13 @@ clickhouse-client --query "INSERT INTO mgbench.logs2 FORMAT CSVWithNames" < mgbe
 clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbench3.csv
 ```
 
-Run benchmark queries:
+## Run benchmark queries:
+
+```sql
+USE mgbench;
 ```
+
+```sql
 -- Q1.1: What is the CPU/network utilization for each web server since midnight?
 
 SELECT machine_name,
@@ -106,8 +120,10 @@ FROM (
     AND log_time >= TIMESTAMP '2017-01-11 00:00:00'
 ) AS r
 GROUP BY machine_name;
+```
 
 
+```sql
 -- Q1.2: Which computer lab machines have been offline in the past day?
 
 SELECT machine_name,
@@ -119,8 +135,9 @@ WHERE (machine_name LIKE 'cslab%' OR
   AND log_time >= TIMESTAMP '2017-01-10 00:00:00'
 ORDER BY machine_name,
          log_time;
+```
 
-
+```sql
 -- Q1.3: What are the hourly average metrics during the past 10 days for a specific workstation?
 
 SELECT dt,
@@ -151,8 +168,9 @@ GROUP BY dt,
          hr
 ORDER BY dt,
          hr;
+```
 
-
+```sql
 -- Q1.4: Over 1 month, how often was each server blocked on disk I/O?
 
 SELECT machine_name,
@@ -165,8 +183,9 @@ WHERE machine_group = 'Servers'
 GROUP BY machine_name
 ORDER BY spikes DESC
 LIMIT 10;
+```
 
-
+```sql
 -- Q1.5: Which externally reachable VMs have run low on memory?
 
 SELECT machine_name,
@@ -185,8 +204,9 @@ GROUP BY machine_name,
 HAVING MIN(mem_free) < 10000
 ORDER BY machine_name,
          dt;
+```
 
-
+```sql
 -- Q1.6: What is the total hourly network traffic across all file servers?
 
 SELECT dt,
@@ -210,8 +230,9 @@ GROUP BY dt,
          hr
 ORDER BY both_sum DESC
 LIMIT 10;
+```
 
-
+```sql
 -- Q2.1: Which requests have caused server errors within the past 2 weeks?
 
 SELECT *
@@ -219,8 +240,9 @@ FROM logs2
 WHERE status_code >= 500
   AND log_time >= TIMESTAMP '2012-12-18 00:00:00'
 ORDER BY log_time;
+```
 
-
+```sql
 -- Q2.2: During a specific 2-week period, was the user password file leaked?
 
 SELECT *
@@ -230,8 +252,10 @@ WHERE status_code >= 200
   AND request LIKE '%/etc/passwd%'
   AND log_time >= TIMESTAMP '2012-05-06 00:00:00'
   AND log_time < TIMESTAMP '2012-05-20 00:00:00';
+```
 
 
+```sql
 -- Q2.3: What was the average path depth for top-level requests in the past month?
 
 SELECT top_level,
@@ -254,8 +278,10 @@ WHERE top_level IN ('/about','/courses','/degrees','/events',
                     '/publications','/research','/teaching','/ugrad')
 GROUP BY top_level
 ORDER BY top_level;
+```
 
 
+```sql
 -- Q2.4: During the last 3 months, which clients have made an excessive number of requests?
 
 SELECT client_ip,
@@ -265,8 +291,10 @@ WHERE log_time >= TIMESTAMP '2012-10-01 00:00:00'
 GROUP BY client_ip
 HAVING COUNT(*) >= 100000
 ORDER BY num_requests DESC;
+```
 
 
+```sql
 -- Q2.5: What are the daily unique visitors?
 
 SELECT dt,
@@ -278,8 +306,10 @@ FROM (
 ) AS r
 GROUP BY dt
 ORDER BY dt;
+```
 
 
+```sql
 -- Q2.6: What are the average and maximum data transfer rates (Gbps)?
 
 SELECT AVG(transfer) / 125000000.0 AS transfer_avg,
@@ -290,8 +320,10 @@ FROM (
   FROM logs2
   GROUP BY log_time
 ) AS r;
+```
 
 
+```sql
 -- Q3.1: Did the indoor temperature reach freezing over the weekend?
 
 SELECT *
@@ -299,8 +331,10 @@ FROM logs3
 WHERE event_type = 'temperature'
   AND event_value <= 32.0
   AND log_time >= '2019-11-29 17:00:00.000';
+```
 
 
+```sql
 -- Q3.4: Over the past 6 months, how frequently were each door opened?
 
 SELECT device_name,
@@ -312,8 +346,14 @@ WHERE event_type = 'door_open'
 GROUP BY device_name,
          device_floor
 ORDER BY ct DESC;
+```
 
+Query 3.5 below uses a UNION.  Set the mode for combining SELECT query results. The setting is only used when shared with UNION without explicitly specifying the UNION ALL or UNION DISTINCT.
+```sql
+SET union_default_mode = 'DISTINCT'
+```
 
+```sql
 -- Q3.5: Where in the building do large temperature variations occur in winter and summer?
 
 WITH temperature AS (
@@ -365,8 +405,10 @@ SELECT DISTINCT device_name,
 FROM temperature
 WHERE dt >= DATE '2019-06-01'
   AND dt < DATE '2019-09-01';
+```
 
 
+```sql
 -- Q3.6: For each device category, what are the monthly power consumption metrics?
 
 SELECT yr,
@@ -411,6 +453,5 @@ ORDER BY yr,
          mo;
 ```
 
-The data is also available for interactive queries in the [Playground](https://gh-api.clickhouse.tech/play?user=play), [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1hY2hpbmVfbmFtZSwKICAgICAgIE1JTihjcHUpIEFTIGNwdV9taW4sCiAgICAgICBNQVgoY3B1KSBBUyBjcHVfbWF4LAogICAgICAgQVZHKGNwdSkgQVMgY3B1X2F2ZywKICAgICAgIE1JTihuZXRfaW4pIEFTIG5ldF9pbl9taW4sCiAgICAgICBNQVgobmV0X2luKSBBUyBuZXRfaW5fbWF4LAogICAgICAgQVZHKG5ldF9pbikgQVMgbmV0X2luX2F2ZywKICAgICAgIE1JTihuZXRfb3V0KSBBUyBuZXRfb3V0X21pbiwKICAgICAgIE1BWChuZXRfb3V0KSBBUyBuZXRfb3V0X21heCwKICAgICAgIEFWRyhuZXRfb3V0KSBBUyBuZXRfb3V0X2F2ZwpGUk9NICgKICBTRUxFQ1QgbWFjaGluZV9uYW1lLAogICAgICAgICBDT0FMRVNDRShjcHVfdXNlciwgMC4wKSBBUyBjcHUsCiAgICAgICAgIENPQUxFU0NFKGJ5dGVzX2luLCAwLjApIEFTIG5ldF9pbiwKICAgICAgICAgQ09BTEVTQ0UoYnl0ZXNfb3V0LCAwLjApIEFTIG5ldF9vdXQKICBGUk9NIG1nYmVuY2gubG9nczEKICBXSEVSRSBtYWNoaW5lX25hbWUgSU4gKCdhbmFuc2knLCdhcmFnb2cnLCd1cmQnKQogICAgQU5EIGxvZ190aW1lID49IFRJTUVTVEFNUCAnMjAxNy0wMS0xMSAwMDowMDowMCcKKSBBUyByCkdST1VQIEJZIG1hY2hpbmVfbmFtZQ==).
+The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1hY2hpbmVfbmFtZSwKICAgICAgIE1JTihjcHUpIEFTIGNwdV9taW4sCiAgICAgICBNQVgoY3B1KSBBUyBjcHVfbWF4LAogICAgICAgQVZHKGNwdSkgQVMgY3B1X2F2ZywKICAgICAgIE1JTihuZXRfaW4pIEFTIG5ldF9pbl9taW4sCiAgICAgICBNQVgobmV0X2luKSBBUyBuZXRfaW5fbWF4LAogICAgICAgQVZHKG5ldF9pbikgQVMgbmV0X2luX2F2ZywKICAgICAgIE1JTihuZXRfb3V0KSBBUyBuZXRfb3V0X21pbiwKICAgICAgIE1BWChuZXRfb3V0KSBBUyBuZXRfb3V0X21heCwKICAgICAgIEFWRyhuZXRfb3V0KSBBUyBuZXRfb3V0X2F2ZwpGUk9NICgKICBTRUxFQ1QgbWFjaGluZV9uYW1lLAogICAgICAgICBDT0FMRVNDRShjcHVfdXNlciwgMC4wKSBBUyBjcHUsCiAgICAgICAgIENPQUxFU0NFKGJ5dGVzX2luLCAwLjApIEFTIG5ldF9pbiwKICAgICAgICAgQ09BTEVTQ0UoYnl0ZXNfb3V0LCAwLjApIEFTIG5ldF9vdXQKICBGUk9NIG1nYmVuY2gubG9nczEKICBXSEVSRSBtYWNoaW5lX25hbWUgSU4gKCdhbmFuc2knLCdhcmFnb2cnLCd1cmQnKQogICAgQU5EIGxvZ190aW1lID49IFRJTUVTVEFNUCAnMjAxNy0wMS0xMSAwMDowMDowMCcKKSBBUyByCkdST1VQIEJZIG1hY2hpbmVfbmFtZQ==).
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/brown-benchmark/) <!--hide-->

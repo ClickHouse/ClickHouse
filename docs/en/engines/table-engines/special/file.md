@@ -1,9 +1,9 @@
 ---
-toc_priority: 37
-toc_title: File
+sidebar_position: 40
+sidebar_label:  File
 ---
 
-# File Table Engine {#table_engines-file}
+# File Table Engine
 
 The File table engine keeps the data in a file in one of the supported [file formats](../../../interfaces/formats.md#formats) (`TabSeparated`, `Native`, etc.).
 
@@ -24,14 +24,15 @@ The `Format` parameter specifies one of the available file formats. To perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
 
-ClickHouse does not allow specifying filesystem path for`File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
+ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
 
 When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it’s put into `data.Format` file in that subdirectory.
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
 
-!!! warning "Warning"
-    Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+:::warning
+Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+:::
 
 ## Example {#example}
 
@@ -85,4 +86,3 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   Indices
     -   Replication
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->

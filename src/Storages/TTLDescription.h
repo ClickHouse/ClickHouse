@@ -75,6 +75,10 @@ struct TTLDescription
     /// Name of destination disk or volume
     String destination_name;
 
+    /// If true, do nothing if DISK or VOLUME doesn't exist .
+    /// Only valid for table MOVE TTLs.
+    bool if_exists = false;
+
     /// Codec name which will be used to recompress data
     ASTPtr recompression_codec;
 
@@ -118,6 +122,9 @@ struct TTLTableDescription
 
     static TTLTableDescription getTTLForTableFromAST(
         const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
+
+    /// Parse description from string
+    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
 };
 
 }

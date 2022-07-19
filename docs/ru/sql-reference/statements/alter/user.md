@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: USER
+sidebar_position: 45
+sidebar_label: USER
 ---
 
 # ALTER USER {#alter-user-statement}
@@ -10,14 +10,14 @@ toc_title: USER
 Синтаксис:
 
 ``` sql
-ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1] 
+ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
         [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
-```  
+```
 
 Для выполнения `ALTER USER` необходима привилегия [ALTER USER](../grant.md#grant-access-management).
 

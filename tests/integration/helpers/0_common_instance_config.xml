@@ -1,5 +1,5 @@
-<yandex>
-    <timezone>Europe/Moscow</timezone>
+<clickhouse>
+    <timezone>Etc/UTC</timezone>
     <listen_host>0.0.0.0</listen_host>
     <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <path>/var/lib/clickhouse/</path>
@@ -9,12 +9,20 @@
     <users_config>users.xml</users_config>
 
   <logger>
-        <level>trace</level>
+        <level>test</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <size>1000M</size>
         <count>10</count>
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
+        <rotateOnOpen>true</rotateOnOpen>
     </logger>
-</yandex>
+
+    <access_control_improvements>
+        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+        <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+        <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+    </access_control_improvements>
+</clickhouse>

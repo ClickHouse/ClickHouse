@@ -1,6 +1,6 @@
 ---
-toc_priority: 41
-toc_title: "Политика доступа"
+sidebar_position: 41
+sidebar_label: "Политика доступа"
 ---
 
 # CREATE ROW POLICY {#create-row-policy-statement}
@@ -10,8 +10,8 @@ toc_title: "Политика доступа"
 Синтаксис:
 
 ``` sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1 
-        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...] 
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT] USING condition
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
@@ -27,16 +27,17 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
 
 Ключевым словом `ALL` обозначаются все пользователи, включая текущего. Ключевые слова `ALL EXCEPT` позволяют исключить пользователей из списка всех пользователей. Например, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-!!! note "Note"
+    :::note 
     Если для таблицы не задано ни одной политики доступа к строкам, то любой пользователь может выполнить команду SELECT и получить все строки таблицы. Если определить хотя бы одну политику для таблицы, до доступ к строкам будет управляться этими политиками, причем для всех пользователей (даже для тех, для кого политики не определялись). Например, следующая политика
 
     `CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
 
     запретит пользователям `mira` и `peter` видеть строки с `b != 1`, и еще запретит всем остальным пользователям (например, пользователю `paul`) видеть какие-либо строки вообще из таблицы `mydb.table1`.
-    
+
     Если это нежелательно, такое поведение можно исправить, определив дополнительную политику:
 
     `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
+    :::
 
 ## Секция AS {#create-row-policy-as}
 

@@ -4,8 +4,8 @@
 #include <memory>
 #include <variant>
 #include <optional>
-
 #include <sparsehash/sparse_hash_map>
+#include <sparsehash/sparse_hash_set>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -35,8 +35,7 @@ template <DictionaryKeyType dictionary_key_type, bool sparse>
 class HashedDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by hashed dictionary");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     HashedDictionary(
         const StorageID & dict_id_,
@@ -47,11 +46,11 @@ public:
 
     std::string getTypeName() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple && sparse)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple && sparse)
             return "SparseHashed";
-        else if constexpr (dictionary_key_type == DictionaryKeyType::simple && !sparse)
+        else if constexpr (dictionary_key_type == DictionaryKeyType::Simple && !sparse)
             return "Hashed";
-        else if constexpr (dictionary_key_type == DictionaryKeyType::complex && sparse)
+        else if constexpr (dictionary_key_type == DictionaryKeyType::Complex && sparse)
             return "ComplexKeySparseHashed";
         else
             return "ComplexKeyHashed";
@@ -80,7 +79,7 @@ public:
         return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
@@ -102,7 +101,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::simple && dict_struct.hierarchical_attribute_index.has_value(); }
+    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::Simple && dict_struct.hierarchical_attribute_index.has_value(); }
 
     ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & hierarchy_attribute_type) const override;
 
@@ -111,36 +110,53 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
+    DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const override;
+
+    size_t getHierarchicalIndexBytesAllocated() const override { return hierarchical_index_bytes_allocated; }
+
     ColumnPtr getDescendants(
         ColumnPtr key_column,
         const DataTypePtr & key_type,
-        size_t level) const override;
+        size_t level,
+        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
     using CollectionTypeNonSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
-        HashMap<UInt64, Value>,
+        dictionary_key_type == DictionaryKeyType::Simple,
+        HashMap<UInt64, Value, DefaultHash<UInt64>>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
 
-#if !defined(ARCADIA_BUILD)
-    template <typename Key, typename Value>
-    using SparseHashMap = google::sparse_hash_map<Key, Value, DefaultHash<Key>>;
-#else
-        template <typename Key, typename Value>
-        using SparseHashMap = google::sparsehash::sparse_hash_map<Key, Value, DefaultHash<Key>>;
-#endif
+    using NoAttributesCollectionTypeNonSparse = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::Simple,
+        HashSet<UInt64, DefaultHash<UInt64>>,
+        HashSetWithSavedHash<StringRef, DefaultHash<StringRef>>>;
 
+    /// Here we use sparse_hash_map with DefaultHash<> for the following reasons:
+    ///
+    /// - DefaultHash<> is used for HashMap
+    /// - DefaultHash<> (from HashTable/Hash.h> works better then std::hash<>
+    ///   in case of sequential set of keys, but with random access to this set, i.e.
+    ///
+    ///       SELECT number FROM numbers(3000000) ORDER BY rand()
+    ///
+    ///   And even though std::hash<> works better in some other cases,
+    ///   DefaultHash<> is preferred since the difference for this particular
+    ///   case is significant, i.e. it can be 10x+.
     template <typename Value>
     using CollectionTypeSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
-        SparseHashMap<UInt64, Value>,
-        SparseHashMap<StringRef, Value>>;
+        dictionary_key_type == DictionaryKeyType::Simple,
+        google::sparse_hash_map<UInt64, Value, DefaultHash<KeyType>>,
+        google::sparse_hash_map<StringRef, Value, DefaultHash<KeyType>>>;
+
+    using NoAttributesCollectionTypeSparse = google::sparse_hash_set<KeyType, DefaultHash<KeyType>>;
 
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
+
+    using NoAttributesCollectionType = std::conditional_t<sparse, NoAttributesCollectionTypeSparse, NoAttributesCollectionTypeNonSparse>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
 
@@ -166,14 +182,13 @@ private:
             CollectionType<Decimal64>,
             CollectionType<Decimal128>,
             CollectionType<Decimal256>,
+            CollectionType<DateTime64>,
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<UUID>,
             CollectionType<StringRef>,
             CollectionType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -183,6 +198,8 @@ private:
     void updateData();
 
     void loadData();
+
+    void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
 
@@ -201,8 +218,6 @@ private:
 
     void resize(size_t added_rows);
 
-    StringRef copyKeyInArena(StringRef key);
-
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryStorageConfiguration configuration;
@@ -210,19 +225,22 @@ private:
     std::vector<Attribute> attributes;
 
     size_t bytes_allocated = 0;
+    size_t hierarchical_index_bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    Arena complex_key_arena;
+    Arena string_arena;
+    NoAttributesCollectionType no_attributes_container;
+    DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
-extern template class HashedDictionary<DictionaryKeyType::simple, false>;
-extern template class HashedDictionary<DictionaryKeyType::simple, true>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, false>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, true>;
 
-extern template class HashedDictionary<DictionaryKeyType::complex, false>;
-extern template class HashedDictionary<DictionaryKeyType::complex, true>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, false>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, true>;
 
 }

@@ -14,8 +14,7 @@ struct NameMultiSearchFirstIndex
     static constexpr auto name = "multiSearchFirstIndex";
 };
 
-using FunctionMultiSearchFirstIndex
-    = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseSensitiveASCII>, NameMultiSearchFirstIndex>;
+using FunctionMultiSearchFirstIndex = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<NameMultiSearchFirstIndex, PositionCaseSensitiveASCII>>;
 
 }
 

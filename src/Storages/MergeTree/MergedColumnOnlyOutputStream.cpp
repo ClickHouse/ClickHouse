@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteSettings.h>
 
 namespace DB
 {
@@ -10,6 +11,7 @@ namespace ErrorCodes
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
+    DataPartStorageBuilderPtr data_part_storage_builder_,
     const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
@@ -18,7 +20,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    : IMergedBlockOutputStream(std::move(data_part_storage_builder_), data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
@@ -26,16 +28,18 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
+        data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         /* rewrite_primary_key = */false);
 
     writer = data_part->getWriter(
+        data_part_storage_builder,
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        std::move(writer_settings),
+        writer_settings,
         index_granularity);
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
@@ -51,22 +55,17 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
-}
-
-void MergedColumnOnlyOutputStream::writeSuffix()
-{
-    throw Exception("Method writeSuffix is not supported by MergedColumnOnlyOutputStream", ErrorCodes::NOT_IMPLEMENTED);
+    new_serialization_infos.add(block);
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
+MergedColumnOnlyOutputStream::fillChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums,
-    bool sync)
+    MergeTreeData::DataPart::Checksums & all_checksums)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finish(checksums, sync);
+    writer->fillChecksums(checksums);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -75,14 +74,28 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
             projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
+    auto serialization_infos = new_part->getSerializationInfos();
+    serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+
     for (const String & removed_file : removed_files)
-        if (all_checksums.files.count(removed_file))
+    {
+        data_part_storage_builder->removeFileIfExists(removed_file);
+
+        if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);
+    }
 
     new_part->setColumns(columns);
+    new_part->setSerializationInfos(serialization_infos);
+
     return checksums;
+}
+
+void MergedColumnOnlyOutputStream::finish(bool sync)
+{
+    writer->finish(sync);
 }
 
 }

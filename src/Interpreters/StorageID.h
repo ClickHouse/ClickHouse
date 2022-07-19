@@ -1,5 +1,5 @@
 #pragma once
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/UUID.h>
 #include <tuple>
 #include <Parsers/IAST_fwd.h>
@@ -10,7 +10,7 @@ namespace Poco
 {
 namespace Util
 {
-class AbstractConfiguration;
+class AbstractConfiguration; // NOLINT(cppcoreguidelines-virtual-class-destructor)
 }
 }
 
@@ -41,9 +41,9 @@ struct StorageID
         assertNotEmpty();
     }
 
-    StorageID(const ASTQueryWithTableAndOutput & query);
-    StorageID(const ASTTableIdentifier & table_identifier_node);
-    StorageID(const ASTPtr & node);
+    StorageID(const ASTQueryWithTableAndOutput & query); /// NOLINT
+    StorageID(const ASTTableIdentifier & table_identifier_node); /// NOLINT
+    StorageID(const ASTPtr & node); /// NOLINT
 
     String getDatabaseName() const;
 
@@ -91,7 +91,9 @@ struct StorageID
 
     /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
     /// ExternalDictnariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
-    String getInternalDictionaryName() const;
+    String getInternalDictionaryName() const { return getShortName(); }
+    /// Get short, but unique, name.
+    String getShortName() const;
 
 private:
     StorageID() = default;

@@ -1,7 +1,8 @@
-#include <stdlib.h>
-#include <common/find_symbols.h>
+#include <cstdlib>
+#include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -10,17 +11,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
-RegexpRowInputFormat::RegexpRowInputFormat(
-        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, in_, std::move(params_))
-        , buf(in_)
-        , format_settings(format_settings_)
-        , field_format(stringToFormat(format_settings_.regexp.escaping_rule))
-        , regexp(format_settings_.regexp.regexp)
+RegexpFieldExtractor::RegexpFieldExtractor(const FormatSettings & format_settings) : regexp(format_settings.regexp.regexp), skip_unmatched(format_settings.regexp.skip_unmatched)
 {
     size_t fields_count = regexp.NumberOfCapturingGroups();
     matched_fields.resize(fields_count);
@@ -35,84 +29,80 @@ RegexpRowInputFormat::RegexpRowInputFormat(
     }
 }
 
+bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
+{
+    PeekableReadBufferCheckpoint checkpoint{buf};
+
+    size_t line_size = 0;
+
+    do
+    {
+        char * pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
+        line_size += pos - buf.position();
+        buf.position() = pos;
+    } while (buf.position() == buf.buffer().end() && !buf.eof());
+
+    buf.makeContinuousMemoryFromCheckpointToPos();
+    buf.rollbackToCheckpoint();
+
+    /// Allow DOS line endings.
+    size_t line_to_match = line_size;
+    if (line_size > 0 && buf.position()[line_size - 1] == '\r')
+        --line_to_match;
+
+    bool match = re2_st::RE2::FullMatchN(re2_st::StringPiece(buf.position(), line_to_match), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
+
+    if (!match && !skip_unmatched)
+        throw Exception("Line \"" + std::string(buf.position(), line_to_match) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
+
+    buf.position() += line_size;
+    if (!buf.eof() && !checkChar('\n', buf))
+        throw Exception("No \\n at the end of line.", ErrorCodes::LOGICAL_ERROR);
+
+    return match;
+}
+
+RegexpRowInputFormat::RegexpRowInputFormat(
+    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
+{
+}
+
+RegexpRowInputFormat::RegexpRowInputFormat(
+    std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    : IRowInputFormat(header_, *buf_, std::move(params_))
+    , buf(std::move(buf_))
+    , format_settings(format_settings_)
+    , escaping_rule(format_settings_.regexp.escaping_rule)
+    , field_extractor(RegexpFieldExtractor(format_settings_))
+{
+}
 
 void RegexpRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf.reset();
-}
-
-RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const String & format)
-{
-    if (format == "Escaped")
-        return ColumnFormat::Escaped;
-    if (format == "Quoted")
-        return ColumnFormat::Quoted;
-    if (format == "CSV")
-        return ColumnFormat::Csv;
-    if (format == "JSON")
-        return ColumnFormat::Json;
-    if (format == "Raw")
-        return ColumnFormat::Raw;
-    throw Exception("Unsupported column format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
+    buf->reset();
 }
 
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     const auto & type = getPort().getHeader().getByPosition(index).type;
-    bool parse_as_nullable = format_settings.null_as_default && !type->isNullable();
-    bool read = true;
-    ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
+    auto matched_field = field_extractor.getField(index);
+    ReadBuffer field_buf(const_cast<char *>(matched_field.data()), matched_field.size(), 0);
     try
     {
-        const auto & serialization = serializations[index];
-        switch (field_format)
-        {
-            case ColumnFormat::Escaped:
-                if (parse_as_nullable)
-                    read = SerializationNullable::deserializeTextEscapedImpl(*columns[index], field_buf, format_settings, serialization);
-                else
-                    serialization->deserializeTextEscaped(*columns[index], field_buf, format_settings);
-                break;
-            case ColumnFormat::Quoted:
-                if (parse_as_nullable)
-                    read = SerializationNullable::deserializeTextQuotedImpl(*columns[index], field_buf, format_settings, serialization);
-                else
-                    serialization->deserializeTextQuoted(*columns[index], field_buf, format_settings);
-                break;
-            case ColumnFormat::Csv:
-                if (parse_as_nullable)
-                    read = SerializationNullable::deserializeTextCSVImpl(*columns[index], field_buf, format_settings, serialization);
-                else
-                    serialization->deserializeTextCSV(*columns[index], field_buf, format_settings);
-                break;
-            case ColumnFormat::Json:
-                if (parse_as_nullable)
-                    read = SerializationNullable::deserializeTextJSONImpl(*columns[index], field_buf, format_settings, serialization);
-                else
-                    serialization->deserializeTextJSON(*columns[index], field_buf, format_settings);
-                break;
-            case ColumnFormat::Raw:
-                if (parse_as_nullable)
-                    read = SerializationNullable::deserializeWholeTextImpl(*columns[index], field_buf, format_settings, serialization);
-                else
-                    serialization->deserializeWholeText(*columns[index], field_buf, format_settings);
-                break;
-            default:
-                break;
-        }
+        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
     }
     catch (Exception & e)
     {
         e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
-    return read;
 }
 
 void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (matched_fields.size() != columns.size())
+    if (field_extractor.getMatchedFieldsSize() != columns.size())
         throw Exception("The number of matched fields in line doesn't match the number of columns.", ErrorCodes::INCORRECT_DATA);
 
     ext.read_columns.assign(columns.size(), false);
@@ -124,48 +114,52 @@ void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowRead
 
 bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (buf.eof())
+    if (buf->eof())
         return false;
 
-    PeekableReadBufferCheckpoint checkpoint{buf};
-
-    size_t line_size = 0;
-
-    do
-    {
-        char * pos = find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end());
-        line_size += pos - buf.position();
-        buf.position() = pos;
-    } while (buf.position() == buf.buffer().end() && !buf.eof());
-
-    buf.makeContinuousMemoryFromCheckpointToPos();
-    buf.rollbackToCheckpoint();
-
-    bool match = RE2::FullMatchN(re2::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
-    bool read_line = true;
-
-    if (!match)
-    {
-        if (!format_settings.regexp.skip_unmatched)
-            throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
-        read_line = false;
-    }
-
-    if (read_line)
+    if (field_extractor.parseRow(*buf))
         readFieldsFromMatch(columns, ext);
-
-    buf.position() += line_size;
-
-    checkChar('\r', buf);
-    if (!buf.eof() && !checkChar('\n', buf))
-        throw Exception("No \\n after \\r at the end of line.", ErrorCodes::INCORRECT_DATA);
-
     return true;
 }
 
-void registerInputFormatProcessorRegexp(FormatFactory & factory)
+void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    factory.registerInputFormatProcessor("Regexp", [](
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
+}
+
+RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : IRowSchemaReader(
+        buf,
+        format_settings_,
+        getDefaultDataTypeForEscapingRule(format_settings_.regexp.escaping_rule))
+    , format_settings(format_settings_)
+    , field_extractor(format_settings)
+    , buf(in_)
+{
+}
+
+DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
+{
+    if (buf.eof())
+        return {};
+
+    field_extractor.parseRow(buf);
+
+    DataTypes data_types;
+    data_types.reserve(field_extractor.getMatchedFieldsSize());
+    for (size_t i = 0; i != field_extractor.getMatchedFieldsSize(); ++i)
+    {
+        String field(field_extractor.getField(i));
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule));
+    }
+
+    return data_types;
+}
+
+void registerInputFormatRegexp(FormatFactory & factory)
+{
+    factory.registerInputFormat("Regexp", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -183,19 +177,11 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\n', '\r'>(pos, in.buffer().end());
+        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
         else if (pos == in.buffer().end())
             continue;
-
-        // Support DOS-style newline ("\r\n")
-        if (*pos == '\r')
-        {
-            ++pos;
-            if (pos == in.buffer().end())
-                loadAtPosition(in, memory, pos);
-        }
 
         if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
             need_more_data = false;
@@ -212,6 +198,14 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("Regexp", &fileSegmentationEngineRegexpImpl);
+}
+
+void registerRegexpSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings)
+    {
+        return std::make_shared<RegexpSchemaReader>(buf, settings);
+    });
 }
 
 }

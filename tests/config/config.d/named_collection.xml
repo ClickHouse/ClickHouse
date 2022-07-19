@@ -1,0 +1,32 @@
+<clickhouse>
+    <named_collections>
+        <remote1>
+            <host>127.0.0.2</host>
+            <port>9000</port>
+            <table>remote_test</table>
+        </remote1>
+        <remote2>
+            <host>127.0.0.{1,2}</host>
+            <table>remote_test</table>
+        </remote2>
+        <clickhouse_dictionary>
+            <host>localhost</host>
+            <user>default</user>
+            <table>s</table>
+        </clickhouse_dictionary>
+        <url_with_headers>
+            <headers>
+                <header>
+                    <name>X-ClickHouse-Format</name>
+                    <value>JSONEachRow</value>
+                </header>
+            </headers>
+        </url_with_headers>
+        <s3_conn>
+            <url>http://localhost:11111/test/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>testtest</secret_access_key>
+            <structure>auto</structure>
+        </s3_conn>
+    </named_collections>
+</clickhouse>

@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config_core.h"
 
 #include <Functions/FunctionFactory.h>
 
@@ -10,17 +8,23 @@ namespace DB
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
+void registerFunctionsMakeDate(FunctionFactory &);
 void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
+void registerFunctionsBinaryRepr(FunctionFactory &);
 void registerFunctionsCoding(FunctionFactory &);
+void registerFunctionsCodingUUID(FunctionFactory &);
+void registerFunctionChar(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
 void registerFunctionsConversion(FunctionFactory &);
+void registerFunctionCastOrDefault(FunctionFactory &);
 void registerFunctionsDateTime(FunctionFactory &);
 void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
+void registerFunctionHashID(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
 void registerFunctionsLogical(FunctionFactory &);
@@ -33,6 +37,7 @@ void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
+void registerFunctionsStringTokenExtractor(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -48,18 +53,22 @@ void registerFunctionBitHammingDistance(FunctionFactory & factory);
 void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
 void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
-#if !defined(ARCADIA_BUILD)
-void registerFunctionBayesAB(FunctionFactory &);
-#endif
+void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
+void registerFunctionsTimeWindow(FunctionFactory &);
+void registerFunctionToBool(FunctionFactory &);
+void registerFunctionMinSampleSize(FunctionFactory &);
+
+/// For Meilisearch
+void registerFunctionMeiliMatch(FunctionFactory & factory);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
 void registerFunctionDecrypt(FunctionFactory & factory);
 void registerFunctionAESEncryptMysql(FunctionFactory & factory);
 void registerFunctionAESDecryptMysql(FunctionFactory & factory);
-
+void registerFunctionShowCertificate(FunctionFactory &);
 #endif
 
 void registerFunctions()
@@ -69,14 +78,17 @@ void registerFunctions()
     registerFunctionsArithmetic(factory);
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
+    registerFunctionsMakeDate(factory);
     registerFunctionsMap(factory);
-#if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
-#endif
+    registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
+    registerFunctionsCodingUUID(factory);
+    registerFunctionChar(factory);
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);
     registerFunctionsConversion(factory);
+    registerFunctionCastOrDefault(factory);
     registerFunctionsDateTime(factory);
     registerFunctionsEmbeddedDictionaries(factory);
     registerFunctionsExternalDictionaries(factory);
@@ -94,6 +106,7 @@ void registerFunctions()
     registerFunctionsStringSearch(factory);
     registerFunctionsStringRegexp(factory);
     registerFunctionsStringSimilarity(factory);
+    registerFunctionsStringTokenExtractor(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
@@ -109,19 +122,24 @@ void registerFunctions()
     registerFunctionTupleHammingDistance(factory);
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
+    registerFunctionsSnowflake(factory);
+    registerFunctionsTimeWindow(factory);
+    registerFunctionToBool(factory);
+    registerFunctionMinSampleSize(factory);
+    registerFunctionTid(factory);
+    registerFunctionLogTrace(factory);
+    registerFunctionHashID(factory);
 
-#if !defined(ARCADIA_BUILD)
-    registerFunctionBayesAB(factory);
-#endif
+    /// For Meilisearch
+    registerFunctionMeiliMatch(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);
     registerFunctionDecrypt(factory);
     registerFunctionAESEncryptMysql(factory);
     registerFunctionAESDecryptMysql(factory);
+    registerFunctionShowCertificate(factory);
 #endif
-    registerFunctionTid(factory);
-    registerFunctionLogTrace(factory);
 }
 
 }

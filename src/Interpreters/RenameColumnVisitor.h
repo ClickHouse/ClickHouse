@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
+
+class ASTIdentifier;
+
 /// Data for RenameColumnVisitor which traverse tree and rename all columns with
 /// name column_name to rename_to
 struct RenameColumnData

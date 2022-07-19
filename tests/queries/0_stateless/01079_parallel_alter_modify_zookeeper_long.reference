@@ -5,6 +5,8 @@
 1725
 Starting alters
 Finishing alters
+Replication did not hang: synced all replicas of concurrent_alter_mt_
+Consistency: 1
 1
 0
 1

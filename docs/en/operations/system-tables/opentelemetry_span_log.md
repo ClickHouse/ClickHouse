@@ -1,10 +1,10 @@
-# system.opentelemetry_span_log {#system_tables-opentelemetry_span_log}
+# opentelemetry_span_log
 
 Contains information about [trace spans](https://opentracing.io/docs/overview/spans/) for executed queries.
 
 Columns:
 
--   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md) — ID of the trace for executed query.
+-   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md)) — ID of the trace for executed query.
 
 -   `span_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — ID of the `trace span`.
 
@@ -50,4 +50,3 @@ attribute.values: []
 
 -   [OpenTelemetry](../../operations/opentelemetry.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/opentelemetry_span_log) <!--hide-->

@@ -2,7 +2,7 @@
 #include <Common/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
-#include <common/range.h>
+#include <base/range.h>
 #include <array>
 #include <algorithm>
 
@@ -153,7 +153,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
     }
 
     /// Was it a trailing run of 0x00's?
-    if (best.base != -1 && size_t(best.base) + size_t(best.len) == words.size())
+    if (best.base != -1 && static_cast<size_t>(best.base) + static_cast<size_t>(best.len) == words.size())
         *dst++ = ':';
 
     *dst++ = '\0';

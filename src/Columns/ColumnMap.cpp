@@ -1,11 +1,9 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <common/map.h>
-#include <common/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -64,8 +62,9 @@ MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 
 Field ColumnMap::operator[](size_t n) const
 {
-    auto array = DB::get<Array>((*nested)[n]);
-    return Map(std::make_move_iterator(array.begin()), std::make_move_iterator(array.end()));
+    Field res;
+    get(n, res);
+    return res;
 }
 
 void ColumnMap::get(size_t n, Field & res) const
@@ -74,11 +73,17 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    res = Map(size);
+    res = Map();
     auto & map = DB::get<Map &>(res);
+    map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        getNestedData().get(offset + i, map[i]);
+        map.push_back(getNestedData()[offset + i]);
+}
+
+bool ColumnMap::isDefaultAt(size_t n) const
+{
+    return nested->isDefaultAt(n);
 }
 
 StringRef ColumnMap::getDataAt(size_t) const
@@ -149,6 +154,11 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
     return ColumnMap::create(filtered);
 }
 
+void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
+{
+    nested->expand(mask, inverted);
+}
+
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const
 {
     auto permuted = nested->permute(perm, limit);
@@ -197,14 +207,16 @@ bool ColumnMap::hasEqualValues() const
     return hasEqualValuesImpl<ColumnMap>();
 }
 
-void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                            size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
-    nested->getPermutation(reverse, limit, nan_direction_hint, res);
+    nested->getPermutation(direction, stability, limit, nan_direction_hint, res);
 }
 
-void ColumnMap::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    nested->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
+    nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
 void ColumnMap::gather(ColumnGathererStream & gatherer)
@@ -215,6 +227,11 @@ void ColumnMap::gather(ColumnGathererStream & gatherer)
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+void ColumnMap::ensureOwnership()
+{
+    nested->ensureOwnership();
 }
 
 size_t ColumnMap::byteSize() const
@@ -258,7 +275,7 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
-    nested->forEachSubcolumn(callback);
+    callback(nested);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const
@@ -268,10 +285,23 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     return false;
 }
 
+double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
+}
+
+void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
+}
+
 ColumnPtr ColumnMap::compress() const
 {
     auto compressed = nested->compress();
-    return ColumnCompressed::create(size(), compressed->byteSize(), [compressed = std::move(compressed)]
+    const auto byte_size = compressed->byteSize();
+    /// The order of evaluation of function arguments is unspecified
+    /// and could cause interacting with object in moved-from state
+    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
     {
         return ColumnMap::create(compressed->decompress());
     });

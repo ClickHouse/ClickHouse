@@ -12,8 +12,20 @@ import subprocess
 from io import StringIO
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-def get_local_port(host):
-    with socket.socket() as fd:
+def is_ipv6(host):
+    try:
+        socket.inet_aton(host)
+        return False
+    except:
+        return True
+
+def get_local_port(host, ipv6):
+    if ipv6:
+        family = socket.AF_INET6
+    else:
+        family = socket.AF_INET
+
+    with socket.socket(family) as fd:
         fd.bind((host, 0))
         return fd.getsockname()[1]
 
@@ -26,16 +38,25 @@ CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 # accessible from clickhouse server.
 #####################################################################################
 
-# IP-address of this host accessible from outside world.
-HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip()
-HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST)
+# IP-address of this host accessible from the outside world. Get the first one
+HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip().split()[0]
+IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
+HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 
 # IP address and port of the HTTP server started from this script.
 HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
-HTTP_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in HTTP_SERVER_ADDRESS) + "/"
+if IS_IPV6:
+    HTTP_SERVER_URL_STR = 'http://' + f'[{str(HTTP_SERVER_ADDRESS[0])}]:{str(HTTP_SERVER_ADDRESS[1])}' + "/"
+else:
+    HTTP_SERVER_URL_STR = 'http://' + f'{str(HTTP_SERVER_ADDRESS[0])}:{str(HTTP_SERVER_ADDRESS[1])}' + "/"
+
 CSV_DATA = os.path.join(tempfile._get_default_tempdir(), next(tempfile._get_candidate_names()))
 
 def get_ch_answer(query):
+    host = CLICKHOUSE_HOST
+    if IS_IPV6:
+        host = f'[{host}]'
+
     url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))
     return urllib.request.urlopen(url, data=query.encode()).read().decode()
 
@@ -95,15 +116,18 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
-def start_server(requests_amount):
-    httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
 
-    def real_func():
-        for i in range(requests_amount):
-            httpd.handle_request()
+class HTTPServerV6(HTTPServer):
+    address_family = socket.AF_INET6
 
-    t = threading.Thread(target=real_func)
-    return t
+def start_server():
+    if IS_IPV6:
+        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, CSVHTTPServer)
+    else:
+        httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
+
+    t = threading.Thread(target=httpd.serve_forever)
+    return t, httpd
 
 # test section
 
@@ -127,6 +151,7 @@ def test_select(table_name="", schema="str String,numuint UInt32,numint Int32,do
 
     if table_name:
         get_ch_answer("drop table if exists {}".format(table_name))
+
 
 def test_insert(table_name="", schema="str String,numuint UInt32,numint Int32,double Float64", requests_insert=[], requests_select=[], answers=[]):
     with open(CSV_DATA, 'w') as f: # flush test file
@@ -172,7 +197,7 @@ def main():
         'select double, count(*) from {tbl} group by double': "7.7\t2\n9.9\t10"
     }
 
-    t = start_server(len(select_only_requests) * 2 + (len(insert_requests) + len(select_requests)) * 2)
+    t, httpd = start_server()
     t.start()
     # test table with url engine
     test_select(table_name="test_table_select", requests=list(select_only_requests.keys()), answers=list(select_only_requests.values()), test_data=test_data)
@@ -182,6 +207,8 @@ def main():
     test_insert(table_name="test_table_insert", requests_insert=insert_requests, requests_select=list(select_requests.keys()), answers=list(select_requests.values()))
     #test insert into table function url
     test_insert(requests_insert=insert_requests, requests_select=list(select_requests.keys()), answers=list(select_requests.values()))
+
+    httpd.shutdown()
     t.join()
     print("PASSED")
 

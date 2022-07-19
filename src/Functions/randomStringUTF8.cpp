@@ -7,7 +7,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -48,6 +48,7 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

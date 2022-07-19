@@ -343,12 +343,12 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         inputs_with_data.pop();
 
         if (input_with_data.waiting_output == -1)
-            throw Exception("No associated output for input with data.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("No associated output for input with data", ErrorCodes::LOGICAL_ERROR);
 
         auto & waiting_output = output_ports[input_with_data.waiting_output];
 
         if (waiting_output.status == OutputStatus::NotActive)
-            throw Exception("Invalid status NotActive for associated output.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Invalid status NotActive for associated output", ErrorCodes::LOGICAL_ERROR);
 
         if (waiting_output.status != OutputStatus::Finished)
         {
@@ -403,12 +403,22 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
     /// Close all other waiting for data outputs (there is no corresponding input for them).
     while (!waiting_outputs.empty())
     {
-       auto & output = output_ports[waiting_outputs.front()];
-       waiting_outputs.pop();
+        auto & output = output_ports[waiting_outputs.front()];
+        waiting_outputs.pop();
 
-       output.status = OutputStatus::Finished;
-       output.port->finish();
-       ++num_finished_outputs;
+        if (output.status != OutputStatus::Finished)
+           ++num_finished_outputs;
+
+        output.status = OutputStatus::Finished;
+        output.port->finish();
+    }
+
+    if (num_finished_outputs == outputs.size())
+    {
+        for (auto & input : inputs)
+            input.close();
+
+        return Status::Finished;
     }
 
     if (disabled_input_ports.empty())
@@ -418,4 +428,3 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
 }
 
 }
-

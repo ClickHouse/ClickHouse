@@ -158,8 +158,8 @@ class SequenceNextNodeImpl final
     using Self = SequenceNextNodeImpl<T, Node>;
 
     using Data = SequenceNextNodeGeneralData<Node>;
-    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
-    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     static constexpr size_t base_cond_column_idx = 2;
     static constexpr size_t event_column_idx = 1;
@@ -175,11 +175,12 @@ public:
     SequenceNextNodeImpl(
         const DataTypePtr & data_type_,
         const DataTypes & arguments,
+        const Array & parameters_,
         SequenceBase seq_base_kind_,
         SequenceDirection seq_direction_,
         size_t min_required_args_,
         UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>({data_type_}, {})
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>({data_type_}, parameters_)
         , seq_base_kind(seq_base_kind_)
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
@@ -192,6 +193,11 @@ public:
     String getName() const override { return "sequenceNextNode"; }
 
     DataTypePtr getReturnType() const override { return data_type; }
+
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    {
+        return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
+    }
 
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
@@ -210,7 +216,7 @@ public:
         a.value.push_back(v->clone(arena), arena);
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         new (place) Data;
     }
@@ -277,7 +283,7 @@ public:
         data(place).sorted = true;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         /// Temporarily do a const_cast to sort the values. It helps to reduce the computational burden on the initiator node.
         this->data(const_cast<AggregateDataPtr>(place)).sort();
@@ -310,7 +316,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         readBinary(data(place).sorted, buf);
 

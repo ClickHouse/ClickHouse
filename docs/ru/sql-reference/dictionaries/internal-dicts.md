@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: "Встроенные словари"
+sidebar_position: 39
+sidebar_label: "Встроенные словари"
 ---
 
 # Встроенные словари {#internal_dicts}

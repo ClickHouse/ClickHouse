@@ -1,9 +1,9 @@
 ---
-toc_priority: 55
-toc_title: Nullable
+sidebar_position: 55
+sidebar_label: Nullable
 ---
 
-# Nullable(typename) {#data_type-nullable}
+# Nullable(typename)
 
 Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes “missing value” alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
@@ -13,14 +13,15 @@ A `Nullable` type field can’t be included in table indexes.
 
 `NULL` is the default value for any `Nullable` type, unless specified otherwise in the ClickHouse server configuration.
 
-## Storage Features {#storage-features}
+## Storage Features
 
 To store `Nullable` type values in a table column, ClickHouse uses a separate file with `NULL` masks in addition to normal file with values. Entries in masks file allow ClickHouse to distinguish between `NULL` and a default value of corresponding data type for each table row. Because of an additional file, `Nullable` column consumes additional storage space compared to a similar normal one.
 
-!!! info "Note"
-    Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
+:::note    
+Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
+:::
 
-## Finding NULL {#finding-null}
+## Finding NULL
 
 It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
 
@@ -47,7 +48,7 @@ Result:
 └────────┘
 ```
 
-## Usage Example {#usage-example}
+## Usage Example
 
 ``` sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
@@ -68,4 +69,4 @@ SELECT x + y FROM t_null
 └────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/data_types/nullable/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/nullable/) <!--hide-->

@@ -1,16 +1,18 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <city.h>
+#include <optional>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
+#include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
 {
 
-using Checksum = UInt64;
+using Checksum = uint64_t;
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 using LogEntries = std::vector<LogEntryPtr>;
@@ -24,9 +26,10 @@ enum class ChangelogVersion : uint8_t
 {
     V0 = 0,
     V1 = 1, /// with 64 bit buffer header
+    V2 = 2, /// with compression and duplicate records
 };
 
-static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V1;
+static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V2;
 
 struct ChangelogRecordHeader
 {
@@ -51,20 +54,28 @@ struct ChangelogFileDescription
     std::string prefix;
     uint64_t from_log_index;
     uint64_t to_log_index;
+    std::string extension;
 
     std::string path;
+
+    /// How many entries should be stored in this log
+    uint64_t expectedEntriesCountInLog() const
+    {
+        return to_log_index - from_log_index + 1;
+    }
 };
 
 class ChangelogWriter;
 
 /// Simplest changelog with files rotation.
-/// No compression, no metadata, just entries with headers one by one
-/// Able to read broken files/entries and discard them.
+/// No compression, no metadata, just entries with headers one by one.
+/// Able to read broken files/entries and discard them. Not thread safe.
 class Changelog
 {
 
 public:
-    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_, bool force_sync_, Poco::Logger * log_);
+    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_,
+            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true);
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
@@ -81,16 +92,19 @@ public:
 
     uint64_t getNextEntryIndex() const
     {
-        return start_index + logs.size();
+        return max_log_id + 1;
     }
 
     uint64_t getStartIndex() const
     {
-        return start_index;
+        return min_log_id;
     }
 
     /// Last entry in log, or fake entry with term 0 if log is empty
     LogEntryPtr getLastEntry() const;
+
+    /// Get entry with latest config in logstore
+    LogEntryPtr getLatestConfigChange() const;
 
     /// Return log entries between [start, end)
     LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
@@ -107,6 +121,8 @@ public:
     /// Fsync latest log to disk and flush buffer
     void flush();
 
+    void shutdown();
+
     uint64_t size() const
     {
         return logs.size();
@@ -122,17 +138,43 @@ private:
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(uint64_t new_start_log_index);
 
-private:
-    const std::string changelogs_dir;
+    /// Currently existing changelogs
+    std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
+
+    using ChangelogIter = decltype(existing_changelogs)::iterator;
+    void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
+
+    static void removeLog(const std::filesystem::path & path, const std::filesystem::path & detached_folder);
+    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
+    void removeAllLogsAfter(uint64_t remove_after_log_start_index);
+    /// Remove all logs from disk
+    void removeAllLogs();
+    /// Init writer for existing log with some entries already written
+    void initWriter(const ChangelogFileDescription & description);
+
+    /// Clean useless log files in a background thread
+    void cleanLogThread();
+
+    const std::filesystem::path changelogs_dir;
+    const std::filesystem::path changelogs_detached_dir;
     const uint64_t rotate_interval;
     const bool force_sync;
     Poco::Logger * log;
+    bool compress_logs;
 
-    std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
+
+    /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
-    IndexToOffset index_to_start_pos;
+    /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
-    uint64_t start_index = 0;
+    /// Start log_id which exists in all "active" logs
+    /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
+    uint64_t min_log_id = 0;
+    uint64_t max_log_id = 0;
+    /// For compaction, queue of delete not used logs
+    /// 128 is enough, even if log is not removed, it's not a problem
+    ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
+    ThreadFromGlobalPool clean_log_thread;
 };
 
 }

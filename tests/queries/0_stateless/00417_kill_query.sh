@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-fasttest
 
 set -e
 
@@ -20,3 +21,4 @@ $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 0 ASYNC"
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 0 FORMAT TabSeparated"
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 0 SYNC FORMAT TabSeparated"
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE 1 TEST" &>/dev/null
+

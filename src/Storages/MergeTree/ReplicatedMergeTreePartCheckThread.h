@@ -8,8 +8,8 @@
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
-#include <common/types.h>
-#include <common/logger_useful.h>
+#include <base/types.h>
+#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -30,7 +30,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreePartCheckThread
 {
 public:
-    ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreePartCheckThread();
 
     /// Processing of the queue to be checked is done in the background thread, which you must first start.
@@ -42,12 +42,12 @@ public:
     {
         ReplicatedMergeTreePartCheckThread * parent;
 
-        TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
+        explicit TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
         {
             parent->stop();
         }
 
-        TemporarilyStop(TemporarilyStop && old) : parent(old.parent)
+        TemporarilyStop(TemporarilyStop && old) noexcept : parent(old.parent)
         {
             old.parent = nullptr;
         }
@@ -70,6 +70,8 @@ public:
 
     /// Check part by name
     CheckResult checkPart(const String & part_name);
+
+    void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
     void run();

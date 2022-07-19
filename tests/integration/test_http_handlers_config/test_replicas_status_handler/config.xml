@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<yandex>
+<clickhouse>
     <http_handlers>
         <rule>
             <methods>GET</methods>
@@ -9,4 +9,4 @@
             <handler><type>replicas_status</type></handler>
         </rule>
     </http_handlers>
-</yandex>
+</clickhouse>

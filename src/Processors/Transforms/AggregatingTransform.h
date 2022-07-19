@@ -1,21 +1,13 @@
 #pragma once
-#include <Processors/IAccumulatingTransform.h>
-#include <Interpreters/Aggregator.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Aggregator.h>
+#include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
-
-class AggregatedArenasChunkInfo : public ChunkInfo
-{
-public:
-    Arenas arenas;
-    AggregatedArenasChunkInfo(Arenas arenas_)
-        : arenas(std::move(arenas_))
-    {}
-};
 
 class AggregatedChunkInfo : public ChunkInfo
 {
@@ -24,18 +16,41 @@ public:
     Int32 bucket_num = -1;
 };
 
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 struct AggregatingTransformParams
 {
     Aggregator::Params params;
-    Aggregator aggregator;
-    bool final;
-    bool only_merge = false;
 
-    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
-        : params(params_), aggregator(params), final(final_) {}
+    /// Each params holds a list of aggregators which are used in query. It's needed because we need
+    /// to use a pointer of aggregator to proper destroy complex aggregation states on exception
+    /// (See comments in AggregatedDataVariants). However, this pointer might not be valid because
+    /// we can have two different aggregators at the same time due to mixed pipeline of aggregate
+    /// projections, and one of them might gets destroyed before used.
+    AggregatorListPtr aggregator_list_ptr;
+    Aggregator & aggregator;
+    bool final;
+
+    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
+        : params(params_)
+        , aggregator_list_ptr(std::make_shared<AggregatorList>())
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , final(final_)
+    {
+    }
+
+    AggregatingTransformParams(
+        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+        : params(params_)
+        , aggregator_list_ptr(aggregator_list_ptr_)
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , final(final_)
+    {
+    }
 
     Block getHeader() const { return aggregator.getHeader(final); }
 
@@ -55,6 +70,46 @@ struct ManyAggregatedData
 
         for (auto & mut : mutexes)
             mut = std::make_unique<std::mutex>();
+    }
+
+    ~ManyAggregatedData()
+    {
+        try
+        {
+            if (variants.size() <= 1)
+                return;
+
+            // Aggregation states destruction may be very time-consuming.
+            // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
+            // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
+            const auto pool = std::make_unique<ThreadPool>(variants.size());
+
+            for (auto && variant : variants)
+            {
+                if (variant->size() < 100'000) // some seemingly reasonable constant
+                    continue;
+
+                // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
+                if (variant->aggregator)
+                {
+                    // variant is moved here and will be destroyed in the destructor of the lambda function.
+                    pool->trySchedule(
+                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                        {
+                            if (thread_group)
+                                CurrentThread::attachToIfDetached(thread_group);
+
+                            setThreadName("AggregDestruct");
+                        });
+                }
+            }
+
+            pool->wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 };
 
@@ -82,9 +137,13 @@ public:
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
 
     /// For Parallel aggregating.
-    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_,
-                         ManyAggregatedDataPtr many_data, size_t current_variant,
-                         size_t max_threads, size_t temporary_data_merge_threads);
+    AggregatingTransform(
+        Block header,
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataPtr many_data,
+        size_t current_variant,
+        size_t max_threads,
+        size_t temporary_data_merge_threads);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }

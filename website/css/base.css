@@ -1,13 +1,11 @@
-body {
-    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Helvetica Neue",Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
-}
-
-a:link, a:visited {
+.blog a:link, .blog a:visited,
+.docs a:link, .docs a:visited {
     color: #f14600;
     text-decoration: none;
 }
 
-a:hover, a:active {
+.blog a:hover, .blog a:active,
+.docs a:hover, .docs a:active {
     text-decoration: underline;
 }
 
@@ -25,7 +23,7 @@ a:hover, a:active {
 }
 
 #logo-icon, #docs-logo-icon {
-    width: 40px;
+    width: 64px;
 }
 
 #logo-text {
@@ -113,19 +111,6 @@ a.btn-outline-yellow {
     color: #fc0;
 }
 
-.navbar-light {
-    border-bottom: 1px solid #efefef;
-}
-
-
-.navbar-light .navbar-nav .nav-link {
-    color: #000;
-}
-
-.navbar-light .navbar-nav .nav-link:hover {
-    color: #f14600;
-}
-
 .bg-number {
     position: absolute;
     font-size: 900%;
@@ -145,7 +130,7 @@ a.btn-outline-yellow {
 }
 
 .nav .dropdown-toggle::after {
-    vertical-align: 0;
+    vertical-align: 0 !important;
 }
 .nav .dropdown-toggle[aria-expanded=false]::after {
     display: inline-block;
@@ -203,4 +188,16 @@ a.btn-outline-yellow {
 
 #feedback_email {
     white-space: nowrap;
+}
+
+.height-20 {
+    height: 20px;
+}
+
+ol.default{
+	margin-top: 10px;
+}
+
+ol.default li{
+	margin-bottom: 10px;
 }

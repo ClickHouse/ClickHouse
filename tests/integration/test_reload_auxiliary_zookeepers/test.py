@@ -31,7 +31,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
     )
 
     # Add an auxiliary zookeeper
-    new_config = """<yandex>
+    new_config = """<clickhouse>
     <zookeeper>
         <node index="1">
             <host>zoo1</host>
@@ -59,8 +59,10 @@ def test_reload_auxiliary_zookeepers(start_cluster):
             </node>
         </zookeeper2>
     </auxiliary_zookeepers>
-</yandex>"""
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
+</clickhouse>"""
+    node.replace_config(
+        "/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config
+    )
 
     node.query("SYSTEM RELOAD CONFIG")
 
@@ -72,7 +74,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
     node.query("ALTER TABLE simple2 ATTACH PARTITION '2020-08-27';")
     assert node.query("SELECT id FROM simple2").strip() == "1"
 
-    new_config = """<yandex>
+    new_config = """<clickhouse>
     <zookeeper>
         <node index="1">
             <host>zoo2</host>
@@ -80,8 +82,10 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         </node>
         <session_timeout_ms>2000</session_timeout_ms>
     </zookeeper>
-</yandex>"""
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
+</clickhouse>"""
+    node.replace_config(
+        "/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config
+    )
     node.query("SYSTEM RELOAD CONFIG")
     time.sleep(5)
 

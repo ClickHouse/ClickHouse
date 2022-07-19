@@ -1,11 +1,14 @@
 #pragma once
 #include <Storages/IStorage.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -32,7 +35,7 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
-    StoragePtr getNested() const override
+    StoragePtr getNestedImpl() const
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
@@ -45,6 +48,20 @@ public:
         get_nested = {};
         return nested;
     }
+
+    StoragePtr getNested() const override
+    {
+        StoragePtr nested_storage = getNestedImpl();
+        assert(!nested_storage->getStoragePolicy());
+        assert(!nested_storage->storesDataOnDisk());
+        return nested_storage;
+    }
+
+    /// Table functions cannot have storage policy and cannot store data on disk.
+    /// We may check if table is readonly or stores data on disk on DROP TABLE.
+    /// Avoid loading nested table by returning nullptr/false for all table functions.
+    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
+    bool storesDataOnDisk() const override { return false; }
 
     String getName() const override
     {
@@ -76,9 +93,10 @@ public:
             nested->drop();
     }
 
-    Pipe read(
+    void read(
+            QueryPlan & query_plan,
             const Names & column_names,
-            const StorageMetadataPtr & metadata_snapshot,
+            const StorageSnapshotPtr & storage_snapshot,
             SelectQueryInfo & query_info,
             ContextPtr context,
             QueryProcessingStage::Enum processed_stage,
@@ -89,31 +107,30 @@ public:
         for (const auto & c : column_names)
             cnames += c + " ";
         auto storage = getNested();
-        auto nested_metadata = storage->getInMemoryMetadataPtr();
-        auto pipe = storage->read(column_names, nested_metadata, query_info, context,
+        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+        storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
-        if (!pipe.empty() && add_conversion)
+        if (add_conversion)
         {
-            auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot,
+            auto from_header = query_plan.getCurrentDataStream().header;
+            auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    pipe.getHeader().getColumnsWithTypeAndName(),
+                    from_header.getColumnsWithTypeAndName(),
                     to_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Name);
-            auto convert_actions = std::make_shared<ExpressionActions>(
-                convert_actions_dag,
-                ExpressionActionsSettings::fromSettings(context->getSettingsRef(), CompileExpressions::yes));
 
-            pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header, convert_actions);
-            });
+            auto step = std::make_unique<ExpressionStep>(
+                query_plan.getCurrentDataStream(),
+                convert_actions_dag);
+
+            step->setStepDescription("Converting columns");
+            query_plan.addStep(std::move(step));
         }
-        return pipe;
     }
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context) override
@@ -134,7 +151,7 @@ public:
         if (nested)
             StorageProxy::renameInMemory(new_table_id);
         else
-            IStorage::renameInMemory(new_table_id);
+            IStorage::renameInMemory(new_table_id); /// NOLINT
     }
 
     bool isView() const override { return false; }

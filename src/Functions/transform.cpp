@@ -1,5 +1,5 @@
 #include <mutex>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -7,10 +7,11 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -66,6 +67,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
@@ -115,7 +117,7 @@ public:
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return type_x;
+            return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
         }
         else
         {
@@ -138,7 +140,7 @@ public:
             if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastSupertype({type_arr_to_nested, type_default});
+                return getLeastSupertype(DataTypes{type_arr_to_nested, type_default});
             }
 
             /// TODO More checks.
@@ -178,6 +180,8 @@ public:
             && !executeNum<Int64>(in, out, default_column)
             && !executeNum<Float32>(in, out, default_column)
             && !executeNum<Float64>(in, out, default_column)
+            && !executeDecimal<Decimal32>(in, out, default_column)
+            && !executeDecimal<Decimal64>(in, out, default_column)
             && !executeString(in, out, default_column))
         {
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
@@ -227,6 +231,8 @@ private:
                     && !executeNumToNumWithConstDefault<T, Int64>(in, out_untyped)
                     && !executeNumToNumWithConstDefault<T, Float32>(in, out_untyped)
                     && !executeNumToNumWithConstDefault<T, Float64>(in, out_untyped)
+                    && !executeNumToDecimalWithConstDefault<T, Decimal32>(in, out_untyped)
+                    && !executeNumToDecimalWithConstDefault<T, Decimal64>(in, out_untyped)
                     && !executeNumToStringWithConstDefault<T>(in, out_untyped))
                 {
                     throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
@@ -245,10 +251,75 @@ private:
                     && !executeNumToNumWithNonConstDefault<T, Int64>(in, out_untyped, default_untyped)
                     && !executeNumToNumWithNonConstDefault<T, Float32>(in, out_untyped, default_untyped)
                     && !executeNumToNumWithNonConstDefault<T, Float64>(in, out_untyped, default_untyped)
+                    && !executeNumToDecimalWithNonConstDefault<T, Decimal32>(in, out_untyped, default_untyped)
+                    && !executeNumToDecimalWithNonConstDefault<T, Decimal64>(in, out_untyped, default_untyped)
                     && !executeNumToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
                 {
                     throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN};
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    template <typename T>
+    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped) const
+    {
+        if (const auto in = checkAndGetColumn<ColumnDecimal<T>>(in_untyped))
+        {
+            if (!default_untyped)
+            {
+                auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
+                if (!out)
+                {
+                    throw Exception{"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
+                                    + ", must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
+                }
+
+                executeImplNumToNum<T>(in->getData(), out->getData());
+            }
+            else if (isColumnConst(*default_untyped))
+            {
+                if (!executeDecimalToNumWithConstDefault<T, UInt8>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, UInt16>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, UInt32>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, UInt64>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, Int8>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, Int16>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, Int32>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, Int64>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, Float32>(in, out_untyped)
+                    && !executeDecimalToNumWithConstDefault<T, Float64>(in, out_untyped)
+                    && !executeDecimalToDecimalWithConstDefault<T, Decimal32>(in, out_untyped)
+                    && !executeDecimalToDecimalWithConstDefault<T, Decimal64>(in, out_untyped)
+                    && !executeDecimalToStringWithConstDefault<T>(in, out_untyped))
+                {
+                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+                                    ErrorCodes::ILLEGAL_COLUMN};
+                }
+            }
+            else
+            {
+                if (!executeDecimalToNumWithNonConstDefault<T, UInt8>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, UInt16>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, UInt32>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, UInt64>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, Int8>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, Int16>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, Int32>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, Int64>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, Float32>(in, out_untyped, default_untyped)
+                    && !executeDecimalToNumWithNonConstDefault<T, Float64>(in, out_untyped, default_untyped)
+                    && !executeDecimalToDecimalWithNonConstDefault<T, Decimal32>(in, out_untyped, default_untyped)
+                    && !executeDecimalToDecimalWithNonConstDefault<T, Decimal64>(in, out_untyped, default_untyped)
+                    && !executeDecimalToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
+                {
+                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+                                    ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
 
@@ -280,6 +351,8 @@ private:
                     && !executeStringToNumWithConstDefault<Int64>(in, out_untyped)
                     && !executeStringToNumWithConstDefault<Float32>(in, out_untyped)
                     && !executeStringToNumWithConstDefault<Float64>(in, out_untyped)
+                    && !executeStringToDecimalWithConstDefault<Decimal32>(in, out_untyped)
+                    && !executeStringToDecimalWithConstDefault<Decimal64>(in, out_untyped)
                     && !executeStringToStringWithConstDefault(in, out_untyped))
                 {
                     throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
@@ -298,6 +371,9 @@ private:
                     && !executeStringToNumWithNonConstDefault<Int64>(in, out_untyped, default_untyped)
                     && !executeStringToNumWithNonConstDefault<Float32>(in, out_untyped, default_untyped)
                     && !executeStringToNumWithNonConstDefault<Float64>(in, out_untyped, default_untyped)
+                    && !executeStringToDecimalWithNonConstDefault<Decimal32>(in, out_untyped, default_untyped)
+                    && !executeStringToDecimalWithNonConstDefault<Decimal64>(in, out_untyped, default_untyped)
+
                     && !executeStringToStringWithNonConstDefault(in, out_untyped, default_untyped))
                 {
                     throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
@@ -315,6 +391,40 @@ private:
     bool executeNumToNumWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
     {
         auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
+        return true;
+    }
+
+    template <typename T, typename U>
+    bool executeNumToDecimalWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
+    {
+        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
+        return true;
+    }
+
+
+    template <typename T, typename U>
+    bool executeDecimalToNumWithConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped) const
+    {
+        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
+        return true;
+    }
+
+    template <typename T, typename U>
+    bool executeDecimalToDecimalWithConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped) const
+    {
+        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
         if (!out)
             return false;
 
@@ -348,6 +458,90 @@ private:
         return true;
     }
 
+    template <typename T, typename U>
+    bool executeNumToDecimalWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
+    {
+        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        if (!executeNumToDecimalWithNonConstDefault2<T, U, UInt8>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, UInt16>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, UInt32>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, UInt64>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, Int8>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, Int16>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, Int32>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, Int64>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefault2<T, U, Float64>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
+            && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
+        {
+            throw Exception(
+                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+        }
+
+        return true;
+    }
+
+    template <typename T, typename U>
+    bool executeDecimalToNumWithNonConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
+    {
+        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        if (!executeDecimalToNumWithNonConstDefault2<T, U, UInt8>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, UInt16>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, UInt32>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, UInt64>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, Int8>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, Int16>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, Int32>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, Int64>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefault2<T, U, Float64>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
+            && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
+        {
+            throw Exception(
+                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+        }
+
+        return true;
+    }
+
+    template <typename T, typename U>
+    bool executeDecimalToDecimalWithNonConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
+    {
+        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        if (!executeDecimalToDecimalWithNonConstDefault2<T, U, UInt8>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, UInt16>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, UInt32>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, UInt64>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int8>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int16>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int32>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int64>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Float64>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
+            && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
+        {
+            throw Exception(
+                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+        }
+
+        return true;
+    }
+
     template <typename T, typename U, typename V>
     bool executeNumToNumWithNonConstDefault2(const ColumnVector<T> * in, ColumnVector<U> * out, const IColumn * default_untyped) const
     {
@@ -359,8 +553,87 @@ private:
         return true;
     }
 
+    template <typename T, typename U, typename V>
+    bool executeNumToDecimalWithNonConstDefault2(const ColumnVector<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
+        return true;
+    }
+
+    template <typename T, typename U, typename V>
+    bool executeNumToDecimalWithNonConstDefaultDecimal2(const ColumnVector<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
+        return true;
+    }
+
+    template <typename T, typename U, typename V>
+    bool executeDecimalToNumWithNonConstDefault2(const ColumnDecimal<T> * in, ColumnVector<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
+        return true;
+    }
+
+    template <typename T, typename U, typename V>
+    bool executeDecimalToDecimalWithNonConstDefault2(const ColumnDecimal<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
+        return true;
+    }
+
+    template <typename T, typename U, typename V>
+    bool executeDecimalToNumWithNonConstDefaultDecimal2(const ColumnDecimal<T> * in, ColumnVector<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
+        return true;
+    }
+
+    template <typename T, typename U, typename V>
+    bool executeDecimalToDecimalWithNonConstDefaultDecimal2(const ColumnDecimal<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
+        return true;
+    }
+
     template <typename T>
     bool executeNumToStringWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
+    {
+        auto * out = typeid_cast<ColumnString *>(out_untyped);
+        if (!out)
+            return false;
+
+        const String & default_str = cache.const_default_value.get<const String &>();
+        StringRef default_string_ref{default_str.data(), default_str.size() + 1};
+        executeImplNumToStringWithConstDefault<T>(in->getData(), out->getChars(), out->getOffsets(), default_string_ref);
+        return true;
+    }
+
+    template <typename T>
+    bool executeDecimalToStringWithConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
@@ -394,10 +667,43 @@ private:
         return true;
     }
 
+    template <typename T>
+    bool executeDecimalToStringWithNonConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
+    {
+        auto * out = typeid_cast<ColumnString *>(out_untyped);
+        if (!out)
+            return false;
+
+        const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
+        if (!default_col)
+        {
+            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN};
+        }
+
+        executeImplNumToStringWithNonConstDefault<T>(
+            in->getData(),
+            out->getChars(), out->getOffsets(),
+            default_col->getChars(), default_col->getOffsets());
+
+        return true;
+    }
+
     template <typename U>
     bool executeStringToNumWithConstDefault(const ColumnString * in, IColumn * out_untyped) const
     {
         auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        executeImplStringToNumWithConstDefault<U>(in->getChars(), in->getOffsets(), out->getData(), cache.const_default_value.get<U>());
+        return true;
+    }
+
+    template <typename U>
+    bool executeStringToDecimalWithConstDefault(const ColumnString * in, IColumn * out_untyped) const
+    {
+        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
         if (!out)
             return false;
 
@@ -430,10 +736,60 @@ private:
         return true;
     }
 
+    template <typename U>
+    bool executeStringToDecimalWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped) const
+    {
+        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
+        if (!out)
+            return false;
+
+        if (!executeStringToDecimalWithNonConstDefault2<U, UInt8>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, UInt16>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, UInt32>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, UInt64>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, Int8>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, Int16>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, Int32>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, Int64>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, Float32>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefault2<U, Float64>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefaultDecimal2<U, Decimal32>(in, out, default_untyped)
+            && !executeStringToDecimalWithNonConstDefaultDecimal2<U, Decimal64>(in, out, default_untyped))
+        {
+            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN};
+        }
+
+        return true;
+    }
+
+
     template <typename U, typename V>
     bool executeStringToNumWithNonConstDefault2(const ColumnString * in, ColumnVector<U> * out, const IColumn * default_untyped) const
     {
         auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplStringToNumWithNonConstDefault<U, V>(in->getChars(), in->getOffsets(), out->getData(), col_default->getData());
+        return true;
+    }
+
+    template <typename U, typename V>
+    bool executeStringToDecimalWithNonConstDefault2(const ColumnString * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
+        if (!col_default)
+            return false;
+
+        executeImplStringToNumWithNonConstDefault<U, V>(in->getChars(), in->getOffsets(), out->getData(), col_default->getData());
+        return true;
+    }
+
+    template <typename U, typename V>
+    bool executeStringToDecimalWithNonConstDefaultDecimal2(const ColumnString * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
+    {
+        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
         if (!col_default)
             return false;
 
@@ -797,7 +1153,18 @@ private:
 
                     // Field may be of Float type, but for the purpose of bitwise
                     // equality we can treat them as UInt64, hence the reinterpret().
-                    table[key.reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+                    if (to[0].getType() ==Field::Types::Decimal32)
+                    {
+                        table[key.reinterpret<Decimal32>()] = (*used_to)[i].reinterpret<Decimal32>();
+                    }
+                    else if (to[0].getType() ==Field::Types::Decimal64)
+                    {
+                        table[key.reinterpret<Decimal32>()] = (*used_to)[i].reinterpret<Decimal64>();
+                    }
+                    else
+                    {
+                        table[key.reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+                    }
                 }
             }
             else

@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Семейство Log"
-toc_title: "Введение"
-toc_priority: 29
+sidebar_label: "Семейство Log"
+sidebar_position: 29
 ---
 
 # Семейство Log {#semeistvo-log}
@@ -13,6 +12,8 @@ toc_priority: 29
 -   [StripeLog](stripelog.md)
 -   [Log](log.md)
 -   [TinyLog](tinylog.md)
+
+Табличные движки семейства `Log` могут хранить данные в распределенных файловых системах [HDFS](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-hdfs) или [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3).
 
 ## Общие свойства {#obshchie-svoistva}
 

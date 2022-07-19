@@ -1,6 +1,6 @@
 #include <iomanip>
 #include <pcg_random.hpp>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
 //#if defined(NDEBUG)
 //#undef NDEBUG

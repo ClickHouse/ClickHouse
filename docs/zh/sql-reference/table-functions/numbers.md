@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: numbers
+sidebar_position: 39
+sidebar_label: numbers
 ---
 
 # numbers {#numbers}
@@ -25,4 +25,4 @@ SELECT * FROM system.numbers LIMIT 10;
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/numbers/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/numbers/) <!--hide-->

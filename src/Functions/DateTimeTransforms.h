@@ -1,10 +1,10 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
-#include <common/DateLUTImpl.h>
-#include <common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
@@ -41,6 +41,11 @@ namespace ErrorCodes
         throw Exception("Illegal type Date of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
+    static inline UInt32 dateTimeIsNotSupported(const char * name)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
 {
@@ -74,6 +79,31 @@ struct ToDateImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToDate32Impl
+{
+    static constexpr auto name = "toDate32";
+
+    static inline Int32 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return Int32(time_zone.toDayNum(t));
+    }
+    static inline Int32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        /// Don't saturate.
+        return Int32(time_zone.toDayNum<Int64>(t));
+    }
+    static inline Int32 execute(Int32 d, const DateLUTImpl &)
+    {
+        return d;
+    }
+    static inline Int32 execute(UInt16 d, const DateLUTImpl &)
+    {
+        return d;
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToStartOfDayImpl
 {
     static constexpr auto name = "toStartOfDay";
@@ -93,7 +123,7 @@ struct ToStartOfDayImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDate(ExtendedDayNum(d));
+        return time_zone.toDate(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -119,7 +149,7 @@ struct ToMondayImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfWeek(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -143,7 +173,31 @@ struct ToStartOfMonthImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfMonth(DayNum(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToLastDayOfMonthImpl
+{
+    static constexpr auto name = "toLastDayOfMonth";
+
+    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -167,7 +221,7 @@ struct ToStartOfQuarterImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfQuarter(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -191,7 +245,7 @@ struct ToStartOfYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -200,7 +254,7 @@ struct ToStartOfYearImpl
 
 struct ToTimeImpl
 {
-    /// When transforming to time, the date will be equated to 1970-01-01.
+    /// When transforming to time, the date will be equated to 1970-01-02.
     static constexpr auto name = "toTime";
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
@@ -286,17 +340,144 @@ struct ToStartOfSecondImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct ToStartOfFiveMinuteImpl
+struct ToStartOfMillisecondImpl
 {
-    static constexpr auto name = "toStartOfFiveMinute";
+    static constexpr auto name = "toStartOfMillisecond";
+
+    static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
+    {
+        // given that scale is 6, scale_multiplier is 1000000
+        // for DateTime64 value of 123.456789:
+        // 123456789 - 789 = 123456000
+        // for DateTime64 value of -123.456789:
+        // -123456789 - (1000 + (-789)) = -123457000
+
+        if (scale_multiplier == 1000)
+        {
+            return datetime64;
+        }
+        else if (scale_multiplier <= 1000)
+        {
+            return datetime64 * (1000 / scale_multiplier);
+        }
+        else
+        {
+        auto droppable_part_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000);
+
+        if (droppable_part_with_sign < 0)
+            droppable_part_with_sign += scale_multiplier;
+
+        return datetime64 - droppable_part_with_sign;
+        }
+    }
+
+    static inline UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfMicrosecondImpl
+{
+    static constexpr auto name = "toStartOfMicrosecond";
+
+    static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
+    {
+        // @see ToStartOfMillisecondImpl
+
+        if (scale_multiplier == 1000000)
+        {
+            return datetime64;
+        }
+        else if (scale_multiplier <= 1000000)
+        {
+            return datetime64 * (1000000 / scale_multiplier);
+        }
+        else
+        {
+            auto droppable_part_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000000);
+
+            if (droppable_part_with_sign < 0)
+                droppable_part_with_sign += scale_multiplier;
+
+            return datetime64 - droppable_part_with_sign;
+        }
+    }
+
+    static inline UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfNanosecondImpl
+{
+    static constexpr auto name = "toStartOfNanosecond";
+
+    static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
+    {
+        // @see ToStartOfMillisecondImpl
+        if (scale_multiplier == 1000000000)
+        {
+            return datetime64;
+        }
+        else if (scale_multiplier <= 1000000000)
+        {
+            return datetime64 * (1000000000 / scale_multiplier);
+        }
+        else
+        {
+            throw Exception("Illegal type of argument for function " + std::string(name) + ", DateTime64 expected", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    }
+
+    static inline UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    static inline UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfFiveMinutesImpl
+{
+    static constexpr auto name = "toStartOfFiveMinutes";
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfFiveMinute(t.whole);
+        return time_zone.toStartOfFiveMinutes(t.whole);
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfFiveMinute(t);
+        return time_zone.toStartOfFiveMinutes(t);
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
@@ -358,7 +539,7 @@ struct ToStartOfFifteenMinutesImpl
     using FactorTransform = ZeroTransform;
 };
 
-/// Round to start of half-an-hour length interval with unspecified offset. This transform is specific for Yandex.Metrica.
+/// Round to start of half-an-hour length interval with unspecified offset. This transform is specific for Metrica web analytics system.
 struct TimeSlotImpl
 {
     static constexpr auto name = "timeSlot";
@@ -432,7 +613,7 @@ struct ToYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYear(ExtendedDayNum(d));
+        return time_zone.toYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -456,7 +637,7 @@ struct ToQuarterImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toQuarter(ExtendedDayNum(d));
+        return time_zone.toQuarter(DayNum(d));
     }
 
     using FactorTransform = ToStartOfYearImpl;
@@ -480,7 +661,7 @@ struct ToMonthImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toMonth(ExtendedDayNum(d));
+        return time_zone.toMonth(DayNum(d));
     }
 
     using FactorTransform = ToStartOfYearImpl;
@@ -504,7 +685,7 @@ struct ToDayOfMonthImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfMonth(ExtendedDayNum(d));
+        return time_zone.toDayOfMonth(DayNum(d));
     }
 
     using FactorTransform = ToStartOfMonthImpl;
@@ -528,7 +709,7 @@ struct ToDayOfWeekImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(ExtendedDayNum(d));
+        return time_zone.toDayOfWeek(DayNum(d));
     }
 
     using FactorTransform = ToMondayImpl;
@@ -552,7 +733,7 @@ struct ToDayOfYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfYear(ExtendedDayNum(d));
+        return time_zone.toDayOfYear(DayNum(d));
     }
 
     using FactorTransform = ToStartOfYearImpl;
@@ -675,7 +856,7 @@ struct ToISOYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toISOYear(ExtendedDayNum(d));
+        return time_zone.toISOYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -699,7 +880,7 @@ struct ToStartOfISOYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfISOYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -723,7 +904,7 @@ struct ToISOWeekImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toISOWeek(ExtendedDayNum(d));
+        return time_zone.toISOWeek(DayNum(d));
     }
 
     using FactorTransform = ToISOYearImpl;
@@ -747,7 +928,7 @@ struct ToRelativeYearNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYear(ExtendedDayNum(d));
+        return time_zone.toYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -771,7 +952,7 @@ struct ToRelativeQuarterNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeQuarterNum(ExtendedDayNum(d));
+        return time_zone.toRelativeQuarterNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -795,7 +976,7 @@ struct ToRelativeMonthNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMonthNum(ExtendedDayNum(d));
+        return time_zone.toRelativeMonthNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -819,7 +1000,7 @@ struct ToRelativeWeekNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
+        return time_zone.toRelativeWeekNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -868,7 +1049,7 @@ struct ToRelativeHourNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeHourNum(ExtendedDayNum(d));
+        return time_zone.toRelativeHourNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -892,7 +1073,7 @@ struct ToRelativeMinuteNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMinuteNum(ExtendedDayNum(d));
+        return time_zone.toRelativeMinuteNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -916,7 +1097,7 @@ struct ToRelativeSecondNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d));
+        return time_zone.fromDayNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -936,11 +1117,11 @@ struct ToYYYYMMImpl
     }
     static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMM(static_cast<ExtendedDayNum>(d));
+        return time_zone.toNumYYYYMM(ExtendedDayNum(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMM(static_cast<DayNum>(d));
+        return time_zone.toNumYYYYMM(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -960,11 +1141,11 @@ struct ToYYYYMMDDImpl
     }
     static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDD(static_cast<ExtendedDayNum>(d));
+        return time_zone.toNumYYYYMMDD(ExtendedDayNum(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDD(static_cast<DayNum>(d));
+        return time_zone.toNumYYYYMMDD(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -984,11 +1165,11 @@ struct ToYYYYMMDDhhmmssImpl
     }
     static inline UInt64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<ExtendedDayNum>(d)));
+        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(ExtendedDayNum(d)));
     }
     static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<DayNum>(d)));
+        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
     }
 
     using FactorTransform = ZeroTransform;

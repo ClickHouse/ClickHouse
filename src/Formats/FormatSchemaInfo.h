@@ -1,6 +1,7 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ class FormatSchemaInfo
 {
 public:
     FormatSchemaInfo(const String & format_schema, const String & format, bool require_message, bool is_server, const std::string & format_schema_path);
+    FormatSchemaInfo(const FormatSettings & settings, const String & format, bool require_message);
 
     /// Returns path to the schema file.
     const String & schemaPath() const { return schema_path; }

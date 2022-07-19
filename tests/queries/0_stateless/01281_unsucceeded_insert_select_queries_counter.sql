@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 DROP TABLE IF EXISTS current_failed_query_metrics;
 DROP TABLE IF EXISTS to_insert;
 

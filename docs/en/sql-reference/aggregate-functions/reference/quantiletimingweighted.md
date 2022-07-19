@@ -1,8 +1,8 @@
 ---
-toc_priority: 205
+sidebar_position: 205
 ---
 
-# quantileTimingWeighted {#quantiletimingweighted}
+# quantileTimingWeighted
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence according to the weight of each sequence member.
 
@@ -38,8 +38,9 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-!!! note "Note"
-    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+:::note    
+For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+:::
 
 **Returned value**
 
@@ -47,8 +48,9 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 
 Type: `Float32`.
 
-!!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+:::note    
+If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+:::
 
 **Example**
 
@@ -79,7 +81,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-# quantilesTimingWeighted {#quantilestimingweighted}
+# quantilesTimingWeighted
 
 Same as `quantileTimingWeighted`, but accept multiple parameters with quantile levels and return an Array filled with many values of that quantiles.
 

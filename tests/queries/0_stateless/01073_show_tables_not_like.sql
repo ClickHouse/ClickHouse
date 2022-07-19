@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SHOW TABLES NOT LIKE '%';
 
 DROP DATABASE IF EXISTS test_01073;

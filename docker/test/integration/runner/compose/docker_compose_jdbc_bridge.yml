@@ -1,7 +1,7 @@
 version: '2.3'
 services:
   bridge1:
-    image: yandex/clickhouse-jdbc-bridge
+    image: clickhouse/jdbc-bridge
     command: |
       /bin/bash -c 'cat << EOF > config/datasources/self.json
       {
@@ -14,10 +14,14 @@ services:
       }
       EOF
       ./docker-entrypoint.sh'
-    ports:
-      - 9020:9019
+    expose:
+      - 9019
     healthcheck:
       test: ["CMD", "curl", "-s", "localhost:9019/ping"]
       interval: 5s
       timeout: 3s
       retries: 30
+    volumes:
+      - type: ${JDBC_BRIDGE_FS:-tmpfs}
+        source: ${JDBC_BRIDGE_LOGS:-}
+        target: /app/logs

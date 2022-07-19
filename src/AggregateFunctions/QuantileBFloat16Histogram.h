@@ -1,7 +1,8 @@
 #pragma once
 
-#include <common/types.h>
-#include <common/bit_cast.h>
+#include <base/types.h>
+#include <base/bit_cast.h>
+#include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 
 #include <IO/ReadBuffer.h>
@@ -134,7 +135,7 @@ private:
             ++arr_it;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 threshold = std::ceil(sum_weight * level);
         Float64 accumulated = 0;
@@ -175,7 +176,7 @@ private:
             ++arr_it;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         size_t level_index = 0;
         Float64 accumulated = 0;

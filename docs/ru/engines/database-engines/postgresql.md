@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: PostgreSQL
+sidebar_position: 35
+sidebar_label: PostgreSQL
 ---
 
 # PostgreSQL {#postgresql}
@@ -14,8 +14,8 @@ toc_title: PostgreSQL
 ## Создание БД {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database 
-ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
 ```
 
 **Параметры движка**
@@ -24,6 +24,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 -   `database` — имя удаленной БД.
 -   `user` — пользователь PostgreSQL.
 -   `password` — пароль пользователя.
+ -  `schema` — схема PostgreSQL.
 -   `use_table_cache` —  определяет кеширование структуры таблиц БД. Необязательный параметр. Значение по умолчанию: `0`.
 
 ## Поддерживаемые типы данных {#data_types-support}
@@ -43,14 +44,14 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 | TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
- 
+
 
 ## Примеры использования {#examples-of-use}
 
 Обмен данными между БД ClickHouse и сервером PostgreSQL:
 
 ``` sql
-CREATE DATABASE test_database 
+CREATE DATABASE test_database
 ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
 ```
 
@@ -102,7 +103,7 @@ SELECT * FROM test_database.test_table;
 └────────┴───────┘
 ```
 
-Пусть структура таблицы была изменена в PostgreSQL: 
+Пусть структура таблицы была изменена в PostgreSQL:
 
 ``` sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text
@@ -135,4 +136,4 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/database-engines/postgresql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/database-engines/postgresql/) <!--hide-->

@@ -1,5 +1,5 @@
 | id | name | array | nullable | low_cardinality | decimal |
 |-:|:-|:-|:-|:-|-:|
-| 1 | name1 | [1,2,3] | Some long string | name1 | 1.110000 |
+| 1 | name1 | [1,2,3] | Some long string | name1 | 1.11 |
 | 2 | name2 | [4,5,60000] | \N | Another long string | 222.222222 |
-| 30000 | One more long string | [7,8,9] | name3 | name3 | 3.330000 |
+| 30000 | One more long string | [7,8,9] | name3 | name3 | 3.33 |

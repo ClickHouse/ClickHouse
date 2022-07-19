@@ -1,14 +1,15 @@
 ---
-toc_priority: 63
-toc_title: User Settings
+sidebar_position: 63
+sidebar_label: User Settings
 ---
 
-# User Settings {#user-settings}
+# User Settings
 
 The `users` section of the `user.xml` configuration file contains user settings.
 
-!!! note "Information"
-    ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
+:::note
+ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
+:::
 
 Structure of the `users` section:
 
@@ -28,7 +29,7 @@ Structure of the `users` section:
         <profile>profile_name</profile>
 
         <quota>default</quota>
-
+        <default_database>default<default_database>
         <databases>
             <database_name>
                 <table_name>
@@ -116,8 +117,9 @@ To open access for user from any network, specify:
 <ip>::/0</ip>
 ```
 
-!!! warning "Warning"
-    It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
+:::warning
+It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
+:::
 
 To open access only from localhost, specify:
 
@@ -159,4 +161,4 @@ The following configuration forces that user `user1` can only see the rows of `t
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

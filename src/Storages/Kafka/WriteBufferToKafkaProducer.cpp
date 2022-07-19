@@ -3,6 +3,16 @@
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event KafkaRowsWritten;
+    extern const Event KafkaProducerFlushes;
+    extern const Event KafkaMessagesProduced;
+    extern const Event KafkaProducerErrors;
+}
+
 namespace DB
 {
 WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
@@ -48,11 +58,12 @@ WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
 
 WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()
 {
-    assert(rows == 0 && chunks.empty());
+    assert(rows == 0);
 }
 
 void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t current_row)
 {
+    ProfileEvents::increment(ProfileEvents::KafkaRowsWritten);
 
     if (++rows % max_rows == 0)
     {
@@ -60,7 +71,7 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
         size_t last_chunk_size = offset();
 
         // if last character of last chunk is delimiter - we don't need it
-        if (delim && last_chunk[last_chunk_size - 1] == delim)
+        if (last_chunk_size && delim && last_chunk[last_chunk_size - 1] == delim)
             --last_chunk_size;
 
         std::string payload;
@@ -104,8 +115,10 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
                     producer->poll(timeout);
                     continue;
                 }
-                throw e;
+                ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
+                throw;
             }
+            ProfileEvents::increment(ProfileEvents::KafkaMessagesProduced);
 
             break;
         }
@@ -127,9 +140,12 @@ void WriteBufferToKafkaProducer::flush()
         {
             if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
                 continue;
-            throw e;
+
+            ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
+            throw;
         }
 
+        ProfileEvents::increment(ProfileEvents::KafkaProducerFlushes);
         break;
     }
 }

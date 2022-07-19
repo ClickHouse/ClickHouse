@@ -13,6 +13,12 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_SSL
+#include <Poco/Net/SecureStreamSocketImpl.h>
+#include <Poco/Net/SSLException.h>
+#include <Poco/Net/X509Certificate.h>
+#endif
+
 namespace DB
 {
 HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
@@ -26,6 +32,7 @@ HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & re
     /// Now that we know socket is still connected, obtain addresses
     client_address = session.clientAddress();
     server_address = session.serverAddress();
+    secure = session.socket().secure();
 
     auto receive_timeout = context->getSettingsRef().http_receive_timeout;
     auto send_timeout = context->getSettingsRef().http_send_timeout;
@@ -67,6 +74,31 @@ bool HTTPServerRequest::checkPeerConnected() const
 
     return true;
 }
+
+#if USE_SSL
+bool HTTPServerRequest::havePeerCertificate() const
+{
+    if (!secure)
+        return false;
+
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    if (!secure_socket)
+        return false;
+
+    return secure_socket->havePeerCertificate();
+}
+
+Poco::Net::X509Certificate HTTPServerRequest::peerCertificate() const
+{
+    if (secure)
+    {
+        const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+        if (secure_socket)
+            return secure_socket->peerCertificate();
+    }
+    throw Poco::Net::SSLException("No certificate available");
+}
+#endif
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {

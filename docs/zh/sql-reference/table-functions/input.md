@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: input
+sidebar_position: 46
+sidebar_label: input
 ---
 
 # input {#input}
@@ -16,7 +16,7 @@ toc_title: input
 数据可以像普通 `INSERT` 查询一样发送，并以必须在查询末尾指定的任何可用[格式](../../interfaces/formats.md#formats)
 传递（与普通 `INSERT SELECT`不同)。
 
-该函数的主要特点是，当服务器从客户端接收数据时，它会同时根据 `SELECT` 子句中的表达式列表将其转换，并插入到目标表中。 
+该函数的主要特点是，当服务器从客户端接收数据时，它会同时根据 `SELECT` 子句中的表达式列表将其转换，并插入到目标表中。
 不会创建包含所有已传输数据的临时表。
 
 **例**
@@ -40,4 +40,4 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/input/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/input/) <!--hide-->

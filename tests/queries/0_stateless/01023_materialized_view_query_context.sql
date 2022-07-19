@@ -1,5 +1,7 @@
+-- Tags: no-parallel
+
 -- Create dictionary, since dictGet*() uses DB::Context in executeImpl()
--- (To cover scope of the Context in DB::PushingToViewsBlockOutputStream::process)
+-- (To cover scope of the Context in PushingToViews chain)
 
 set insert_distributed_sync=1;
 

@@ -55,7 +55,7 @@ WHERE (query_id =
     WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
-)) AND (symbol LIKE '%Source%');
+)) AND (symbol LIKE '%Source%'); -- { serverError 125 }
 
 
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
@@ -70,7 +70,7 @@ WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterd
     WHERE current_database = currentDatabase() AND (event_date >= yesterday()) AND (query LIKE '%test memory profiler%')
     ORDER BY event_time DESC
     LIMIT 1
-)); -- { serverError 42 }
+)); -- { serverError 125 }
 
 DROP TABLE IF EXISTS trace_log;
 

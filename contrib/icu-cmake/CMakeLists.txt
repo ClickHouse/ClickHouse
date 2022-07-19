@@ -1,3 +1,14 @@
+if (OS_LINUX)
+    option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
+else ()
+    option(ENABLE_ICU "Enable ICU" 0)
+endif ()
+
+if (NOT ENABLE_ICU)
+    message(STATUS "Not using icu")
+    return()
+endif()
+
 set(ICU_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source")
 set(ICUDATA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icudata/")
 
@@ -201,7 +212,9 @@ set(ICUUC_SOURCES
 "${ICU_SOURCE_DIR}/common/ubiditransform.cpp"
 "${ICU_SOURCE_DIR}/common/pluralmap.cpp"
 "${ICU_SOURCE_DIR}/common/static_unicode_sets.cpp"
-"${ICU_SOURCE_DIR}/common/restrace.cpp")
+"${ICU_SOURCE_DIR}/common/restrace.cpp"
+"${ICU_SOURCE_DIR}/common/emojiprops.cpp"
+"${ICU_SOURCE_DIR}/common/lstmbe.cpp")
 
 set(ICUI18N_SOURCES
 "${ICU_SOURCE_DIR}/i18n/ucln_in.cpp"
@@ -387,7 +400,6 @@ set(ICUI18N_SOURCES
 "${ICU_SOURCE_DIR}/i18n/sharedbreakiterator.cpp"
 "${ICU_SOURCE_DIR}/i18n/scientificnumberformatter.cpp"
 "${ICU_SOURCE_DIR}/i18n/dayperiodrules.cpp"
-"${ICU_SOURCE_DIR}/i18n/nounit.cpp"
 "${ICU_SOURCE_DIR}/i18n/number_affixutils.cpp"
 "${ICU_SOURCE_DIR}/i18n/number_compact.cpp"
 "${ICU_SOURCE_DIR}/i18n/number_decimalquantity.cpp"
@@ -435,31 +447,40 @@ set(ICUI18N_SOURCES
 "${ICU_SOURCE_DIR}/i18n/formattedvalue.cpp"
 "${ICU_SOURCE_DIR}/i18n/formattedval_iterimpl.cpp"
 "${ICU_SOURCE_DIR}/i18n/formattedval_sbimpl.cpp"
-"${ICU_SOURCE_DIR}/i18n/formatted_string_builder.cpp")
+"${ICU_SOURCE_DIR}/i18n/formatted_string_builder.cpp"
+"${ICU_SOURCE_DIR}/i18n/measunit_extra.cpp"
+"${ICU_SOURCE_DIR}/i18n/number_symbolswrapper.cpp"
+"${ICU_SOURCE_DIR}/i18n/number_usageprefs.cpp"
+"${ICU_SOURCE_DIR}/i18n/numrange_capi.cpp"
+"${ICU_SOURCE_DIR}/i18n/pluralranges.cpp"
+"${ICU_SOURCE_DIR}/i18n/units_complexconverter.cpp"
+"${ICU_SOURCE_DIR}/i18n/units_converter.cpp"
+"${ICU_SOURCE_DIR}/i18n/units_data.cpp"
+"${ICU_SOURCE_DIR}/i18n/units_router.cpp")
 
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
 set(ICUDATA_SOURCES
-    "${ICUDATA_SOURCE_DIR}/icudt66l_dat.S"
+    "${ICUDATA_SOURCE_DIR}/icudt70l_dat.S"
     "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" # Without this cmake can incorrectly detects library type (OBJECT) instead of SHARED/STATIC
 )
 
 # Note that we don't like any kind of binary plugins (because of runtime dependencies, vulnerabilities, ABI incompatibilities).
 add_definitions(-D_REENTRANT -DU_HAVE_ELF_H=1 -DU_HAVE_STRTOD_L=1 -DU_HAVE_XLOCALE_H=0 -DDEFAULT_ICU_PLUGINS="/dev/null")
 
-add_library(icuuc ${ICUUC_SOURCES})
-add_library(icui18n ${ICUI18N_SOURCES})
-add_library(icudata ${ICUDATA_SOURCES})
+add_library(_icuuc ${ICUUC_SOURCES})
+add_library(_icui18n ${ICUI18N_SOURCES})
+add_library(_icudata ${ICUDATA_SOURCES})
 
-target_link_libraries(icuuc PRIVATE icudata)
-target_link_libraries(icui18n PRIVATE icuuc)
+target_link_libraries(_icuuc PRIVATE _icudata)
+target_link_libraries(_icui18n PRIVATE _icuuc)
 
-target_include_directories(icuuc SYSTEM PUBLIC "${ICU_SOURCE_DIR}/common/")
-target_include_directories(icui18n SYSTEM PUBLIC "${ICU_SOURCE_DIR}/i18n/")
+target_include_directories(_icuuc SYSTEM PUBLIC "${ICU_SOURCE_DIR}/common/")
+target_include_directories(_icui18n SYSTEM PUBLIC "${ICU_SOURCE_DIR}/i18n/")
 
-target_compile_definitions(icuuc PRIVATE -DU_COMMON_IMPLEMENTATION)
-target_compile_definitions(icui18n PRIVATE -DU_I18N_IMPLEMENTATION)
+target_compile_definitions(_icuuc PRIVATE -DU_COMMON_IMPLEMENTATION)
+target_compile_definitions(_icui18n PRIVATE -DU_I18N_IMPLEMENTATION)
 
-if (COMPILER_CLANG)
-    target_compile_options(icudata PRIVATE -Wno-unused-command-line-argument)
-endif ()
+add_library(_icu INTERFACE)
+target_link_libraries(_icu INTERFACE _icui18n _icuuc _icudata)
+add_library(ch_contrib::icu ALIAS _icu)

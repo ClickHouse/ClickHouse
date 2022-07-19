@@ -39,6 +39,8 @@ public:
         return 2;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isInteger(arguments[0]))
@@ -104,8 +106,9 @@ private:
         else if (buckets_field.getType() == Field::Types::UInt64)
             num_buckets = checkBucketsRange(buckets_field.get<UInt64>());
         else
-            throw Exception("Illegal type " + String(buckets_field.getTypeName()) + " of the second argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the second argument of function {}",
+                buckets_field.getTypeName(), getName());
 
         const auto & hash_col = arguments[0].column;
         const IDataType * hash_type = arguments[0].type.get();

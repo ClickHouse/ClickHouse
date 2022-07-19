@@ -46,18 +46,18 @@ public:
 
     ~MongoDBDictionarySource() override;
 
-    BlockInputStreamPtr loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockInputStreamPtr loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for MongoDBDictionarySource");
     }
 
     bool supportsSelectiveLoad() const override { return true; }
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     /// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
     bool isModified() const override { return true; }
@@ -65,7 +65,7 @@ public:
     ///Not yet supported
     bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_unique<MongoDBDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<MongoDBDictionarySource>(*this); }
 
     std::string toString() const override;
 

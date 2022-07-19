@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <filesystem>
 #include <iostream>
@@ -29,7 +29,7 @@ try
     auto config = processor.loadConfig().configuration;
     String zookeeper_path = argv[2];
 
-    auto zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper");
+    auto zookeeper = std::make_shared<zkutil::ZooKeeper>(*config, "zookeeper", nullptr);
 
     std::unordered_map<String, std::set<Int64>> current_inserts;
 

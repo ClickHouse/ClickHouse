@@ -1,16 +1,14 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 
 #if USE_LIBPQXX
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
-#include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
+#include <Common/LocalDateTime.h>
+#include <Common/logger_useful.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 
@@ -26,6 +24,7 @@ public:
         const String db;
         const String schema;
         const String table;
+        const String query;
         const String where;
         const String invalidate_query;
         const String update_field;
@@ -42,10 +41,10 @@ public:
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
-    BlockInputStreamPtr loadUpdatedAll() override;
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadAll() override;
+    QueryPipeline loadUpdatedAll() override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;
@@ -57,7 +56,7 @@ public:
 private:
     String getUpdateFieldAndDate();
     String doInvalidateQuery(const std::string & request) const;
-    BlockInputStreamPtr loadBase(const String & query);
+    QueryPipeline loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
     const Configuration configuration;

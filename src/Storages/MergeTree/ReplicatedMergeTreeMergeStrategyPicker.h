@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <optional>
 #include <mutex>
 #include <vector>
@@ -42,7 +42,7 @@ struct ReplicatedMergeTreeLogEntryData;
 class ReplicatedMergeTreeMergeStrategyPicker: public boost::noncopyable
 {
 public:
-    ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_);
 
     /// triggers refreshing the cached state (list of replicas etc.)
     /// used when we get new merge event from the zookeeper queue ( see queueUpdatingTask() etc )
@@ -52,13 +52,8 @@ public:
     /// and we may need to do a fetch (or postpone) instead of merge
     bool shouldMergeOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const;
 
-    /// return true if s3_execute_merges_on_single_replica_time_threshold feature is active
-    /// and we may need to do a fetch (or postpone) instead of merge
-    bool shouldMergeOnSingleReplicaS3Shared(const ReplicatedMergeTreeLogEntryData & entry) const;
-
     /// returns the replica name
     /// and it's not current replica should do the merge
-    /// used in shouldExecuteLogEntry and in tryExecuteMerge
     std::optional<String> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);
 
     /// checks (in zookeeper) if the picked replica finished the merge
@@ -72,7 +67,7 @@ private:
     uint64_t getEntryHash(const ReplicatedMergeTreeLogEntryData & entry) const;
 
     std::atomic<time_t> execute_merges_on_single_replica_time_threshold = 0;
-    std::atomic<time_t> s3_execute_merges_on_single_replica_time_threshold = 0;
+    std::atomic<time_t> remote_fs_execute_merges_on_single_replica_time_threshold = 0;
     std::atomic<time_t> last_refresh_time = 0;
 
     std::mutex mutex;

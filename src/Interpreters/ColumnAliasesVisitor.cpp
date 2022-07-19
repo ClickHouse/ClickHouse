@@ -3,7 +3,6 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -14,8 +13,11 @@
 namespace DB
 {
 
-bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
+bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &, const Data & data)
 {
+    if (data.excluded_nodes.contains(node.get()))
+        return false;
+
     if (const auto * f = node->as<ASTFunction>())
     {
         /// "lambda" visits children itself.
@@ -61,8 +63,8 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
 {
     if (auto column_name = IdentifierSemantic::getColumnName(node))
     {
-        if (data.array_join_result_columns.count(*column_name) || data.array_join_source_columns.count(*column_name)
-            || data.private_aliases.count(*column_name) || !data.columns.has(*column_name))
+        if (data.array_join_result_columns.contains(*column_name) || data.array_join_source_columns.contains(*column_name)
+            || data.private_aliases.contains(*column_name) || !data.columns.has(*column_name))
             return;
 
         const auto & col = data.columns.get(*column_name);
@@ -72,7 +74,7 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             auto alias_expr = col.default_desc.expression->clone();
             auto original_column = alias_expr->getColumnName();
             // If expanded alias is used in array join, avoid expansion, otherwise the column will be mis-array joined
-            if (data.array_join_result_columns.count(original_column) || data.array_join_source_columns.count(original_column))
+            if (data.array_join_result_columns.contains(original_column) || data.array_join_source_columns.contains(original_column))
                 return;
             ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
             // We need to set back the original column name, or else the process of naming resolution will complain.
@@ -81,6 +83,7 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             else
                 ast->setAlias(*column_name);
 
+            data.changed = true;
             // revisit ast to track recursive alias columns
             Visitor(data).visit(ast);
         }

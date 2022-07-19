@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/types.h>
-#include <common/strong_typedef.h>
+#include <base/types.h>
+#include <base/strong_typedef.h>
 
 namespace DB
 {

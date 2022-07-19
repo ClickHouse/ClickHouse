@@ -12,8 +12,7 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/map.h>
-
+#include <base/map.h>
 
 namespace DB
 {
@@ -47,8 +46,12 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
 
-    for (const auto & [_, size] : column_sizes)
-        total_size_of_queried_columns += size;
+    for (const auto & name : queried_columns)
+    {
+        auto it = column_sizes.find(name);
+        if (it != column_sizes.end())
+            total_size_of_queried_columns += it->second;
+    }
 
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
     optimize(query_info.query->as<ASTSelectQuery &>());
@@ -115,13 +118,67 @@ static bool isConditionGood(const ASTPtr & condition)
     return false;
 }
 
+static const ASTFunction * getAsTuple(const ASTPtr & node)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
+        return func;
+    return {};
+}
+
+static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
+{
+    if (const auto * value_tuple = node->as<ASTLiteral>())
+        return value_tuple && value_tuple->value.tryGet<Tuple>(tuple);
+    return false;
+}
+
+bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
+{
+    if (!func || func->name != "equals" || func->arguments->children.size() != 2)
+        return false;
+
+    Tuple tuple_lit;
+    const ASTFunction * tuple_other = nullptr;
+    if (getAsTupleLiteral(func->arguments->children[0], tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children[1]);
+    else if (getAsTupleLiteral(func->arguments->children[1], tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children[0]);
+
+    if (!tuple_other || tuple_lit.size() != tuple_other->arguments->children.size())
+        return false;
+
+    for (size_t i = 0; i < tuple_lit.size(); ++i)
+    {
+        const auto & child = tuple_other->arguments->children[i];
+        std::shared_ptr<IAST> fetch_sign_column = nullptr;
+        /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
+        if (const auto * child_func = getAsTuple(child))
+            fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
+        else if (const auto * child_ident = child->as<ASTIdentifier>())
+            fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
+        else
+            return false;
+
+        ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
+        ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
+        analyzeImpl(res, func_node, is_final);
+    }
+
+    return true;
+}
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
 {
-    if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
+    const auto * func = node->as<ASTFunction>();
+
+    if (func && func->name == "and")
     {
-        for (const auto & elem : func_and->arguments->children)
+        for (const auto & elem : func->arguments->children)
             analyzeImpl(res, elem, is_final);
+    }
+    else if (tryAnalyzeTuple(res, func, is_final))
+    {
+        /// analyzed
     }
     else
     {
@@ -257,7 +314,7 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     UInt64 size = 0;
 
     for (const auto & identifier : identifiers)
-        if (column_sizes.count(identifier))
+        if (column_sizes.contains(identifier))
             size += column_sizes.at(identifier);
 
     return size;
@@ -288,7 +345,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        if (!KeyCondition::atom_map.count(func->name))
+        if (!KeyCondition::atom_map.contains(func->name))
             return false;
 
         const auto & args = func->arguments->children;
@@ -310,7 +367,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 
 bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
 {
-    return sorting_key_names.count(column_name);
+    return sorting_key_names.contains(column_name);
 }
 
 
@@ -326,7 +383,7 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers) const
 {
     for (const auto & identifier : identifiers)
-        if (table_columns.count(identifier) == 0)
+        if (!table_columns.contains(identifier))
             return false;
 
     return true;
@@ -342,6 +399,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
             return true;
 
         /// disallow GLOBAL IN, GLOBAL NOT IN
+        /// TODO why?
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
             return true;
@@ -353,8 +411,8 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
-        if (array_joined_names.count(*opt_name) ||
-            array_joined_names.count(Nested::extractTableName(*opt_name)) ||
+        if (array_joined_names.contains(*opt_name) ||
+            array_joined_names.contains(Nested::extractTableName(*opt_name)) ||
             (is_final && !isSortingKey(*opt_name)))
             return true;
     }
@@ -369,7 +427,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
 
 void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 {
-    auto array_join_expression_list = select.arrayJoinExpressionList();
+    auto [array_join_expression_list, _] = select.arrayJoinExpressionList();
 
     /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
     if (!array_join_expression_list)

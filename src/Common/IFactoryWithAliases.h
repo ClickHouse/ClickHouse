@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Poco/String.h>
 
 #include <unordered_map>
@@ -27,9 +27,9 @@ protected:
 
     String getAliasToOrName(const String & name) const
     {
-        if (aliases.count(name))
+        if (aliases.contains(name))
             return aliases.at(name);
-        else if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.count(name_lowercase))
+        else if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
             return case_insensitive_aliases.at(name_lowercase);
         else
             return name;
@@ -108,7 +108,7 @@ public:
 
     bool isAlias(const String & name) const
     {
-        return aliases.count(name) || case_insensitive_aliases.count(name);
+        return aliases.count(name) || case_insensitive_aliases.contains(name);
     }
 
     bool hasNameOrAlias(const String & name) const
@@ -125,7 +125,7 @@ public:
         return name;
     }
 
-    virtual ~IFactoryWithAliases() override {}
+    ~IFactoryWithAliases() override = default;
 
 private:
     using InnerMap = std::unordered_map<String, Value>; // name -> creator

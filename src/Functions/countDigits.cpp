@@ -36,6 +36,7 @@ public:
     String getName() const override { return name; }
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -60,7 +61,7 @@ public:
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
-            using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
+            using ColVecType = ColumnVectorOrDecimal<Type>;
 
             if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
             {
@@ -83,7 +84,7 @@ private:
     template <typename T, typename ColVecType>
     static void execute(const ColVecType & col, ColumnUInt8 & result_column, size_t rows_count)
     {
-        using NativeT = typename NativeType<T>::Type;
+        using NativeT = NativeType<T>;
 
         const auto & src_data = col.getData();
         auto & dst_data = result_column.getData();
@@ -91,7 +92,7 @@ private:
 
         for (size_t i = 0; i < rows_count; ++i)
         {
-            if constexpr (IsDecimalNumber<T>)
+            if constexpr (is_decimal<T>)
                 dst_data[i] = digits<NativeT>(src_data[i].value);
             else
                 dst_data[i] = digits<NativeT>(src_data[i]);
@@ -101,7 +102,7 @@ private:
     template <typename T>
     static UInt32 digits(T value)
     {
-        static_assert(!IsDecimalNumber<T>);
+        static_assert(!is_decimal<T>);
         using DivT = std::conditional_t<is_signed_v<T>, Int32, UInt32>;
 
         UInt32 res = 0;

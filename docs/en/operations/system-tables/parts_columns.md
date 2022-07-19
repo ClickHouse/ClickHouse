@@ -1,4 +1,4 @@
-# system.parts_columns {#system_tables-parts_columns}
+# parts_columns
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -19,10 +19,10 @@ Columns:
 
     Possible values:
 
-    -   `Wide` — Each column is stored in a separate file in a filesystem. 
-    -   `Compact` — All columns are stored in one file in a filesystem. 
+    -   `Wide` — Each column is stored in a separate file in a filesystem.
+    -   `Compact` — All columns are stored in one file in a filesystem.
 
-    Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table. 
+    Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table.
 
 -   `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
 
@@ -145,4 +145,3 @@ column_marks_bytes:                    48
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/parts_columns) <!--hide-->

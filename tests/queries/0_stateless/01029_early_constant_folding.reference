@@ -2,7 +2,7 @@ SELECT 1
 WHERE 0
 SELECT 1
 SELECT 1
-WHERE (1 IN (0, 2)) AND (2 = (identity(CAST(2, \'UInt8\')) AS subquery))
+WHERE (1 IN (0, 2)) AND (2 = (identity(_CAST(2, \'Nullable(UInt8)\')) AS subquery))
 SELECT 1
 WHERE 1 IN ((
     SELECT arrayJoin([1, 2, 3])

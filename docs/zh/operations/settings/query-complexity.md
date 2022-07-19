@@ -254,4 +254,4 @@ Possible values:
 Default value: 0.
 
 
-[原始文章](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/settings/query_complexity/) <!--hide-->

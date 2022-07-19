@@ -1,39 +1,54 @@
 #pragma once
 
 #include <Server/KeeperTCPHandler.h>
-#include <Poco/Net/TCPServerConnectionFactory.h>
+#include <Server/TCPServerConnectionFactory.h>
 #include <Poco/Net/NetException.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Server/IServer.h>
 #include <string>
 
 namespace DB
 {
 
-class KeeperTCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
+using ConfigGetter = std::function<const Poco::Util::AbstractConfiguration & ()>;
+
+class KeeperTCPHandlerFactory : public TCPServerConnectionFactory
 {
 private:
-    IServer & server;
+    ConfigGetter config_getter;
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Logger * log;
+    Poco::Timespan receive_timeout;
+    Poco::Timespan send_timeout;
+
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
     public:
         using Poco::Net::TCPServerConnection::TCPServerConnection;
         void run() override {}
     };
+
 public:
-    KeeperTCPHandlerFactory(IServer & server_, bool secure)
-        : server(server_)
+    KeeperTCPHandlerFactory(
+        ConfigGetter config_getter_,
+        std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
+        uint64_t receive_timeout_seconds,
+        uint64_t send_timeout_seconds,
+        bool secure)
+        : config_getter(config_getter_)
+        , keeper_dispatcher(keeper_dispatcher_)
         , log(&Poco::Logger::get(std::string{"KeeperTCP"} + (secure ? "S" : "") + "HandlerFactory"))
+        , receive_timeout(/* seconds = */ receive_timeout_seconds, /* microseconds = */ 0)
+        , send_timeout(/* seconds = */ send_timeout_seconds, /* microseconds = */ 0)
     {
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
     {
         try
         {
             LOG_TRACE(log, "Keeper request. Address: {}", socket.peerAddress().toString());
-            return new KeeperTCPHandler(server, socket);
+            return new KeeperTCPHandler(config_getter(), keeper_dispatcher, receive_timeout, send_timeout, socket);
         }
         catch (const Poco::Net::NetException &)
         {
@@ -41,6 +56,7 @@ public:
             return new DummyTCPHandler(socket);
         }
     }
+
 };
 
 }

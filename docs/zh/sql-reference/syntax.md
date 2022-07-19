@@ -1,6 +1,6 @@
 ---
-toc_priority: 31
-toc_title: SQL语法
+sidebar_position: 31
+sidebar_label: SQL语法
 
 ---
 
@@ -54,7 +54,7 @@ ClickHouse支持SQL风格或C语言风格的注释：
 -   集群、数据库、表、分区、列的名称
 -   函数
 -   数据类型
--   [表达式别名](https://clickhouse.tech/docs/zh/sql-reference/syntax/#syntax-expression_aliases)
+-   [表达式别名](https://clickhouse.com/docs/zh/sql-reference/syntax/#syntax-expression_aliases)
 
 变量名可以被括起或不括起，后者是推荐做法。
 
@@ -192,4 +192,4 @@ select查询中，星号可以代替表达式使用。详情请参见“select�
 表达式列表是用逗号分隔的一个或多个表达式。
 反过来，函数和运算符可以将表达式作为参数。
 
-[原始文档](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->

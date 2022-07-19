@@ -2,6 +2,8 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 
 namespace ProfileEvents
@@ -45,13 +47,14 @@ struct QueryThreadLogElement
 
     ClientInfo client_info;
 
-    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
     static std::string name() { return "QueryThreadLog"; }
 
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 
@@ -62,5 +65,3 @@ class QueryThreadLog : public SystemLog<QueryThreadLogElement>
 
 
 }
-
-

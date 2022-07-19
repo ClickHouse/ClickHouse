@@ -20,3 +20,6 @@ SELECT ? AS xyz11
 SELECT ? xyz11
 SELECT ?, xyz11
 SELECT ?..
+SELECT ? xyz11
+SELECT ?, xyz11
+SELECT ?..

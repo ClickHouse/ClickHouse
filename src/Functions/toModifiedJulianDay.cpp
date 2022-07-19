@@ -138,6 +138,8 @@ namespace DB
             return return_type;
         }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
         {
             return std::make_unique<ExecutableFunctionToModifiedJulianDay<Name, ToDataType, nullOnErrors>>();
@@ -155,10 +157,7 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return Monotonicity(
-                true,  // is_monotonic
-                true,  // is_positive
-                true); // is_always_monotonic
+            return { .is_monotonic = true, .is_always_monotonic = true };
         }
 
     private:

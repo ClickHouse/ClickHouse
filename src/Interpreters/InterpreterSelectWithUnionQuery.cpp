@@ -2,8 +2,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -13,6 +15,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -30,9 +33,16 @@ namespace ErrorCodes
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+    : InterpreterSelectWithUnionQuery(query_ptr_, Context::createCopy(context_), options_, required_result_column_names)
+{
+}
+
+InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
+    bool require_full_header = ast->hasNonDefaultUnionMode();
 
     const Settings & settings = context->getSettingsRef();
     if (options.subquery_depth == 0 && (settings.limit > 0 || settings.offset > 0))
@@ -49,7 +59,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     nested_interpreters.reserve(num_children);
     std::vector<Names> required_result_column_names_for_other_selects(num_children);
 
-    if (!required_result_column_names.empty() && num_children > 1)
+    if (!require_full_header && !required_result_column_names.empty() && num_children > 1)
     {
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
@@ -79,10 +89,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    if (num_children == 1 && settings_limit_offset_needed)
+    if (num_children == 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
         const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
-        ASTSelectQuery * select_query = first_select_ast->as<ASTSelectQuery>();
+        ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
+        if (!select_query)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
 
         if (!select_query->withFill() && !select_query->limit_with_ties)
         {
@@ -98,7 +110,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             }
             else if (settings.offset)
             {
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.offset)));
+                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(settings.offset)));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
 
@@ -109,19 +121,19 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
                 UInt64 new_limit_length = 0;
                 if (settings.offset == 0)
-                    new_limit_length = std::min(limit_length, UInt64(settings.limit));
+                    new_limit_length = std::min(limit_length, static_cast<UInt64>(settings.limit));
                 else if (settings.offset < limit_length)
-                    new_limit_length =  settings.limit ? std::min(UInt64(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
+                    new_limit_length =  settings.limit ? std::min(static_cast<UInt64>(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
 
                 limit_length_ast->as<ASTLiteral &>().value = Field(new_limit_length);
             }
             else if (settings.limit)
             {
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.limit)));
+                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(settings.limit)));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 
-            settings_limit_offset_done = true;
+            options.settings_limit_offset_done = true;
         }
     }
 
@@ -131,7 +143,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
-            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), current_required_result_column_names));
+            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
+        // We need to propagate the uses_view_source flag from children to the (self) parent since, if one of the children uses
+        // a view source that means that the parent uses it too and can be cached globally
+        uses_view_source |= nested_interpreters.back()->usesViewSource();
     }
 
     /// Determine structure of the result.
@@ -144,7 +159,22 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     {
         Blocks headers(num_children);
         for (size_t query_num = 0; query_num < num_children; ++query_num)
+        {
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
+            const auto & current_required_result_column_names = required_result_column_names_for_other_selects[query_num];
+            if (!current_required_result_column_names.empty())
+            {
+                const auto & header_columns = headers[query_num].getNames();
+                if (current_required_result_column_names != header_columns)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Different order of columns in UNION subquery: {} and {}",
+                        fmt::join(current_required_result_column_names, ", "),
+                        fmt::join(header_columns, ", "));
+                }
+
+            }
+        }
 
         result_header = getCommonHeaderForUnion(headers);
     }
@@ -199,8 +229,10 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
-    else
+    else if (ast_ptr_->as<ASTSelectQuery>())
         return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+    else
+        return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
@@ -208,14 +240,24 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    else
+    else if (ast_ptr_->as<ASTSelectQuery>())
         return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
+    else
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
 Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery)
 {
+    if (!context_->hasQueryContext())
+    {
+        if (is_subquery)
+            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
+        else
+            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
+    }
+
     auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
     auto key = queryToString(query_ptr_);
@@ -225,10 +267,14 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     }
 
     if (is_subquery)
+    {
         return cache[key]
             = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
+    }
     else
+    {
         return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
+    }
 }
 
 
@@ -237,6 +283,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     // auto num_distinct_union = optimizeUnionList();
     size_t num_plans = nested_interpreters.size();
     const Settings & settings = context->getSettingsRef();
+
+    auto local_limits = getStorageLimits(*context, options);
+    storage_limits.emplace_back(local_limits);
+    for (auto & interpreter : nested_interpreters)
+        interpreter->addStorageLimits(storage_limits);
 
     /// Skip union for single interpreter.
     if (num_plans == 1)
@@ -273,19 +324,24 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
         const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
-        if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
+        if (query.union_mode == SelectUnionMode::DISTINCT)
         {
             /// Add distinct transform
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-            auto distinct_step
-                = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+            auto distinct_step = std::make_unique<DistinctStep>(
+                query_plan.getCurrentDataStream(),
+                limits,
+                0,
+                result_header.getNames(),
+                false,
+                settings.optimize_distinct_in_order);
 
             query_plan.addStep(std::move(distinct_step));
         }
     }
 
-    if (settings_limit_offset_needed && !settings_limit_offset_done)
+    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
         if (settings.limit > 0)
         {
@@ -301,6 +357,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
     }
 
+    query_plan.addInterpreterContext(context);
 }
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
@@ -310,16 +367,14 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline = query_plan.buildQueryPipeline(
+    auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    res.pipeline = std::move(*pipeline);
-    res.pipeline.addInterpreterContext(context);
-
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    setQuota(res.pipeline);
     return res;
 }
-
 
 void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {

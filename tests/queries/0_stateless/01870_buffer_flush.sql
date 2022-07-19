@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 -- Check that Buffer will be flushed before shutdown
 -- (via DETACH DATABASE)
 

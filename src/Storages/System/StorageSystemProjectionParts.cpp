@@ -90,18 +90,17 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
 }
 
 void StorageSystemProjectionParts::processNextStorage(
-    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
-    MergeTreeData::DataPartsVector all_parts;
-
-    all_parts = info.getParts(all_parts_state, has_state_column, true /* require_projection_parts */);
-
-    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        const auto & part = all_parts[part_number];
+        const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
+        chassert(parent_part);
+
         auto part_state = all_parts_state[part_number];
 
         ColumnSize columns_size = part->getTotalColumnsSize();
@@ -125,7 +124,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(parent_part->getTypeName());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part_state == State::Committed);
+            columns[res_index++]->insert(part_state == State::Active);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
@@ -201,9 +200,9 @@ void StorageSystemProjectionParts::processNextStorage(
         if (part->isStoredOnDisk())
         {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
         }
         else
         {
@@ -282,7 +281,7 @@ void StorageSystemProjectionParts::processNextStorage(
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
-            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
+            columns[res_index++]->insert(IMergeTreeDataPart::stateString(part_state));
     }
 }
 

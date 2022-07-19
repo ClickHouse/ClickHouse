@@ -9,7 +9,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
@@ -28,7 +27,9 @@ public:
         const TablesWithColumns & tables;
         ContextPtr context;
         const std::unordered_set<String> & group_by_function_hashes;
-        Monotonicity monotonicity{true, true, true};
+
+        Monotonicity monotonicity = { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+
         ASTIdentifier * identifier = nullptr;
         DataTypePtr arg_data_type = {};
 
@@ -46,8 +47,7 @@ public:
             /// if ORDER BY contains aggregate function or window functions, it
             /// shouldn't be optimized
             if (ast_function.is_window_function
-                || AggregateFunctionFactory::instance().isAggregateFunctionName(
-                    ast_function.name))
+                || AggregateUtils::isAggregateFunction(ast_function))
             {
                 return false;
             }

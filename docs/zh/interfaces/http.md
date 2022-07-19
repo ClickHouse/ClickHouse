@@ -1,6 +1,6 @@
 ---
-toc_priority: 19
-toc_title: HTTP客户端
+sidebar_position: 19
+sidebar_label: HTTP客户端
 ---
 
 # HTTP客户端 {#http-interface}
@@ -15,6 +15,17 @@ HTTP接口允许您在任何编程语言的任何平台上使用ClickHouse。我
 
 ``` bash
 $ curl 'http://localhost:8123/'
+Ok.
+```
+
+Web UI 可以通过这个地址访问: `http://localhost:8123/play`.
+在运行状况检查脚本中，使用`GET /ping`请求。这个处理方法总是返回 "Ok"。(以换行结尾)。可从18.12.13版获得。请参见' /replicas_status '检查复制集的延迟。
+
+
+``` bash
+$ curl 'http://localhost:8123/ping'
+Ok.
+$ curl 'http://localhost:8123/replicas_status'
 Ok.
 ```
 
@@ -162,7 +173,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 如果在URL中指定了`compress=1`，服务会返回压缩的数据。
 如果在URL中指定了`decompress=1`，服务会解压通过POST方法发送的数据。
 
-您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](#settings-http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。 
+您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](#settings-http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。
 
 您可以使用它在传输大量数据时减少网络流量，或者创建立即压缩的转储。
 
@@ -407,7 +418,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 是一个预定义的`predefined_query_handler`查询，它由ClickHouse在匹配HTTP请求并返回查询结果时执行。这是一个必须的配置。
 
-以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_alter_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
+以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
 
 示例:
 
@@ -430,9 +441,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 !!! note "警告"
@@ -444,7 +455,7 @@ max_alter_threads   2
 
 ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值。`query_param_name`的默认值是`/query`。这是一个可选的配置。如果配置文件中没有定义，则不会传入参数。
 
-为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_alter_threads`，`queries`设置是否成功的值。
+为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`，`queries`设置是否成功的值。
 
 示例:
 
@@ -462,9 +473,9 @@ ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 ### static {#static}
@@ -624,4 +635,4 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/http_interface/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/interfaces/http_interface/) <!--hide-->

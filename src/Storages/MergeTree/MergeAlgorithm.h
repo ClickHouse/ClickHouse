@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -11,7 +11,5 @@ enum class MergeAlgorithm
     Horizontal, /// per-row merge of all columns
     Vertical /// per-row merge of PK and secondary indices columns, per-column gather for non-PK columns
 };
-
-String toString(MergeAlgorithm merge_algorithm);
 
 }

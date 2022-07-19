@@ -1,4 +1,9 @@
-<yandex>
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>
@@ -14,7 +19,8 @@
             </networks>
             <allow_databases>
                 <database>default</database>
+                <database>system</database>
             </allow_databases>
         </test_allow>
     </users>
-</yandex>
+</clickhouse>

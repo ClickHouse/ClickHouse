@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS dictionary_source_en;
 DROP TABLE IF EXISTS dictionary_source_ru;
 DROP TABLE IF EXISTS dictionary_source_view;
@@ -19,9 +21,11 @@ CREATE TABLE dictionary_source_ru
 
 INSERT INTO dictionary_source_ru VALUES (1, 'Один'), (2,'Два'), (3, 'Три');
 
-CREATE VIEW dictionary_source_view AS  SELECT id, dictionary_source_en.value as value_en, dictionary_source_ru.value as value_ru  FROM  dictionary_source_en LEFT JOIN dictionary_source_ru USING (id);
+CREATE VIEW dictionary_source_view AS
+    SELECT id, dictionary_source_en.value as value_en, dictionary_source_ru.value as value_ru
+    FROM dictionary_source_en LEFT JOIN dictionary_source_ru USING (id);
 
-select * from dictionary_source_view;
+select * from dictionary_source_view ORDER BY id;
 
 CREATE DICTIONARY flat_dictionary
 (

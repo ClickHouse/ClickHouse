@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 #include <memory>
 #include <vector>
@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/NamePrompter.h>
 
 namespace DB
 {
@@ -61,7 +62,7 @@ struct IndexDescription
 };
 
 /// All secondary indices in storage
-struct IndicesDescription : public std::vector<IndexDescription>
+struct IndicesDescription : public std::vector<IndexDescription>, IHints<1, IndicesDescription>
 {
     /// Index with name exists
     bool has(const String & name) const;
@@ -72,6 +73,8 @@ struct IndicesDescription : public std::vector<IndexDescription>
 
     /// Return common expression for all stored indices
     ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
+
+    Names getAllRegisteredNames() const override;
 };
 
 }

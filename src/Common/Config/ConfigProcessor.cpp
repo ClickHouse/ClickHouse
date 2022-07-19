@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 #include "ConfigProcessor.h"
 #include "YAMLParser.h"
 
@@ -20,8 +18,9 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <common/getResource.h>
-#include <common/errnoToString.h>
+#include <Common/getResource.h>
+#include <base/errnoToString.h>
+#include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -43,24 +42,6 @@ namespace ErrorCodes
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
 
-/// Extracts from a string the first encountered number consisting of at least two digits.
-static std::string numberFromHost(const std::string & s)
-{
-    for (size_t i = 0; i < s.size(); ++i)
-    {
-        std::string res;
-        size_t j = i;
-        while (j < s.size() && isNumericASCII(s[j]))
-            res += s[j++];
-        if (res.size() >= 2)
-        {
-            while (res[0] == '0')
-                res.erase(res.begin());
-            return res;
-        }
-    }
-    return "";
-}
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
@@ -125,7 +106,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
     }
-    std::sort(attrs_kv.begin(), attrs_kv.end());
+    ::sort(attrs_kv.begin(), attrs_kv.end());
 
     ElementIdentifier res;
     res.push_back(element->nodeName());
@@ -156,6 +137,35 @@ static Node * getRootNode(Document * document)
 static bool allWhitespace(const std::string & s)
 {
     return s.find_first_not_of(" \t\n\r") == std::string::npos;
+}
+
+static void deleteAttributesRecursive(Node * root)
+{
+    const NodeListPtr children = root->childNodes();
+    std::vector<Node *> children_to_delete;
+
+    for (size_t i = 0, size = children->length(); i < size; ++i)
+    {
+        Node * child = children->item(i);
+
+        if (child->nodeType() == Node::ELEMENT_NODE)
+        {
+            Element & child_element = dynamic_cast<Element &>(*child);
+
+            if (child_element.hasAttribute("replace"))
+                child_element.removeAttribute("replace");
+
+            if (child_element.hasAttribute("remove"))
+                children_to_delete.push_back(child);
+            else
+                deleteAttributesRecursive(child);
+        }
+    }
+
+    for (auto * child : children_to_delete)
+    {
+        root->removeChild(child);
+    }
 }
 
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
@@ -219,6 +229,10 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         }
         if (!merged && !remove)
         {
+            /// Since we didn't find a pair to this node in default config, we will paste it as is.
+            /// But it may have some child nodes which have attributes like "replace" or "remove".
+            /// They are useless in preprocessed configuration.
+            deleteAttributesRecursive(with_node);
             NodePtr new_node = config->importNode(with_node, true);
             config_root->appendChild(new_node);
         }
@@ -230,23 +244,21 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
 
-    if (config_root->nodeName() != with_root->nodeName())
-        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
+    std::string config_root_node_name = config_root->nodeName();
+    std::string merged_root_node_name = with_root->nodeName();
+
+    /// For compatibility, we treat 'yandex' and 'clickhouse' equivalent.
+    /// See https://clickhouse.com/blog/en/2021/clickhouse-inc/
+
+    if (config_root_node_name != merged_root_node_name
+        && !((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
+            && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
+    {
+        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
+            " It must be <" + config_root->nodeName() + ">");
+    }
 
     mergeRecursive(config, config_root, with_root);
-}
-
-static std::string layerFromHost()
-{
-    struct utsname buf;
-    if (uname(&buf))
-        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
-
-    std::string layer = numberFromHost(buf.nodename);
-    if (layer.empty())
-        throw Poco::Exception(std::string("no layer in host name: ") + buf.nodename);
-
-    return layer;
 }
 
 void ConfigProcessor::doIncludesRecursive(
@@ -278,18 +290,6 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (node->nodeType() != Node::ELEMENT_NODE)
         return;
-
-    /// Substitute <layer> for the number extracted from the hostname only if there is an
-    /// empty <layer> tag without attributes in the original file.
-    if (node->nodeName() == "layer"
-        && !node->hasAttributes()
-        && !node->hasChildNodes()
-        && node->nodeValue().empty())
-    {
-        NodePtr new_node = config->createTextNode(layerFromHost());
-        node->appendChild(new_node);
-        return;
-    }
 
     std::map<std::string, const Node *> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
@@ -386,7 +386,7 @@ void ConfigProcessor::doIncludesRecursive(
     {
         auto get_incl_node = [&](const std::string & name)
         {
-            return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
+            return include_from ? getRootNode(include_from.get())->getNodeByPath(name) : nullptr;
         };
 
         process_include(attr_nodes["incl"], get_incl_node, "Include not found: ");
@@ -477,7 +477,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
-    std::sort(files.begin(), files.end());
+    ::sort(files.begin(), files.end());
 
     return files;
 }
@@ -514,7 +514,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     else
     {
         /// These embedded files added during build with some cmake magic.
-        /// Look at the end of programs/sever/CMakeLists.txt.
+        /// Look at the end of programs/server/CMakeLists.txt.
         std::string embedded_name;
         if (path == "config.xml")
             embedded_name = "embedded.xml";
@@ -577,7 +577,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     std::unordered_set<std::string> contributing_zk_paths;
     try
     {
-        Node * node = config->getNodeByPath("yandex/include_from");
+        Node * node = getRootNode(config.get())->getNodeByPath("include_from");
+
         XMLDocumentPtr include_from;
         std::string include_from_path;
         if (node)
@@ -695,6 +696,10 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             if (new_path.starts_with(main_config_path))
                 new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
+
+            /// If we have config file in YAML format, the preprocessed config will inherit .yaml extension
+            /// but will contain config in XML format, so some tools like clickhouse extract-from-config won't work
+            new_path = fs::path(new_path).replace_extension(".xml").string();
 
             if (preprocessed_dir.empty())
             {

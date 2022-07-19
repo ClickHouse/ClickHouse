@@ -1,11 +1,11 @@
 ---
-toc_priority: 58
-toc_title: "Функции для работы с внешними словарями"
+sidebar_position: 58
+sidebar_label: "Функции для работы с внешними словарями"
 ---
 
-!!! attention "Внимание"
+    :::note "Внимание"
     Для словарей, созданных с помощью [DDL-запросов](../../sql-reference/statements/create/dictionary.md), в параметре `dict_name` указывается полное имя словаря вместе с базой данных, например: `<database>.<dict_name>`. Если база данных не указана, используется текущая.
-
+    :::
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
@@ -23,8 +23,8 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 **Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `attr_names` — имя столбца словаря, [Строковый литерал](../syntax.md#syntax-string-literal), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
+-   `attr_names` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
+-   `id_expr` — значение ключа словаря. [Expression](../../sql-reference/syntax.md#syntax-expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
 -   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_names`, или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких выражений.
 
 **Возвращаемое значение**
@@ -53,7 +53,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 Настройка внешнего словаря:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -77,7 +77,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Выполним запрос:
@@ -87,7 +87,7 @@ SELECT
     dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
     toTypeName(val) AS type
 FROM system.numbers
-LIMIT 3
+LIMIT 3;
 ```
 
 ``` text
@@ -113,7 +113,7 @@ LIMIT 3
 Настройка внешнего словаря:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-mult</name>
         <source>
@@ -138,11 +138,11 @@ LIMIT 3
                 <name>c2</name>
                 <type>String</type>
                 <null_value></null_value>
-            </attribute>            
+            </attribute>
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Выполним запрос:
@@ -237,7 +237,7 @@ dictHas('dict_name', id)
 **Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
+-   `id_expr` — значение ключа словаря. [Expression](../../sql-reference/syntax.md#syntax-expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 
 **Возвращаемое значение**
 
@@ -290,16 +290,16 @@ Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-refere
 
 Возвращает потомков первого уровня в виде массива индексов. Это обратное преобразование для [dictGetHierarchy](#dictgethierarchy).
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 dictGetChildren(dict_name, key)
 ```
 
-**Аргументы** 
+**Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 
 **Возвращаемые значения**
 
@@ -337,7 +337,7 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 
 ## dictGetDescendant {#dictgetdescendant}
 
-Возвращает всех потомков, как если бы функция [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.  
+Возвращает всех потомков, как если бы функция [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.
 
 **Синтаксис**
 
@@ -345,9 +345,9 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 dictGetDescendants(dict_name, key, level)
 ```
 
-**Аргументы** 
+**Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 -   `level` — уровень иерархии. Если `level = 0`, возвращаются все потомки. [UInt8](../../sql-reference/data-types/int-uint.md).
 

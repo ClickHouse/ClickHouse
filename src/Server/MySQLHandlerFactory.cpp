@@ -2,8 +2,8 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>
-#include <common/logger_useful.h>
-#include <common/scope_guard.h>
+#include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Server/MySQLHandler.h>
 
 #if USE_SSL
@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int OPENSSL_ERROR;
 }
@@ -66,7 +67,10 @@ void MySQLHandlerFactory::readRSAKeys()
         FILE * fp = fopen(certificate_file.data(), "r");
         if (fp == nullptr)
             throw Exception("Cannot open certificate file: " + certificate_file + ".", ErrorCodes::CANNOT_OPEN_FILE);
-        SCOPE_EXIT(fclose(fp));
+        SCOPE_EXIT(
+            if (0 != fclose(fp))
+                throwFromErrno("Cannot close file with the certificate in MySQLHandlerFactory", ErrorCodes::CANNOT_CLOSE_FILE);
+        );
 
         X509 * x509 = PEM_read_X509(fp, nullptr, nullptr, nullptr);
         SCOPE_EXIT(X509_free(x509));
@@ -89,7 +93,10 @@ void MySQLHandlerFactory::readRSAKeys()
         FILE * fp = fopen(private_key_file.data(), "r");
         if (fp == nullptr)
             throw Exception ("Cannot open private key file " + private_key_file + ".", ErrorCodes::CANNOT_OPEN_FILE);
-        SCOPE_EXIT(fclose(fp));
+        SCOPE_EXIT(
+            if (0 != fclose(fp))
+                throwFromErrno("Cannot close file with the certificate in MySQLHandlerFactory", ErrorCodes::CANNOT_CLOSE_FILE);
+        );
 
         private_key.reset(PEM_read_RSAPrivateKey(fp, nullptr, nullptr, nullptr));
         if (!private_key)
@@ -118,14 +125,14 @@ void MySQLHandlerFactory::generateRSAKeys()
 }
 #endif
 
-Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket)
+Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
     size_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 #if USE_SSL
-    return new MySQLHandlerSSL(server, socket, ssl_enabled, connection_id, *public_key, *private_key);
+    return new MySQLHandlerSSL(server, tcp_server, socket, ssl_enabled, connection_id, *public_key, *private_key);
 #else
-    return new MySQLHandler(server, socket, ssl_enabled, connection_id);
+    return new MySQLHandler(server, tcp_server, socket, ssl_enabled, connection_id);
 #endif
 
 }

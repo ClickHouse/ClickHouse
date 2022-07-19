@@ -1,12 +1,13 @@
 #pragma once
 
 #include <algorithm>
-#include <cstring>
 #include <memory>
 #include <iostream>
 #include <cassert>
+#include <cstring>
 
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <IO/BufferBase.h>
 
 
@@ -16,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -58,8 +60,8 @@ public:
         pos = working_buffer.begin();
     }
 
-    /** it is desirable in the derived classes to place the next() call in the destructor,
-      * so that the last data is written
+    /** it is desirable in the derived classes to place the finalize() call in the destructor,
+      * so that the last data is written (if finalize() wasn't called explicitly)
       */
     virtual ~WriteBuffer() = default;
 
@@ -72,6 +74,9 @@ public:
 
     void write(const char * from, size_t n)
     {
+        if (finalized)
+            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+
         size_t bytes_copied = 0;
 
         /// Produces endless loop
@@ -90,20 +95,58 @@ public:
 
     inline void write(char x)
     {
+        if (finalized)
+            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+
         nextIfAtEnd();
         *pos = x;
         ++pos;
     }
 
+    /// This method may be called before finalize() to tell there would not be any more data written.
+    /// Used does not have to call it, implementation should check it itself if needed.
+    ///
+    /// The idea is similar to prefetch. In case if all data is written, we can flush the buffer
+    /// and start sending data asynchronously. It may improve writing performance in case you have
+    /// multiple files to finalize. Mainly, for blob storage, finalization has high latency,
+    /// and calling preFinalize in a loop may parallelize it.
+    virtual void preFinalize() { next(); }
+
+    /// Write the last data.
+    void finalize()
+    {
+        if (finalized)
+            return;
+
+        /// finalize() is often called from destructors.
+        LockMemoryExceptionInThread lock(VariableContext::Global);
+        try
+        {
+            finalizeImpl();
+            finalized = true;
+        }
+        catch (...)
+        {
+            pos = working_buffer.begin();
+            finalized = true;
+            throw;
+        }
+    }
+
+    /// Wait for data to be reliably written. Mainly, call fsync for fd.
+    /// May be called after finalize() if needed.
     virtual void sync()
     {
         next();
     }
 
-    virtual void finalize()
+protected:
+    virtual void finalizeImpl()
     {
         next();
     }
+
+    bool finalized = false;
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

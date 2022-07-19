@@ -1,3 +1,9 @@
+---
+sidebar_position: 0
+sidebar_label: 什么是ClickHouse？
+---
+
+
 # 什么是ClickHouse？ {#shi-yao-shi-clickhouse}
 
 ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)。
@@ -87,4 +93,4 @@ ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)�
 
 请注意，为了提高CPU效率，查询语言必须是声明型的(SQL或MDX)， 或者至少一个向量(J，K)。 查询应该只包含隐式循环，允许进行优化。
 
-[来源文章](https://clickhouse.tech/docs/zh/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/) <!--hide-->

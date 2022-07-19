@@ -1,4 +1,4 @@
-# system.settings_profile_elements {#system_tables-settings_profile_elements}
+# settings_profile_elements
 
 Describes the content of the settings profile:
 
@@ -27,4 +27,4 @@ Columns:
 
 -    `inherit_profile` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — A parent profile for this setting profile. `NULL` if not set. Setting profile will inherit all the settings' values and constraints (`min`, `max`, `readonly`) from its parent profiles.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/settings_profile_elements) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings_profile_elements) <!--hide-->

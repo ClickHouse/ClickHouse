@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/logger_useful.h>
 
 #include <array>
 
@@ -26,7 +27,8 @@ NamesAndTypesList TextLogElement::getNamesAndTypes()
                 {"Notice",         static_cast<Int8>(Message::PRIO_NOTICE)},
                 {"Information",    static_cast<Int8>(Message::PRIO_INFORMATION)},
                 {"Debug",          static_cast<Int8>(Message::PRIO_DEBUG)},
-                {"Trace",          static_cast<Int8>(Message::PRIO_TRACE)}
+                {"Trace",          static_cast<Int8>(Message::PRIO_TRACE)},
+                {"Test",           static_cast<Int8>(Message::PRIO_TEST)},
         });
 
     return
