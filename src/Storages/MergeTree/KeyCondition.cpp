@@ -900,25 +900,26 @@ bool KeyCondition::tryPrepareSetIndex(
         /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
         /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
         /// that the types it was prepared with are compatible with the types of the primary key.
-        auto set_ast_hash = right_arg->getTreeHash();
-        const auto & sets_map = prepared_sets->getSetsMap();
-        auto set_it = std::find_if(
-            sets_map.begin(), sets_map.end(),
-            [&](const auto & candidate_entry)
-            {
-                if (candidate_entry.first.ast_hash != set_ast_hash)
+
+        auto types_match = [&indexes_mapping, &data_types](const SetPtr & candidate_set)
+        {
+            assert(indexes_mapping.size() == data_types.size());
+
+            for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
                     return false;
 
-                for (size_t i = 0; i < indexes_mapping.size(); ++i)
-                    if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
-                        return false;
+            return true;
+        };
 
-                return true;
-        });
-        if (set_it == sets_map.end())
-            return false;
-
-        prepared_set = set_it->second;
+        for (const auto & set : prepared_sets->getByTreeHash(right_arg->getTreeHash()))
+        {
+            if (types_match(set))
+            {
+                prepared_set = set;
+                break;
+            }
+        }
     }
 
     /// The index can be prepared if the elements of the set were saved in advance.

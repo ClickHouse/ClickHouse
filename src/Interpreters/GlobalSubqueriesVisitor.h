@@ -178,12 +178,8 @@ public:
             }
             else
             {
-                auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
-                auto & subquery_for_set = prepared_sets->createOrGetSubquery(external_table_name, set_key);
-
-                subquery_for_set.source = std::make_unique<QueryPlan>();
-                interpreter->buildQueryPlan(*subquery_for_set.source);
-                subquery_for_set.table = external_storage;
+                auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
+                subquery_for_set.setSource(*interpreter, external_storage);
             }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,

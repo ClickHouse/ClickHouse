@@ -23,7 +23,7 @@ class Logger;
 
 namespace DB
 {
-struct SubqueryForSet;
+class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
