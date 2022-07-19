@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/SetVariants.h>
 

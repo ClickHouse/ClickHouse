@@ -1,9 +1,9 @@
 ---
-sidebar_position: 50
-sidebar_label:  SummingMergeTree
+toc_priority: 34
+toc_title: SummingMergeTree
 ---
 
-# SummingMergeTree
+# SummingMergeTree {#summingmergetree}
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
@@ -41,9 +41,8 @@ When creating a `SummingMergeTree` table the same [clauses](../../../engines/tab
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
-Do not use this method in new projects and, if possible, switch the old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -137,4 +136,4 @@ When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggreg
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

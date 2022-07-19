@@ -1,11 +1,11 @@
 #include "LZ4_decompress_faster.h"
 
-#include <cstring>
+#include <string.h>
 #include <iostream>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
-#include <base/types.h>
-#include <base/unaligned.h>
+#include <common/types.h>
+#include <common/unaligned.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -70,7 +70,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined(__riscv)
+#if defined(__x86_64__) || defined(__PPC__)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -261,7 +261,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined (__riscv)
+#if defined(__x86_64__) || defined(__PPC__)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
@@ -450,11 +450,7 @@ bool NO_INLINE decompressImpl(
         const unsigned token = *ip++;
         length = token >> 4;
         if (length == 0x0F)
-        {
-            if (unlikely(ip + 1 >= input_end))
-                return false;
             continue_read_length();
-        }
 
         /// Copy literals.
 
@@ -473,20 +469,6 @@ bool NO_INLINE decompressImpl(
 
         if (unlikely(copy_end > output_end))
             return false;
-
-        // Due to implementation specifics the copy length is always a multiple of copy_amount
-        size_t real_length = 0;
-
-        static_assert(copy_amount == 8 || copy_amount == 16 || copy_amount == 32);
-        if constexpr (copy_amount == 8)
-            real_length = (((length >> 3) + 1) * 8);
-        else if constexpr (copy_amount == 16)
-            real_length = (((length >> 4) + 1) * 16);
-        else if constexpr (copy_amount == 32)
-            real_length = (((length >> 5) + 1) * 32);
-
-        if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
-             return false;
 
         wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
@@ -512,11 +494,7 @@ bool NO_INLINE decompressImpl(
 
         length = token & 0x0F;
         if (length == 0x0F)
-        {
-            if (unlikely(ip + 1 >= input_end))
-                return false;
             continue_read_length();
-        }
         length += 4;
 
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
@@ -628,12 +606,12 @@ void StreamStatistics::print() const
 {
     std::cerr
         << "Num tokens: " << num_tokens
-        << ", Avg literal length: " << static_cast<double>(sum_literal_lengths) / num_tokens
-        << ", Avg match length: " << static_cast<double>(sum_match_lengths) / num_tokens
-        << ", Avg match offset: " << static_cast<double>(sum_match_offsets) / num_tokens
-        << ", Offset < 8 ratio: " << static_cast<double>(count_match_offset_less_8) / num_tokens
-        << ", Offset < 16 ratio: " << static_cast<double>(count_match_offset_less_16) / num_tokens
-        << ", Match replicate itself: " << static_cast<double>(count_match_replicate_itself) / num_tokens
+        << ", Avg literal length: " << double(sum_literal_lengths) / num_tokens
+        << ", Avg match length: " << double(sum_match_lengths) / num_tokens
+        << ", Avg match offset: " << double(sum_match_offsets) / num_tokens
+        << ", Offset < 8 ratio: " << double(count_match_offset_less_8) / num_tokens
+        << ", Offset < 16 ratio: " << double(count_match_offset_less_16) / num_tokens
+        << ", Match replicate itself: " << double(count_match_replicate_itself) / num_tokens
         << "\n";
 }
 

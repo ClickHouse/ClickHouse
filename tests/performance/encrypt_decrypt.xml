@@ -15,12 +15,14 @@
               <value>encrypt('aes-128-gcm', materialize(plaintext), key16, iv12, 'aadaadaadaad')</value>
 
               <value>encrypt('aes-192-cbc', materialize(plaintext), key24, iv16)</value>
+              <value>encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-ctr', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-ecb', materialize(plaintext), key24)</value>
               <value>encrypt('aes-192-ofb', materialize(plaintext), key24, iv16)</value>
               <value>encrypt('aes-192-gcm', materialize(plaintext), key24, iv12, 'aadaadaadaad')</value>
 
               <value>encrypt('aes-256-cbc', materialize(plaintext), key32, iv16)</value>
+              <value>encrypt('aes-256-cfb128', materialize(plaintext), key32, iv16)</value>
               <value>encrypt('aes-256-ctr', materialize(plaintext), key32, iv16)</value>
               <value>encrypt('aes-256-ecb', materialize(plaintext), key32)</value>
               <value>encrypt('aes-256-ofb', materialize(plaintext), key32, iv16)</value>
@@ -35,12 +37,14 @@
               <value>decrypt('aes-128-gcm', encrypt('aes-128-gcm', materialize(plaintext), key16, iv12, 'aadaadaadaad'), key16, iv12, 'aadaadaadaad')</value>
 
               <value>decrypt('aes-192-cbc', encrypt('aes-192-cbc', materialize(plaintext), key24, iv16), key24, iv16)</value>
+              <value>decrypt('aes-192-cfb128', encrypt('aes-192-cfb128', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-ctr', encrypt('aes-192-ctr', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-ecb', encrypt('aes-192-ecb', materialize(plaintext), key24), key24)</value>
               <value>decrypt('aes-192-ofb', encrypt('aes-192-ofb', materialize(plaintext), key24, iv16), key24, iv16)</value>
               <value>decrypt('aes-192-gcm', encrypt('aes-192-gcm', materialize(plaintext), key24, iv12, 'aadaadaadaad'), key24, iv12, 'aadaadaadaad')</value>
 
               <value>decrypt('aes-256-cbc', encrypt('aes-256-cbc', materialize(plaintext), key32, iv16), key32, iv16)</value>
+              <value>decrypt('aes-256-cfb128', encrypt('aes-256-cfb128', materialize(plaintext), key32, iv16), key32, iv16)</value>
               <value>decrypt('aes-256-ctr', encrypt('aes-256-ctr', materialize(plaintext), key32, iv16), key32, iv16)</value>
               <value>decrypt('aes-256-ecb', encrypt('aes-256-ecb', materialize(plaintext), key32), key32)</value>
               <value>decrypt('aes-256-ofb', encrypt('aes-256-ofb', materialize(plaintext), key32, iv16), key32, iv16)</value>

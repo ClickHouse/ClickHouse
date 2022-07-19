@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <remote_servers>
 
         <![CDATA[
@@ -46,4 +46,4 @@
         </two_shards_one_local_one_remote_at_port_9001>
 
     </remote_servers>
-</clickhouse>
+</yandex>

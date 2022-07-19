@@ -2,7 +2,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Merges/Algorithms/FixedSizeDequeWithGaps.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <queue>
 
 namespace DB

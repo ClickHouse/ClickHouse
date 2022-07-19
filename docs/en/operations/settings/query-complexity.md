@@ -1,9 +1,9 @@
 ---
-sidebar_position: 59
-sidebar_label: Restrictions on Query Complexity
+toc_priority: 59
+toc_title: Restrictions on Query Complexity
 ---
 
-# Restrictions on Query Complexity
+# Restrictions on Query Complexity {#restrictions-on-query-complexity}
 
 Restrictions on query complexity are part of the settings.
 They are used to provide safer execution from the user interface.
@@ -65,20 +65,20 @@ What to do when the volume of data read exceeds one of the limits: ‘throw’ o
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
 
 A maximum number of rows that can be read from a local table on a leaf node when running a distributed query. While
-distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will be checked only on the read
-stage on the leaf nodes and ignored on results merging stage on the root node. For example, cluster consists of 2 shards
-and each shard contains a table with 100 rows. Then distributed query which suppose to read all the data from both
-tables with setting `max_rows_to_read=150` will fail as in total it will be 200 rows. While query
+distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will be checked only on the read 
+stage on the leaf nodes and ignored on results merging stage on the root node. For example, cluster consists of 2 shards 
+and each shard contains a table with 100 rows. Then distributed query which suppose to read all the data from both 
+tables with setting `max_rows_to_read=150` will fail as in total it will be 200 rows. While query 
 with `max_rows_to_read_leaf=150` will succeed since leaf nodes will read 100 rows at max.
 
 ## max_bytes_to_read_leaf {#max-bytes-to-read-leaf}
 
-A maximum number of bytes (uncompressed data) that can be read from a local table on a leaf node when running
-a distributed query. While distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will
-be checked only on the read stage on the leaf nodes and ignored on results merging stage on the root node.
-For example, cluster consists of 2 shards and each shard contains a table with 100 bytes of data.
-Then distributed query which suppose to read all the data from both tables with setting `max_bytes_to_read=150` will fail
-as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` will succeed since leaf nodes will read
+A maximum number of bytes (uncompressed data) that can be read from a local table on a leaf node when running 
+a distributed query. While distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will 
+be checked only on the read stage on the leaf nodes and ignored on results merging stage on the root node. 
+For example, cluster consists of 2 shards and each shard contains a table with 100 bytes of data. 
+Then distributed query which suppose to read all the data from both tables with setting `max_bytes_to_read=150` will fail 
+as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` will succeed since leaf nodes will read 
 100 bytes at max.
 
 ## read_overflow_mode_leaf {#read-overflow-mode-leaf}
@@ -312,4 +312,4 @@ When inserting data, ClickHouse calculates the number of partitions in the inser
 
 > “Too many partitions for single INSERT block (more than” + toString(max_parts) + “). The limit is controlled by ‘max_partitions_per_insert_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
 
-[Original article](https://clickhouse.com/docs/en/operations/settings/query_complexity/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->

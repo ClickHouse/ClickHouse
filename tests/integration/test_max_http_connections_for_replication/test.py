@@ -9,9 +9,9 @@ from helpers.test_tools import assert_eq_with_retry
 def _fill_nodes(nodes, shard, connections_count):
     for node in nodes:
         node.query(
-            """
+            '''
                 CREATE DATABASE test;
-
+    
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}')
                 PARTITION BY date
@@ -19,25 +19,14 @@ def _fill_nodes(nodes, shard, connections_count):
                 SETTINGS
                     replicated_max_parallel_fetches_for_host={connections},
                     index_granularity=8192;
-            """.format(
-                shard=shard, replica=node.name, connections=connections_count
-            )
-        )
+            '''.format(shard=shard, replica=node.name, connections=connections_count))
 
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1",
-    user_configs=[],
-    main_configs=["configs/remote_servers.xml"],
-    with_zookeeper=True,
-)
-node2 = cluster.add_instance(
-    "node2",
-    user_configs=[],
-    main_configs=["configs/remote_servers.xml"],
-    with_zookeeper=True,
-)
+node1 = cluster.add_instance('node1', user_configs=[],
+                             main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', user_configs=[],
+                             main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -56,7 +45,6 @@ def start_small_cluster():
 def test_single_endpoint_connections_count(start_small_cluster):
     node1.query("TRUNCATE TABLE test_table")
     node2.query("SYSTEM SYNC REPLICA test_table")
-
     def task(count):
         print(("Inserting ten times from {}".format(count)))
         for i in range(count, count + 10):
@@ -68,12 +56,7 @@ def test_single_endpoint_connections_count(start_small_cluster):
     assert_eq_with_retry(node1, "select count() from test_table", "100")
     assert_eq_with_retry(node2, "select count() from test_table", "100")
 
-    assert (
-        node2.query(
-            "SELECT value FROM system.events where event='CreatedHTTPConnections'"
-        )
-        == "1\n"
-    )
+    assert node2.query("SELECT value FROM system.events where event='CreatedHTTPConnections'") == '1\n'
 
 
 def test_keepalive_timeout(start_small_cluster):
@@ -92,29 +75,12 @@ def test_keepalive_timeout(start_small_cluster):
 
     assert_eq_with_retry(node2, "select count() from test_table", str(2))
 
-    assert not node2.contains_in_log(
-        "No message received"
-    ), "Found 'No message received' in clickhouse-server.log"
+    assert not node2.contains_in_log("No message received"), "Found 'No message received' in clickhouse-server.log"
 
 
-node3 = cluster.add_instance(
-    "node3",
-    user_configs=[],
-    main_configs=["configs/remote_servers.xml"],
-    with_zookeeper=True,
-)
-node4 = cluster.add_instance(
-    "node4",
-    user_configs=[],
-    main_configs=["configs/remote_servers.xml"],
-    with_zookeeper=True,
-)
-node5 = cluster.add_instance(
-    "node5",
-    user_configs=[],
-    main_configs=["configs/remote_servers.xml"],
-    with_zookeeper=True,
-)
+node3 = cluster.add_instance('node3', user_configs=[], main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+node4 = cluster.add_instance('node4', user_configs=[], main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+node5 = cluster.add_instance('node5', user_configs=[], main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -148,10 +114,5 @@ def test_multiple_endpoint_connections_count(start_big_cluster):
     assert_eq_with_retry(node4, "select count() from test_table", "100")
     assert_eq_with_retry(node5, "select count() from test_table", "100")
 
-    # Two per each host or sometimes less, if fetches are not performed in parallel. But not more.
-    assert (
-        node5.query(
-            "SELECT value FROM system.events where event='CreatedHTTPConnections'"
-        )
-        <= "4\n"
-    )
+    # two per each host
+    assert node5.query("SELECT value FROM system.events where event='CreatedHTTPConnections'") == '4\n'

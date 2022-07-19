@@ -1,14 +1,13 @@
 #!/usr/bin/expect -f
-# Tags: long
 
 log_user 0
 set timeout 60
 match_max 100000
+# A default timeout action is to do nothing, change it to fail
 expect_after {
-    # Do not ignore eof from expect
-    eof { exp_continue }
-    # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    timeout {
+        exit 1
+    }
 }
 set basedir [file dirname $argv0]
 
@@ -28,7 +27,7 @@ close
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
 expect ":) "
 send -- "\[A"
-expect "for the history"
+expect "SELECT 'for the history'"
 
 # Will check that Ctrl+C clears current line.
 send -- "\3"

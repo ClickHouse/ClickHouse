@@ -21,9 +21,7 @@ By default, starting above server instance will be run as default user without p
 
 ### connect to it from a native client
 ```bash
-$ docker run -it --rm --link some-clickhouse-server:clickhouse-server --entrypoint clickhouse-client clickhouse/clickhouse-server --host clickhouse-server
-# OR
-$ docker exec -it some-clickhouse-server clickhouse-client
+$ docker run -it --rm --link some-clickhouse-server:clickhouse-server clickhouse/clickhouse-client --host clickhouse-server
 ```
 
 More information about [ClickHouse client](https://clickhouse.com/docs/en/interfaces/cli/).

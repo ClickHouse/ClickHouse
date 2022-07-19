@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS alias_local10;
 DROP TABLE IF EXISTS alias10;
 

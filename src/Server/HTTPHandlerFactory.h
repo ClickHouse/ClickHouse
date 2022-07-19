@@ -5,7 +5,7 @@
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -103,15 +103,12 @@ public:
         });
     }
 
-    /// Handle Post request or (Get or Head) with params or OPTIONS requests
-    void allowPostAndGetParamsAndOptionsRequest()
+    /// Handle POST or GET with params
+    void allowPostAndGetParamsRequest()
     {
         addFilter([](const auto & request)
         {
-            return (request.getURI().find('?') != std::string::npos
-                && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
-                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
+            return request.getURI().find('?') != std::string::npos
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
         });
     }

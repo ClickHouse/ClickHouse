@@ -1,6 +1,3 @@
--- Tags: no-ordinary-database, no-parallel
--- Tag no-ordinary-database: Requires Atomic database
-
 DROP DATABASE IF EXISTS 01914_db;
 CREATE DATABASE 01914_db ENGINE=Atomic;
 

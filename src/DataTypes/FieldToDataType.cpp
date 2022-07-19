@@ -1,7 +1,6 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -109,10 +108,11 @@ DataTypePtr FieldToDataType::operator() (const Array & x) const
     element_types.reserve(x.size());
 
     for (const Field & elem : x)
-        element_types.emplace_back(applyVisitor(FieldToDataType(allow_convertion_to_string), elem));
+        element_types.emplace_back(applyVisitor(FieldToDataType(), elem));
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype(element_types, allow_convertion_to_string));
+    return std::make_shared<DataTypeArray>(getLeastSupertype(element_types));
 }
+
 
 DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
 {
@@ -123,7 +123,7 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
     element_types.reserve(tuple.size());
 
     for (const auto & element : tuple)
-        element_types.push_back(applyVisitor(FieldToDataType(allow_convertion_to_string), element));
+        element_types.push_back(applyVisitor(FieldToDataType(), element));
 
     return std::make_shared<DataTypeTuple>(element_types);
 }
@@ -139,30 +139,17 @@ DataTypePtr FieldToDataType::operator() (const Map & map) const
     {
         const auto & tuple = elem.safeGet<const Tuple &>();
         assert(tuple.size() == 2);
-        key_types.push_back(applyVisitor(FieldToDataType(allow_convertion_to_string), tuple[0]));
-        value_types.push_back(applyVisitor(FieldToDataType(allow_convertion_to_string), tuple[1]));
+        key_types.push_back(applyVisitor(FieldToDataType(), tuple[0]));
+        value_types.push_back(applyVisitor(FieldToDataType(), tuple[1]));
     }
 
-    return std::make_shared<DataTypeMap>(
-        getLeastSupertype(key_types, allow_convertion_to_string),
-        getLeastSupertype(value_types, allow_convertion_to_string));
-}
-
-DataTypePtr FieldToDataType::operator() (const Object &) const
-{
-    /// TODO: Do we need different parameters for type Object?
-    return std::make_shared<DataTypeObject>("json", false);
+    return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
 }
 
 DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const
 {
     const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
     return DataTypeFactory::instance().get(name);
-}
-
-DataTypePtr FieldToDataType::operator()(const bool &) const
-{
-    return DataTypeFactory::instance().get("Bool");
 }
 
 }

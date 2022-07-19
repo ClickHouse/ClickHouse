@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,9 +6,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 # 1. init
-$CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "DROP DATABASE IF EXISTS test_01192"
-$CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "DROP DATABASE IF EXISTS test_01192_renamed"
-$CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "DROP DATABASE IF EXISTS test_01192_atomic"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01192"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01192_renamed"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01192_atomic"
 
 $CLICKHOUSE_CLIENT --default_database_engine=Ordinary -q "CREATE DATABASE test_01192 UUID '00001192-0000-4000-8000-000000000001'" 2>&1| grep -F "does not support" > /dev/null && echo "ok"
 $CLICKHOUSE_CLIENT --default_database_engine=Atomic -q "CREATE DATABASE test_01192 UUID '00001192-0000-4000-8000-000000000001'"
@@ -63,8 +62,8 @@ $CLICKHOUSE_CLIENT -q "SELECT dictGet('test_01192_atomic.dict', '_part', toUInt6
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_01192_atomic.mt SELECT number + sleepEachRow(1) + 10 FROM numbers(10)" && echo "inserted" &
 sleep 1
 
-$CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "RENAME DATABASE test_01192 TO test_01192_renamed" 2>&1| grep -F "not supported" > /dev/null && echo "ok"
-$CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "DROP DATABASE test_01192"
+$CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192 TO test_01192_renamed" 2>&1| grep -F "not supported" > /dev/null && echo "ok"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01192"
 $CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192_atomic TO test_01192" && echo "renamed"
 wait
 

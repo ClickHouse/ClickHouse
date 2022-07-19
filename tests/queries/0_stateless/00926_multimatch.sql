@@ -1,5 +1,3 @@
--- Tags: no-fasttest, use-hyperscan
-
 select 0 = multiMatchAny(materialize('mpnsguhwsitzvuleiwebwjfitmsg'), ['wbirxqoabpblrnvvmjizj', 'cfcxhuvrexyzyjsh', 'oldhtubemyuqlqbwvwwkwin', 'bumoozxdkjglzu', 'intxlfohlxmajjomw', 'dxkeghohv', 'arsvmwwkjeopnlwnan', 'ouugllgowpqtaxslcopkytbfhifaxbgt', 'hkedmjlbcrzvryaopjqdjjc', 'tbqkljywstuahzh', 'o', 'wowoclosyfcuwotmvjygzuzhrery', 'vpefjiffkhlggntcu', 'ytdixvasrorhripzfhjdmlhqksmctyycwp']) from system.numbers limit 10;
 select 0 = multiMatchAny(materialize('qjjzqexjpgkglgxpzrbqbnskq'), ['vaiatcjacmlffdzsejpdareqzy', 'xspcfzdufkmecud', 'bcvtbuqtctq', 'nkcopwbfytgemkqcfnnno', 'dylxnzuyhq', 'tno', 'scukuhufly', 'cdyquzuqlptv', 'ohluyfeksyxepezdhqmtfmgkvzsyph', 'ualzwtahvqvtijwp', 'jg', 'gwbawqlngzcknzgtmlj', 'qimvjcgbkkp', 'eaedbcgyrdvv', 'qcwrncjoewwedyyewcdkh', 'uqcvhngoqngmitjfxpznqomertqnqcveoqk', 'ydrgjiankgygpm', 'axepgap']) from system.numbers limit 10;
 select 0 = multiMatchAny(materialize('fdkmtqmxnegwvnjhghjq'), ['vynkybvdmhgeezybbdqfrukibisj', 'knazzamgjjpavwhvdkwigykh', 'peumnifrmdhhmrqqnemw', 'lmsnyvqoisinlaqobxojlwfbi', 'oqwfzs', 'dymudxxeodwjpgbibnkvr', 'vomtfsnizkplgzktqyoiw', 'yoyfuhlpgrzds', 'cefao', 'gi', 'srpgxfjwl', 'etsjusdeiwbfe', 'ikvtzdopxo', 'ljfkavrau', 'soqdhxtenfrkmeic', 'ktprjwfcelzbup', 'pcvuoddqwsaurcqdtjfnczekwni', 'agkqkqxkfbkfgyqliahsljim']) from system.numbers limit 10;
@@ -75,18 +73,18 @@ select 1 = multiMatchAny(materialize('abcdef'), ['a......', 'a.....']) from syst
 select 0 = multiMatchAny(materialize('aaaa'), ['.*aa.*aaa.*', 'aaaaaa{2}', '\(aa\){3}']) from system.numbers limit 10;
 select 1 = multiMatchAny(materialize('abc'), ['a\0d']) from system.numbers limit 10;
 
-select 1 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), ['google', 'unian1']) from system.numbers limit 10;
-select 2 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), ['google1', 'unian']) from system.numbers limit 10;
-select 0 != multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), ['.*goo.*', '.*yan.*']) from system.numbers limit 10;
+select 1 = multiMatchAnyIndex(materialize('gogleuedeyandexgoogle'), ['google', 'yandex1']) from system.numbers limit 10;
+select 2 = multiMatchAnyIndex(materialize('gogleuedeyandexgoogle'), ['google1', 'yandex']) from system.numbers limit 10;
+select 0 != multiMatchAnyIndex(materialize('gogleuedeyandexgoogle'), ['.*goo.*', '.*yan.*']) from system.numbers limit 10;
 select 5 = multiMatchAnyIndex(materialize('vladizlvav dabe don\'t heart me no more'), ['what', 'is', 'love', 'baby', 'no mo??', 'dont', 'h.rt me']) from system.numbers limit 10;
 
 SELECT multiMatchAny(materialize('/odezhda-dlya-bega/'), ['/odezhda-dlya-bega/', 'kurtki-i-vetrovki-dlya-bega', 'futbolki-i-mayki-dlya-bega']);
 SELECT 1 = multiMatchAny('фабрикант', ['f[ae]b[ei]rl', 'ф[иаэе]б[еэи][рпл]', 'афиукд', 'a[ft],th', '^ф[аиеэ]?б?[еэи]?$', 'берлик', 'fab', 'фа[беьв]+е?[рлко]']);
 
 -- All indices tests
-SELECT [1, 2] = arraySort(multiMatchAllIndices(materialize('gogleuedeuniangoogle'), ['.*goo.*', '.*yan.*'])) from system.numbers limit 5;
-SELECT [1, 3] = arraySort(multiMatchAllIndices(materialize('gogleuedeuniangoogle'), ['.*goo.*', 'neverexisted', '.*yan.*'])) from system.numbers limit 5;
-SELECT [] = multiMatchAllIndices(materialize('gogleuedeuniangoogle'), ['neverexisted', 'anotherone', 'andanotherone']) from system.numbers limit 5;
+SELECT [1, 2] = arraySort(multiMatchAllIndices(materialize('gogleuedeyandexgoogle'), ['.*goo.*', '.*yan.*'])) from system.numbers limit 5;
+SELECT [1, 3] = arraySort(multiMatchAllIndices(materialize('gogleuedeyandexgoogle'), ['.*goo.*', 'neverexisted', '.*yan.*'])) from system.numbers limit 5;
+SELECT [] = multiMatchAllIndices(materialize('gogleuedeyandexgoogle'), ['neverexisted', 'anotherone', 'andanotherone']) from system.numbers limit 5;
 SELECT [1, 2, 3, 11] = arraySort(multiMatchAllIndices('фабрикант', ['', 'рикан', 'а', 'f[ae]b[ei]rl', 'ф[иаэе]б[еэи][рпл]', 'афиукд', 'a[ft],th', '^ф[аиеэ]?б?[еэи]?$', 'берлик', 'fab', 'фа[беьв]+е?[рлко]']));
 SELECT [1] = multiMatchAllIndices(materialize('/odezhda-dlya-bega/'), ['/odezhda-dlya-bega/', 'kurtki-i-vetrovki-dlya-bega', 'futbolki-i-mayki-dlya-bega']);
 SELECT [] = multiMatchAllIndices(materialize('aaaa'), ['.*aa.*aaa.*', 'aaaaaa{2}', '\(aa\){3}']);

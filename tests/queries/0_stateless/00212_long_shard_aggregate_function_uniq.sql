@@ -1,5 +1,3 @@
--- Tags: long, shard
-
 -- uniqHLL12
 
 SELECT 'uniqHLL12';

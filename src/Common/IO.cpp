@@ -1,7 +1,7 @@
 #include <Common/IO.h>
 
 #include <unistd.h>
-#include <cerrno>
+#include <errno.h>
 #include <cstring>
 
 bool writeRetry(int fd, const char * data, size_t size)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 #include <string>
 #include <vector>
@@ -9,7 +9,7 @@
 #include <functional>
 #include <signal.h>
 
-#ifdef OS_DARWIN
+#ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
 #   ifdef __clang__
 #       pragma clang diagnostic ignored "-Wreserved-id-macro"
@@ -61,8 +61,6 @@ public:
     std::string toString() const;
 
     static std::string toString(void ** frame_pointers, size_t offset, size_t size);
-    static std::string toStringStatic(const FramePointers & frame_pointers, size_t offset, size_t size);
-    static void dropCache();
     static void symbolize(const FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames);
 
     void toStringEveryLine(std::function<void(const std::string &)> callback) const;

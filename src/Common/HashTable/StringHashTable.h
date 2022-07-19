@@ -160,16 +160,16 @@ template <typename Mapped>
 struct StringHashTableLookupResult
 {
     Mapped * mapped_ptr;
-    StringHashTableLookupResult() {} /// NOLINT
-    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {} /// NOLINT
-    StringHashTableLookupResult(std::nullptr_t) {} /// NOLINT
-    const VoidKey getKey() const { return {}; } /// NOLINT
+    StringHashTableLookupResult() {}
+    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {}
+    StringHashTableLookupResult(std::nullptr_t) {}
+    const VoidKey getKey() const { return {}; }
     auto & getMapped() { return *mapped_ptr; }
     auto & operator*() { return *this; }
     auto & operator*() const { return *this; }
     auto * operator->() { return this; }
     auto * operator->() const { return this; }
-    explicit operator bool() const { return mapped_ptr; }
+    operator bool() const { return mapped_ptr; }
     friend bool operator==(const StringHashTableLookupResult & a, const std::nullptr_t &) { return !a.mapped_ptr; }
     friend bool operator==(const std::nullptr_t &, const StringHashTableLookupResult & b) { return !b.mapped_ptr; }
     friend bool operator!=(const StringHashTableLookupResult & a, const std::nullptr_t &) { return a.mapped_ptr; }
@@ -214,7 +214,7 @@ public:
 
     StringHashTable() = default;
 
-    explicit StringHashTable(size_t reserve_for_num_elements)
+    StringHashTable(size_t reserve_for_num_elements)
         : m1{reserve_for_num_elements / 4}
         , m2{reserve_for_num_elements / 4}
         , m3{reserve_for_num_elements / 4}
@@ -222,7 +222,7 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs) noexcept
+    StringHashTable(StringHashTable && rhs)
         : m1(std::move(rhs.m1))
         , m2(std::move(rhs.m2))
         , m3(std::move(rhs.m3))
@@ -232,16 +232,12 @@ public:
 
     ~StringHashTable() = default;
 
+public:
     // Dispatch is written in a way that maximizes the performance:
     // 1. Always memcpy 8 times bytes
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
-    //
     // NOTE: It relies on Little Endianness
-    //
-    // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
-    // std::string here, but you can pass i.e. ColumnString::getDataAt()),
-    // since it copies 8 bytes at a time.
     template <typename Self, typename KeyHolder, typename Func>
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
@@ -279,7 +275,7 @@ public:
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
                     memcpy(&n[0], p, 8);
-                    n[0] &= -1ULL >> s;
+                    n[0] &= -1ul >> s;
                 }
                 else
                 {

@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <QueryPipeline/ProfileInfo.h>
+#include <DataStreams/BlockStreamProfileInfo.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB
@@ -15,7 +15,7 @@ class LazyOutputFormat : public IOutputFormat
 
 public:
     explicit LazyOutputFormat(const Block & header)
-        : IOutputFormat(header, out), queue(2) {}
+        : IOutputFormat(header, out), queue(2), finished_processing(false) {}
 
     String getName() const override { return "LazyOutputFormat"; }
 
@@ -23,28 +23,32 @@ public:
     Chunk getTotals();
     Chunk getExtremes();
 
-    bool isFinished() { return queue.isFinishedAndEmpty(); }
+    bool isFinished() { return finished_processing && queue.size() == 0; }
 
-    ProfileInfo & getProfileInfo() { return info; }
+    BlockStreamProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void onCancel() override
+    void finish()
     {
-        queue.clearAndFinish();
+        finished_processing = true;
+        /// Clear queue in case if somebody is waiting lazy_format to push.
+        queue.clear();
     }
 
-    void finalizeImpl() override
+    void finalize() override
     {
-        queue.finish();
-    }
+        finished_processing = true;
 
-    bool expectMaterializedColumns() const override { return false; }
+        /// In case we are waiting for result.
+        queue.emplace(Chunk());
+    }
 
 protected:
     void consume(Chunk chunk) override
     {
-        (void)(queue.emplace(std::move(chunk)));
+        if (!finished_processing)
+            queue.emplace(std::move(chunk));
     }
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
@@ -59,7 +63,9 @@ private:
     /// Is not used.
     static WriteBuffer out;
 
-    ProfileInfo info;
+    BlockStreamProfileInfo info;
+
+    std::atomic<bool> finished_processing;
 };
 
 }

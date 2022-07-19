@@ -18,7 +18,7 @@
         <substitution>
             <name>time_zone</name>
             <values>
-               <value>Asia/Istanbul</value>
+               <value>Europe/Moscow</value>
             </values>
         </substitution>
         <substitution>

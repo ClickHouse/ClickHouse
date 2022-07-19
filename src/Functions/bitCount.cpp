@@ -1,4 +1,4 @@
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 
@@ -14,7 +14,6 @@ struct BitCountImpl
 {
     using ResultType = UInt8;
     static constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     static inline ResultType apply(A a)
     {

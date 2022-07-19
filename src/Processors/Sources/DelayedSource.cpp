@@ -1,8 +1,7 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sinks/NullSink.h>
+#include <Processors/NullSink.h>
 #include <Processors/ResizeProcessor.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -112,9 +111,7 @@ void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, const B
 
 void DelayedSource::work()
 {
-    auto builder = creator();
-    auto pipe = QueryPipelineBuilder::getPipe(std::move(builder), resources);
-
+    auto pipe = creator();
     const auto & header = main->getHeader();
 
     if (pipe.empty())

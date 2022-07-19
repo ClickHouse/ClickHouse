@@ -7,21 +7,15 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
-instance_test_reconnect = cluster.add_instance(
-    "instance_test_reconnect", main_configs=["configs/remote_servers.xml"]
-)
+instance_test_reconnect = cluster.add_instance('instance_test_reconnect', main_configs=['configs/remote_servers.xml'])
 instance_test_inserts_batching = cluster.add_instance(
-    "instance_test_inserts_batching",
-    main_configs=["configs/remote_servers.xml"],
-    user_configs=["configs/enable_distributed_inserts_batching.xml"],
-)
-remote = cluster.add_instance(
-    "remote", main_configs=["configs/forbid_background_merges.xml"]
-)
+    'instance_test_inserts_batching',
+    main_configs=['configs/remote_servers.xml'], user_configs=['configs/enable_distributed_inserts_batching.xml'])
+remote = cluster.add_instance('remote', main_configs=['configs/forbid_background_merges.xml'])
 
 instance_test_inserts_local_cluster = cluster.add_instance(
-    "instance_test_inserts_local_cluster", main_configs=["configs/remote_servers.xml"]
-)
+    'instance_test_inserts_local_cluster',
+    main_configs=['configs/remote_servers.xml'])
 
 
 @pytest.fixture(scope="module")
@@ -31,47 +25,29 @@ def started_cluster():
 
         remote.query("CREATE TABLE local1 (x UInt32) ENGINE = Log")
 
-        instance_test_reconnect.query(
-            """
+        instance_test_reconnect.query('''
 CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local1')
-"""
-        )
+''')
+        instance_test_reconnect.query("CREATE TABLE local1_source (x UInt32) ENGINE = Memory")
         instance_test_reconnect.query(
-            "CREATE TABLE local1_source (x UInt32) ENGINE = Memory"
-        )
-        instance_test_reconnect.query(
-            "CREATE MATERIALIZED VIEW local1_view to distributed AS SELECT x FROM local1_source"
-        )
+            "CREATE MATERIALIZED VIEW local1_view to distributed AS SELECT x FROM local1_source")
 
-        remote.query(
-            "CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)"
-        )
-        instance_test_inserts_batching.query(
-            """
+        remote.query("CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)")
+        instance_test_inserts_batching.query('''
 CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local2')
-"""
-        )
+''')
+        instance_test_inserts_batching.query("CREATE TABLE local2_source (d Date, x UInt32) ENGINE = Log")
         instance_test_inserts_batching.query(
-            "CREATE TABLE local2_source (d Date, x UInt32) ENGINE = Log"
-        )
-        instance_test_inserts_batching.query(
-            "CREATE MATERIALIZED VIEW local2_view to distributed AS SELECT d,x FROM local2_source"
-        )
+            "CREATE MATERIALIZED VIEW local2_view to distributed AS SELECT d,x FROM local2_source")
 
+        instance_test_inserts_local_cluster.query("CREATE TABLE local_source (d Date, x UInt32) ENGINE = Memory")
         instance_test_inserts_local_cluster.query(
-            "CREATE TABLE local_source (d Date, x UInt32) ENGINE = Memory"
-        )
+            "CREATE MATERIALIZED VIEW local_view to distributed_on_local AS SELECT d,x FROM local_source")
         instance_test_inserts_local_cluster.query(
-            "CREATE MATERIALIZED VIEW local_view to distributed_on_local AS SELECT d,x FROM local_source"
-        )
-        instance_test_inserts_local_cluster.query(
-            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)"
-        )
-        instance_test_inserts_local_cluster.query(
-            """
+            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)")
+        instance_test_inserts_local_cluster.query('''
 CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
-"""
-        )
+''')
 
         yield cluster
 
@@ -86,12 +62,10 @@ def test_reconnect(started_cluster):
         # Open a connection for insertion.
         instance.query("INSERT INTO local1_source VALUES (1)")
         time.sleep(1)
-        assert remote.query("SELECT count(*) FROM local1").strip() == "1"
+        assert remote.query("SELECT count(*) FROM local1").strip() == '1'
 
         # Now break the connection.
-        pm.partition_instances(
-            instance, remote, action="REJECT --reject-with tcp-reset"
-        )
+        pm.partition_instances(instance, remote, action='REJECT --reject-with tcp-reset')
         instance.query("INSERT INTO local1_source VALUES (2)")
         time.sleep(1)
 
@@ -103,7 +77,7 @@ def test_reconnect(started_cluster):
         instance.query("INSERT INTO local1_source VALUES (3)")
         time.sleep(1)
 
-        assert remote.query("SELECT count(*) FROM local1").strip() == "3"
+        assert remote.query("SELECT count(*) FROM local1").strip() == '3'
 
 
 @pytest.mark.skip(reason="Flapping test")
@@ -120,14 +94,10 @@ def test_inserts_batching(started_cluster):
         instance.query("INSERT INTO local2_source(x, d) VALUES (2, '2000-01-01')")
 
         for i in range(3, 7):
-            instance.query(
-                "INSERT INTO local2_source(d, x) VALUES ('2000-01-01', {})".format(i)
-            )
+            instance.query("INSERT INTO local2_source(d, x) VALUES ('2000-01-01', {})".format(i))
 
         for i in range(7, 9):
-            instance.query(
-                "INSERT INTO local2_source(x, d) VALUES ({}, '2000-01-01')".format(i)
-            )
+            instance.query("INSERT INTO local2_source(x, d) VALUES ({}, '2000-01-01')".format(i))
 
         instance.query("INSERT INTO local2_source(d, x) VALUES ('2000-01-01', 9)")
 
@@ -137,23 +107,15 @@ def test_inserts_batching(started_cluster):
 
         # Memory Engine doesn't support ALTER so we just DROP/CREATE everything
         instance.query("DROP TABLE  local2_source")
-        instance.query(
-            "CREATE TABLE local2_source (d Date, x UInt32, s String) ENGINE = Memory"
-        )
-        instance.query(
-            "CREATE MATERIALIZED VIEW local2_view to distributed AS SELECT d,x,s FROM local2_source"
-        )
+        instance.query("CREATE TABLE local2_source (d Date, x UInt32, s String) ENGINE = Memory")
+        instance.query("CREATE MATERIALIZED VIEW local2_view to distributed AS SELECT d,x,s FROM local2_source")
 
         for i in range(10, 13):
-            instance.query(
-                "INSERT INTO local2_source(d, x) VALUES ('2000-01-01', {})".format(i)
-            )
+            instance.query("INSERT INTO local2_source(d, x) VALUES ('2000-01-01', {})".format(i))
 
     time.sleep(1.0)
 
-    result = remote.query(
-        "SELECT _part, groupArray(x) FROM local2 GROUP BY _part ORDER BY _part"
-    )
+    result = remote.query("SELECT _part, groupArray(x) FROM local2 GROUP BY _part ORDER BY _part")
 
     # Explanation: as merges are turned off on remote instance, active parts in local2 table correspond 1-to-1
     # to inserted blocks.
@@ -164,13 +126,13 @@ def test_inserts_batching(started_cluster):
     # 3. Full batch of inserts regardless order of columns thanks to the view.
     # 4. Full batch of inserts after ALTER (that have different block structure).
     # 5. What was left to insert before ALTER.
-    expected = """\
+    expected = '''\
 20000101_20000101_1_1_0	[1]
 20000101_20000101_2_2_0	[2,3,4]
 20000101_20000101_3_3_0	[5,6,7]
 20000101_20000101_4_4_0	[10,11,12]
 20000101_20000101_5_5_0	[8,9]
-"""
+'''
     assert TSV(result) == TSV(expected)
 
 
@@ -178,4 +140,4 @@ def test_inserts_local(started_cluster):
     instance = instance_test_inserts_local_cluster
     instance.query("INSERT INTO local_source VALUES ('2000-01-01', 1)")
     time.sleep(0.5)
-    assert instance.query("SELECT count(*) FROM local").strip() == "1"
+    assert instance.query("SELECT count(*) FROM local").strip() == '1'

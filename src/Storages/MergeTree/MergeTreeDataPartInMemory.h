@@ -44,9 +44,7 @@ public:
         const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return false; }
-    bool isStoredOnRemoteDisk() const override { return false; }
-    bool isStoredOnRemoteDiskWithZeroCopySupport() const override { return false; }
-    bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
+    bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.name); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
     void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;

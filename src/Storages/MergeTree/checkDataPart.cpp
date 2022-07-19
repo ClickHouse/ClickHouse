@@ -98,29 +98,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
-    SerializationInfoByName serialization_infos(columns_txt, SerializationInfo::Settings{ratio_of_defaults, false});
-    auto serialization_path = path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME;
-
-    if (disk->exists(serialization_path))
-    {
-        auto serialization_file = disk->readFile(serialization_path);
-        serialization_infos.readJSON(*serialization_file);
-    }
-
-    auto get_serialization = [&serialization_infos](const auto & column)
-    {
-        auto it = serialization_infos.find(column.name);
-        return it == serialization_infos.end()
-            ? column.type->getDefaultSerialization()
-            : column.type->getSerialization(*it->second);
-    };
-
     /// This function calculates only checksum of file content (compressed or uncompressed).
     /// It also calculates checksum of projections.
     auto checksum_file = [&](const String & file_path, const String & file_name)
     {
-        if (disk->isDirectory(file_path) && endsWith(file_name, ".proj"))
+        if (disk->isDirectory(file_path) && endsWith(file_name, ".proj") && !startsWith(file_name, "tmp_")) // ignore projection tmp merge dir
         {
             auto projection_name = file_name.substr(0, file_name.size() - sizeof(".proj") + 1);
             auto pit = data_part->getProjectionParts().find(projection_name);
@@ -136,26 +118,31 @@ IMergeTreeDataPart::Checksums checkDataPart(
             IMergeTreeDataPart::Checksums projection_checksums_data;
             const auto & projection_path = file_path;
 
-            if (projection->getType() == MergeTreeDataPartType::Compact)
+            if (part_type == MergeTreeDataPartType::COMPACT)
             {
                 auto proj_path = file_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
                 auto file_buf = disk->readFile(proj_path);
                 HashingReadBuffer hashing_buf(*file_buf);
                 hashing_buf.ignoreAll();
-                projection_checksums_data.files[MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION]
-                    = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
+                projection_checksums_data.files[MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
             }
             else
             {
                 const NamesAndTypesList & projection_columns_list = projection->getColumns();
                 for (const auto & projection_column : projection_columns_list)
                 {
-                    get_serialization(projection_column)->enumerateStreams(
+                    auto serialization = IDataType::getSerialization(projection_column, [&](const String & stream_name)
+                    {
+                        return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
+                    });
+
+                    serialization->enumerateStreams(
                         [&](const ISerialization::SubstreamPath & substream_path)
                         {
                             String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
-                            projection_checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
-                        });
+                            checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
+                        },
+                        {});
                 }
             }
 
@@ -175,7 +162,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 auto projection_checksum_it = projection_checksums_data.files.find(projection_file_name);
 
                 /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-                if (projection_checksum_it == projection_checksums_data.files.end() && !files_without_checksums.contains(projection_file_name))
+                if (projection_checksum_it == projection_checksums_data.files.end() && !files_without_checksums.count(projection_file_name))
                 {
                     auto projection_txt_checksum_it = projection_checksum_files_txt.find(file_name);
                     if (projection_txt_checksum_it == projection_checksum_files_txt.end()
@@ -210,7 +197,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     bool check_uncompressed = true;
     /// First calculate checksums for columns data
-    if (part_type == MergeTreeDataPartType::Compact)
+    if (part_type == MergeTreeDataPartType::COMPACT)
     {
         const auto & file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
         checksum_file(path + file_name, file_name);
@@ -218,15 +205,21 @@ IMergeTreeDataPart::Checksums checkDataPart(
         /// We check only checksum of compressed file.
         check_uncompressed = false;
     }
-    else if (part_type == MergeTreeDataPartType::Wide)
+    else if (part_type == MergeTreeDataPartType::WIDE)
     {
         for (const auto & column : columns_list)
         {
-            get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            auto serialization = IDataType::getSerialization(column,
+                [&](const String & stream_name)
+                {
+                    return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
+                });
+
+            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);
-            });
+            }, {});
         }
     }
     else
@@ -251,7 +244,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto checksum_it = checksums_data.files.find(file_name);
 
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-        if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
+        if (checksum_it == checksums_data.files.end() && !files_without_checksums.count(file_name))
         {
             auto txt_checksum_it = checksum_files_txt.find(file_name);
             if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
@@ -271,6 +264,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || !checksums_txt.files.empty())
         checksums_txt.checkEqual(checksums_data, check_uncompressed);
+
     return checksums_data;
 }
 

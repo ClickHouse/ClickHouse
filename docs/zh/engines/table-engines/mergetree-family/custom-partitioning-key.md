@@ -117,4 +117,4 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouse 支持对分区执行这些操作：删除分区，将分区从一个表复制到另一个表，或创建备份。了解分区的所有操作，请参阅 [分区和片段的操作](../../../sql-reference/statements/alter.md#alter_manipulations-with-partitions) 一节。
 
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

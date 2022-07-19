@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -80,10 +80,6 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperSession;
 }
 
-namespace DB
-{
-    class ZooKeeperLog;
-}
 
 namespace Coordination
 {
@@ -114,14 +110,13 @@ public:
         const String & auth_data,
         Poco::Timespan session_timeout_,
         Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        Poco::Timespan operation_timeout_);
 
     ~ZooKeeper() override;
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const override { return requests_queue.isFinished(); }
+    bool isExpired() const override { return requests_queue.isClosed(); }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -187,9 +182,7 @@ public:
     /// it will do read in another session, that read may not see the
     /// already performed write.
 
-    void finalize(const String & reason)  override { finalize(false, false, reason); }
-
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    void finalize()  override { finalize(false, false); }
 
 private:
     String root_path;
@@ -199,8 +192,6 @@ private:
     Poco::Timespan operation_timeout;
 
     Poco::Net::StreamSocket socket;
-    /// To avoid excessive getpeername(2) calls.
-    Poco::Net::SocketAddress socket_address;
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
@@ -209,7 +200,7 @@ private:
     std::atomic<XID> next_xid {1};
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
-    std::atomic_flag finalization_started;
+    std::atomic<bool> finalization_started {false};
 
     using clock = std::chrono::steady_clock;
 
@@ -240,8 +231,6 @@ private:
     ThreadFromGlobalPool send_thread;
     ThreadFromGlobalPool receive_thread;
 
-    Poco::Logger * log;
-
     void connect(
         const Nodes & node,
         Poco::Timespan connection_timeout);
@@ -259,7 +248,7 @@ private:
     void close();
 
     /// Call all remaining callbacks and watches, passing errors to them.
-    void finalize(bool error_send, bool error_receive, const String & reason);
+    void finalize(bool error_send, bool error_receive);
 
     template <typename T>
     void write(const T &);
@@ -267,10 +256,7 @@ private:
     template <typename T>
     void read(T &);
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
-
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
-    std::shared_ptr<ZooKeeperLog> zk_log;
 };
 
 }

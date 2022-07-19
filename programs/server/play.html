@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html>
+<html> <!-- TODO If I write DOCTYPE HTML something changes but I don't know what. -->
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
@@ -10,7 +9,7 @@
     Do not use any JavaScript or CSS frameworks or preprocessors.
     This HTML page should not require any build systems (node.js, npm, gulp, etc.)
     This HTML page should not be minified, instead it should be reasonably minimalistic by itself.
-    This HTML page should not load any external resources on load.
+    This HTML page should not load any external resources
     (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
@@ -30,11 +29,10 @@
 
     -->
 
-    <style>
+    <style type="text/css">
         :root {
             --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
             --element-background-color: #FFF;
-            --bar-color: #F8F4F0; /* Light bar in background of table cells. */
             --border-color: #EEE;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FFAA00; /* Orange on light-cyan is especially good. */
@@ -47,14 +45,11 @@
             --table-hover-color: #FFF8EF;
             --null-color: #A88;
             --link-color: #06D;
-            --logo-color: #CEE;
-            --logo-color-active: #BDD;
         }
 
         [data-theme="dark"] {
             --background-color: #000;
             --element-background-color: #102030;
-            --bar-color: #182838;
             --border-color: #111;
             --shadow-color: rgba(255, 255, 255, 0.1);
             --text-color: #CCC;
@@ -68,42 +63,14 @@
             --table-hover-color: #003333;
             --null-color: #A88;
             --link-color: #4BDAF7;
-            --logo-color: #222;
-            --logo-color-active: #333;
-        }
-
-        *
-        {
-            box-sizing: border-box;
         }
 
         html, body
         {
-            height: 100%;
-            margin: 0;
-            /* This enables position: sticky on controls */
-            overflow: auto;
-        }
-
-        html
-        {
-            /* The fonts that have full support for hinting. */
-            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            /* Personal choice. */
+            font-family: Sans-Serif;
             background: var(--background-color);
             color: var(--text-color);
-        }
-
-        body
-        {
-            /* This element will show scroll-bar on overflow, and the scroll-bar will be outside of the padding. */
-            padding: 0.5rem;
-        }
-
-        #controls
-        {
-            /* When a page will be scrolled horizontally due to large table size, keep controls in place. */
-            position: sticky;
-            left: 0;
         }
 
         /* Otherwise Webkit based browsers will display ugly border on focus. */
@@ -114,17 +81,24 @@
             color: var(--text-color);
         }
 
+        /* Otherwise scrollbar may appear dynamically and it will alter viewport height,
+           then relative heights of elements will change suddenly, and it will break overall impression. */
+        /* html
+        {
+            overflow-x: scroll;
+        }*/
+
+        div
+        {
+            width: 100%;
+        }
+
         .monospace
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
-               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
-            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;
-        }
-
-        .monospace-table
-        {
-            /* Liberation is worse than DejaVu for block drawing characters. */
-            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant).
+            */
+            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
         }
 
         .shadow
@@ -143,15 +117,15 @@
 
         #query
         {
-            /* Make enough space for even big queries. */
-            height: 20vh;
-            /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
-            min-width: 100%;
+            /* Make enough space for even huge queries. */
+            height: 20%;
+            width: 100%;
         }
 
         #inputs
         {
             white-space: nowrap;
+            width: 100%;
         }
 
         #url
@@ -215,9 +189,10 @@
 
         #data-table
         {
-            width: 100%;
             border-collapse: collapse;
             border-spacing: 0;
+            /* I need pixel-perfect alignment but not sure the following is correct, please help */
+            min-width: calc(100vw - 2rem);
         }
 
         /* Will be displayed when user specified custom format. */
@@ -232,18 +207,17 @@
         td
         {
             background-color: var(--element-background-color);
+            white-space: nowrap;
             /* For wide tables any individual column will be no more than 50% of page width. */
             max-width: 50vw;
             /* The content is cut unless you hover. */
             overflow: hidden;
-            text-overflow: ellipsis;
             padding: 0.25rem 0.5rem;
             border: 1px solid var(--border-color);
             white-space: pre;
-            vertical-align: top;
         }
 
-        .right
+        td.right
         {
             text-align: right;
         }
@@ -251,7 +225,7 @@
         th
         {
             padding: 0.25rem 0.5rem;
-            text-align: center;
+            text-align: middle;
             background-color: var(--table-header-color);
             border: 1px solid var(--border-color);
         }
@@ -275,31 +249,11 @@
             display: none;
         }
 
-        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut. */
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+           TODO Find a way to make it work on touch devices. */
         td.left:hover
         {
             white-space: pre-wrap;
-            max-width: none;
-        }
-
-        td.transposed
-        {
-            max-width: none;
-            overflow: auto;
-            white-space: pre-wrap;
-        }
-
-        td.empty-result
-        {
-            text-align: center;
-            vertical-align: middle;
-        }
-
-        div.empty-result
-        {
-            opacity: 10%;
-            font-size: 7vw;
-            font-family: Liberation Sans, DejaVu Sans, sans-serif;
         }
 
         /* The style for SQL NULL */
@@ -308,25 +262,12 @@
             color: var(--null-color);
         }
 
-        @keyframes hourglass-animation {
-            0% {
-                transform: rotate(-180deg);
-            }
-            50% {
-                transform: rotate(-180deg);
-            }
-            100% {
-                transform: none;
-            }
-        }
-
         #hourglass
         {
             display: none;
-            margin-left: 1rem;
+            padding-left: 1rem;
             font-size: 110%;
             color: #888;
-            animation: hourglass-animation 1s linear infinite;
         }
 
         #check-mark
@@ -341,11 +282,6 @@
         {
             color: var(--link-color);
             text-decoration: none;
-        }
-
-        #graph
-        {
-            display: none;
         }
 
         /* This is for graph in svg */
@@ -370,114 +306,71 @@
         {
             fill: var(--text-color);
         }
-
-        #logo
-        {
-            fill: var(--logo-color);
-        }
-
-        #logo:hover
-        {
-            fill: var(--logo-color-active);
-        }
-
-        #logo-container
-        {
-            text-align: center;
-            margin-top: 5em;
-        }
     </style>
 </head>
 
 <body>
-    <div id="controls">
-        <div id="inputs">
-            <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
-        </div>
-        <div id="query_div">
-            <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
-        </div>
-        <div id="run_div">
-            <button class="shadow" id="run">Run</button>
-            <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
-            <span id="hourglass">⧗</span>
-            <span id="check-mark">✔</span>
-            <span id="stats"></span>
-            <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
-        </div>
+    <div id="inputs">
+        <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" /><input class="monospace shadow" id="user" type="text" value="default" /><input class="monospace shadow" id="password" type="password" />
+    </div>
+    <div>
+        <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
+    </div>
+    <div id="run_div">
+        <button class="shadow" id="run">Run</button>
+        <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
+        <span id="hourglass">⧗</span>
+        <span id="check-mark">✔</span>
+        <span id="stats"></span>
+        <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
     <div id="data_div">
-        <table class="monospace-table shadow" id="data-table"></table>
-        <pre class="monospace-table shadow" id="data-unparsed"></pre>
+        <table class="monospace shadow" id="data-table"></table>
+        <pre class="monospace shadow" id="data-unparsed"></pre>
     </div>
     <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
-    </p>
-    <p id="logo-container">
-        <a href="https://clickhouse.com/">
-        <svg id="logo" width="50%" viewBox="0 0 180 28" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-            <title>Powered by ClickHouse</title>
-            <g transform="translate(21, 0)">
-                <path d="M9.76370444,20.9560972 C8.43447886,20.9735251 7.11430823,20.7384252 5.875478,20.2636703 C4.72047444,19.8054437 3.67723122,19.1113387 2.81453379,18.2271205 C1.90927726,17.3283139 1.2048111,16.2531042 0.746328237,15.0704684 C-0.248776079,12.2964995 -0.248776079,9.27056268 0.746328237,6.4965938 C1.67159165,4.07354026 3.61800681,2.16434552 6.08229856,1.26266086 C7.35832383,0.792264319 8.71148185,0.557532775 10.0739353,0.570233938 C11.1612577,0.548839362 12.2465336,0.672146838 13.3003359,0.936812899 C14.1575307,1.16603291 14.9890302,1.47989577 15.7821826,1.8736258 L15.0376286,4.17492705 C14.334754,3.70811103 13.5779913,3.32526638 12.7832845,3.03445917 C11.8308864,2.71897047 10.8304102,2.56740693 9.82575061,2.58641822 C7.96245266,2.56886976 6.1853824,3.35817309 4.96546756,4.74516099 C4.30442786,5.50472232 3.79877758,6.38298172 3.47635956,7.33157921 C3.08814385,8.46618422 2.89929764,9.65767851 2.91794407,10.8548103 C2.90195973,12.0219322 3.07653544,13.184001 3.43499545,14.2965795 C3.73382292,15.2302331 4.21899806,16.0957206 4.86205728,16.8422667 C5.46077204,17.5238868 6.21094713,18.0604846 7.05435517,18.41041 C7.95798877,18.7824827 8.9290709,18.969569 9.90847883,18.9602785 C10.8005951,18.9648543 11.68759,18.827308 12.5350999,18.5529685 C13.3447055,18.2769814 14.1214074,17.9150606 14.8514901,17.4735971 L15.575362,19.2046644 C14.8756447,19.7279796 14.0929921,20.1339593 13.2589718,20.4062288 C12.1346344,20.7859604 10.952228,20.9719742 9.76370444,20.9560972 L9.76370444,20.9560972 Z" id="Path"></path>
-                <polygon id="Path" points="21.2008811 0 21.2008811 20.6709803 18.7397165 20.6709803 18.7397165 0 21.2008811 0"></polygon>
-                <path d="M26.5161694,4.15456155 C26.0981094,4.18404053 25.6871808,4.03620327 25.3868859,3.74828616 C25.0865909,3.46036905 24.9255529,3.05981554 24.9443332,2.64751471 C24.9293499,2.23543398 25.0776822,1.83376364 25.3579743,1.52741233 C25.9917593,0.922143971 26.9992154,0.922143971 27.6330004,1.52741233 C27.9227354,1.82938962 28.0789406,2.23223687 28.0673236,2.64751471 C28.0795295,3.0508229 27.9224226,3.44126169 27.6330004,3.7268861 C27.3352303,4.0129939 26.9320049,4.16740365 26.5161694,4.15456155 L26.5161694,4.15456155 Z M27.7570927,6.31330432 L27.7570927,20.5691528 L25.3166102,20.5691528 L25.3166102,6.31330432 L27.7777748,6.31330432 L27.7570927,6.31330432 Z" id="Shape"></path>
-                <path d="M38.2015308,20.9561849 C37.2331788,20.9606473 36.2723959,20.7880054 35.3680892,20.4469598 C34.5040176,20.1277138 33.7207114,19.6274001 33.072381,18.9806439 C32.4086321,18.3083453 31.8882536,17.5120269 31.5419089,16.6386117 C30.789066,14.6134632 30.789066,12.3911868 31.5419089,10.3660384 C31.8953146,9.48650873 32.4305899,8.68894988 33.1137451,8.02400613 C33.8006138,7.36063917 34.6265105,6.85322326 35.5335456,6.53732479 C36.4665869,6.19626518 37.4544707,6.0237894 38.4497154,6.02818735 C39.2367736,6.02254268 40.0215928,6.11144966 40.7867877,6.29293882 C41.402916,6.43127907 41.9904819,6.67235105 42.5240804,7.00573124 L41.7381623,9.14410851 C41.2326995,8.76428196 40.6844527,8.44310218 40.1042799,8.18693012 C39.4990142,7.95244732 38.8516533,7.84158602 38.2015308,7.86108215 C37.5775701,7.85677667 36.958946,7.97445444 36.3815099,8.20729561 C35.8033669,8.44328317 35.2871426,8.80537627 34.8717198,9.2663015 C34.4220004,9.77237252 34.0776687,10.3605404 33.8582991,10.9973688 C33.5836299,11.7832018 33.4506403,12.6102801 33.4653401,13.4412285 C33.3646964,14.9221144 33.8543791,16.3832889 34.8303557,17.5143281 C35.8193073,18.4542588 37.1597853,18.9483223 38.5324437,18.8788165 C39.7296588,18.8515966 40.8932941,18.483801 41.8829366,17.8198106 L42.4413521,19.6119744 C41.8863529,20.0201826 41.2635134,20.3302813 40.6006492,20.5284218 C39.8277327,20.7904738 39.0186907,20.9346965 38.2015308,20.9561849 L38.2015308,20.9561849 Z" id="Path"></path>
-                <path d="M47.9427789,0 L47.9427789,20.6709803 L45.4402502,20.6709803 L45.4402502,0 L47.9427789,0 Z M54.3542161,20.6709803 L48.2736918,13.0135531 L54.2714879,6.33366982 L56.8360628,6.33366982 L50.9003129,12.7284361 L57.2497039,20.6709803 L54.3542161,20.6709803 L54.3542161,20.6709803 Z" id="Shape"></path>
-                <polygon id="Path" points="73.1128405 11.8730852 62.7718127 11.8730852 62.7718127 20.6506148 60.1038276 20.6506148 60.1038276 0.855350908 62.7718127 0.855350908 62.7718127 9.89763193 73.1128405 9.89763193 73.1128405 0.855350908 75.7808256 0.855350908 75.7808256 20.6709803 73.1128405 20.6709803"></polygon>
-                <path d="M86.3079919,20.9560972 C85.38699,20.956828 84.4743522,20.7840259 83.6193247,20.4469598 C82.7801539,20.1243214 82.0191689,19.6317014 81.3856627,19.0010094 C80.7288968,18.3272298 80.2155719,17.5309446 79.8758726,16.6589772 C79.1241518,14.6056391 79.1241518,12.35828 79.8758726,10.3049419 C80.2139667,9.43820628 80.7276537,8.64828849 81.3856627,7.98327514 C82.0210949,7.3549028 82.7815529,6.86262399 83.6193247,6.53732479 C84.4743522,6.20025867 85.38699,6.0274377 86.3079919,6.02818492 C87.235663,6.02783377 88.154999,6.20059422 89.0173412,6.53732479 C89.8608646,6.86326706 90.6279639,7.35528929 91.2716852,7.98327514 C91.9432058,8.64563226 92.4709473,9.43552137 92.8228394,10.3049419 C93.5941835,12.3548594 93.5941835,14.6090597 92.8228394,16.6589772 C92.5001582,17.5252355 92.0083217,18.3208853 91.3750955,19.0010094 C90.7336187,19.6317283 89.9659063,20.1241438 89.1207514,20.4469598 C88.2261198,20.7965781 87.270406,20.9695718 86.3079919,20.9560972 Z M86.3079919,19.1028369 C86.8871906,19.1004754 87.4613802,18.9970483 88.0039204,18.7973545 C88.5665616,18.5933999 89.0704796,18.2579374 89.4723464,17.8198106 C89.93364,17.3107661 90.2854168,16.714971 90.5064492,16.0683778 C90.7858877,15.2345245 90.9187812,14.3598326 90.8994082,13.4819595 C90.921252,12.6039337 90.7882958,11.7288286 90.5064492,10.8955413 C90.2829062,10.2561715 89.9312542,9.66751308 89.4723464,9.16447401 C89.0704796,8.72634722 88.5665616,8.39088465 88.0039204,8.18693012 C87.4613802,7.98723626 86.8871906,7.88380922 86.3079919,7.88144765 C85.7421967,7.88338153 85.1815027,7.98690253 84.6534274,8.18693012 C84.1067964,8.39867016 83.6180769,8.73344525 83.2263656,9.16447401 C82.771108,9.66662382 82.426093,10.2559587 82.2129449,10.8955413 C81.9432303,11.7312023 81.817401,12.6054092 81.8406679,13.4819595 C81.8197008,14.3583785 81.9454766,15.2322137 82.2129449,16.0683778 C82.4234966,16.7151843 82.7686424,17.3116787 83.2263656,17.8198106 C83.6175627,18.2514112 84.1064306,18.586288 84.6534274,18.7973545 C85.1815027,18.9973821 85.7421967,19.1009031 86.3079919,19.1028369 L86.3079919,19.1028369 Z" id="Shape"></path>
-                <path d="M104.218652,20.1211118 C103.261113,20.713834 102.142858,21.0051032 101.012933,20.9560972 C99.7999523,21.0051122 98.6193584,20.5636475 97.7451686,19.7341674 C96.8353108,18.7009502 96.3878256,17.3496664 96.5042453,15.9869158 L96.5042453,6.31330432 L98.9860919,6.31330432 L98.9860919,15.9869158 C98.9742754,16.4701161 99.0441695,16.9518863 99.1929125,17.4125006 C99.3056456,17.7606047 99.5046708,18.0755709 99.77201,18.328948 C100.016574,18.5594167 100.314849,18.7272509 100.640656,18.81772 C100.990271,18.9161408 101.352523,18.9641592 101.716123,18.9602785 C102.655549,19.0038445 103.582007,18.7308795 104.342744,18.1863895 C105.051689,17.6370184 105.630443,16.9420231 106.038673,16.1498398 L106.038673,6.31330432 L108.499837,6.31330432 L108.499837,20.5691528 L106.328222,20.5691528 L106.100719,18.0031001 L106.100719,18.0031001 C105.687922,18.8692089 105.035644,19.6032598 104.218652,20.1211118 L104.218652,20.1211118 Z" id="Path"></path>
-                <path d="M116.421065,20.9560972 C115.801233,20.9950241 115.179512,20.9950241 114.55968,20.9560972 C114.092617,20.8964402 113.62981,20.8080164 113.173982,20.6913458 C112.813228,20.605003 112.460411,20.4891975 112.119197,20.3451323 C111.834495,20.2200141 111.558175,20.0771664 111.291915,19.9174568 L112.098515,17.8809071 C112.279343,18.026767 112.473161,18.156273 112.677613,18.2678515 C112.976636,18.4329534 113.287727,18.5759069 113.608305,18.695527 C114.017173,18.8537321 114.439319,18.9763932 114.869911,19.0621059 C115.380772,19.1609067 115.900459,19.2086684 116.421065,19.2046644 C117.260254,19.2611102 118.095255,19.0466179 118.799501,18.5936995 C119.330358,18.1920161 119.630919,17.5621502 119.606101,16.9033632 C119.629117,16.3456326 119.383876,15.8098319 118.944275,15.4574128 C118.248621,14.9827695 117.47054,14.6376468 116.648567,14.4391379 L114.869911,13.8485385 C114.332933,13.6600961 113.82489,13.3996834 113.36012,13.0746496 C112.918371,12.7629353 112.551287,12.3597625 112.284654,11.8934507 C111.990937,11.3416153 111.84837,10.7239217 111.871013,10.1012869 C111.7928,8.92823263 112.331666,7.79778562 113.298074,7.10755873 C114.467654,6.39295223 115.832855,6.05154147 117.206983,6.13001484 C118.07528,6.11663174 118.942387,6.19859987 119.79224,6.37440081 C120.389496,6.49652839 120.971868,6.68085438 121.529532,6.92426925 L120.950435,8.96081903 C120.479952,8.73041885 119.996597,8.52643737 119.502691,8.3498541 C118.797193,8.1146398 118.054965,8.00432014 117.310393,8.02400613 C116.535101,7.9880419 115.762277,8.13465573 115.056049,8.45168159 C114.47936,8.75940804 114.145458,9.37689414 114.208085,10.0198249 C114.202,10.3323024 114.296078,10.6387208 114.476951,10.8955413 C114.663996,11.1520366 114.903538,11.3670997 115.180141,11.5268718 C115.506126,11.720303 115.852962,11.8774057 116.214244,11.9952782 L117.455167,12.3618572 L119.130414,12.9117256 C119.664383,13.1015363 120.166356,13.3692768 120.619522,13.70598 C121.602378,14.4140087 122.154912,15.5634667 122.087948,16.7608047 C122.121004,17.4696719 121.956505,18.1739382 121.612261,18.7973545 C121.300726,19.3338382 120.869299,19.7934828 120.350655,20.1414773 C119.804193,20.5059941 119.194247,20.7683295 118.551316,20.9153662 C117.845409,21.0123699 117.130265,21.0260437 116.421065,20.9560972 Z" id="Path"></path>
-                <path d="M136.379248,19.4286849 C135.765636,19.9144267 135.063746,20.2807344 134.311043,20.5080563 C133.397586,20.8060079 132.439751,20.9505822 131.477601,20.9357317 C129.484022,21.0457076 127.539179,20.3034303 126.141631,18.899182 C124.819952,17.3656124 124.152831,15.3875844 124.280246,13.3801321 C124.263071,12.3194805 124.438164,11.2643153 124.797297,10.2642109 C125.111353,9.39844373 125.596363,8.60246478 126.224359,7.92217864 C126.799559,7.29363386 127.504769,6.79365416 128.292565,6.4558628 C129.13245,6.11650376 130.03203,5.94349361 130.939868,5.94672536 C131.84844,5.93569173 132.749586,6.10900306 133.587171,6.4558628 C134.355957,6.77570775 135.026242,7.28828126 135.531284,7.94254414 C136.069381,8.66407624 136.423989,9.5021104 136.565387,10.3864039 C136.756685,11.5054228 136.756685,12.6480576 136.565387,13.7670765 L126.720728,13.7670765 C126.831033,17.1749031 128.464915,18.8788165 131.622376,18.8788165 C132.38185,18.8941966 133.138087,18.7769813 133.856038,18.532603 C134.495821,18.304128 135.106567,18.0034291 135.676058,17.6365211 L136.379248,19.4286849 Z M131.022596,7.73888916 C130.017668,7.7293132 129.052936,8.12697327 128.354611,8.83862604 C127.526752,9.75405949 127.031943,10.9148261 126.948231,12.1378367 L134.331725,12.1378367 C134.534684,10.9751452 134.259342,9.78072052 133.566489,8.81826055 C132.931983,8.09270485 131.993938,7.6946933 131.022596,7.73888916 Z" id="Shape"></path>
-            </g>
-        </svg>
-        </a>
     </p>
 </body>
 
 <script type="text/javascript">
 
     /// Incremental request number. When response is received,
-    /// if its request number does not equal to the current request number, response will be ignored.
+    /// if it's request number does not equal to the current request number, response will be ignored.
     /// This is to avoid race conditions.
     let request_num = 0;
 
     /// Save query in history only if it is different.
     let previous_query = '';
 
-    const current_url = new URL(window.location);
-
-    const server_address = current_url.searchParams.get('url');
-    if (server_address) {
-        document.getElementById('url').value = server_address;
-    } else if (location.protocol != 'file:') {
-        /// Substitute the address of the server where the page is served.
+    /// Substitute the address of the server where the page is served.
+    if (location.protocol != 'file:') {
         document.getElementById('url').value = location.origin;
     }
 
     /// Substitute user name if it's specified in the query string
-    const user_from_url = current_url.searchParams.get('user');
+    let user_from_url = (new URL(window.location)).searchParams.get('user');
     if (user_from_url) {
         document.getElementById('user').value = user_from_url;
     }
 
     function postImpl(posted_request_num, query)
     {
-        const user = document.getElementById('user').value;
-        const password = document.getElementById('password').value;
+        /// TODO: Check if URL already contains query string (append parameters).
 
-        const server_address = document.getElementById('url').value;
+        let user = document.getElementById('user').value;
+        let password = document.getElementById('password').value;
 
-        const url = server_address +
-            (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        let url = document.getElementById('url').value +
             /// Ask server to allow cross-domain requests.
-            'add_http_cors_header=1' +
+            '?add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
-        const xhr = new XMLHttpRequest;
+        let xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
 
@@ -491,24 +384,17 @@
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
                 if (query != previous_query) {
-                    const state = {
+                    let state = {
                         query: query,
                         status: this.status,
                         response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
-                    const title = "ClickHouse Query: " + query;
-
-                    let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-                    if (server_address != location.origin) {
-                        /// Save server's address in URL if it's not identical to the address of the play UI.
-                        history_url += '&url=' + encodeURIComponent(server_address);
-                    }
-                    history_url += '#' + window.btoa(query);
-
+                    let title = "ClickHouse Query: " + query;
+                    let url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
                     if (previous_query == '') {
-                        history.replaceState(state, title, history_url);
+                        history.replaceState(state, title, url);
                     } else {
-                        history.pushState(state, title, history_url);
+                        history.pushState(state, title, url);
                     }
                     document.title = title;
                     previous_query = query;
@@ -519,7 +405,7 @@
         }
 
         document.getElementById('check-mark').style.display = 'none';
-        document.getElementById('hourglass').style.display = 'inline-block';
+        document.getElementById('hourglass').style.display = 'inline';
 
         xhr.send(query);
     }
@@ -601,28 +487,6 @@
 
         document.getElementById('hourglass').style.display = 'none';
         document.getElementById('check-mark').style.display = 'none';
-
-        document.getElementById('logo-container').style.display = 'block';
-    }
-
-    function formatReadable(number = 0, decimals = 2, units = []) {
-        const k = 1000;
-        const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
-        const unit = units[i];
-        const dm = unit ? decimals : 0;
-        return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
-    }
-
-    function formatReadableBytes(bytes) {
-        const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
-
-        return formatReadable(bytes, 2, units);
-    }
-
-    function formatReadableRows(rows) {
-        const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
-
-        return formatReadable(rows, 2, units);
     }
 
     function renderResult(response)
@@ -630,155 +494,72 @@
         clear();
 
         let stats = document.getElementById('stats');
-        const seconds = response.statistics.elapsed.toFixed(3);
-        const rows = response.statistics.rows_read;
-        const bytes = response.statistics.bytes_read;
-        const formatted_bytes = formatReadableBytes(bytes);
-        const formatted_rows = formatReadableRows(rows);
-        stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+        stats.innerText = 'Elapsed: ' + response.statistics.elapsed.toFixed(3) + " sec, read " + response.statistics.rows_read + " rows.";
 
-        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-        if (response.data.length > 3 && document.getElementById('query').value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
+        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1.
+        if (response.data.length > 3 && response.data[0][0] === "digraph" && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {
             renderGraph(response);
         } else {
             renderTable(response);
         }
     }
 
-    function renderCell(cell, col_idx, settings)
-    {
-        let td = document.createElement('td');
-
-        let is_null = (cell === null);
-        let is_link = false;
-
-        /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-        let text;
-        if (is_null) {
-            text = 'ᴺᵁᴸᴸ';
-        } else if (typeof(cell) === 'object') {
-            text = JSON.stringify(cell);
-        } else {
-            text = cell;
-
-            /// If it looks like URL, create a link. This is for convenience.
-            if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
-                is_link = true;
-            }
-        }
-
-        let node = document.createTextNode(text);
-        if (is_link) {
-            let link = document.createElement('a');
-            link.appendChild(node);
-            link.href = text;
-            link.setAttribute('target', '_blank');
-            node = link;
-        }
-
-        if (settings.is_transposed) {
-            td.className = 'left transposed';
-        } else {
-            td.className = settings.column_is_number[col_idx] ? 'right' : 'left';
-        }
-        if (is_null) {
-            td.className += ' null';
-        }
-
-        /// If it's a number, render bar in background.
-        if (!settings.is_transposed && settings.column_need_render_bars[col_idx] && text > 0) {
-            const ratio = 100 * text / settings.column_maximums[col_idx];
-
-            let div = document.createElement('div');
-
-            div.style.width = '100%';
-            div.style.background = `linear-gradient(to right,
-                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                transparent ${ratio}%, transparent 100%)`;
-
-            div.appendChild(node);
-            node = div;
-        }
-
-        td.appendChild(node);
-        return td;
-    }
-
-    function renderTableTransposed(response)
-    {
-        let tbody = document.createElement('tbody');
-        for (let col_idx in response.meta) {
-            let tr = document.createElement('tr');
-            {
-                let th = document.createElement('th');
-                th.className = 'right';
-                th.style.width = '0';
-                th.appendChild(document.createTextNode(response.meta[col_idx].name));
-                tr.appendChild(th);
-            }
-            for (let row_idx in response.data)
-            {
-                let cell = response.data[row_idx][col_idx];
-                const td = renderCell(cell, col_idx, {is_transposed: true});
-                tr.appendChild(td);
-            }
-            if (response.data.length == 0 && col_idx == 0)
-            {
-                /// If result is empty, show this fact with a style.
-                let td = document.createElement('td');
-                td.rowSpan = response.meta.length;
-                td.className = 'empty-result';
-                let div = document.createElement('div');
-                div.appendChild(document.createTextNode("empty result"));
-                div.className = 'empty-result';
-                td.appendChild(div);
-                tr.appendChild(td);
-            }
-            tbody.appendChild(tr);
-        }
-        let table = document.getElementById('data-table');
-        table.appendChild(tbody);
-    }
-
     function renderTable(response)
     {
-        if (response.data.length <= 1 && response.meta.length >= 5) {
-            renderTableTransposed(response)
-            return;
-        }
-
         let thead = document.createElement('thead');
         for (let idx in response.meta) {
             let th = document.createElement('th');
-            const name = document.createTextNode(response.meta[idx].name);
+            let name = document.createTextNode(response.meta[idx].name);
             th.appendChild(name);
             thead.appendChild(th);
         }
 
         /// To prevent hanging the browser, limit the number of cells in a table.
         /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
-        const max_rows = 10000 / response.meta.length;
+        let max_rows = 10000 / response.meta.length;
         let row_num = 0;
 
-        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
-        const column_maximums = column_is_number.map((elem, idx) => elem ? Math.max(...response.data.map(row => row[idx])) : 0);
-        const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
-        const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
-
-        const settings = {
-            is_transposed: false,
-            column_is_number: column_is_number,
-            column_maximums: column_maximums,
-            column_minimums: column_minimums,
-            column_need_render_bars: column_need_render_bars,
-        };
+        let column_classes = response.meta.map(elem => elem.type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left');
 
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
             let tr = document.createElement('tr');
             for (let col_idx in response.data[row_idx]) {
+                let td = document.createElement('td');
                 let cell = response.data[row_idx][col_idx];
-                const td = renderCell(cell, col_idx, settings);
+
+                let is_null = (cell === null);
+                let is_link = false;
+
+                /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
+                let text;
+                if (is_null) {
+                    text = 'ᴺᵁᴸᴸ';
+                } else if (typeof(cell) === 'object') {
+                    text = JSON.stringify(cell);
+                } else {
+                    text = cell;
+
+                    /// If it looks like URL, create a link. This is for convenience.
+                    if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+                        is_link = true;
+                    }
+                }
+
+                let node = document.createTextNode(text);
+                if (is_link) {
+                    let link = document.createElement('a');
+                    link.appendChild(node);
+                    link.href = text;
+                    link.setAttribute('target', '_blank');
+                    node = link;
+                }
+
+                td.appendChild(node);
+                td.className = column_classes[col_idx];
+                if (is_null) {
+                    td.className += ' null';
+                }
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
@@ -815,20 +596,13 @@
         clear();
         document.getElementById('error').innerText = response ? response : "No response.";
         document.getElementById('error').style.display = 'block';
-        document.getElementById('logo-container').style.display = 'none';
     }
 
     /// Huge JS libraries should be loaded only if needed.
-    function loadJS(src, integrity) {
+    function loadJS(src) {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = src;
-            if (integrity) {
-                script.crossOrigin = 'anonymous';
-                script.integrity = integrity;
-            } else {
-                console.warn('no integrity for', src)
-            }
             script.addEventListener('load', function() { resolve(true); });
             document.head.appendChild(script);
         });
@@ -839,14 +613,10 @@
         if (load_dagre_promise) { return load_dagre_promise; }
 
         load_dagre_promise = Promise.all([
-            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                   'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                   'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                   'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                   'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
+            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js'),
+            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js'),
+            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js'),
+            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0'),
         ]);
 
         return load_dagre_promise;
@@ -873,22 +643,20 @@
         svg.style.height = graph.graph().height;
     }
 
-    function setColorTheme(theme) {
+    function setColorTheme(theme)
+    {
         window.localStorage.setItem('theme', theme);
         document.documentElement.setAttribute('data-theme', theme);
     }
 
-    /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-    let theme = current_url.searchParams.get('theme');
-    if (['dark', 'light'].indexOf(theme) === -1) {
-        theme = window.localStorage.getItem('theme');
-    }
-
+    /// The choice of color theme is saved in browser.
+    let theme = window.localStorage.getItem('theme');
     if (theme) {
-        document.documentElement.setAttribute('data-theme', theme);
+        setColorTheme(theme);
     } else {
         /// Obtain system-level user preference
-        const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
+        let media_query_list = window.matchMedia('prefers-color-scheme: dark')
+
         if (media_query_list.matches) {
             /// Set without saving to localstorage
             document.documentElement.setAttribute('data-theme', 'dark');
@@ -904,11 +672,13 @@
         });
     }
 
-    document.getElementById('toggle-light').onclick = function() {
+    document.getElementById('toggle-light').onclick = function()
+    {
         setColorTheme('light');
     }
 
-    document.getElementById('toggle-dark').onclick = function() {
+    document.getElementById('toggle-dark').onclick = function()
+    {
         setColorTheme('dark');
     }
 </script>

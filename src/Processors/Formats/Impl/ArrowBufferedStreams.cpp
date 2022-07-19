@@ -1,17 +1,12 @@
-#ifdef HAS_RESERVED_IDENTIFIER
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
-
 #include "ArrowBufferedStreams.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
-#include <Common/assert_cast.h>
+
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
-#include <IO/PeekableReadBuffer.h>
 #include <arrow/buffer.h>
-#include <arrow/io/memory.h>
+#include <arrow/io/api.h>
 #include <arrow/result.h>
 
 #include <sys/stat.h>
@@ -19,12 +14,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_FILE_SIZE;
-    extern const int INCORRECT_DATA;
-}
 
 ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
 {
@@ -48,26 +37,14 @@ arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length
     return arrow::Status::OK();
 }
 
-RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, off_t file_size_)
-    : in{in_}, seekable_in{dynamic_cast<SeekableReadBuffer &>(in_)}, file_size{file_size_}, is_open{true}
-{
-}
-
-RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_)
-    : in{in_}, seekable_in{dynamic_cast<SeekableReadBuffer &>(in_)}, is_open{true}
+RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_)
+    : in{in_}, file_size{file_size_}, is_open{true}
 {
 }
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
 {
-    if (!file_size)
-    {
-        if (isBufferWithFileSize(in))
-            file_size = getFileSizeFromReadBuffer(in);
-        if (!file_size)
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out size of file");
-    }
-    return arrow::Result<int64_t>(*file_size);
+    return arrow::Result<int64_t>(file_size);
 }
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
@@ -78,7 +55,7 @@ arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 {
-    return seekable_in.getPosition();
+    return in.getPosition();
 }
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
@@ -99,7 +76,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBu
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
 {
-    seekable_in.seek(position, SEEK_SET);
+    in.seek(position, SEEK_SET);
     return arrow::Status::OK();
 }
 
@@ -140,12 +117,7 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
-    ReadBuffer & in,
-    const FormatSettings & settings,
-    std::atomic<int> & is_cancelled,
-    const std::string & format_name,
-    const std::string & magic_bytes)
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in)
 {
     if (auto * fd_in = dynamic_cast<ReadBufferFromFileDescriptor *>(&in))
     {
@@ -155,32 +127,12 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
         if (res == 0 && S_ISREG(stat.st_mode))
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size);
     }
-    else if (dynamic_cast<SeekableReadBuffer *>(&in) && isBufferWithFileSize(in))
-    {
-        if (settings.seekable_read)
-            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(in);
-    }
 
     // fallback to loading the entire file in memory
     std::string file_data;
     {
-        PeekableReadBuffer buf(in);
-        std::string magic_bytes_from_data;
-        magic_bytes_from_data.resize(magic_bytes.size());
-        bool read_magic_bytes = false;
-        try
-        {
-            PeekableReadBufferCheckpoint checkpoint(buf, true);
-            buf.readStrict(magic_bytes_from_data.data(), magic_bytes_from_data.size());
-            read_magic_bytes = true;
-        }
-        catch (const Exception &) {}
-
-        if (!read_magic_bytes || magic_bytes_from_data != magic_bytes)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a {} file", format_name);
-
         WriteBufferFromString file_buffer(file_data);
-        copyData(buf, file_buffer, is_cancelled);
+        copyData(in, file_buffer);
     }
 
     return std::make_shared<arrow::io::BufferReader>(arrow::Buffer::FromString(std::move(file_data)));

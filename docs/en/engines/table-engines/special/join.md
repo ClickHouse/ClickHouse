@@ -1,15 +1,14 @@
 ---
-sidebar_position: 70
-sidebar_label: Join
+toc_priority: 40
+toc_title: Join
 ---
 
-# Join Table Engine
+# Join Table Engine {#join}
 
 Optional prepared data structure for usage in [JOIN](../../../sql-reference/statements/select/join.md#select-join) operations.
 
-:::note
-This is not an article about the [JOIN clause](../../../sql-reference/statements/select/join.md#select-join) itself.
-:::
+!!! note "Note"
+    This is not an article about the [JOIN clause](../../../sql-reference/statements/select/join.md#select-join) itself.
 
 ## Creating a Table {#creating-a-table}
 
@@ -31,26 +30,64 @@ See the detailed description of the [CREATE TABLE](../../../sql-reference/statem
 
 Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters do not match, ClickHouse does not throw an exception and may return incorrect data.
 
-## Specifics and Recommendations {#specifics-and-recommendations}
+## Table Usage {#table-usage}
 
-### Data Storage {#data-storage}
+### Example {#example}
 
-`Join` table data is always located in the RAM. When inserting rows into a table, ClickHouse writes data blocks to the directory on the disk so that they can be restored when the server restarts.
+Creating the left-side table:
 
-If the server restarts incorrectly, the data block on the disk might get lost or damaged. In this case, you may need to manually delete the file with damaged data.
+``` sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog
+```
+
+``` sql
+INSERT INTO id_val VALUES (1,11)(2,12)(3,13)
+```
+
+Creating the right-side `Join` table:
+
+``` sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id)
+```
+
+``` sql
+INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23)
+```
+
+Joining the tables:
+
+``` sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_nulls = 1
+```
+
+``` text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │            ᴺᵁᴸᴸ │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+As an alternative, you can retrieve data from the `Join` table, specifying the join key value:
+
+``` sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1))
+```
+
+``` text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
 
 ### Selecting and Inserting Data {#selecting-and-inserting-data}
 
 You can use `INSERT` queries to add data to the `Join`-engine tables. If the table was created with the `ANY` strictness, data for duplicate keys are ignored. With the `ALL` strictness, all rows are added.
 
-Main use-cases for `Join`-engine tables are following:
+You cannot perform a `SELECT` query directly from the table. Instead, use one of the following methods:
 
 -   Place the table to the right side in a `JOIN` clause.
 -   Call the [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, which lets you extract data from the table the same way as from a dictionary.
-
-### Deleting Data {#deleting-data}
-
-`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](../../../sql-reference/statements/alter/index.md#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
 
 ### Limitations and Settings {#join-limitations-and-settings}
 
@@ -65,66 +102,12 @@ When creating a table, the following settings are applied:
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
-The `Join`-engine allows to specify [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](../../../sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
+The `Join`-engine allows use [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../../sql-reference/statements/select/index.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
 
-## Usage Examples {#example}
+## Data Storage {#data-storage}
 
-Creating the left-side table:
+`Join` table data is always located in the RAM. When inserting rows into a table, ClickHouse writes data blocks to the directory on the disk so that they can be restored when the server restarts.
 
-``` sql
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
-```
+If the server restarts incorrectly, the data block on the disk might get lost or damaged. In this case, you may need to manually delete the file with damaged data.
 
-``` sql
-INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
-```
-
-Creating the right-side `Join` table:
-
-``` sql
-CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
-```
-
-``` sql
-INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23);
-```
-
-Joining the tables:
-
-``` sql
-SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
-```
-
-``` text
-┌─id─┬─val─┬─id_val_join.val─┐
-│  1 │  11 │              21 │
-│  2 │  12 │               0 │
-│  3 │  13 │              23 │
-└────┴─────┴─────────────────┘
-```
-
-As an alternative, you can retrieve data from the `Join` table, specifying the join key value:
-
-``` sql
-SELECT joinGet('id_val_join', 'val', toUInt32(1));
-```
-
-``` text
-┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
-│                                         21 │
-└────────────────────────────────────────────┘
-```
-
-Deleting a row from the `Join` table:
-
-```sql
-ALTER TABLE id_val_join DELETE WHERE id = 3;
-```
-
-```text
-┌─id─┬─val─┐
-│  1 │  21 │
-└────┴─────┘
-```
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/join/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->

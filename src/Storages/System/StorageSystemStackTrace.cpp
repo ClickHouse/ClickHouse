@@ -1,12 +1,12 @@
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
-#include <csignal>
+#include <signal.h>
 #include <poll.h>
 
 #include <mutex>
 #include <filesystem>
 
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,8 +16,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
-#include <base/getThreadId.h>
-#include <Common/logger_useful.h>
+#include <common/getThreadId.h>
+#include <common/logger_useful.h>
 
 
 namespace DB

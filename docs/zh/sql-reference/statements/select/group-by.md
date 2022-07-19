@@ -1,5 +1,5 @@
 ---
-sidebar_label: GROUP BY
+toc_title: GROUP BY
 ---
 
 # GROUP BY子句 {#select-group-by-clause}
@@ -7,7 +7,7 @@ sidebar_label: GROUP BY
 `GROUP BY` 子句将 `SELECT` 查询结果转换为聚合模式，其工作原理如下:
 
 -   `GROUP BY` 子句包含表达式列表（或单个表达式 -- 可以认为是长度为1的列表）。 这份名单充当 “grouping key”，而每个单独的表达式将被称为 “key expressions”.
--   在所有的表达式在 [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having)，和 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 子句中 **必须** 基于键表达式进行计算 **或** 上 [聚合函数](../../../sql-reference/aggregate-functions/index.md) 在非键表达式（包括纯列）上。 换句话说，从表中选择的每个列必须用于键表达式或聚合函数内，但不能同时使用。
+-   在所有的表达式在 [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having.md)，和 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 子句中 **必须** 基于键表达式进行计算 **或** 上 [聚合函数](../../../sql-reference/aggregate-functions/index.md) 在非键表达式（包括纯列）上。 换句话说，从表中选择的每个列必须用于键表达式或聚合函数内，但不能同时使用。
 -   聚合结果 `SELECT` 查询将包含尽可能多的行，因为有唯一值 “grouping key” 在源表中。 通常这会显着减少行数，通常是数量级，但不一定：如果所有行数保持不变 “grouping key” 值是不同的。
 
 !!! note "注"
@@ -56,7 +56,7 @@ sidebar_label: GROUP BY
 -   在 `Pretty*` 格式时，该行在主结果之后作为单独的表输出。
 -   在其他格式中，它不可用。
 
-`WITH TOTALS` 可以以不同的方式运行时 [HAVING](../../../sql-reference/statements/select/having) 是存在的。 该行为取决于 `totals_mode` 设置。
+`WITH TOTALS` 可以以不同的方式运行时 [HAVING](../../../sql-reference/statements/select/having.md) 是存在的。 该行为取决于 `totals_mode` 设置。
 
 ### 配置总和处理 {#configuring-totals-processing}
 

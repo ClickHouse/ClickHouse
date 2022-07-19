@@ -5,16 +5,15 @@
 
 #include <functional>
 #include <filesystem>
+#include <pcg-random/pcg_random.hpp>
 
-#include <base/find_symbols.h>
-#include <base/sort.h>
-#include <base/getFQDNOrHostName.h>
+#include <common/logger_useful.h>
+#include <common/find_symbols.h>
+#include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <Common/isLocalAddress.h>
 
 #include <Poco/Net/NetException.h>
-#include <Poco/Net/DNS.h>
 
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
@@ -27,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 }
 
@@ -49,7 +47,7 @@ static void check(Coordination::Error code, const std::string & path)
 
 
 void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-                     int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_)
+                     int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
     log = &Poco::Logger::get("ZooKeeper");
     hosts = hosts_;
@@ -58,7 +56,6 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
     implementation = implementation_;
-    get_priority_load_balancing = get_priority_load_balancing_;
 
     if (implementation == "zookeeper")
     {
@@ -68,21 +65,21 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
         Coordination::ZooKeeper::Nodes nodes;
         nodes.reserve(hosts.size());
 
+        Strings shuffled_hosts = hosts;
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
+        pcg64 generator(randomSeed());
+        std::shuffle(shuffled_hosts.begin(), shuffled_hosts.end(), generator);
 
         bool dns_error = false;
-        for (auto & host : shuffled_hosts)
+        for (auto & host_string : shuffled_hosts)
         {
-            auto & host_string = host.host;
             try
             {
-                bool secure = startsWith(host_string, "secure://");
+                bool secure = bool(startsWith(host_string, "secure://"));
 
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
 
-                LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, Poco::Net::SocketAddress{host_string}.toString());
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
             catch (const Poco::Net::HostNotFoundException & e)
@@ -114,8 +111,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
                 identity_,
                 Poco::Timespan(0, session_timeout_ms_ * 1000),
                 Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
-                Poco::Timespan(0, operation_timeout_ms_ * 1000),
-                zk_log);
+                Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
         if (chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(hosts, ","));
@@ -156,47 +152,19 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
     }
 }
 
-std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
-{
-    std::function<size_t(size_t index)> get_priority = get_priority_load_balancing.getPriorityFunc(get_priority_load_balancing.load_balancing, 0, hosts.size());
-    std::vector<ShuffleHost> shuffle_hosts;
-    for (size_t i = 0; i < hosts.size(); ++i)
-    {
-        ShuffleHost shuffle_host;
-        shuffle_host.host = hosts[i];
-        if (get_priority)
-            shuffle_host.priority = get_priority(i);
-        shuffle_host.randomize();
-        shuffle_hosts.emplace_back(shuffle_host);
-    }
-
-    ::sort(
-        shuffle_hosts.begin(), shuffle_hosts.end(),
-        [](const ShuffleHost & lhs, const ShuffleHost & rhs)
-        {
-            return ShuffleHost::compare(lhs, rhs);
-        });
-
-    return shuffle_hosts;
-}
-
 ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_,
-                     std::shared_ptr<DB::ZooKeeperLog> zk_log_, const GetPriorityForLoadBalancing & get_priority_load_balancing_)
+                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
-    zk_log = std::move(zk_log_);
     Strings hosts_strings;
     splitInto<','>(hosts_strings, hosts_string);
 
-    init(implementation_, hosts_strings, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_, get_priority_load_balancing_);
+    init(implementation_, hosts_strings, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
 }
 
 ZooKeeper::ZooKeeper(const Strings & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_,
-                     std::shared_ptr<DB::ZooKeeperLog> zk_log_, const GetPriorityForLoadBalancing & get_priority_load_balancing_)
+                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
-    zk_log = std::move(zk_log_);
-    init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_, get_priority_load_balancing_);
+    init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
 }
 
 struct ZooKeeperArgs
@@ -239,15 +207,6 @@ struct ZooKeeperArgs
             {
                 implementation = config.getString(config_name + "." + key);
             }
-            else if (key == "zookeeper_load_balancing")
-            {
-                String load_balancing_str = config.getString(config_name + "." + key);
-                /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
-                auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
-                if (!load_balancing)
-                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-                get_priority_load_balancing.load_balancing = *load_balancing;
-            }
             else
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
         }
@@ -259,15 +218,6 @@ struct ZooKeeperArgs
             if (chroot.back() == '/')
                 chroot.pop_back();
         }
-
-        /// init get_priority_load_balancing
-        get_priority_load_balancing.hostname_differences.resize(hosts.size());
-        const String & local_hostname = getFQDNOrHostName();
-        for (size_t i = 0; i < hosts.size(); ++i)
-        {
-            const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
-            get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, node_host);
-        }
     }
 
     Strings hosts;
@@ -276,14 +226,12 @@ struct ZooKeeperArgs
     int operation_timeout_ms;
     std::string chroot;
     std::string implementation;
-    GetPriorityForLoadBalancing get_priority_load_balancing;
 };
 
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     ZooKeeperArgs args(config, config_name);
-    init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot, args.get_priority_load_balancing);
+    init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot);
 }
 
 bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
@@ -294,11 +242,8 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     if (args.implementation == implementation && implementation == "testkeeper")
         return false;
 
-    if (args.get_priority_load_balancing != get_priority_load_balancing)
-        return true;
-
-    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot, args.get_priority_load_balancing)
-        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, args.get_priority_load_balancing);
+    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot)
+        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 
@@ -318,7 +263,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::List), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -379,7 +324,7 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Create), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -449,7 +394,7 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Remove), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -481,7 +426,7 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Exists), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -515,7 +460,7 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Get), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -588,7 +533,7 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Set), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -640,7 +585,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Multi), requests[0]->getPath()));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -702,34 +647,24 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
     }
 }
 
-bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probably_flat, const String & keep_child_node)
+void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
-        return false;
-
-    bool removed_as_expected = true;
+        return;
     while (!children.empty())
     {
         Coordination::Requests ops;
         Strings batch;
-        ops.reserve(MULTI_BATCH_SIZE);
-        batch.reserve(MULTI_BATCH_SIZE);
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             String child_path = fs::path(path) / children.back();
-
-            /// Will try to avoid recursive getChildren calls if child_path probably has no children.
-            /// It may be extremely slow when path contain a lot of leaf children.
-            if (!probably_flat)
-                tryRemoveChildrenRecursive(child_path);
-
+            tryRemoveChildrenRecursive(child_path);
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
             {
                 batch.push_back(child_path);
                 ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
             }
-
             children.pop_back();
         }
 
@@ -737,39 +672,10 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
         /// this means someone is concurrently removing these children and we will have
         /// to remove them one by one.
         Coordination::Responses responses;
-        if (tryMulti(ops, responses) == Coordination::Error::ZOK)
-            continue;
-
-        removed_as_expected = false;
-
-        std::vector<zkutil::ZooKeeper::FutureRemove> futures;
-        futures.reserve(batch.size());
-        for (const std::string & child : batch)
-            futures.push_back(asyncTryRemoveNoThrow(child, -1));
-
-        for (size_t i = 0; i < batch.size(); ++i)
-        {
-            auto res = futures[i].get();
-            if (res.error == Coordination::Error::ZOK)
-                continue;
-            if (res.error == Coordination::Error::ZNONODE)
-                continue;
-
-            if (res.error == Coordination::Error::ZNOTEMPTY)
-            {
-                if (probably_flat)
-                {
-                    /// It actually has children, let's remove them
-                    tryRemoveChildrenRecursive(batch[i]);
-                    tryRemove(batch[i]);
-                }
-                continue;
-            }
-
-            throw KeeperException(res.error, batch[i]);
-        }
+        if (tryMulti(ops, responses) != Coordination::Error::ZOK)
+            for (const std::string & child : batch)
+                tryRemove(child);
     }
-    return removed_as_expected;
 }
 
 void ZooKeeper::removeRecursive(const std::string & path)
@@ -802,7 +708,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
     auto callback = [state](const Coordination::GetResponse & response)
     {
-        state->code = static_cast<int32_t>(response.error);
+        state->code = int32_t(response.error);
         if (state->code)
             state->event.set();
     };
@@ -811,17 +717,14 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     {
         if (!state->code)
         {
-            state->code = static_cast<int32_t>(response.error);
+            state->code = int32_t(response.error);
             if (!state->code)
                 state->event_type = response.type;
             state->event.set();
         }
     };
 
-    /// do-while control structure to allow using this function in non-blocking
-    /// fashion with a wait condition which returns false by the time this
-    /// method is called.
-    do
+    while (!condition || !condition())
     {
         /// Use getData insteand of exists to avoid watch leak.
         impl->get(path, callback, watch);
@@ -829,7 +732,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         if (!state->event.tryWait(1000))
             continue;
 
-        if (state->code == static_cast<int32_t>(Coordination::Error::ZNONODE))
+        if (state->code == int32_t(Coordination::Error::ZNONODE))
             return true;
 
         if (state->code)
@@ -837,29 +740,13 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
         if (state->event_type == Coordination::DELETED)
             return true;
-    } while (!condition || !condition());
-
+    }
     return false;
-}
-
-void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
-{
-    zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
-    String content;
-    if (!tryGet(path, content, nullptr, eph_node_disappeared))
-        return;
-
-    int32_t timeout_ms = 2 * session_timeout_ms;
-    if (!eph_node_disappeared->tryWait(timeout_ms))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-                            "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
-                            "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
-                            "Node data: '{}'", path, timeout_ms / 1000, content);
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation, zk_log, get_priority_load_balancing);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation);
 }
 
 
@@ -1145,18 +1032,10 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
     }
 }
 
-void ZooKeeper::finalize(const String & reason)
+void ZooKeeper::finalize()
 {
-    impl->finalize(reason);
+    impl->finalize();
 }
-
-void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-{
-    zk_log = std::move(zk_log_);
-    if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
-        zk->setZooKeeperLog(zk_log);
-}
-
 
 size_t KeeperMultiException::getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
@@ -1234,66 +1113,6 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     request->path = path;
     request->version = version;
     return request;
-}
-
-std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
-{
-    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
-        zookeeper_path.resize(zookeeper_path.size() - 1);
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
-    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
-    {
-        /// Do not allow this for new tables, print warning for tables created in old versions
-        if (check_starts_with_slash)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
-        if (log)
-            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases", zookeeper_path);
-        zookeeper_path = "/" + zookeeper_path;
-    }
-
-    return zookeeper_path;
-}
-
-String extractZooKeeperName(const String & path)
-{
-    static constexpr auto default_zookeeper_name = "default";
-    if (path.empty())
-        throw DB::Exception("ZooKeeper path should not be empty", DB::ErrorCodes::BAD_ARGUMENTS);
-    if (path[0] == '/')
-        return default_zookeeper_name;
-    auto pos = path.find(":/");
-    if (pos != String::npos && pos < path.find('/'))
-    {
-        auto zookeeper_name = path.substr(0, pos);
-        if (zookeeper_name.empty())
-            throw DB::Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", DB::ErrorCodes::BAD_ARGUMENTS);
-        return zookeeper_name;
-    }
-    return default_zookeeper_name;
-}
-
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log)
-{
-    if (path.empty())
-        throw DB::Exception("ZooKeeper path should not be empty", DB::ErrorCodes::BAD_ARGUMENTS);
-    if (path[0] == '/')
-        return normalizeZooKeeperPath(path, check_starts_with_slash, log);
-    auto pos = path.find(":/");
-    if (pos != String::npos && pos < path.find('/'))
-    {
-        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
-    }
-    return normalizeZooKeeperPath(path, check_starts_with_slash, log);
-}
-
-String getSequentialNodeName(const String & prefix, UInt64 number)
-{
-    /// NOTE Sequential counter in ZooKeeper is Int32.
-    assert(number < std::numeric_limits<Int32>::max());
-    constexpr size_t seq_node_digits = 10;
-    String num_str = std::to_string(number);
-    String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;
-    return name;
 }
 
 }

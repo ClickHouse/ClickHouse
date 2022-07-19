@@ -175,28 +175,25 @@ struct PositionCaseInsensitiveUTF8
 };
 
 
-template <typename Name, typename Impl>
+template <typename Impl>
 struct PositionImpl
 {
     static constexpr bool use_default_implementation_for_constants = false;
     static constexpr bool supports_start_pos = true;
-    static constexpr auto name = Name::name;
-
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {};}
 
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
     static void vectorConstant(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
         const std::string & needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
-        const UInt8 * const begin = haystack_data.data();
-        const UInt8 * const end = haystack_data.data() + haystack_data.size();
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
 
         /// Current index in the array of strings.
         size_t i = 0;
@@ -207,7 +204,7 @@ struct PositionImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Determine which index it refers to.
-            while (begin + haystack_offsets[i] <= pos)
+            while (begin + offsets[i] <= pos)
             {
                 res[i] = 0;
                 ++i;
@@ -215,14 +212,14 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() < begin + offsets[i])
             {
-                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
                 {
                     pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(
                         reinterpret_cast<const char *>(pos),
-                        reinterpret_cast<const char *>(begin + haystack_offsets[i]),
+                        reinterpret_cast<const char *>(begin + offsets[i]),
                         start - res_pos));
                     continue;
                 }
@@ -232,7 +229,7 @@ struct PositionImpl
             {
                 res[i] = 0;
             }
-            pos = begin + haystack_offsets[i];
+            pos = begin + offsets[i];
             ++i;
         }
 
@@ -411,13 +408,7 @@ struct PositionImpl
     template <typename... Args>
     static void vectorFixedConstant(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
-    }
-
-    template <typename... Args>
-    static void vectorFixedVector(Args &&...)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
+        throw Exception("Functions 'position' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

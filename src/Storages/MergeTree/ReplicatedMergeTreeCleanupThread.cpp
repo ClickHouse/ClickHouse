@@ -2,12 +2,10 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Interpreters/Context.h>
-#include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
+#include <pcg_random.hpp>
 #include <unordered_set>
-
-#include <base/sort.h>
 
 
 namespace DB
@@ -64,9 +62,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
-        storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
-        if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
-            storage.clearOldBrokenPartsFromDetachedDirecory();
+        storage.clearOldTemporaryDirectories();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -114,7 +110,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     if (entries.empty())
         return;
 
-    ::sort(entries.begin(), entries.end());
+    std::sort(entries.begin(), entries.end());
 
     String min_saved_record_log_str = entries[
         entries.size() > storage_settings->max_replicated_logs_to_keep
@@ -406,7 +402,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         NameSet blocks_set(blocks.begin(), blocks.end());
         for (auto it = cached_block_stats.begin(); it != cached_block_stats.end();)
         {
-            if (!blocks_set.contains(it->first))
+            if (!blocks_set.count(it->first))
                 it = cached_block_stats.erase(it);
             else
                 ++it;
@@ -447,7 +443,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         }
     }
 
-    ::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
+    std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
 }
 
 
@@ -473,7 +469,6 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     for (const String & replica : replicas)
     {
         String pointer;
-        // No Need to check return value to delete mutations.
         zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/mutation_pointer", pointer);
         if (pointer.empty())
             return; /// One replica hasn't done anything yet so we can't delete any mutations.
@@ -481,7 +476,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     }
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/mutations");
-    ::sort(entries.begin(), entries.end());
+    std::sort(entries.begin(), entries.end());
 
     /// Do not remove entries that are greater than `min_pointer` (they are not done yet).
     entries.erase(std::upper_bound(entries.begin(), entries.end(), padIndex(min_pointer)), entries.end());

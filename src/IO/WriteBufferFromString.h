@@ -2,7 +2,7 @@
 
 #include <string>
 #include <IO/WriteBufferFromVector.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
 
 namespace DB

@@ -9,21 +9,9 @@ from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1",
-    main_configs=["configs/enable_keeper1.xml", "configs/use_keeper.xml"],
-    stay_alive=True,
-)
-node2 = cluster.add_instance(
-    "node2",
-    main_configs=["configs/enable_keeper2.xml", "configs/use_keeper.xml"],
-    stay_alive=True,
-)
-node3 = cluster.add_instance(
-    "node3",
-    main_configs=["configs/enable_keeper3.xml", "configs/use_keeper.xml"],
-    stay_alive=True,
-)
+node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml', 'configs/use_keeper.xml'], stay_alive=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml', 'configs/use_keeper.xml'], stay_alive=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml', 'configs/use_keeper.xml'], stay_alive=True)
 
 from kazoo.client import KazooClient, KazooState
 
@@ -39,7 +27,6 @@ TODO find (or write) not so smart python client.
 TODO remove this when jepsen tests will be written.
 """
 
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -50,10 +37,8 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
 def smaller_exception(ex):
-    return "\n".join(str(ex).split("\n")[0:2])
-
+    return '\n'.join(str(ex).split('\n')[0:2])
 
 def wait_node(node):
     for _ in range(100):
@@ -74,16 +59,13 @@ def wait_node(node):
     else:
         raise Exception("Can't wait node", node.name, "to become ready")
 
-
 def wait_nodes():
     for node in [node1, node2, node3]:
         wait_node(node)
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
+    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -96,11 +78,7 @@ def test_blocade_leader(started_cluster):
         try:
             for i, node in enumerate([node1, node2, node3]):
                 node.query("CREATE DATABASE IF NOT EXISTS ordinary ENGINE=Ordinary")
-                node.query(
-                    "CREATE TABLE IF NOT EXISTS ordinary.t1 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t1', '{}') ORDER BY tuple()".format(
-                        i + 1
-                    )
-                )
+                node.query("CREATE TABLE IF NOT EXISTS ordinary.t1 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t1', '{}') ORDER BY tuple()".format(i + 1))
             break
         except Exception as ex:
             print("Got exception from node", smaller_exception(ex))
@@ -121,9 +99,7 @@ def test_blocade_leader(started_cluster):
 
         for i in range(100):
             try:
-                restart_replica_for_sure(
-                    node2, "ordinary.t1", "/clickhouse/t1/replicas/2"
-                )
+                restart_replica_for_sure(node2, "ordinary.t1", "/clickhouse/t1/replicas/2")
                 node2.query("INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -135,16 +111,12 @@ def test_blocade_leader(started_cluster):
                 time.sleep(0.5)
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t1", "/clickhouse/t1/replicas/{}".format(num + 1)
-                )
+                dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
             assert False, "Cannot insert anything node2"
 
         for i in range(100):
             try:
-                restart_replica_for_sure(
-                    node3, "ordinary.t1", "/clickhouse/t1/replicas/3"
-                )
+                restart_replica_for_sure(node3, "ordinary.t1", "/clickhouse/t1/replicas/3")
                 node3.query("INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -156,26 +128,19 @@ def test_blocade_leader(started_cluster):
                 time.sleep(0.5)
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t1", "/clickhouse/t1/replicas/{}".format(num + 1)
-                )
+                dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
             assert False, "Cannot insert anything node3"
 
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                restart_replica_for_sure(
-                    node, "ordinary.t1", "/clickhouse/t1/replicas/{}".format(n + 1)
-                )
+                restart_replica_for_sure(node, "ordinary.t1", "/clickhouse/t1/replicas/{}".format(n + 1))
                 break
             except Exception as ex:
                 try:
                     node.query("ATTACH TABLE ordinary.t1")
                 except Exception as attach_ex:
-                    print(
-                        "Got exception node{}".format(n + 1),
-                        smaller_exception(attach_ex),
-                    )
+                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
 
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
@@ -191,42 +156,31 @@ def test_blocade_leader(started_cluster):
             time.sleep(0.5)
     else:
         for num, node in enumerate([node1, node2, node3]):
-            dump_zk(
-                node, "/clickhouse/t1", "/clickhouse/t1/replicas/{}".format(num + 1)
-            )
+            dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
         assert False, "Cannot insert anything node1"
 
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                restart_replica_for_sure(
-                    node, "ordinary.t1", "/clickhouse/t1/replicas/{}".format(n + 1)
-                )
+                restart_replica_for_sure(node, "ordinary.t1", "/clickhouse/t1/replicas/{}".format(n + 1))
                 node.query("SYSTEM SYNC REPLICA ordinary.t1", timeout=10)
                 break
             except Exception as ex:
                 try:
                     node.query("ATTACH TABLE ordinary.t1")
                 except Exception as attach_ex:
-                    print(
-                        "Got exception node{}".format(n + 1),
-                        smaller_exception(attach_ex),
-                    )
+                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
 
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t1", "/clickhouse/t1/replicas/{}".format(num + 1)
-                )
-            assert False, "Cannot sync replica node{}".format(n + 1)
+                dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
+            assert False, "Cannot sync replica node{}".format(n+1)
 
     if node1.query("SELECT COUNT() FROM ordinary.t1") != "310\n":
         for num, node in enumerate([node1, node2, node3]):
-            dump_zk(
-                node, "/clickhouse/t1", "/clickhouse/t1/replicas/{}".format(num + 1)
-            )
+            dump_zk(node, '/clickhouse/t1', '/clickhouse/t1/replicas/{}'.format(num + 1))
 
     assert_eq_with_retry(node1, "SELECT COUNT() FROM ordinary.t1", "310")
     assert_eq_with_retry(node2, "SELECT COUNT() FROM ordinary.t1", "310")
@@ -238,38 +192,13 @@ def dump_zk(node, zk_path, replica_path):
     print("Replicas")
     print(node.query("SELECT * FROM system.replicas FORMAT Vertical"))
     print("Replica 2 info")
-    print(
-        node.query(
-            "SELECT * FROM system.zookeeper WHERE path = '{}' FORMAT Vertical".format(
-                zk_path
-            )
-        )
-    )
+    print(node.query("SELECT * FROM system.zookeeper WHERE path = '{}' FORMAT Vertical".format(zk_path)))
     print("Queue")
-    print(
-        node.query(
-            "SELECT * FROM system.zookeeper WHERE path = '{}/queue' FORMAT Vertical".format(
-                replica_path
-            )
-        )
-    )
+    print(node.query("SELECT * FROM system.zookeeper WHERE path = '{}/queue' FORMAT Vertical".format(replica_path)))
     print("Log")
-    print(
-        node.query(
-            "SELECT * FROM system.zookeeper WHERE path = '{}/log' FORMAT Vertical".format(
-                zk_path
-            )
-        )
-    )
+    print(node.query("SELECT * FROM system.zookeeper WHERE path = '{}/log' FORMAT Vertical".format(zk_path)))
     print("Parts")
-    print(
-        node.query(
-            "SELECT name FROM system.zookeeper WHERE path = '{}/parts' FORMAT Vertical".format(
-                replica_path
-            )
-        )
-    )
-
+    print(node.query("SELECT name FROM system.zookeeper WHERE path = '{}/parts' FORMAT Vertical".format(replica_path)))
 
 def restart_replica_for_sure(node, table_name, zk_replica_path):
     fake_zk = None
@@ -289,6 +218,7 @@ def restart_replica_for_sure(node, table_name, zk_replica_path):
             fake_zk.close()
 
 
+
 # in extremely rare case it can take more than 5 minutes in debug build with sanitizer
 @pytest.mark.timeout(600)
 def test_blocade_leader_twice(started_cluster):
@@ -297,11 +227,7 @@ def test_blocade_leader_twice(started_cluster):
         try:
             for i, node in enumerate([node1, node2, node3]):
                 node.query("CREATE DATABASE IF NOT EXISTS ordinary ENGINE=Ordinary")
-                node.query(
-                    "CREATE TABLE IF NOT EXISTS ordinary.t2 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t2', '{}') ORDER BY tuple()".format(
-                        i + 1
-                    )
-                )
+                node.query("CREATE TABLE IF NOT EXISTS ordinary.t2 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t2', '{}') ORDER BY tuple()".format(i + 1))
             break
         except Exception as ex:
             print("Got exception from node", smaller_exception(ex))
@@ -322,9 +248,7 @@ def test_blocade_leader_twice(started_cluster):
 
         for i in range(100):
             try:
-                restart_replica_for_sure(
-                    node2, "ordinary.t2", "/clickhouse/t2/replicas/2"
-                )
+                restart_replica_for_sure(node2, "ordinary.t2", "/clickhouse/t2/replicas/2")
                 node2.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
@@ -336,16 +260,12 @@ def test_blocade_leader_twice(started_cluster):
                 time.sleep(0.5)
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t2", "/clickhouse/t2/replicas/{}".format(num + 1)
-                )
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node2"
 
         for i in range(100):
             try:
-                restart_replica_for_sure(
-                    node3, "ordinary.t2", "/clickhouse/t2/replicas/3"
-                )
+                restart_replica_for_sure(node3, "ordinary.t2", "/clickhouse/t2/replicas/3")
                 node3.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
                 node3.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
                 break
@@ -358,9 +278,7 @@ def test_blocade_leader_twice(started_cluster):
                 time.sleep(0.5)
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t2", "/clickhouse/t2/replicas/{}".format(num + 1)
-                )
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node3"
 
         node2.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
@@ -388,26 +306,19 @@ def test_blocade_leader_twice(started_cluster):
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                restart_replica_for_sure(
-                    node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1)
-                )
+                restart_replica_for_sure(node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1))
                 break
             except Exception as ex:
                 try:
                     node.query("ATTACH TABLE ordinary.t2")
                 except Exception as attach_ex:
-                    print(
-                        "Got exception node{}".format(n + 1),
-                        smaller_exception(attach_ex),
-                    )
+                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
 
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t2", "/clickhouse/t2/replicas/{}".format(num + 1)
-                )
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
     for n, node in enumerate([node1, node2, node3]):
@@ -420,18 +331,14 @@ def test_blocade_leader_twice(started_cluster):
                 time.sleep(0.5)
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t2", "/clickhouse/t2/replicas/{}".format(num + 1)
-                )
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
         for i in range(100):
             all_done = True
             for n, node in enumerate([node1, node2, node3]):
                 try:
-                    restart_replica_for_sure(
-                        node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1)
-                    )
+                    restart_replica_for_sure(node, "ordinary.t2", "/clickhouse/t2/replicas/{}".format(n + 1))
                     node.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
                     break
                 except Exception as ex:
@@ -439,10 +346,7 @@ def test_blocade_leader_twice(started_cluster):
                     try:
                         node.query("ATTACH TABLE ordinary.t2")
                     except Exception as attach_ex:
-                        print(
-                            "Got exception node{}".format(n + 1),
-                            smaller_exception(attach_ex),
-                        )
+                        print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
 
                     print("Got exception node{}".format(n + 1), smaller_exception(ex))
                     time.sleep(0.5)
@@ -451,17 +355,13 @@ def test_blocade_leader_twice(started_cluster):
                 break
         else:
             for num, node in enumerate([node1, node2, node3]):
-                dump_zk(
-                    node, "/clickhouse/t2", "/clickhouse/t2/replicas/{}".format(num + 1)
-                )
+                dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
             assert False, "Cannot reconnect in i {} retries".format(i)
 
     assert_eq_with_retry(node1, "SELECT COUNT() FROM ordinary.t2", "510")
     if node2.query("SELECT COUNT() FROM ordinary.t2") != "510\n":
         for num, node in enumerate([node1, node2, node3]):
-            dump_zk(
-                node, "/clickhouse/t2", "/clickhouse/t2/replicas/{}".format(num + 1)
-            )
+            dump_zk(node, '/clickhouse/t2', '/clickhouse/t2/replicas/{}'.format(num + 1))
 
     assert_eq_with_retry(node2, "SELECT COUNT() FROM ordinary.t2", "510")
     assert_eq_with_retry(node3, "SELECT COUNT() FROM ordinary.t2", "510")

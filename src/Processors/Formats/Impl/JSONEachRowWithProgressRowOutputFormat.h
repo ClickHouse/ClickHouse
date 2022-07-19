@@ -5,21 +5,20 @@
 namespace DB
 {
 
-class JSONEachRowWithProgressRowOutputFormat final : public JSONEachRowRowOutputFormat
+class JSONEachRowWithProgressRowOutputFormat : public JSONEachRowRowOutputFormat
 {
 public:
     using JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat;
 
-    void onProgress(const Progress & value) override;
-    void flush() override;
-
-private:
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
     void writeSuffix() override;
+    void onProgress(const Progress & value) override;
+    void flush() override;
 
     void writeProgress();
 
+private:
     Progress progress;
     std::vector<String> progress_lines;
     std::mutex progress_lines_mutex;

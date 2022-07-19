@@ -9,7 +9,7 @@
 {% set og_type = 'article' %}
 
 {% if page and page.abs_url %}
-    {% set url = 'https://clickhouse.com' + page.abs_url %}
+    {% set url = 'https://clickhouse.tech' + page.abs_url %}
 {% endif %}
 
 {% if page and page.canonical_url %}
@@ -48,7 +48,7 @@
     {% block content %}
     {% if not is_blog %}
         {% include "templates/docs/nav.html" %}
-        <div class="docs container-fluid mt-3{% if direction == 'rtl' %} text-right{% endif %}">
+        <div class="container-fluid{% if direction == 'rtl' %} text-right{% endif %}">
             <div class="row justify-content-end{% if not single_page %} justify-content-xl-center{% endif %}">
                 {% include "templates/docs/sidebar.html" %}
                 {% include "templates/docs/content.html" %}
@@ -66,8 +66,8 @@
         </div>
         {% if page and page.meta.is_index %}
             {% include "templates/index/community.html" %}
+            {% include "templates/blog/footer.html" %}
         {% endif %}
-        {% include "templates/blog/footer.html" %}
     {% endif %}
 
     {% endblock %}

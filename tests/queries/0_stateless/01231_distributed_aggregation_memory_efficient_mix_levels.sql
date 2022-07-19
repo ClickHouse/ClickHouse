@@ -1,5 +1,3 @@
--- Tags: distributed, no-parallel
-
 set send_logs_level = 'error';
 
 create database if not exists shard_0;

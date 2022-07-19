@@ -73,30 +73,30 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
+void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
 {
-    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
+    if (number_of_free_entries_in_pool_to_execute_mutation > query_settings.background_pool_size)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
             " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
+            " is greater than the value of 'background_pool_size'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
             number_of_free_entries_in_pool_to_execute_mutation,
-            background_pool_tasks);
+            query_settings.background_pool_size);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks)
+    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > query_settings.background_pool_size)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
             " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
+            " is greater than the value of 'background_pool_size'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
             number_of_free_entries_in_pool_to_lower_max_size_of_merge,
-            background_pool_tasks);
+            query_settings.background_pool_size);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
@@ -120,7 +120,7 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
+            "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 150: {}",
             min_bytes_to_rebalance_partition_over_jbod,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }

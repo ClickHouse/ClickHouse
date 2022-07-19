@@ -5,17 +5,11 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <base/sleep.h>
+#include <common/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
-namespace ProfileEvents
-{
-extern const Event SleepFunctionCalls;
-extern const Event SleepFunctionMicroseconds;
-}
 
 namespace DB
 {
@@ -64,8 +58,6 @@ public:
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         WhichDataType which(arguments[0]);
@@ -99,11 +91,8 @@ public:
             if (seconds > 3.0)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
-            UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
-            UInt64 microseconds = seconds * count * 1e6;
+            UInt64 microseconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
             sleepForMicroseconds(microseconds);
-            ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
-            ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each columns.

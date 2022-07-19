@@ -7,7 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -77,17 +77,17 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = this->data(place);
-        const auto & b = this->data(rhs);
+        auto & b = this->data(rhs);
 
         a.merge(b, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         this->data(place).read(buf, arena);
     }
@@ -102,4 +102,4 @@ public:
 
 };
 
-}
+};

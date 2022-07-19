@@ -2,13 +2,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 
 #if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2
-#elif defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
-#    define LIBDIVIDE_AVX512
-#elif defined(__AVX2__)
-#    define LIBDIVIDE_AVX2
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-#    define LIBDIVIDE_NEON
+#    define LIBDIVIDE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -33,31 +27,18 @@ struct ModuloByConstantImpl
     using Op = ModuloImpl<A, B>;
     using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
-        if constexpr (op_case == OpCase::RightConstant)
-        {
-            if (right_nullmap && (*right_nullmap)[0])
-                return;
-            vectorConstant(a, *b, c, size);
-        }
+        if constexpr (op_case == OpCase::Vector)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        else if constexpr (op_case == OpCase::LeftConstant)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(*a, b[i]);
         else
-        {
-            if (right_nullmap)
-            {
-                for (size_t i = 0; i < size; ++i)
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
-                    else
-                        apply<op_case>(a, b, c, i);
-            }
-            else
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
-        }
+            vectorConstant(a, *b, c, size);
     }
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
@@ -112,16 +93,6 @@ struct ModuloByConstantImpl
             for (size_t i = 0; i < size; ++i)
                 dst[i] = src[i] & mask;
         }
-    }
-
-private:
-    template <OpCase op_case>
-    static inline void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
-    {
-        if constexpr (op_case == OpCase::Vector)
-            c[i] = Op::template apply<ResultType>(a[i], b[i]);
-        else
-            c[i] = Op::template apply<ResultType>(*a, b[i]);
     }
 };
 

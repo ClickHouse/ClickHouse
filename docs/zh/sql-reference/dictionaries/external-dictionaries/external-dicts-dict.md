@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 40
-sidebar_label: "\u914D\u7F6E\u5916\u90E8\u5B57\u5178"
+toc_priority: 40
+toc_title: "\u914D\u7F6E\u5916\u90E8\u5B57\u5178"
 ---
 
 # 配置外部字典 {#dicts-external-dicts-dict}
@@ -50,4 +50,4 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 -   [结构](external-dicts-dict-structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
 -   [使用寿命](external-dicts-dict-lifetime.md) — Frequency of dictionary updates.
 
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MutationCommands.h>
-#include <Common/TransactionID.h>
 
 
 namespace DB
@@ -22,35 +21,22 @@ struct MergeTreeMutationEntry
     String file_name;
     bool is_temp = false;
 
-    UInt64 block_number = 0;
+    Int64 block_number = 0;
 
     String latest_failed_part;
     MergeTreePartInfo latest_failed_part_info;
     time_t latest_fail_time = 0;
     String latest_fail_reason;
 
-    /// ID of transaction which has created mutation.
-    TransactionID tid = Tx::PrehistoricTID;
-    /// CSN of transaction which has created mutation
-    /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or PrehistoricCSN if there is no transaction.
-    CSN csn = Tx::UnknownCSN;
-
     /// Create a new entry and write it to a temporary file.
-    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, Int64 tmp_number);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
     /// Commit entry and rename it to a permanent file.
-    void commit(UInt64 block_number_);
+    void commit(Int64 block_number_);
 
     void removeFile();
-
-    void writeCSN(CSN csn_);
-
-    static String versionToFileName(UInt64 block_number_);
-    static UInt64 tryParseFileName(const String & file_name_);
-    static UInt64 parseFileName(const String & file_name_);
 
     /// Load an existing entry.
     MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);

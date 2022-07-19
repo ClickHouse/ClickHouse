@@ -1,7 +1,8 @@
 ---
 title: "Синтаксис запросов SELECT"
-sidebar_label: SELECT
-sidebar_position: 32
+toc_folder_title: SELECT
+toc_priority: 32
+toc_title: "Обзор"
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}
@@ -10,7 +11,7 @@ sidebar_position: 32
 
 ``` sql
 [WITH expr_list|(subquery)]
-SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
+SELECT [DISTINCT] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
@@ -19,12 +20,12 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename [COMPRESSION type] ]
+[INTO OUTFILE filename]
 [FORMAT format]
 ```
 
@@ -33,8 +34,6 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 Особенности каждой необязательной секции рассматриваются в отдельных разделах, которые перечислены в том же порядке, в каком они выполняются:
 
 -   [Секция WITH](with.md)
--   [Секция SELECT](#select-clause)
--   [Секция DISTINCT](distinct.md)
 -   [Секция FROM](from.md)
 -   [Секция SAMPLE](sample.md)
 -   [Секция JOIN](join.md)
@@ -43,11 +42,11 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 -   [Секция GROUP BY](group-by.md)
 -   [Секция LIMIT BY](limit-by.md)
 -   [Секция HAVING](having.md)
+-   [Секция SELECT](#select-clause)
+-   [Секция DISTINCT](distinct.md)
 -   [Секция LIMIT](limit.md)
--   [Секция OFFSET](offset.md)
+    [Секция OFFSET](offset.md)
 -   [Секция UNION ALL](union.md)
--   [Секция INTERSECT](intersect.md)
--   [Секция EXCEPT](except.md)
 -   [Секция INTO OUTFILE](into-outfile.md)
 -   [Секция FORMAT](format.md)
 
@@ -141,13 +140,14 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Вы можете использовать синонимы (алиасы `AS`) в любом месте запроса.
 
-В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать не названия столбцов, а номера. Для этого нужно включить настройку [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments). Тогда, например, в запросе с `ORDER BY 1,2` будет выполнена сортировка сначала по первому, а затем по второму столбцу.
+В секциях `GROUP BY`, `ORDER BY`, в отличие от диалекта MySQL, и в соответствии со стандартным SQL, не поддерживаются позиционные аргументы.
+Например, если вы напишите `GROUP BY 1, 2` - то это будет воспринято, как группировка по константам (то есть, агрегация всех строк в одну).
 
 
 ## Детали реализации {#implementation-details}
 
 Если в запросе отсутствуют секции `DISTINCT`, `GROUP BY`, `ORDER BY`, подзапросы в `IN` и `JOIN`, то запрос будет обработан полностью потоково, с использованием O(1) количества оперативки.
-Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения:
+Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения: 
 
 -   `max_memory_usage`
 -   `max_rows_to_group_by`
@@ -169,7 +169,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 ### APPLY {#apply-modifier}
 
-Вызывает указанную функцию для каждой строки, возвращаемой внешним табличным выражением запроса.
+Вызывает указанную функцию для каждой строки, возвращаемой внешним табличным выражением запроса. 
 
 **Синтаксис:**
 
@@ -177,7 +177,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
 
-**Пример:**
+**Пример:** 
 
 ``` sql
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -271,9 +271,9 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 ## SETTINGS в запросе SELECT {#settings-in-select}
 
-Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
+Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию. 
 
-Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md).
+Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md). 
 
 **Пример**
 

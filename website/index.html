@@ -5,31 +5,30 @@
 {% extends "templates/base.html" %}
 
 {% block extra_meta %}
-{% include "templates/common_fonts.html" %}
 <script type="application/ld+json">{
 "@context": "https://schema.org",
 "@type": "SoftwareApplication",
 "name": "ClickHouse",
 "operatingSystem": ["Linux", "FreeBSD", "Mac OS X"],
 "featureList": ["SQL", "columnar storage", "fault-tolerance", "distributed queries"],
-"softwareHelp": "https://clickhouse.com/docs/en/",
+"softwareHelp": "https://clickhouse.tech/docs/en/",
 "license": "https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE",
 "applicationCategory": "https://schema.org/DeveloperApplication",
 "applicationSubCategory": "Database Management System",
 "copyrightHolder": {
   "@type": "Organization",
-  "name": "ClickHouse, Inc.",
+  "name": "Yandex LLC",
   "logo": {
     "@type": "ImageObject",
-    "url": "https://clickhouse.com/images/logo-400x240.png",
-    "width": 400,
-    "height": 240
+    "url": "https://clickhouse.tech/images/yandex.png",
+    "width": 163,
+    "height": 60
   }
 },
 "copyrightYear": 2016,
 "mainEntityOfPage": {
   "@type": "WebSite",
-  "@id": "https://clickhouse.com"
+  "@id": "https://clickhouse.tech"
 },
 "offers": {
   "@type": "Offer",
@@ -39,32 +38,20 @@
 }</script>
 {% endblock %}
 
-{% block banner %}
-
-{% include "templates/global/banner.html" %}
-
-{% endblock %}
-
-{% block nav %}
-
-{% include "templates/global/nav.html" %}
-
-{% endblock %}
-
 {% block content %}
 
+{% include "templates/index/nav.html" %}
 {% include "templates/index/hero.html" %}
+{% include "templates/index/events.html" %}
+{% include "templates/index/performance.html" %}
 {% include "templates/index/why.html" %}
 {% include "templates/index/success.html" %}
-
-{% if false %}
-    {% include "templates/index/pullquote.html" %}
-{% endif %}
-
-{% include "templates/index/performance.html" %}
+{% include "templates/index/efficient.html" %}
+{% include "templates/index/rich.html" %}
+{% include "templates/index/features.html" %}
+{% include "templates/index/scalable.html" %}
+{% include "templates/index/use.html" %}
 {% include "templates/index/quickstart.html" %}
 {% include "templates/index/community.html" %}
 
-{% include "templates/global/newsletter.html" %}
-{% include "templates/global/github_stars.html" %}
 {% endblock %}

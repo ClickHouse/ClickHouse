@@ -41,7 +41,7 @@ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-
 ## Zookeeper.xml格式 {#format-of-zookeeper-xml}
 
 ``` xml
-<clickhouse>
+<yandex>
     <logger>
         <level>trace</level>
         <size>100M</size>
@@ -54,13 +54,13 @@ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-
             <port>2181</port>
         </node>
     </zookeeper>
-</clickhouse>
+</yandex>
 ```
 
 ## 复制任务的配置 {#configuration-of-copying-tasks}
 
 ``` xml
-<clickhouse>
+<yandex>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
@@ -158,14 +158,14 @@ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-
         </table_hits>
 
         <!-- Next table to copy. It is not copied until previous table is copying. -->
-        <table_visits>
+        </table_visits>
         ...
         </table_visits>
         ...
     </tables>
-</clickhouse>
+</yandex>
 ```
 
 `clickhouse-copier` 跟踪更改 `/task/path/description` 并在飞行中应用它们。 例如，如果你改变的值 `max_workers`，运行任务的进程数也会发生变化。
 
-[原始文章](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
@@ -60,12 +60,14 @@
 
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
+    <mark_cache_size>5368709120</mark_cache_size>
+
     <mmap_cache_size>1000</mmap_cache_size>
 
-    <path>./</path>
+    <path>/var/lib/clickhouse/</path>
 
-    <tmp_path>./tmp/</tmp_path>
-    <user_files_path>./user_files/</user_files_path>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
     <ldap_servers>
     </ldap_servers>
     <user_directories>
@@ -272,4 +274,4 @@
         <anonymize>false</anonymize>
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
     </send_crash_reports>
-</clickhouse>
+</yandex>

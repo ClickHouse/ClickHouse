@@ -22,7 +22,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::Compact, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
@@ -33,7 +33,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::Compact, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_)
 {
 }
 
@@ -107,7 +107,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
     size_t marks_file_size = volume->getDisk()->getFileSize(marks_file_path);
 
-    auto buffer = volume->getDisk()->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
+    auto buffer = volume->getDisk()->readFile(marks_file_path, marks_file_size);
     while (!buffer->eof())
     {
         /// Skip offsets for columns
@@ -125,7 +125,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
-    if (!getColumnPosition(column.getNameInStorage()))
+    if (!getColumnPosition(column.name))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
@@ -143,14 +143,14 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
     if (!checksums.empty())
     {
         /// count.txt should be present even in non custom-partitioned parts
-        if (!checksums.files.contains("count.txt"))
+        if (!checksums.files.count("count.txt"))
             throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
         {
-            if (!checksums.files.contains(mrk_file_name))
+            if (!checksums.files.count(mrk_file_name))
                 throw Exception("No marks file checksum for column in part " + fullPath(volume->getDisk(), path), ErrorCodes::NO_FILE_IN_DATA_PART);
-            if (!checksums.files.contains(DATA_FILE_NAME_WITH_EXTENSION))
+            if (!checksums.files.count(DATA_FILE_NAME_WITH_EXTENSION))
                 throw Exception("No data file checksum for in part " + fullPath(volume->getDisk(), path), ErrorCodes::NO_FILE_IN_DATA_PART);
         }
     }
@@ -180,16 +180,6 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
     }
-}
-
-bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
-{
-    return volume->getDisk()->isRemote();
-}
-
-bool MergeTreeDataPartCompact::isStoredOnRemoteDiskWithZeroCopySupport() const
-{
-    return volume->getDisk()->supportZeroCopyReplication();
 }
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()

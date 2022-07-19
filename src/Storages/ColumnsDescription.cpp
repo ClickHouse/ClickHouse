@@ -117,7 +117,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
         ParserColumnDeclaration column_parser(/* require type */ true);
         ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
-        if (auto * col_ast = ast->as<ASTColumnDeclaration>())
+        if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
         {
             if (col_ast->default_expression)
             {
@@ -196,7 +196,7 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
 {
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
@@ -222,8 +222,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    if (add_subcolumns)
-        addSubcolumns(column.name, column.type);
+    addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -231,11 +230,8 @@ void ColumnsDescription::remove(const String & column_name)
 {
     auto range = getNameRange(columns, column_name);
     if (range.first == range.second)
-    {
-        String exception_message = fmt::format("There is no column {} in table", column_name);
-        appendHintsMessage(exception_message, column_name);
-        throw Exception(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-    }
+        throw Exception("There is no column " + column_name + " in table.",
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
     for (auto list_it = range.first; list_it != range.second;)
     {
@@ -248,11 +244,7 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
 {
     auto it = columns.get<1>().find(column_from);
     if (it == columns.get<1>().end())
-    {
-        String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
-        appendHintsMessage(exception_message, column_from);
-        throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception("Cannot find column " + column_from + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
     {
@@ -317,7 +309,7 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
-        ColumnDescription column = *it;
+        ColumnDescription column = std::move(*it);
         removeSubcolumns(column.name);
         it = columns.get<0>().erase(it);
 
@@ -348,15 +340,6 @@ NamesAndTypesList ColumnsDescription::getOrdinary() const
     return ret;
 }
 
-NamesAndTypesList ColumnsDescription::getInsertable() const
-{
-    NamesAndTypesList ret;
-    for (const auto & col : columns)
-        if (col.default_desc.kind == ColumnDefaultKind::Default || col.default_desc.kind == ColumnDefaultKind::Ephemeral)
-            ret.emplace_back(col.name, col.type);
-    return ret;
-}
-
 NamesAndTypesList ColumnsDescription::getMaterialized() const
 {
     NamesAndTypesList ret;
@@ -375,80 +358,12 @@ NamesAndTypesList ColumnsDescription::getAliases() const
     return ret;
 }
 
-NamesAndTypesList ColumnsDescription::getEphemeral() const
-{
-    NamesAndTypesList ret;
-        for (const auto & col : columns)
-            if (col.default_desc.kind == ColumnDefaultKind::Ephemeral)
-                ret.emplace_back(col.name, col.type);
-    return ret;
-}
-
 NamesAndTypesList ColumnsDescription::getAll() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
         ret.emplace_back(col.name, col.type);
     return ret;
-}
-
-NamesAndTypesList ColumnsDescription::getSubcolumns(const String & name_in_storage) const
-{
-    auto range = subcolumns.get<1>().equal_range(name_in_storage);
-    return NamesAndTypesList(range.first, range.second);
-}
-
-NamesAndTypesList ColumnsDescription::getNested(const String & column_name) const
-{
-    auto range = getNameRange(columns, column_name);
-    NamesAndTypesList nested;
-    for (auto & it = range.first; it != range.second; ++it)
-        nested.emplace_back(it->name, it->type);
-    return nested;
-}
-
-void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
-{
-    NamesAndTypesList subcolumns_list;
-    for (const auto & col : source_list)
-    {
-        auto range = subcolumns.get<1>().equal_range(col.name);
-        if (range.first != range.second)
-            subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
-    }
-
-    source_list.splice(source_list.end(), std::move(subcolumns_list));
-}
-
-NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) const
-{
-    NamesAndTypesList res;
-    switch (options.kind)
-    {
-        case GetColumnsOptions::All:
-            res = getAll();
-            break;
-        case GetColumnsOptions::AllPhysical:
-            res = getAllPhysical();
-            break;
-        case GetColumnsOptions::Ordinary:
-            res = getOrdinary();
-            break;
-        case GetColumnsOptions::Materialized:
-            res = getMaterialized();
-            break;
-        case GetColumnsOptions::Aliases:
-            res = getAliases();
-            break;
-        case GetColumnsOptions::Ephemeral:
-            res = getEphemeral();
-            break;
-    }
-
-    if (options.with_subcolumns)
-        addSubcolumnsToList(res);
-
-    return res;
 }
 
 bool ColumnsDescription::has(const String & column_name) const
@@ -477,37 +392,35 @@ const ColumnDescription & ColumnsDescription::get(const String & column_name) co
     return *it;
 }
 
-static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
+static ColumnsDescription::GetFlags defaultKindToGetFlag(ColumnDefaultKind kind)
 {
     switch (kind)
     {
         case ColumnDefaultKind::Default:
-            return GetColumnsOptions::Ordinary;
+            return ColumnsDescription::Ordinary;
         case ColumnDefaultKind::Materialized:
-            return GetColumnsOptions::Materialized;
+            return ColumnsDescription::Materialized;
         case ColumnDefaultKind::Alias:
-            return GetColumnsOptions::Aliases;
-        case ColumnDefaultKind::Ephemeral:
-            return GetColumnsOptions::Ephemeral;
+            return ColumnsDescription::Aliases;
     }
     __builtin_unreachable();
 }
 
-NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
+NamesAndTypesList ColumnsDescription::getByNames(GetFlags flags, const Names & names, bool with_subcolumns) const
 {
     NamesAndTypesList res;
     for (const auto & name : names)
     {
         if (auto it = columns.get<1>().find(name); it != columns.get<1>().end())
         {
-            auto kind = defaultKindToGetKind(it->default_desc.kind);
-            if (options.kind & kind)
+            auto kind = defaultKindToGetFlag(it->default_desc.kind);
+            if (flags & kind)
             {
                 res.emplace_back(name, it->type);
                 continue;
             }
         }
-        else if (options.with_subcolumns)
+        else if (with_subcolumns)
         {
             auto jt = subcolumns.get<0>().find(name);
             if (jt != subcolumns.get<0>().end())
@@ -528,7 +441,7 @@ NamesAndTypesList ColumnsDescription::getAllPhysical() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias && col.default_desc.kind != ColumnDefaultKind::Ephemeral)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -537,66 +450,27 @@ Names ColumnsDescription::getNamesOfPhysical() const
 {
     Names ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias && col.default_desc.kind != ColumnDefaultKind::Ephemeral)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias)
             ret.emplace_back(col.name);
     return ret;
 }
 
-std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
+std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetFlags flags, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
+    if (it != columns.get<1>().end() && (defaultKindToGetFlag(it->default_desc.kind) & flags))
         return NameAndTypePair(it->name, it->type);
 
-    if (options.with_subcolumns)
-    {
-        auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
-            return *jt;
-    }
+    auto jt = subcolumns.get<0>().find(column_name);
+    if (jt != subcolumns.get<0>().end())
+        return *jt;
 
     return {};
 }
 
-NameAndTypePair ColumnsDescription::getColumn(const GetColumnsOptions & options, const String & column_name) const
+NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetFlags flags, const String & column_name) const
 {
-    auto column = tryGetColumn(options, column_name);
-    if (!column)
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-            "There is no column {} in table.", column_name);
-
-    return *column;
-}
-
-std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
-{
-    return tryGetColumn(GetColumnsOptions(kind).withSubcolumns(), column_name);
-}
-
-std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const
-{
-    auto it = columns.get<1>().find(column_name);
-    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
-        return *it;
-
-    if (options.with_subcolumns)
-    {
-        auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
-            return ColumnDescription{jt->name, jt->type};
-    }
-
-    return {};
-}
-
-std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const
-{
-    return tryGetColumnDescription(GetColumnsOptions(kind).withSubcolumns(), column_name);
-}
-
-NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
-{
-    auto column = tryGetColumnOrSubcolumn(kind, column_name);
+    auto column = tryGetColumnOrSubcolumn(flags, column_name);
     if (!column)
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
             "There is no column or subcolumn {} in table.", column_name);
@@ -606,7 +480,11 @@ NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind
 
 std::optional<NameAndTypePair> ColumnsDescription::tryGetPhysical(const String & column_name) const
 {
-    return tryGetColumn(GetColumnsOptions::AllPhysical, column_name);
+    auto it = columns.get<1>().find(column_name);
+    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias)
+        return {};
+
+    return NameAndTypePair(it->name, it->type);
 }
 
 NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
@@ -622,23 +500,39 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return it != columns.get<1>().end() &&
-        it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
+    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
 }
 
-bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
+bool ColumnsDescription::hasColumnOrSubcolumn(GetFlags flags, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
     return (it != columns.get<1>().end()
-        && (defaultKindToGetKind(it->default_desc.kind) & kind))
+        && (defaultKindToGetFlag(it->default_desc.kind) & flags))
             || hasSubcolumn(column_name);
 }
 
-bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
+void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
 {
-    auto range = getNameRange(columns, column_name);
-    return range.first != range.second &&
-        defaultKindToGetKind(range.first->default_desc.kind) & kind;
+    for (const auto & col : source_list)
+    {
+        auto range = subcolumns.get<1>().equal_range(col.name);
+        if (range.first != range.second)
+            source_list.insert(source_list.end(), range.first, range.second);
+    }
+}
+
+NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
+{
+    auto columns_list = getAll();
+    addSubcolumnsToList(columns_list);
+    return columns_list;
+}
+
+NamesAndTypesList ColumnsDescription::getAllPhysicalWithSubcolumns() const
+{
+    auto columns_list = getAllPhysical();
+    addSubcolumnsToList(columns_list);
+    return columns_list;
 }
 
 bool ColumnsDescription::hasDefaults() const
@@ -716,22 +610,6 @@ ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
     return ret;
 }
 
-void ColumnsDescription::resetColumnTTLs()
-{
-    std::vector<ColumnDescription> old_columns;
-    old_columns.reserve(columns.size());
-    for (const auto & col : columns)
-        old_columns.emplace_back(col);
-
-    columns.clear();
-
-    for (auto & col : old_columns)
-    {
-        col.ttl.reset();
-        add(col);
-    }
-}
-
 
 String ColumnsDescription::toString() const
 {
@@ -771,16 +649,17 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
 
 void ColumnsDescription::addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage)
 {
-    IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
+    for (const auto & subcolumn_name : type_in_storage->getSubcolumnNames())
     {
-        auto subcolumn = NameAndTypePair(name_in_storage, subname, type_in_storage, subdata.type);
+        auto subcolumn = NameAndTypePair(name_in_storage, subcolumn_name,
+            type_in_storage, type_in_storage->getSubcolumnType(subcolumn_name));
 
         if (has(subcolumn.name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
 
         subcolumns.get<0>().insert(std::move(subcolumn));
-    }, {type_in_storage->getDefaultSerialization(), type_in_storage, nullptr, nullptr});
+    }
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
@@ -788,18 +667,6 @@ void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
     if (range.first != range.second)
         subcolumns.get<1>().erase(range.first, range.second);
-}
-
-std::vector<String> ColumnsDescription::getAllRegisteredNames() const
-{
-    std::vector<String> names;
-    names.reserve(columns.size());
-    for (const auto & column : columns)
-    {
-        if (column.name.find('.') == std::string::npos)
-            names.push_back(column.name);
-    }
-    return names;
 }
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)

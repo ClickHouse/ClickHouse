@@ -1,14 +1,11 @@
-#include <cstring>
-#include <string_view>
-#include <Common/clearPasswordFromCommandLine.h>
-
-using namespace std::literals;
+#include <string.h>
+#include "clearPasswordFromCommandLine.h"
 
 void clearPasswordFromCommandLine(int argc, char ** argv)
 {
     for (int arg = 1; arg < argc; ++arg)
     {
-        if (arg + 1 < argc && argv[arg] == "--password"sv)
+        if (arg + 1 < argc && 0 == strcmp(argv[arg], "--password"))
         {
             ++arg;
             memset(argv[arg], 0, strlen(argv[arg]));

@@ -3,11 +3,11 @@
 log_user 0
 set timeout 60
 match_max 100000
+# A default timeout action is to do nothing, change it to fail
 expect_after {
-    # Do not ignore eof from expect
-    eof { exp_continue }
-    # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    timeout {
+        exit 2
+    }
 }
 
 set basedir [file dirname $argv0]

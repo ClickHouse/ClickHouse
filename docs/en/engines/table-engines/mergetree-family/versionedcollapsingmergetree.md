@@ -1,9 +1,9 @@
 ---
-sidebar_position: 80
-sidebar_label:  VersionedCollapsingMergeTree
+toc_priority: 37
+toc_title: VersionedCollapsingMergeTree
 ---
 
-# VersionedCollapsingMergeTree
+# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 This engine:
 
@@ -53,9 +53,8 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../.
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
-Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects. If possible, switch the old projects to the method described above.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -234,4 +233,4 @@ SELECT * FROM UAct FINAL
 
 This is a very inefficient way to select data. Don’t use it for large tables.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

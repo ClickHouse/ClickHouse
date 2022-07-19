@@ -29,6 +29,7 @@ private:
         bool data_finished = false;
     };
 
+private:
     /// alter_version -> AlterState.
     std::map<int, AlterState> queue_state;
 

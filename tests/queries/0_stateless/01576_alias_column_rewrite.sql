@@ -123,7 +123,6 @@ create table pl (dt DateTime, i int, projection p (select sum(i) group by toStar
 
 insert into pl values ('2020-10-24', 1);
 
-set max_rows_to_read = 2;
 select sum(i) from pd group by dt_m settings allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
 
 drop table pd;

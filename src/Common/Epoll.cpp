@@ -3,7 +3,7 @@
 #include "Epoll.h"
 #include <Common/Exception.h>
 #include <unistd.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -21,12 +21,12 @@ Epoll::Epoll() : events_count(0)
         throwFromErrno("Cannot open epoll descriptor", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-Epoll::Epoll(Epoll && other) noexcept : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
+Epoll::Epoll(Epoll && other) : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
 {
     other.epoll_fd = -1;
 }
 
-Epoll & Epoll::operator=(Epoll && other) noexcept
+Epoll & Epoll::operator=(Epoll && other)
 {
     epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;

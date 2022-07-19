@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Poco/String.h>
 
 #include <unordered_map>
@@ -125,7 +125,7 @@ public:
         return name;
     }
 
-    virtual ~IFactoryWithAliases() override = default;
+    virtual ~IFactoryWithAliases() override {}
 
 private:
     using InnerMap = std::unordered_map<String, Value>; // name -> creator

@@ -1,70 +1,61 @@
-# Compiler
-
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (COMPILER_GCC 1)
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
     set (COMPILER_CLANG 1) # Safe to treat AppleClang as a regular Clang, in general.
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set (COMPILER_CLANG 1)
-else ()
-    message (FATAL_ERROR "Compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
 endif ()
-
-# Print details to output
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION OUTPUT_STRIP_TRAILING_WHITESPACE)
-message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
-
-# Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 12)
-set (XCODE_MINIMUM_VERSION 12.0)
-set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
-set (GCC_MINIMUM_VERSION 11)
 
 if (COMPILER_GCC)
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION})
-        message (FATAL_ERROR "Compilation with GCC version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${GCC_MINIMUM_VERSION}.")
+    # Require minimum version of gcc
+    set (GCC_MINIMUM_VERSION 10)
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION} AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+        message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 
-    message (WARNING "Compilation with GCC is unsupported. Please use Clang instead.")
+    message (WARNING "GCC compiler is not officially supported for ClickHouse. You should migrate to clang.")
 
 elseif (COMPILER_CLANG)
+    # Require minimum version of clang/apple-clang
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-        # (Experimental!) Specify "-DALLOW_APPLECLANG=ON" when running CMake configuration step, if you want to experiment with using it.
-        if (NOT ALLOW_APPLECLANG AND NOT DEFINED ENV{ALLOW_APPLECLANG})
-            message (FATAL_ERROR "Compilation with AppleClang is unsupported. Please use vanilla Clang, e.g. from Homebrew.")
-        endif ()
-
-        # For a mapping between XCode / AppleClang / vanilla Clang versions, see https://en.wikipedia.org/wiki/Xcode
+        # AppleClang 10.0.1 (Xcode 10.2) corresponds to LLVM/Clang upstream version 7.0.0
+        # AppleClang 11.0.0 (Xcode 11.0) corresponds to LLVM/Clang upstream version 8.0.0
+        set (XCODE_MINIMUM_VERSION 10.2)
+        set (APPLE_CLANG_MINIMUM_VERSION 10.0.1)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${APPLE_CLANG_MINIMUM_VERSION})
-            message (FATAL_ERROR "Compilation with AppleClang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
+            message (FATAL_ERROR "AppleClang compiler version must be at least ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
+        elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.0.0)
+            # char8_t is available starting (upstream vanilla) Clang 7, but prior to Clang 8,
+            # it is not enabled by -std=c++20 and can be enabled with an explicit -fchar8_t.
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fchar8_t")
+            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")
         endif ()
     else ()
+        set (CLANG_MINIMUM_VERSION 9)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
-            message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
+            message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
         endif ()
     endif ()
+else ()
+    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang and GCC.")
 endif ()
 
-# Linker
-
-string (REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
-list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
+STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
+LIST(GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
 # Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
 
-if (NOT LINKER_NAME)
-    if (COMPILER_GCC)
-        find_program (LLD_PATH NAMES "ld.lld")
-        find_program (GOLD_PATH NAMES "ld.gold")
-    elseif (COMPILER_CLANG)
-        find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
-        find_program (GOLD_PATH NAMES "ld.gold" "gold")
-    endif ()
-endif()
+if (COMPILER_GCC AND NOT LINKER_NAME)
+    find_program (LLD_PATH NAMES "ld.lld")
+    find_program (GOLD_PATH NAMES "ld.gold")
+elseif (NOT LINKER_NAME)
+    find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
+    find_program (GOLD_PATH NAMES "ld.gold" "gold")
+endif ()
 
 if (OS_LINUX AND NOT LINKER_NAME)
-    # prefer lld linker over gold or ld on linux
+    # We prefer LLD linker over Gold or BFD on Linux.
     if (LLD_PATH)
         if (COMPILER_GCC)
             # GCC driver requires one of supported linker names like "lld".
@@ -77,7 +68,6 @@ if (OS_LINUX AND NOT LINKER_NAME)
 
     if (NOT LINKER_NAME)
         if (GOLD_PATH)
-            message (WARNING "Linking with gold is not recommended. Please use lld.")
             if (COMPILER_GCC)
                 set (LINKER_NAME "gold")
             else ()
@@ -86,95 +76,16 @@ if (OS_LINUX AND NOT LINKER_NAME)
         endif ()
     endif ()
 endif ()
-# TODO: allow different linker on != OS_LINUX
 
 if (LINKER_NAME)
-    if (COMPILER_CLANG)
-        find_program (LLD_PATH NAMES ${LINKER_NAME})
-        if (NOT LLD_PATH)
-            message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
-        endif ()
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_PATH}")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LLD_PATH}")
+    if (COMPILER_CLANG AND (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 12.0.0 OR CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL 12.0.0))
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LINKER_NAME}")
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LINKER_NAME}")
     else ()
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
     endif ()
 
+    message(STATUS "Using custom linker by name: ${LINKER_NAME}")
 endif ()
 
-if (LINKER_NAME)
-    message(STATUS "Using linker: ${LINKER_NAME}")
-else()
-    message(STATUS "Using linker: <default>")
-endif()
-
-# Archiver
-
-if (COMPILER_GCC)
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-14" "llvm-ar-13" "llvm-ar-12")
-else ()
-    find_program (LLVM_AR_PATH NAMES "llvm-ar-${COMPILER_VERSION_MAJOR}" "llvm-ar")
-endif ()
-
-if (LLVM_AR_PATH)
-    set (CMAKE_AR "${LLVM_AR_PATH}")
-endif ()
-
-message(STATUS "Using archiver: ${CMAKE_AR}")
-
-# Ranlib
-
-if (COMPILER_GCC)
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-14" "llvm-ranlib-13" "llvm-ranlib-12")
-else ()
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib-${COMPILER_VERSION_MAJOR}" "llvm-ranlib")
-endif ()
-
-if (LLVM_RANLIB_PATH)
-    set (CMAKE_RANLIB "${LLVM_RANLIB_PATH}")
-endif ()
-
-message(STATUS "Using ranlib: ${CMAKE_RANLIB}")
-
-# Install Name Tool
-
-if (COMPILER_GCC)
-    find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool" "llvm-install-name-tool-14" "llvm-install-name-tool-13" "llvm-install-name-tool-12")
-else ()
-    find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool-${COMPILER_VERSION_MAJOR}" "llvm-install-name-tool")
-endif ()
-
-if (LLVM_INSTALL_NAME_TOOL_PATH)
-    set (CMAKE_INSTALL_NAME_TOOL "${LLVM_INSTALL_NAME_TOOL_PATH}")
-endif ()
-
-message(STATUS "Using install-name-tool: ${CMAKE_INSTALL_NAME_TOOL}")
-
-# Objcopy
-
-if (COMPILER_GCC)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-14" "llvm-objcopy-13" "llvm-objcopy-12" "objcopy")
-else ()
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy")
-endif ()
-
-if (OBJCOPY_PATH)
-    message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
-else ()
-    message (FATAL_ERROR "Cannot find objcopy.")
-endif ()
-
-# Strip
-
-if (COMPILER_GCC)
-    find_program (STRIP_PATH NAMES "llvm-strip" "llvm-strip-14" "llvm-strip-13" "llvm-strip-12" "strip")
-else ()
-    find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
-endif ()
-
-if (STRIP_PATH)
-    message (STATUS "Using strip: ${STRIP_PATH}")
-else ()
-    message (FATAL_ERROR "Cannot find strip.")
-endif ()

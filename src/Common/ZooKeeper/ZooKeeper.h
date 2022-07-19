@@ -7,16 +7,12 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/GetPriorityForLoadBalancing.h>
-#include <Common/thread_local_rng.h>
 #include <unistd.h>
-#include <random>
 
 
 namespace ProfileEvents
@@ -29,10 +25,6 @@ namespace CurrentMetrics
     extern const Metric EphemeralNode;
 }
 
-namespace DB
-{
-    class ZooKeeperLog;
-}
 
 namespace zkutil
 {
@@ -40,25 +32,6 @@ namespace zkutil
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
-struct ShuffleHost
-{
-    String host;
-    Int64 priority = 0;
-    UInt32 random = 0;
-
-    void randomize()
-    {
-        random = thread_local_rng();
-    }
-
-    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
-    {
-        return std::forward_as_tuple(lhs.priority, lhs.random)
-               < std::forward_as_tuple(rhs.priority, rhs.random);
-    }
-};
-
-using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -75,21 +48,17 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     /// hosts_string -- comma separated [secure://]host:port list
-    explicit ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
+    ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
-              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
+              const std::string & implementation_ = "zookeeper");
 
-    explicit ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
+    ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
-              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
+              const std::string & implementation_ = "zookeeper");
 
     /** Config of the form:
         <zookeeper>
@@ -113,9 +82,7 @@ public:
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
-
-    std::vector<ShuffleHost> shuffleHosts() const;
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -225,10 +192,7 @@ public:
     /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
     /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
     void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
-    /// If probably_flat is true, this method will optimistically try to remove children non-recursive
-    /// and will fall back to recursive removal if it gets ZNOTEMPTY for some child.
-    /// Returns true if no kind of fallback happened.
-    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, const String & keep_child_node = {});
+    void tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node = {});
 
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
@@ -239,10 +203,6 @@ public:
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
-
-    /// Wait for the ephemeral node created in previous session to disappear.
-    /// Throws LOGICAL_ERROR if node still exists after 2x session_timeout.
-    void waitForEphemeralToDisappearIfAny(const std::string & path);
 
     /// Async interface (a small subset of operations is implemented).
     ///
@@ -307,17 +267,13 @@ public:
     /// * The node doesn't exist
     FutureGet asyncTryGet(const std::string & path);
 
-    void finalize(const String & reason);
-
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
-
-    UInt32 getSessionUptime() const { return session_uptime.elapsedSeconds(); }
+    void finalize();
 
 private:
     friend class EphemeralNodeHolder;
 
     void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_);
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -342,11 +298,6 @@ private:
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
-    std::shared_ptr<DB::ZooKeeperLog> zk_log;
-
-    GetPriorityForLoadBalancing get_priority_load_balancing;
-
-    AtomicStopwatch session_uptime;
 };
 
 
@@ -414,13 +365,4 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
-
-String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
-
-String extractZooKeeperName(const String & path);
-
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
-
-String getSequentialNodeName(const String & prefix, UInt64 number);
-
 }

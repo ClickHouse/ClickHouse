@@ -32,11 +32,9 @@ namespace DB::GatherUtils
 
 enum class ArraySearchType
 {
-    Any, // Corresponds to the hasAny array function
-    All, // Corresponds to the hasAll array function
-    Substr, // Corresponds to the hasSubstr array function
-    StartsWith,
-    EndsWith
+  Any, // Corresponds to the hasAny array function
+  All, // Corresponds to the hasAll array function
+  Substr // Corresponds to the hasSubstr array function
 };
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows);
@@ -54,14 +52,9 @@ ColumnArray::MutablePtr sliceFromRightConstantOffsetBounded(IArraySource & src, 
 ColumnArray::MutablePtr sliceDynamicOffsetUnbounded(IArraySource & src, const IColumn & offset_column);
 ColumnArray::MutablePtr sliceDynamicOffsetBounded(IArraySource & src, const IColumn & offset_column, const IColumn & length_column);
 
-ColumnArray::MutablePtr sliceFromLeftDynamicLength(IArraySource & src, const IColumn & length_column);
-ColumnArray::MutablePtr sliceFromRightDynamicLength(IArraySource & src, const IColumn & length_column);
-
 void sliceHasAny(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasAll(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
-void sliceHasStartsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
-void sliceHasEndsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 
 inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
 {
@@ -76,12 +69,7 @@ inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchTyp
         case ArraySearchType::Substr:
             sliceHasSubstr(first, second, result);
             break;
-        case ArraySearchType::StartsWith:
-            sliceHasStartsWith(first, second, result);
-            break;
-        case ArraySearchType::EndsWith:
-            sliceHasEndsWith(first, second, result);
-            break;
+
     }
 }
 

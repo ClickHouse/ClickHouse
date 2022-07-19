@@ -5,7 +5,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/WriteHelpers.h>
 
@@ -22,7 +22,7 @@ static void assertGranuleBlocksStructure(const Blocks & granule_index_blocks)
     Block prev_block;
     for (size_t index = 0; index < granule_index_blocks.size(); ++index)
     {
-        const Block & granule_index_block = granule_index_blocks[index];
+        Block granule_index_block = granule_index_blocks[index];
 
         if (index != 0)
             assertBlocksHaveEqualStructure(prev_block, granule_index_block, "Granule blocks of bloom filter has difference structure.");
@@ -84,12 +84,10 @@ bool MergeTreeIndexGranuleBloomFilter::empty() const
     return !total_rows;
 }
 
-void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr)
 {
     if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read data to a non-empty bloom filter index.");
-    if (version != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+        throw Exception("Cannot read data to a non-empty bloom filter index.", ErrorCodes::LOGICAL_ERROR);
 
     readVarUInt(total_rows, istr);
     for (auto & filter : bloom_filters)
@@ -104,7 +102,7 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
 void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
+        throw Exception("Attempt to write empty bloom filter index.", ErrorCodes::LOGICAL_ERROR);
 
     static size_t atom_size = 8;
     writeVarUInt(total_rows, ostr);

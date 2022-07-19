@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteSettings.h>
 
 namespace DB
 {
@@ -19,7 +18,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
@@ -27,7 +26,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
-        data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         /* rewrite_primary_key = */false);
@@ -53,17 +51,22 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
-    new_serialization_infos.add(block);
+}
+
+void MergedColumnOnlyOutputStream::writeSuffix()
+{
+    throw Exception("Method writeSuffix is not supported by MergedColumnOnlyOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::fillChecksums(
+MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums)
+    MergeTreeData::DataPart::Checksums & all_checksums,
+    bool sync)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->fillChecksums(checksums);
+    writer->finish(checksums, sync);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -72,32 +75,14 @@ MergedColumnOnlyOutputStream::fillChecksums(
             projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
-    auto serialization_infos = new_part->getSerializationInfos();
-    serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
-
-    auto disk = new_part->volume->getDisk();
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
     for (const String & removed_file : removed_files)
-    {
-        auto file_path = new_part->getFullRelativePath() + removed_file;
-        /// Can be called multiple times, don't need to remove file twice
-        if (disk->exists(file_path))
-            disk->removeFile(file_path);
-
-        if (all_checksums.files.contains(removed_file))
+        if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
-    }
 
     new_part->setColumns(columns);
-    new_part->setSerializationInfos(serialization_infos);
-
     return checksums;
-}
-
-void MergedColumnOnlyOutputStream::finish(bool sync)
-{
-    writer->finish(sync);
 }
 
 }

@@ -1,6 +1,6 @@
-<clickhouse>
+<yandex>
     <rabbitmq>
         <username>root</username>
         <password>clickhouse</password>
     </rabbitmq>
-</clickhouse>
+</yandex>

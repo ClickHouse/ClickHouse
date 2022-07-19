@@ -6,8 +6,6 @@
 #include <Interpreters/StorageID.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
@@ -245,7 +243,7 @@ IdentifierSemantic::getIdentsMembership(ASTPtr ast, const std::vector<TableWithC
     for (const auto * ident : idents)
     {
         /// short name clashes with alias, ambiguous
-        if (ident->isShort() && aliases.contains(ident->shortName()))
+        if (ident->isShort() && aliases.count(ident->shortName()))
             return {};
         const auto pos = getIdentMembership(*ident, tables);
         if (!pos)

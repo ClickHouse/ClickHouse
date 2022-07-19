@@ -1,5 +1,3 @@
--- Tags: distributed
-
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS test_local_1;

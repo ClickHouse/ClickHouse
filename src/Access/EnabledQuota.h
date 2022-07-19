@@ -1,15 +1,13 @@
 #pragma once
 
-#include <Access/Common/QuotaDefs.h>
+#include <Access/Quota.h>
 #include <Core/UUID.h>
 #include <Poco/Net/IPAddress.h>
-#include <boost/container/flat_set.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <atomic>
 #include <chrono>
 #include <memory>
-#include <optional>
 
 
 namespace DB
@@ -39,18 +37,21 @@ public:
         friend bool operator >=(const Params & lhs, const Params & rhs) { return !(lhs < rhs); }
     };
 
+    using ResourceType = Quota::ResourceType;
+    using ResourceAmount = Quota::ResourceAmount;
+
     ~EnabledQuota();
 
     /// Tracks resource consumption. If the quota exceeded and `check_exceeded == true`, throws an exception.
-    void used(QuotaType quota_type, QuotaValue value, bool check_exceeded = true) const;
-    void used(const std::pair<QuotaType, QuotaValue> & usage1, bool check_exceeded = true) const;
-    void used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, bool check_exceeded = true) const;
-    void used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, const std::pair<QuotaType, QuotaValue> & usage3, bool check_exceeded = true) const;
-    void used(const std::vector<std::pair<QuotaType, QuotaValue>> & usages, bool check_exceeded = true) const;
+    void used(ResourceType resource_type, ResourceAmount amount, bool check_exceeded = true) const;
+    void used(const std::pair<ResourceType, ResourceAmount> & resource, bool check_exceeded = true) const;
+    void used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, bool check_exceeded = true) const;
+    void used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, const std::pair<ResourceType, ResourceAmount> & resource3, bool check_exceeded = true) const;
+    void used(const std::vector<std::pair<ResourceType, ResourceAmount>> & resources, bool check_exceeded = true) const;
 
     /// Checks if the quota exceeded. If so, throws an exception.
     void checkExceeded() const;
-    void checkExceeded(QuotaType quota_type) const;
+    void checkExceeded(ResourceType resource_type) const;
 
     /// Returns the information about quota consumption.
     std::optional<QuotaUsage> getUsage() const;
@@ -60,26 +61,24 @@ public:
 
 private:
     friend class QuotaCache;
-    explicit EnabledQuota(const Params & params_);
-    EnabledQuota() {} /// NOLINT
+    EnabledQuota(const Params & params_);
+    EnabledQuota() {}
 
     const String & getUserName() const { return params.user_name; }
 
+    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+
     struct Interval
     {
-        mutable std::atomic<QuotaValue> used[static_cast<size_t>(QuotaType::MAX)];
-        QuotaValue max[static_cast<size_t>(QuotaType::MAX)];
+        mutable std::atomic<ResourceAmount> used[MAX_RESOURCE_TYPE];
+        ResourceAmount max[MAX_RESOURCE_TYPE];
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
         mutable std::atomic<std::chrono::system_clock::duration> end_of_interval;
 
-        Interval(std::chrono::seconds duration_, bool randomize_interval_, std::chrono::system_clock::time_point current_time_);
-
+        Interval();
         Interval(const Interval & src) { *this = src; }
         Interval & operator =(const Interval & src);
-
-        std::chrono::system_clock::time_point getEndOfInterval(std::chrono::system_clock::time_point current_time) const;
-        std::chrono::system_clock::time_point getEndOfInterval(std::chrono::system_clock::time_point current_time, bool & counters_were_reset) const;
     };
 
     struct Intervals

@@ -1,6 +1,8 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_LIBPQXX
 
@@ -30,6 +32,7 @@ public:
         ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
+        const ASTStorage * database_engine_define_,
         bool is_attach_,
         const String & database_name_,
         const String & postgres_database_name,
@@ -40,45 +43,27 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
 
-    DatabaseTablesIteratorPtr
-    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(
+            ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
-
-    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
-
-    void detachTablePermanently(ContextPtr context, const String & table_name) override;
-
-    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
+    void createTable(ContextPtr context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
     void dropTable(ContextPtr local_context, const String & name, bool no_delay) override;
 
     void drop(ContextPtr local_context) override;
 
-    bool hasReplicationThread() const override { return true; }
-
-    void stopReplication() override;
-
-    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
+    void stopReplication();
 
     void shutdown() override;
-
-    String getPostgreSQLDatabaseName() const { return remote_database_name; }
-
-protected:
-    ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
     void startSynchronization();
 
-    ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
-
-    String getFormattedTablesList(const String & except = {}) const;
-
+    ASTPtr database_engine_define;
     bool is_attach;
     String remote_database_name;
     postgres::ConnectionInfo connection_info;
@@ -87,10 +72,6 @@ private:
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
     std::map<std::string, StoragePtr> materialized_tables;
     mutable std::mutex tables_mutex;
-    mutable std::mutex handler_mutex;
-
-    BackgroundSchedulePool::TaskHolder startup_task;
-    bool shutdown_called = false;
 };
 
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <set>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
@@ -23,8 +23,8 @@ struct ReplicatedMergeTreeQuorumEntry
     size_t required_number_of_replicas{};
     std::set<String> replicas;
 
-    ReplicatedMergeTreeQuorumEntry() = default;
-    explicit ReplicatedMergeTreeQuorumEntry(const String & str)
+    ReplicatedMergeTreeQuorumEntry() {}
+    ReplicatedMergeTreeQuorumEntry(const String & str)
     {
         fromString(str);
     }

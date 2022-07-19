@@ -1,5 +1,0 @@
-<clickhouse>
-    <access_control_improvements>
-        <users_without_row_policies_can_read_rows remove="remove"/>
-    </access_control_improvements>
-</clickhouse>

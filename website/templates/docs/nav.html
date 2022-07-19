@@ -1,7 +1,7 @@
-<nav id="top-nav" class="navbar py-1 navbar-dark navbar-expand-md bg-dark-alt text-white fixed-top">
+<nav id="top-nav" class="navbar navbar-dark navbar-expand-md bg-dark-alt text-white sticky-top">
     <div class="container-fluid justify-content-between">
         <a class="d-block navbar-brand mr-3" href="/">
-            <img id="docs-logo-icon" src="/docs/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/>
+            <img id="docs-logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/>
         </a>
         <div class="w-100 navbar-text text-left d-none d-md-block">
             <h1 class="h3 m-0 p-0 d-inline">
@@ -24,24 +24,24 @@
                 {% endif %}
                 {% if edit_url %}
                 <li id="edit-wrapper" class="nav-item">
-                    <a id="edit-link" href="{{ edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/docs/images/mkdocs/edit.svg" alt="Edit this article" height="60" /></a>
+                    <a id="edit-link" href="{{ edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
                 </li>
                 {% endif %}
                 <li class="nav-item">
                      <a class="nav-link" href="https://github.com/ClickHouse/ClickHouse" rel="external nofollow noreferrer">
-                        <img src="/docs/images/index/github.svg" alt="GitHub repository" title="Go to GitHub" height="72" />
+                        <img src="/images/index/github.svg" alt="GitHub repository" title="Go to GitHub" height="32" />
                     </a>
                 </li>
-                <li id="languages-wrapper" class="nav-item dropdown mr-3">
+                <li id="languages-wrapper" class="nav-item dropdown">
                     <div id="languages-dropdown">
                         <a class="nav-link dropdown-toggle d-inline-block mt-1 text-muted" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            <img src="/docs/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="60" class="d-inline-block mt-n1" />
+                            <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="32" class="d-inline-block mt-n1" />
                         </a>
                         <div class="dropdown-menu bg-dark" aria-labelledby="lang-dropdown">
                             {% for code, name in config.extra.languages.items() %}
                             <a class="dropdown-item{% if language == code %} disabled{% endif %}"
                                href="/docs/{{ code }}/{{ page.url }}">
-                                <img src="/docs/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name }}
+                                <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name }}
                             </a>
                             {% endfor %}
                         </div>
@@ -54,7 +54,7 @@
             <div class="input-group">
                 <div class="input-group-prepend w-100">
                     <span class="input-group-text bg-secondary-alt text-muted border-0 mr-n1" id="search-icon">
-                        <img src="/docs/images/mkdocs/search.svg" />
+                        <img src="/images/mkdocs/search.svg" />
                     </span>
                     <input id="docsearch-input" class="form-control bg-secondary-alt text-muted border-0 pl-1" type="search" placeholder="Search" aria-label="Search">
                 </div>

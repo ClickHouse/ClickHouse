@@ -179,7 +179,7 @@ CREATE TABLE hits
 # How to prepare data
 
 Download the 100 million rows dataset from here and insert into ClickHouse:
-https://clickhouse.com/docs/en/getting-started/example-datasets/metrica/
+https://clickhouse.tech/docs/en/getting-started/example-datasets/metrica/
 
 Create the dataset from ClickHouse:
 

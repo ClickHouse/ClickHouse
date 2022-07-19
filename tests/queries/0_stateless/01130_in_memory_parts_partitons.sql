@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS t2;
 
 CREATE TABLE t2(id UInt32, a UInt64, s String)

@@ -2,14 +2,13 @@
 #include <vector>
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -20,10 +19,9 @@ namespace ErrorCodes
 }
 
 
-ODBCSource::ODBCSource(
+ODBCBlockInputStream::ODBCBlockInputStream(
     nanodbc::ConnectionHolderPtr connection_holder, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
-    : ISource(sample_block)
-    , log(&Poco::Logger::get("ODBCSource"))
+    : log(&Poco::Logger::get("ODBCBlockInputStream"))
     , max_block_size{max_block_size_}
     , query(query_str)
 {
@@ -33,10 +31,10 @@ ODBCSource::ODBCSource(
 }
 
 
-Chunk ODBCSource::generate()
+Block ODBCBlockInputStream::readImpl()
 {
-    if (is_finished)
-        return {};
+    if (finished)
+        return Block();
 
     MutableColumns columns(description.sample_block.cloneEmptyColumns());
     size_t num_rows = 0;
@@ -45,7 +43,7 @@ Chunk ODBCSource::generate()
     {
         if (!result.next())
         {
-            is_finished = true;
+            finished = true;
             break;
         }
 
@@ -77,11 +75,11 @@ Chunk ODBCSource::generate()
             break;
     }
 
-    return Chunk(std::move(columns), num_rows);
+    return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
 
-void ODBCSource::insertValue(
+void ODBCBlockInputStream::insertValue(
         IColumn & column, const DataTypePtr data_type, const ValueType type, nanodbc::result & row, size_t idx)
 {
     switch (type)
@@ -142,16 +140,7 @@ void ODBCSource::insertValue(
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
         }
-        case ValueType::vtDateTime64:
-        {
-            auto value = row.get<std::string>(idx);
-            ReadBufferFromString in(value);
-            DateTime64 time = 0;
-            const auto * datetime_type = assert_cast<const DataTypeDateTime64 *>(data_type.get());
-            readDateTime64Text(time, datetime_type->getScale(), in, datetime_type->getTimeZone());
-            assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
-            break;
-        }
+        case ValueType::vtDateTime64:[[fallthrough]];
         case ValueType::vtDecimal32: [[fallthrough]];
         case ValueType::vtDecimal64: [[fallthrough]];
         case ValueType::vtDecimal128: [[fallthrough]];

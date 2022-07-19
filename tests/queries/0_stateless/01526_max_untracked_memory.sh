@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-cpu-aarch64
-# requires TraceCollector, does not available under sanitizers and aarch64
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

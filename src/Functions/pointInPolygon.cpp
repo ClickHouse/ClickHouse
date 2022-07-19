@@ -13,7 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -81,8 +81,6 @@ public:
         return 0;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
@@ -139,7 +137,7 @@ public:
         }
         else
         {
-            for (size_t i = 1; i < arguments.size(); ++i)
+            for (size_t i = 1; i < arguments.size(); i++)
             {
                 const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
                 if (array == nullptr)
@@ -167,7 +165,7 @@ public:
 
         const auto & tuple_columns = tuple_col->getColumns();
 
-        const ColumnWithTypeAndName & poly = arguments[1];
+        const ColumnWithTypeAndName poly = arguments[1];
         const IColumn * poly_col = poly.column.get();
         const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
 
@@ -188,7 +186,7 @@ public:
             /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
             using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
-            /// C++11 has thread-safe function-local static.
+            /// C++11 has thread-safe function-local statics.
             static Pool known_polygons;
 
             auto factory = [&polygon]()

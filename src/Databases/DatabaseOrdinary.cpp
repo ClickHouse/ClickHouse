@@ -4,8 +4,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/TablesLoader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -23,12 +21,14 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
+static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace
@@ -39,7 +39,7 @@ namespace
         DatabaseOrdinary & database,
         const String & database_name,
         const String & metadata_path,
-        bool force_restore)
+        bool has_force_restore_data_flag)
     {
         try
         {
@@ -48,16 +48,25 @@ namespace
                 database_name,
                 database.getTableDataPath(query),
                 context,
-                force_restore);
+                has_force_restore_data_flag);
 
-            database.attachTable(context, table_name, table, database.getTableDataPath(query));
+            database.attachTable(table_name, table, database.getTableDataPath(query));
         }
         catch (Exception & e)
         {
             e.addMessage(
-                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.getTable()) + " from metadata file " + metadata_path
+                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table) + " from metadata file " + metadata_path
                 + " from query " + serializeAST(query));
             throw;
+        }
+    }
+
+    void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
+    {
+        if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+        {
+            LOG_INFO(log, "{}%", processed * 100.0 / total);
+            watch.restart();
         }
     }
 }
@@ -74,21 +83,63 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool /*force_attach*/)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
+    using FileNames = std::map<std::string, ASTPtr>;
+    std::mutex file_names_mutex;
+    FileNames file_names;
 
-    ParsedTablesMetadata metadata;
-    loadTablesMetadata(local_context, metadata);
+    size_t total_dictionaries = 0;
 
-    size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
+    auto process_metadata = [&file_names, &total_dictionaries, &file_names_mutex, this](
+                                const String & file_name)
+    {
+        fs::path path(getMetadataPath());
+        fs::path file_path(file_name);
+        fs::path full_path = path / file_path;
+
+        try
+        {
+            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            if (ast)
+            {
+                auto * create_query = ast->as<ASTCreateQuery>();
+                create_query->database = database_name;
+
+                if (fs::exists(full_path.string() + detached_suffix))
+                {
+                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
+                    /// if (create_query->uuid != UUIDHelpers::Nil)
+                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+
+                    const std::string table_name = file_name.substr(0, file_name.size() - 4);
+                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+                    return;
+                }
+
+                std::lock_guard lock{file_names_mutex};
+                file_names[file_name] = ast;
+                total_dictionaries += create_query->is_dictionary;
+            }
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("Cannot parse definition from metadata file " + full_path.string());
+            throw;
+        }
+    };
+
+    iterateMetadataFiles(local_context, process_metadata);
+
+    size_t total_tables = file_names.size() - total_dictionaries;
+
+    LOG_INFO(log, "Total {} tables and {} dictionaries.", total_tables, total_dictionaries);
 
     AtomicStopwatch watch;
-    std::atomic<size_t> dictionaries_processed{0};
     std::atomic<size_t> tables_processed{0};
 
     ThreadPool pool;
@@ -101,40 +152,21 @@ void DatabaseOrdinary::loadStoredObjects(
     /// loading of its config only, it doesn't involve loading the dictionary itself.
 
     /// Attach dictionaries.
-    for (const auto & name_with_path_and_query : metadata.parsed_tables)
+    for (const auto & name_with_query : file_names)
     {
-        const auto & name = name_with_path_and_query.first;
-        const auto & path = name_with_path_and_query.second.path;
-        const auto & ast = name_with_path_and_query.second.ast;
-        const auto & create_query = ast->as<const ASTCreateQuery &>();
+        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
 
         if (create_query.is_dictionary)
         {
             pool.scheduleOrThrowOnError([&]()
             {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
-
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
-            });
-        }
-    }
-
-    pool.wait();
-
-    /// Attach tables.
-    for (const auto & name_with_path_and_query : metadata.parsed_tables)
-    {
-        const auto & name = name_with_path_and_query.first;
-        const auto & path = name_with_path_and_query.second.path;
-        const auto & ast = name_with_path_and_query.second.ast;
-        const auto & create_query = ast->as<const ASTCreateQuery &>();
-
-        if (!create_query.is_dictionary)
-        {
-            pool.scheduleOrThrowOnError([&]()
-            {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
+                tryAttachTable(
+                    local_context,
+                    create_query,
+                    *this,
+                    database_name,
+                    getMetadataPath() + name_with_query.first,
+                    has_force_restore_data_flag);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -144,94 +176,37 @@ void DatabaseOrdinary::loadStoredObjects(
 
     pool.wait();
 
-    if (!skip_startup_tables)
+    /// Attach tables.
+    for (const auto & name_with_query : file_names)
     {
-        /// After all tables was basically initialized, startup them.
-        startupTables(pool, force_restore, force_attach);
-    }
-}
+        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
 
-void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata)
-{
-    size_t prev_tables_count = metadata.parsed_tables.size();
-    size_t prev_total_dictionaries = metadata.total_dictionaries;
-
-    auto process_metadata = [&metadata, this](const String & file_name)
-    {
-        fs::path path(getMetadataPath());
-        fs::path file_path(file_name);
-        fs::path full_path = path / file_path;
-
-        try
+        if (!create_query.is_dictionary)
         {
-            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
-            if (ast)
+            pool.scheduleOrThrowOnError([&]()
             {
-                auto * create_query = ast->as<ASTCreateQuery>();
-                create_query->setDatabase(database_name);
+                tryAttachTable(
+                    local_context,
+                    create_query,
+                    *this,
+                    database_name,
+                    getMetadataPath() + name_with_query.first,
+                    has_force_restore_data_flag);
 
-                if (fs::exists(full_path.string() + detached_suffix))
-                {
-                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
-                    /// if (create_query->uuid != UUIDHelpers::Nil)
-                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-
-                    const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-                    return;
-                }
-
-                QualifiedTableName qualified_name{database_name, create_query->getTable()};
-                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
-
-                std::lock_guard lock{metadata.mutex};
-                metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
-                if (loading_dependencies.empty())
-                {
-                    metadata.independent_database_objects.emplace_back(std::move(qualified_name));
-                }
-                else
-                {
-                    for (const auto & dependency : loading_dependencies)
-                        metadata.dependencies_info[dependency].dependent_database_objects.insert(qualified_name);
-                    assert(metadata.dependencies_info[qualified_name].dependencies.empty());
-                    metadata.dependencies_info[qualified_name].dependencies = std::move(loading_dependencies);
-                }
-                metadata.total_dictionaries += create_query->is_dictionary;
-            }
+                /// Messages, so that it's not boring to wait for the server to load for a long time.
+                logAboutProgress(log, ++tables_processed, total_tables, watch);
+            });
         }
-        catch (Exception & e)
-        {
-            e.addMessage("Cannot parse definition from metadata file " + full_path.string());
-            throw;
-        }
-    };
+    }
 
-    iterateMetadataFiles(local_context, process_metadata);
+    pool.wait();
 
-    size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
-    size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
-    size_t tables_in_database = objects_in_database - dictionaries_in_database;
-
-    LOG_INFO(log, "Metadata processed, database {} has {} tables and {} dictionaries in total.",
-             database_name, tables_in_database, dictionaries_in_database);
+    /// After all tables was basically initialized, startup them.
+    startupTables(pool);
 }
 
-void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
-{
-    assert(name.database == database_name);
-    const auto & create_query = ast->as<const ASTCreateQuery &>();
 
-    tryAttachTable(
-        local_context,
-        create_query,
-        *this,
-        name.database,
-        file_path,
-        force_restore);
-}
-
-void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_restore*/, bool /*force_attach*/)
+void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
 
@@ -256,7 +231,6 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_rest
     }
     catch (...)
     {
-        /// We have to wait for jobs to finish here, because job function has reference to variables on the stack of current thread.
         thread_pool.wait();
         throw;
     }
@@ -296,9 +270,6 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
             out.sync();
         out.close();
     }
-
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }

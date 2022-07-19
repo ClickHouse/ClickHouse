@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
 from subprocess import Popen, PIPE, STDOUT
-from threading import Thread
-from time import sleep
-import logging
-import os
 import sys
+import os
 
 
 # Very simple tee logic implementation. You can specify shell command, output
@@ -14,40 +11,15 @@ import sys
 # stdout.
 class TeePopen:
     # pylint: disable=W0102
-    def __init__(self, command, log_file, env=os.environ.copy(), timeout=None):
+    def __init__(self, command, log_file, env=os.environ.copy()):
         self.command = command
         self.log_file = log_file
         self.env = env
-        self.process = None
-        self.timeout = timeout
-
-    def _check_timeout(self):
-        sleep(self.timeout)
-        while self.process.poll() is None:
-            logging.warning(
-                "Killing process %s, timeout %s exceeded",
-                self.process.pid,
-                self.timeout,
-            )
-            os.killpg(self.process.pid, 9)
-            sleep(10)
 
     def __enter__(self):
-        self.process = Popen(
-            self.command,
-            shell=True,
-            universal_newlines=True,
-            env=self.env,
-            start_new_session=True,  # signall will be sent to all children
-            stderr=STDOUT,
-            stdout=PIPE,
-            bufsize=1,
-        )
-        self.log_file = open(self.log_file, "w", encoding="utf-8")
-        if self.timeout is not None and self.timeout > 0:
-            t = Thread(target=self._check_timeout)
-            t.daemon = True  # does not block the program from exit
-            t.start()
+        # pylint: disable=W0201
+        self.process = Popen(self.command, shell=True, universal_newlines=True, env=self.env, stderr=STDOUT, stdout=PIPE, bufsize=1)
+        self.log_file = open(self.log_file, 'w', encoding='utf-8')
         return self
 
     def __exit__(self, t, value, traceback):

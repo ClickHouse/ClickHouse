@@ -6,21 +6,22 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node_default")
+node = cluster.add_instance('node_default')
 
 system_logs = [
     # disabled by default
-    ("system.text_log", 0),
+    ('system.part_log', 0),
+    ('system.text_log', 0),
+
     # enabled by default
-    ("system.query_log", 1),
-    ("system.query_thread_log", 1),
-    ("system.part_log", 1),
-    ("system.trace_log", 1),
-    ("system.metric_log", 1),
+    ('system.query_log', 1),
+    ('system.query_thread_log', 1),
+    ('system.trace_log', 1),
+    ('system.metric_log', 1),
 ]
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope='module', autouse=True)
 def start_cluster():
     try:
         cluster.start()
@@ -29,14 +30,14 @@ def start_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope='function')
 def flush_logs():
-    node.query("SYSTEM FLUSH LOGS")
+    node.query('SYSTEM FLUSH LOGS')
 
 
-@pytest.mark.parametrize("table,exists", system_logs)
+@pytest.mark.parametrize('table,exists', system_logs)
 def test_system_logs(flush_logs, table, exists):
-    q = "SELECT * FROM {}".format(table)
+    q = 'SELECT * FROM {}'.format(table)
     if exists:
         node.query(q)
     else:
@@ -46,21 +47,10 @@ def test_system_logs(flush_logs, table, exists):
 # Logic is tricky, let's check that there is no hang in case of message queue
 # is not empty (this is another code path in the code).
 def test_system_logs_non_empty_queue():
-    node.query(
-        "SELECT 1",
-        settings={
-            # right now defaults are the same,
-            # this set explicitly to avoid depends from defaults.
-            "log_queries": 1,
-            "log_queries_min_type": "QUERY_START",
-        },
-    )
-    node.query("SYSTEM FLUSH LOGS")
-
-
-def test_system_suspend():
-    node.query("CREATE TABLE t (x DateTime) ENGINE=Memory;")
-    node.query("INSERT INTO t VALUES (now());")
-    node.query("SYSTEM SUSPEND FOR 1 SECOND;")
-    node.query("INSERT INTO t VALUES (now());")
-    assert "1\n" == node.query("SELECT max(x) - min(x) >= 1 FROM t;")
+    node.query('SELECT 1', settings={
+        # right now defaults are the same,
+        # this set explicitly to avoid depends from defaults.
+        'log_queries': 1,
+        'log_queries_min_type': 'QUERY_START',
+    })
+    node.query('SYSTEM FLUSH LOGS')

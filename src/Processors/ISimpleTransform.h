@@ -32,6 +32,11 @@ protected:
     /// This allows to escape caching chunks in input port, which can lead to uneven data distribution.
     bool set_input_not_needed_after_read = true;
 
+    virtual void transform(Chunk &)
+    {
+        throw Exception("Method transform is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     virtual void transform(Chunk & input_chunk, Chunk & output_chunk)
     {
         transform(input_chunk);
@@ -43,11 +48,6 @@ protected:
 
 public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
-
-    virtual void transform(Chunk &)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method transform is not implemented for {}", getName());
-    }
 
     Status prepare() override;
     void work() override;

@@ -2,73 +2,60 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
-
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
-if (USE_MUSL)
-    # Only clickhouse-keeper can be built with musl currently
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" OFF)
-else ()
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
-endif ()
+option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
 option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/
 option (ENABLE_CLICKHOUSE_BENCHMARK "Queries benchmarking mode" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Configs processor (extract values etc.)" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-compressor/
 option (ENABLE_CLICKHOUSE_COMPRESSOR "Data compressor and decompressor" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-copier/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
 option (ENABLE_CLICKHOUSE_COPIER "Inter-cluster data copying mode" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_FORMAT "Queries pretty-printer and formatter with syntax highlighting"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-obfuscator/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-obfuscator/
 option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data to benchmark-ready one)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
+# https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
-if (ENABLE_ODBC AND NOT USE_MUSL)
+if (ENABLE_ODBC)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
         ${ENABLE_CLICKHOUSE_ALL})
 else ()
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" OFF)
 endif ()
 
-if (NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
-        ${ENABLE_CLICKHOUSE_ALL})
-endif ()
+option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
+    ${ENABLE_CLICKHOUSE_ALL})
 
-# https://presentations.clickhouse.com/matemarketing_2020/
-option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENABLE_CLICKHOUSE_ALL})
+# https://presentations.clickhouse.tech/matemarketing_2020/
+option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories"
+    ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER "A tool to export table data files to be later put to a static files web server" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper logs and snapshots into clickhouse-keeper snapshot" ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
-
-option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
-
-if (NOT ENABLE_NURAFT)
+if (NOT USE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
-    # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
+    # since USE_NURAFT is set to OFF for FreeBSD and Darwin.
     message (STATUS "clickhouse-keeper and clickhouse-keeper-converter will not be built (lack of NuRaft)")
     set(ENABLE_CLICKHOUSE_KEEPER OFF)
     set(ENABLE_CLICKHOUSE_KEEPER_CONVERTER OFF)
@@ -173,14 +160,8 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
-if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
+if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED ON)
-endif()
-
-if (ENABLE_CLICKHOUSE_DISKS)
-    message(STATUS "Clickhouse disks mode: ON")
-else()
-    message(STATUS "ClickHouse disks mode: OFF")
 endif()
 
 configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
@@ -246,9 +227,6 @@ add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
 add_subdirectory (bash-completion)
-add_subdirectory (static-files-disk-uploader)
-add_subdirectory (su)
-add_subdirectory (disks)
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     add_subdirectory (keeper)
@@ -280,9 +258,7 @@ if (CLICKHOUSE_ONE_SHARED)
     ${CLICKHOUSE_GIT_IMPORT_SOURCES}
     ${CLICKHOUSE_ODBC_BRIDGE_SOURCES}
     ${CLICKHOUSE_KEEPER_SOURCES}
-    ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES}
-    ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES}
-    ${CLICKHOUSE_SU_SOURCES})
+    ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES})
 
     target_link_libraries(clickhouse-lib
       ${CLICKHOUSE_SERVER_LINK}
@@ -297,9 +273,7 @@ if (CLICKHOUSE_ONE_SHARED)
       ${CLICKHOUSE_GIT_IMPORT_LINK}
       ${CLICKHOUSE_ODBC_BRIDGE_LINK}
       ${CLICKHOUSE_KEEPER_LINK}
-      ${CLICKHOUSE_KEEPER_CONVERTER_LINK}
-      ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK}
-      ${CLICKHOUSE_SU_LINK})
+      ${CLICKHOUSE_KEEPER_CONVERTER_LINK})
 
     target_include_directories(clickhouse-lib
       ${CLICKHOUSE_SERVER_INCLUDE}
@@ -332,8 +306,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
         clickhouse-obfuscator
         clickhouse-git-import
         clickhouse-copier
-        clickhouse-static-files-disk-uploader
-        clickhouse-disks)
+    )
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
@@ -398,12 +371,6 @@ else ()
     if (ENABLE_CLICKHOUSE_GIT_IMPORT)
         clickhouse_target_link_split_lib(clickhouse git-import)
     endif ()
-    if (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER)
-        clickhouse_target_link_split_lib(clickhouse static-files-disk-uploader)
-    endif ()
-    if (ENABLE_CLICKHOUSE_SU)
-        clickhouse_target_link_split_lib(clickhouse su)
-    endif ()
     if (ENABLE_CLICKHOUSE_KEEPER)
         clickhouse_target_link_split_lib(clickhouse keeper)
     endif()
@@ -412,9 +379,6 @@ else ()
     endif()
     if (ENABLE_CLICKHOUSE_INSTALL)
         clickhouse_target_link_split_lib(clickhouse install)
-    endif ()
-    if (ENABLE_CLICKHOUSE_DISKS)
-        clickhouse_target_link_split_lib(clickhouse disks)
     endif ()
 
     set (CLICKHOUSE_BUNDLE)
@@ -468,38 +432,18 @@ else ()
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-git-import" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-git-import)
     endif ()
-    if (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER)
-        add_custom_target (clickhouse-static-files-disk-uploader ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-static-files-disk-uploader DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-static-files-disk-uploader" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-static-files-disk-uploader)
-    endif ()
-    if (ENABLE_CLICKHOUSE_SU)
-        add_custom_target (clickhouse-su ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-su DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-su" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-su)
-    endif ()
-
     if (ENABLE_CLICKHOUSE_KEEPER)
-        if (NOT BUILD_STANDALONE_KEEPER AND CREATE_KEEPER_SYMLINK)
-            add_custom_target (clickhouse-keeper ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper DEPENDS clickhouse)
-            install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        endif()
-
-        # otherwise we don't build keeper
-        if (BUILD_STANDALONE_KEEPER OR CREATE_KEEPER_SYMLINK)
-            list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper)
-        endif()
+        add_custom_target (clickhouse-keeper ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper)
     endif ()
     if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
         add_custom_target (clickhouse-keeper-converter ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-converter DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-converter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
     endif ()
-    if (ENABLE_CLICKHOUSE_DISKS)
-        add_custom_target (clickhouse-disks ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-disks DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-disks" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-disks)
-    endif ()
+
+    install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
@@ -508,23 +452,12 @@ else ()
     endif()
 
     if (USE_BINARY_HASH)
-        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
     endif()
+endif ()
 
-    if (INSTALL_STRIPPED_BINARIES)
-        clickhouse_strip_binary(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT} BINARY_PATH clickhouse)
-    else()
-        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${STRIPPED_BINARIES_OUTPUT})
-        install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-    endif()
-endif()
-
-if (ENABLE_TESTS)
+if (ENABLE_TESTS AND USE_GTEST)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()

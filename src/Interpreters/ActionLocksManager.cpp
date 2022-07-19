@@ -72,7 +72,7 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 {
     std::lock_guard lock(mutex);
 
-    if (storage_locks.contains(table.get()))
+    if (storage_locks.count(table.get()))
         storage_locks[table.get()].erase(action_type);
 }
 

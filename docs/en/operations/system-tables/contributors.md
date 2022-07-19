@@ -1,4 +1,4 @@
-# contributors
+# system.contributors {#system-contributors}
 
 Contains information about contributors. The order is random at query execution time.
 
@@ -38,4 +38,4 @@ SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 │ Olga Khvostikova │
 └──────────────────┘
 ```
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/contributors) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/contributors) <!--hide-->

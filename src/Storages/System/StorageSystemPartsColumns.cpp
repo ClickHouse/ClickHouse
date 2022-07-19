@@ -6,9 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
@@ -61,22 +58,14 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
-        {"serialization_kind",                         std::make_shared<DataTypeString>()},
-        {"subcolumns.names",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"subcolumns.types",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"subcolumns.serializations",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"subcolumns.bytes_on_disk",                   std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"subcolumns.data_compressed_bytes",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"subcolumns.data_uncompressed_bytes",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"subcolumns.marks_bytes",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
     }
     )
 {
 }
 
 void StorageSystemPartsColumns::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -137,7 +126,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getTypeName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part_state == State::Active);
+                columns[res_index++]->insert(part_state == State::Committed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getMarksCount());
 
@@ -217,7 +206,7 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-            ColumnSize column_size = part->getColumnSize(column.name);
+            ColumnSize column_size = part->getColumnSize(column.name, *column.type);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
             if (columns_mask[src_index++])
@@ -226,66 +215,6 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.data_uncompressed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
-
-            auto serialization = part->getSerialization(column);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
-
-            Array subcolumn_names;
-            Array subcolumn_types;
-            Array subcolumn_serializations;
-            Array subcolumn_bytes_on_disk;
-            Array subcolumn_data_compressed_bytes;
-            Array subcolumn_data_uncompressed_bytes;
-            Array subcolumn_marks_bytes;
-
-            IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
-            {
-                /// We count only final subcolumns, which are represented by files on disk
-                /// and skip intermediate suibcolumns of types Tuple and Nested.
-                if (isTuple(data.type) || isNested(data.type))
-                    return;
-
-                subcolumn_names.push_back(name);
-                subcolumn_types.push_back(data.type->getName());
-                subcolumn_serializations.push_back(ISerialization::kindToString(data.serialization->getKind()));
-
-                ColumnSize size;
-                NameAndTypePair subcolumn(column.name, name, column.type, data.type);
-                String file_name = ISerialization::getFileNameForStream(subcolumn, subpath);
-
-                auto bin_checksum = part->checksums.files.find(file_name + ".bin");
-                if (bin_checksum != part->checksums.files.end())
-                {
-                    size.data_compressed += bin_checksum->second.file_size;
-                    size.data_uncompressed += bin_checksum->second.uncompressed_size;
-                }
-
-                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.marks_file_extension);
-                if (mrk_checksum != part->checksums.files.end())
-                    size.marks += mrk_checksum->second.file_size;
-
-                subcolumn_bytes_on_disk.push_back(size.data_compressed + size.marks);
-                subcolumn_data_compressed_bytes.push_back(size.data_compressed);
-                subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
-                subcolumn_marks_bytes.push_back(size.marks);
-
-            }, { serialization, column.type, nullptr, nullptr });
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_names);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_types);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_serializations);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_bytes_on_disk);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_data_compressed_bytes);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_data_uncompressed_bytes);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(subcolumn_marks_bytes);
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());

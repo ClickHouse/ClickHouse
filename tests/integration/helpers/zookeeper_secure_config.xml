@@ -1,17 +1,17 @@
-<clickhouse>
+<yandex>
     <zookeeper>
-        <node index="1">
-            <host>zoo1</host>
-            <port>2281</port>
-        </node>
-        <node index="2">
-            <host>zoo2</host>
-            <port>2281</port>
-        </node>
-        <node index="3">
-            <host>zoo3</host>
-            <port>2281</port>
-        </node>
-        <session_timeout_ms>15000</session_timeout_ms>
-    </zookeeper>
-</clickhouse>
+	    <node index="1">
+		    <host>zoo1</host>
+		    <port>2281</port>
+	    </node>
+	    <node index="2">
+		    <host>zoo2</host>
+		    <port>2281</port>
+	    </node>
+	    <node index="3">
+		    <host>zoo3</host>
+		    <port>2281</port>
+	    </node>
+        <session_timeout_ms>3000</session_timeout_ms>
+	</zookeeper>
+</yandex>

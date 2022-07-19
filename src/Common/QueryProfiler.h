@@ -1,11 +1,12 @@
 #pragma once
 
-#include <optional>
-#include <base/types.h>
+#include <common/types.h>
 #include <signal.h>
 #include <time.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 
 namespace Poco
@@ -25,13 +26,13 @@ namespace DB
   *  3. write collected stack trace to trace_pipe for TraceCollector
   *
   * Destructor tries to unset timer and restore previous signal handler.
-  * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
+  * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCpu.
   */
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
-    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
+    QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_);
     ~QueryProfilerBase();
 
 private:
@@ -41,27 +42,30 @@ private:
 
 #if USE_UNWIND
     /// Timer id from timer_create(2)
-    std::optional<timer_t> timer_id;
+    timer_t timer_id = nullptr;
 #endif
 
     /// Pause signal to interrupt threads to get traces
     int pause_signal;
+
+    /// Previous signal handler to restore after query profiler exits
+    struct sigaction * previous_handler = nullptr;
 };
 
 /// Query profiler with timer based on real clock
 class QueryProfilerReal : public QueryProfilerBase<QueryProfilerReal>
 {
 public:
-    QueryProfilerReal(UInt64 thread_id, UInt32 period); /// NOLINT
+    QueryProfilerReal(const UInt64 thread_id, const UInt32 period);
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };
 
 /// Query profiler with timer based on CPU clock
-class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
+class QueryProfilerCpu : public QueryProfilerBase<QueryProfilerCpu>
 {
 public:
-    QueryProfilerCPU(UInt64 thread_id, UInt32 period); /// NOLINT
+    QueryProfilerCpu(const UInt64 thread_id, const UInt32 period);
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };

@@ -1,4 +1,3 @@
-#include <Interpreters/Aggregator.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -9,13 +8,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -23,7 +19,9 @@
 #include <chrono>
 
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -50,7 +48,7 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFile> & out)
 {
     /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
 
@@ -59,11 +57,11 @@ static void openFileIfExists(const char * filename, std::optional<ReadBufferFrom
         out.emplace(filename, small_buffer_size);
 }
 
-static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
+static std::unique_ptr<ReadBufferFromFile> openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+        return std::make_unique<ReadBufferFromFile>(filename, small_buffer_size);
     return {};
 }
 
@@ -73,11 +71,12 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 AsynchronousMetrics::AsynchronousMetrics(
     ContextPtr global_context_,
     int update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_)
     : WithContext(global_context_)
     , update_period(update_period_seconds)
-    , protocol_server_metrics_func(protocol_server_metrics_func_)
-    , log(&Poco::Logger::get("AsynchronousMetrics"))
+    , servers_to_start_before_tables(servers_to_start_before_tables_)
+    , servers(servers_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/meminfo", meminfo);
@@ -88,23 +87,9 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
 
-    openSensors();
-    openBlockDevices();
-    openEDAC();
-    openSensorsChips();
-#endif
-}
-
-#if defined(OS_LINUX)
-void AsynchronousMetrics::openSensors()
-{
-    LOG_TRACE(log, "Scanning /sys/class/thermal");
-
-    thermal.clear();
-
     for (size_t thermal_device_index = 0;; ++thermal_device_index)
     {
-        std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(fmt::format("/sys/class/thermal/thermal_zone{}/temp", thermal_device_index));
+        std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(fmt::format("/sys/class/thermal/thermal_zone{}/temp", thermal_device_index));
         if (!file)
         {
             /// Sometimes indices are from zero sometimes from one.
@@ -113,59 +98,57 @@ void AsynchronousMetrics::openSensors()
             else
                 break;
         }
-
-        file->rewind();
-        Int64 temperature = 0;
-        try
-        {
-            readText(temperature, *file);
-        }
-        catch (const ErrnoException & e)
-        {
-            LOG_WARNING(
-                &Poco::Logger::get("AsynchronousMetrics"),
-                "Thermal monitor '{}' exists but could not be read, error {}.",
-                thermal_device_index,
-                e.getErrno());
-            continue;
-        }
-
         thermal.emplace_back(std::move(file));
     }
-}
 
-void AsynchronousMetrics::openBlockDevices()
-{
-    LOG_TRACE(log, "Scanning /sys/block");
-
-    if (!std::filesystem::exists("/sys/block"))
-        return;
-
-    block_devices_rescan_delay.restart();
-
-    block_devs.clear();
-
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
+    for (size_t hwmon_index = 0;; ++hwmon_index)
     {
-        String device_name = device_dir.path().filename();
+        String hwmon_name_file = fmt::format("/sys/class/hwmon/hwmon{}/name", hwmon_index);
+        if (!std::filesystem::exists(hwmon_name_file))
+        {
+            if (hwmon_index == 0)
+                continue;
+            else
+                break;
+        }
 
-        /// We are not interested in loopback devices.
-        if (device_name.starts_with("loop"))
-            continue;
+        String hwmon_name;
+        ReadBufferFromFile hwmon_name_in(hwmon_name_file, small_buffer_size);
+        readText(hwmon_name, hwmon_name_in);
+        std::replace(hwmon_name.begin(), hwmon_name.end(), ' ', '_');
 
-        std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(device_dir.path() / "stat");
-        if (!file)
-            continue;
+        for (size_t sensor_index = 0;; ++sensor_index)
+        {
+            String sensor_name_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_label", hwmon_index, sensor_index);
+            String sensor_value_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_input", hwmon_index, sensor_index);
 
-        block_devs[device_name] = std::move(file);
+            bool sensor_name_file_exists = std::filesystem::exists(sensor_name_file);
+            bool sensor_value_file_exists = std::filesystem::exists(sensor_value_file);
+
+            /// Sometimes there are labels but there is no files with data or vice versa.
+            if (!sensor_name_file_exists && !sensor_value_file_exists)
+            {
+                if (sensor_index == 0)
+                    continue;
+                else
+                    break;
+            }
+
+            std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(sensor_value_file);
+            if (!file)
+                continue;
+
+            String sensor_name;
+            if (sensor_name_file_exists)
+            {
+                ReadBufferFromFile sensor_name_in(sensor_name_file, small_buffer_size);
+                readText(sensor_name, sensor_name_in);
+                std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
+            }
+
+            hwmon_devices[hwmon_name][sensor_name] = std::move(file);
+        }
     }
-}
-
-void AsynchronousMetrics::openEDAC()
-{
-    LOG_TRACE(log, "Scanning /sys/devices/system/edac");
-
-    edac.clear();
 
     for (size_t edac_index = 0;; ++edac_index)
     {
@@ -190,81 +173,26 @@ void AsynchronousMetrics::openEDAC()
         if (edac_uncorrectable_file_exists)
             edac.back().second = openFileIfExists(edac_uncorrectable_file);
     }
-}
 
-void AsynchronousMetrics::openSensorsChips()
-{
-    LOG_TRACE(log, "Scanning /sys/class/hwmon");
-
-    hwmon_devices.clear();
-
-    for (size_t hwmon_index = 0;; ++hwmon_index)
+    if (std::filesystem::exists("/sys/block"))
     {
-        String hwmon_name_file = fmt::format("/sys/class/hwmon/hwmon{}/name", hwmon_index);
-        if (!std::filesystem::exists(hwmon_name_file))
+        for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
         {
-            if (hwmon_index == 0)
+            String device_name = device_dir.path().filename();
+
+            /// We are not interested in loopback devices.
+            if (device_name.starts_with("loop"))
                 continue;
-            else
-                break;
-        }
 
-        String hwmon_name;
-        ReadBufferFromFilePRead hwmon_name_in(hwmon_name_file, small_buffer_size);
-        readText(hwmon_name, hwmon_name_in);
-        std::replace(hwmon_name.begin(), hwmon_name.end(), ' ', '_');
-
-        for (size_t sensor_index = 0;; ++sensor_index)
-        {
-            String sensor_name_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_label", hwmon_index, sensor_index);
-            String sensor_value_file = fmt::format("/sys/class/hwmon/hwmon{}/temp{}_input", hwmon_index, sensor_index);
-
-            bool sensor_name_file_exists = std::filesystem::exists(sensor_name_file);
-            bool sensor_value_file_exists = std::filesystem::exists(sensor_value_file);
-
-            /// Sometimes there are labels but there is no files with data or vice versa.
-            if (!sensor_name_file_exists && !sensor_value_file_exists)
-            {
-                if (sensor_index == 0)
-                    continue;
-                else
-                    break;
-            }
-
-            std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(sensor_value_file);
+            std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(device_dir.path() / "stat");
             if (!file)
                 continue;
 
-            String sensor_name;
-            if (sensor_name_file_exists)
-            {
-                ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
-                readText(sensor_name, sensor_name_in);
-                std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
-            }
-
-            file->rewind();
-            Int64 temperature = 0;
-            try
-            {
-                readText(temperature, *file);
-            }
-            catch (const ErrnoException & e)
-            {
-                LOG_WARNING(
-                    &Poco::Logger::get("AsynchronousMetrics"),
-                    "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.",
-                    hwmon_name,
-                    sensor_name,
-                    e.getErrno());
-                continue;
-            }
-
-            hwmon_devices[hwmon_name][sensor_name] = std::move(file);
+            block_devs[device_name] = std::move(file);
         }
     }
-}
 #endif
+}
 
 void AsynchronousMetrics::start()
 {
@@ -274,7 +202,7 @@ void AsynchronousMetrics::start()
     thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
-void AsynchronousMetrics::stop()
+AsynchronousMetrics::~AsynchronousMetrics()
 {
     try
     {
@@ -285,20 +213,12 @@ void AsynchronousMetrics::stop()
 
         wait_cond.notify_one();
         if (thread)
-        {
             thread->join();
-            thread.reset();
-        }
     }
     catch (...)
     {
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-}
-
-AsynchronousMetrics::~AsynchronousMetrics()
-{
-    stop();
 }
 
 
@@ -377,7 +297,7 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
-#if USE_JEMALLOC
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
 uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
@@ -589,45 +509,11 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 
     {
-        if (auto index_mark_cache = getContext()->getIndexMarkCache())
-        {
-            new_values["IndexMarkCacheBytes"] = index_mark_cache->weight();
-            new_values["IndexMarkCacheFiles"] = index_mark_cache->count();
-        }
-    }
-
-    {
-        if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
-        {
-            new_values["IndexUncompressedCacheBytes"] = index_uncompressed_cache->weight();
-            new_values["IndexUncompressedCacheCells"] = index_uncompressed_cache->count();
-        }
-    }
-
-    {
         if (auto mmap_cache = getContext()->getMMappedFileCache())
         {
             new_values["MMapCacheCells"] = mmap_cache->count();
         }
     }
-
-    {
-        auto caches = FileCacheFactory::instance().getAll();
-        for (const auto & [_, cache_data] : caches)
-        {
-            new_values["FilesystemCacheBytes"] = cache_data.cache->getUsedCacheSize();
-            new_values["FilesystemCacheFiles"] = cache_data.cache->getFileSegmentsNum();
-        }
-    }
-
-#if USE_ROCKSDB
-    {
-        if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
-        {
-            new_values["MergeTreeMetadataCacheSize"] = metadata_cache->getEstimateNumKeys();
-        }
-    }
-#endif
 
 #if USE_EMBEDDED_COMPILER
     {
@@ -639,28 +525,16 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 #endif
 
-
     new_values["Uptime"] = getContext()->getUptimeSeconds();
 
-    {
-        if (const auto stats = getHashTablesCacheStatistics())
-        {
-            new_values["HashTableStatsCacheEntries"] = stats->entries;
-            new_values["HashTableStatsCacheHits"] = stats->hits;
-            new_values["HashTableStatsCacheMisses"] = stats->misses;
-        }
-    }
-
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX)
     {
         MemoryStatisticsOS::Data data = memory_stat.get();
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
-#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = data.shared;
-#endif
         new_values["MemoryCode"] = data.code;
         new_values["MemoryDataAndStack"] = data.data_and_stack;
 
@@ -676,7 +550,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
-                LOG_TRACE(log,
+                LOG_TRACE(&Poco::Logger::get("AsynchronousMetrics"),
                     "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
@@ -687,9 +561,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
-#endif
 
-#if defined(OS_LINUX)
     if (loadavg)
     {
         try
@@ -1022,14 +894,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-    /// Update list of block devices periodically
-    /// (i.e. someone may add new disk to RAID array)
-    if (block_devices_rescan_delay.elapsedSeconds() >= 300)
-        openBlockDevices();
-
-    try
+    for (auto & [name, device] : block_devs)
     {
-        for (auto & [name, device] : block_devs)
+        try
         {
             device->rewind();
 
@@ -1077,17 +944,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 new_values["BlockActiveTimePerOp_" + name] = delta_values.io_ticks * time_multiplier / delta_values.in_flight_ios;
                 new_values["BlockQueueTimePerOp_" + name] = delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios;
             }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// Try to reopen block devices in case of error
-        /// (i.e. ENOENT means that some disk had been replaced, and it may apperas with a new name)
-        try
-        {
-            openBlockDevices();
         }
         catch (...)
         {
@@ -1181,27 +1037,16 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-    try
+    for (size_t i = 0, size = thermal.size(); i < size; ++i)
     {
-        for (size_t i = 0, size = thermal.size(); i < size; ++i)
+        try
         {
-            ReadBufferFromFilePRead & in = *thermal[i];
+            ReadBufferFromFile & in = *thermal[i];
 
             in.rewind();
             Int64 temperature = 0;
             readText(temperature, in);
             new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
-        }
-    }
-    catch (...)
-    {
-        if (errno != ENODATA)   /// Ok for thermal sensors.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// Files maybe re-created on module load/unload
-        try
-        {
-            openSensors();
         }
         catch (...)
         {
@@ -1209,22 +1054,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-    try
+    for (const auto & [hwmon_name, sensors] : hwmon_devices)
     {
-        for (const auto & [hwmon_name, sensors] : hwmon_devices)
+        try
         {
             for (const auto & [sensor_name, sensor_file] : sensors)
             {
                 sensor_file->rewind();
                 Int64 temperature = 0;
-                try
-                {
-                    readText(temperature, *sensor_file);
-                }
-                catch (const ErrnoException & e)
-                {
-                    LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"), "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.", hwmon_name, sensor_name, e.getErrno());
-                }
+                readText(temperature, *sensor_file);
 
                 if (sensor_name.empty())
                     new_values[fmt::format("Temperature_{}", hwmon_name)] = temperature * 0.001;
@@ -1232,36 +1070,22 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
             }
         }
-    }
-    catch (...)
-    {
-        if (errno != ENODATA)   /// Ok for thermal sensors.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// Files can be re-created on:
-        /// - module load/unload
-        /// - suspend/resume cycle
-        /// So file descriptors should be reopened.
-        try
-        {
-            openSensorsChips();
-        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    try
+    for (size_t i = 0, size = edac.size(); i < size; ++i)
     {
-        for (size_t i = 0, size = edac.size(); i < size; ++i)
-        {
-            /// NOTE maybe we need to take difference with previous values.
-            /// But these metrics should be exceptionally rare, so it's ok to keep them accumulated.
+        /// NOTE maybe we need to take difference with previous values.
+        /// But these metrics should be exceptionally rare, so it's ok to keep them accumulated.
 
+        try
+        {
             if (edac[i].first)
             {
-                ReadBufferFromFilePRead & in = *edac[i].first;
+                ReadBufferFromFile & in = *edac[i].first;
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
@@ -1270,22 +1094,12 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
             if (edac[i].second)
             {
-                ReadBufferFromFilePRead & in = *edac[i].second;
+                ReadBufferFromFile & in = *edac[i].second;
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
                 new_values[fmt::format("EDAC{}_Uncorrectable", i)] = errors;
             }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// EDAC files can be re-created on module load/unload
-        try
-        {
-            openEDAC();
         }
         catch (...)
         {
@@ -1298,9 +1112,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     {
         auto stat = getStatVFS(getContext()->getPath());
 
-        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
+        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
+        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
+        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
         new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
         new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
@@ -1310,9 +1124,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         /// Current working directory of the server is the directory with logs.
         auto stat = getStatVFS(".");
 
-        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
+        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
+        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
+        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
         new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
         new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;
@@ -1385,7 +1199,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     total_number_of_parts += table_merge_tree->getPartsCount();
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
                     StorageReplicatedMergeTree::Status status;
                     table_replicated_merge_tree->getStatus(status, false);
@@ -1457,15 +1271,26 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 return it->second;
         };
 
-        const auto server_metrics = protocol_server_metrics_func();
-        for (const auto & server_metric : server_metrics)
+        if (servers_to_start_before_tables)
         {
-            if (const auto * name = get_metric_name(server_metric.port_name))
-                new_values[name] = server_metric.current_threads;
+            for (const auto & server : *servers_to_start_before_tables)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
+        }
+
+        if (servers)
+        {
+            for (const auto & server : *servers)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
         }
     }
 
-#if USE_JEMALLOC
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
@@ -1495,9 +1320,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     new_values["AsynchronousMetricsCalculationTimeSpent"] = watch.elapsedSeconds();
 
     /// Log the new metrics.
-    if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog())
+    if (auto log = getContext()->getAsynchronousMetricLog())
     {
-        asynchronous_metric_log->addValues(new_values);
+        log->addValues(new_values);
     }
 
     first_run = false;

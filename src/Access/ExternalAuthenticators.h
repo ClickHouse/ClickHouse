@@ -3,7 +3,7 @@
 #include <Access/LDAPClient.h>
 #include <Access/Credentials.h>
 #include <Access/GSSAcceptor.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <chrono>
 #include <map>
@@ -51,6 +51,7 @@ private:
     using LDAPCaches = std::map<String, LDAPCache>;               // server name -> cache
     using LDAPParams = std::map<String, LDAPClient::Params>;      // server name -> params
 
+private:
     mutable std::recursive_mutex mutex;
     LDAPParams ldap_client_params_blueprint;
     mutable LDAPCaches ldap_caches;

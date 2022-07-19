@@ -2,8 +2,6 @@
 
 #include <vector>
 
-#include <base/sort.h>
-
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/NaNUtils.h>
 
@@ -66,7 +64,7 @@ struct QuantileLevels
             permutation[i] = i;
         }
 
-        ::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
+        std::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
     }
 };
 

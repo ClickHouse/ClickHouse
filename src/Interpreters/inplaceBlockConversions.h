@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/COW.h>
 
 #include <memory>
 #include <string>
@@ -14,13 +13,6 @@ namespace DB
 class Block;
 class NamesAndTypesList;
 class ColumnsDescription;
-
-class IColumn;
-using ColumnPtr = COW<IColumn>::Ptr;
-using Columns = std::vector<ColumnPtr>;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
@@ -38,11 +30,5 @@ ActionsDAGPtr evaluateMissingDefaults(
 
 /// Tries to convert columns in block to required_columns
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context);
-
-void fillMissingColumns(
-    Columns & res_columns,
-    size_t num_rows,
-    const NamesAndTypesList & requested_columns,
-    StorageMetadataPtr metadata_snapshot);
 
 }

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 19
-sidebar_label: AMPLab Big Data Benchmark
+toc_priority: 19
+toc_title: AMPLab Big Data Benchmark
 ---
 
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
@@ -124,4 +124,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

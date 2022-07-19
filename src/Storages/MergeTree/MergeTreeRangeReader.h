@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Block.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -21,6 +21,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
 struct PrewhereExprInfo
 {
+    /// Actions which are executed in order to alias columns are used for prewhere actions.
+    ExpressionActionsPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     ExpressionActionsPtr row_level_filter;
@@ -42,8 +44,7 @@ public:
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprInfo * prewhere_info_,
-        bool last_reader_in_chain_,
-        const Names & non_const_virtual_column_names);
+        bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
 
@@ -57,12 +58,11 @@ public:
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
 
-    /// Accumulates sequential read() requests to perform a large read instead of multiple small reads
     class DelayedStream
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, size_t current_task_last_mark_, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
@@ -81,8 +81,6 @@ public:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
-        /// Last mark from all ranges of current task.
-        size_t current_task_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -101,8 +99,7 @@ public:
     {
     public:
         Stream() = default;
-        Stream(size_t from_mark, size_t to_mark,
-               size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader);
+        Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
         size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
@@ -120,14 +117,11 @@ public:
         size_t numPendingGranules() const { return last_mark - current_mark; }
         size_t numPendingRows() const;
         size_t currentMark() const { return current_mark; }
-        UInt64 currentPartOffset() const;
-        UInt64 lastPartOffset() const;
 
         size_t current_mark = 0;
         /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity
         size_t offset_after_current_mark = 0;
 
-        /// Last mark in current range.
         size_t last_mark = 0;
 
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -238,7 +232,6 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
-    void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -251,7 +244,6 @@ private:
 
     bool last_reader_in_chain = false;
     bool is_initialized = false;
-    Names non_const_virtual_column_names;
 };
 
 }

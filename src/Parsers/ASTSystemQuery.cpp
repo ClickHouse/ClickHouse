@@ -1,88 +1,108 @@
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
-#include <magic_enum.hpp>
 
 namespace DB
 {
 
-namespace
+
+namespace ErrorCodes
 {
-    std::vector<std::string> getTypeIndexToTypeName()
-    {
-        constexpr std::size_t types_size = magic_enum::enum_count<ASTSystemQuery::Type>();
-
-        std::vector<std::string> type_index_to_type_name;
-        type_index_to_type_name.resize(types_size);
-
-        auto entries = magic_enum::enum_entries<ASTSystemQuery::Type>();
-        for (const auto & [entry, str] : entries)
-        {
-            auto str_copy = String(str);
-            std::replace(str_copy.begin(), str_copy.end(), '_', ' ');
-            type_index_to_type_name[static_cast<UInt64>(entry)] = std::move(str_copy);
-        }
-
-        return type_index_to_type_name;
-    }
+    extern const int LOGICAL_ERROR;
 }
+
 
 const char * ASTSystemQuery::typeToString(Type type)
 {
-    /** During parsing if SystemQuery is not parsed properly it is added to Expected variants as description check IParser.h.
-      * Description string must be statically allocated.
-      */
-    static std::vector<std::string> type_index_to_type_name = getTypeIndexToTypeName();
-    const auto & type_name = type_index_to_type_name[static_cast<UInt64>(type)];
-    return type_name.data();
-}
-
-String ASTSystemQuery::getDatabase() const
-{
-    String name;
-    tryGetIdentifierNameInto(database, name);
-    return name;
-}
-
-String ASTSystemQuery::getTable() const
-{
-    String name;
-    tryGetIdentifierNameInto(table, name);
-    return name;
-}
-
-void ASTSystemQuery::setDatabase(const String & name)
-{
-    if (database)
+    switch (type)
     {
-        std::erase(children, database);
-        database.reset();
-    }
-
-    if (!name.empty())
-    {
-        database = std::make_shared<ASTIdentifier>(name);
-        children.push_back(database);
+        case Type::SHUTDOWN:
+            return "SHUTDOWN";
+        case Type::KILL:
+            return "KILL";
+        case Type::SUSPEND:
+            return "SUSPEND";
+        case Type::DROP_DNS_CACHE:
+            return "DROP DNS CACHE";
+        case Type::DROP_MARK_CACHE:
+            return "DROP MARK CACHE";
+        case Type::DROP_UNCOMPRESSED_CACHE:
+            return "DROP UNCOMPRESSED CACHE";
+        case Type::DROP_MMAP_CACHE:
+            return "DROP MMAP CACHE";
+#if USE_EMBEDDED_COMPILER
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+            return "DROP COMPILED EXPRESSION CACHE";
+#endif
+        case Type::STOP_LISTEN_QUERIES:
+            return "STOP LISTEN QUERIES";
+        case Type::START_LISTEN_QUERIES:
+            return "START LISTEN QUERIES";
+        case Type::RESTART_REPLICAS:
+            return "RESTART REPLICAS";
+        case Type::RESTART_REPLICA:
+            return "RESTART REPLICA";
+        case Type::RESTORE_REPLICA:
+            return "RESTORE REPLICA";
+        case Type::DROP_REPLICA:
+            return "DROP REPLICA";
+        case Type::SYNC_REPLICA:
+            return "SYNC REPLICA";
+        case Type::FLUSH_DISTRIBUTED:
+            return "FLUSH DISTRIBUTED";
+        case Type::RELOAD_DICTIONARY:
+            return "RELOAD DICTIONARY";
+        case Type::RELOAD_DICTIONARIES:
+            return "RELOAD DICTIONARIES";
+        case Type::RELOAD_MODEL:
+            return "RELOAD MODEL";
+        case Type::RELOAD_MODELS:
+            return "RELOAD MODELS";
+        case Type::RELOAD_EMBEDDED_DICTIONARIES:
+            return "RELOAD EMBEDDED DICTIONARIES";
+        case Type::RELOAD_CONFIG:
+            return "RELOAD CONFIG";
+        case Type::RELOAD_SYMBOLS:
+            return "RELOAD SYMBOLS";
+        case Type::STOP_MERGES:
+            return "STOP MERGES";
+        case Type::START_MERGES:
+            return "START MERGES";
+        case Type::STOP_TTL_MERGES:
+            return "STOP TTL MERGES";
+        case Type::START_TTL_MERGES:
+            return "START TTL MERGES";
+        case Type::STOP_MOVES:
+            return "STOP MOVES";
+        case Type::START_MOVES:
+            return "START MOVES";
+        case Type::STOP_FETCHES:
+            return "STOP FETCHES";
+        case Type::START_FETCHES:
+            return "START FETCHES";
+        case Type::STOP_REPLICATED_SENDS:
+            return "STOP REPLICATED SENDS";
+        case Type::START_REPLICATED_SENDS:
+            return "START REPLICATED SENDS";
+        case Type::STOP_REPLICATION_QUEUES:
+            return "STOP REPLICATION QUEUES";
+        case Type::START_REPLICATION_QUEUES:
+            return "START REPLICATION QUEUES";
+        case Type::STOP_DISTRIBUTED_SENDS:
+            return "STOP DISTRIBUTED SENDS";
+        case Type::START_DISTRIBUTED_SENDS:
+            return "START DISTRIBUTED SENDS";
+        case Type::FLUSH_LOGS:
+            return "FLUSH LOGS";
+        case Type::RESTART_DISK:
+            return "RESTART DISK";
+        default:
+            throw Exception("Unknown SYSTEM query command", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
-void ASTSystemQuery::setTable(const String & name)
-{
-    if (table)
-    {
-        std::erase(children, table);
-        table.reset();
-    }
-
-    if (!name.empty())
-    {
-        table = std::make_shared<ASTIdentifier>(name);
-        children.push_back(table);
-    }
-}
 
 void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
@@ -92,19 +112,19 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     auto print_database_table = [&]
     {
         settings.ostr << " ";
-        if (database)
+        if (!database.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
                           << (settings.hilite ? hilite_none : "") << ".";
         }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getTable())
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(table)
                       << (settings.hilite ? hilite_none : "");
     };
 
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
-        if (table)
+        if (!table.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"
                           << (settings.hilite ? hilite_none : "");
@@ -115,11 +135,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM ZKPATH "
                           << (settings.hilite ? hilite_none : "") << quoteString(replica_zk_path);
         }
-        else if (database)
+        else if (!database.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM DATABASE "
                           << (settings.hilite ? hilite_none : "");
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
                           << (settings.hilite ? hilite_none : "");
         }
     };
@@ -131,12 +151,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "")
                       << "."
                       << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(volume)
-                      << (settings.hilite ? hilite_none : "");
-    };
-
-    auto print_identifier = [&](const String & identifier)
-    {
-        settings.ostr << " " << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
                       << (settings.hilite ? hilite_none : "");
     };
 
@@ -158,7 +172,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_DISTRIBUTED_SENDS
         || type == Type::START_DISTRIBUTED_SENDS)
     {
-        if (table)
+        if (!table.empty())
             print_database_table();
         else if (!volume.empty())
             print_on_volume();
@@ -167,23 +181,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::RESTORE_REPLICA
             || type == Type::SYNC_REPLICA
             || type == Type::FLUSH_DISTRIBUTED
-            || type == Type::RELOAD_DICTIONARY
-            || type == Type::RELOAD_MODEL
-            || type == Type::RELOAD_FUNCTION
-            || type == Type::RESTART_DISK)
+            || type == Type::RELOAD_DICTIONARY)
     {
-        if (table)
-            print_database_table();
-        else if (!target_model.empty())
-            print_identifier(target_model);
-        else if (!target_function.empty())
-            print_identifier(target_function);
-        else if (!disk.empty())
-            print_identifier(disk);
-    }
-    else if (type == Type::SYNC_DATABASE_REPLICA)
-    {
-        print_identifier(database->as<ASTIdentifier>()->name());
+        print_database_table();
     }
     else if (type == Type::DROP_REPLICA)
     {
@@ -195,11 +195,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             << (settings.hilite ? hilite_none : "") << seconds
             << (settings.hilite ? hilite_keyword : "") << " SECOND"
             << (settings.hilite ? hilite_none : "");
-    }
-    else if (type == Type::DROP_FILESYSTEM_CACHE)
-    {
-        if (!filesystem_cache_path.empty())
-            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
     }
 }
 

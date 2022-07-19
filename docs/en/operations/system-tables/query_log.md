@@ -1,10 +1,9 @@
-# query_log
+# system.query_log {#system_tables-query_log}
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
-:::note
-This table does not contain the ingested data for `INSERT` queries.
-:::
+!!! note "Note"
+    This table does not contain the ingested data for `INSERT` queries.
 
 You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
 
@@ -24,10 +23,6 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created.
 2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created.
 3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
-
-You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_log` table.
-
-You can use the [log_formatted_queries](../../operations/settings/settings.md#settings-log-formatted-queries) setting to log formatted queries to the `formatted_query` column.
 
 Columns:
 
@@ -51,14 +46,11 @@ Columns:
 -   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
 -   `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
--   `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted query string.
 -   `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Identical hash value without the values of literals for similar queries.
 -   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 -   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.
--   `views` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the (materialized or live) views present in the query.
 -   `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the columns present in the query.
--   `projections` ([String](../../sql-reference/data-types/string.md)) — Names of the projections used during the query execution.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
 -   `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 -   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
@@ -73,8 +65,6 @@ Columns:
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
 -   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that the parent query was launched from.
 -   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to make the parent query.
--   `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Initial query starting time (for distributed query execution).
--   `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Initial query starting time with microseconds precision (for distributed query execution).
 -   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
@@ -111,79 +101,59 @@ Columns:
 **Example**
 
 ``` sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.query_log WHERE type = 'QueryFinish' AND (query LIKE '%toDate(\'2000-12-05\')%') ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
 ```
 
 ``` text
 Row 1:
 ──────
-type:                                  QueryFinish
-event_date:                            2021-11-03
-event_time:                            2021-11-03 16:13:54
-event_time_microseconds:               2021-11-03 16:13:54.953024
-query_start_time:                      2021-11-03 16:13:54
-query_start_time_microseconds:         2021-11-03 16:13:54.952325
-query_duration_ms:                     0
-read_rows:                             69
-read_bytes:                            6187
-written_rows:                          0
-written_bytes:                         0
-result_rows:                           69
-result_bytes:                          48256
-memory_usage:                          0
-current_database:                      default
-query:                                 DESCRIBE TABLE system.query_log
-formatted_query:
-normalized_query_hash:                 8274064835331539124
-query_kind:
-databases:                             []
-tables:                                []
-columns:                               []
-projections:                           []
-views:                                 []
-exception_code:                        0
+type:                          QueryStart
+event_date:                    2020-09-11
+event_time:                    2020-09-11 10:08:17
+event_time_microseconds:       2020-09-11 10:08:17.063321
+query_start_time:              2020-09-11 10:08:17
+query_start_time_microseconds: 2020-09-11 10:08:17.063321
+query_duration_ms:             0
+read_rows:                     0
+read_bytes:                    0
+written_rows:                  0
+written_bytes:                 0
+result_rows:                   0
+result_bytes:                  0
+memory_usage:                  0
+current_database:              default
+query:                         INSERT INTO test1 VALUES
+exception_code:                0
 exception:
 stack_trace:
-is_initial_query:                      1
-user:                                  default
-query_id:                              7c28bbbb-753b-4eba-98b1-efcbe2b9bdf6
-address:                               ::ffff:127.0.0.1
-port:                                  40452
-initial_user:                          default
-initial_query_id:                      7c28bbbb-753b-4eba-98b1-efcbe2b9bdf6
-initial_address:                       ::ffff:127.0.0.1
-initial_port:                          40452
-initial_query_start_time:              2021-11-03 16:13:54
-initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
-interface:                             1
-os_user:                               sevirov
-client_hostname:                       clickhouse.ru-central1.internal
-client_name:                           ClickHouse
-client_revision:                       54449
-client_version_major:                  21
-client_version_minor:                  10
-client_version_patch:                  1
-http_method:                           0
+is_initial_query:              1
+user:                          default
+query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
+address:                       ::ffff:127.0.0.1
+port:                          33452
+initial_user:                  default
+initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
+initial_address:               ::ffff:127.0.0.1
+initial_port:                  33452
+interface:                     1
+os_user:                       bharatnc
+client_hostname:               tower
+client_name:                   ClickHouse
+client_revision:               54437
+client_version_major:          20
+client_version_minor:          7
+client_version_patch:          2
+http_method:                   0
 http_user_agent:
-http_referer:
-forwarded_for:
 quota_key:
-revision:                              54456
-log_comment:
-thread_ids:                            [30776,31174]
-ProfileEvents:                         {'Query':1,'NetworkSendElapsedMicroseconds':59,'NetworkSendBytes':2643,'SelectedRows':69,'SelectedBytes':6187,'ContextLock':9,'RWLockAcquiredReadLocks':1,'RealTimeMicroseconds':817,'UserTimeMicroseconds':427,'SystemTimeMicroseconds':212,'OSCPUVirtualTimeMicroseconds':639,'OSReadChars':894,'OSWriteChars':319}
-Settings:                              {'load_balancing':'random','max_memory_usage':'10000000000'}
-used_aggregate_functions:              []
-used_aggregate_function_combinators:   []
-used_database_engines:                 []
-used_data_type_families:               []
-used_dictionaries:                     []
-used_formats:                          []
-used_functions:                        []
-used_storages:                         []
-used_table_functions:                  []
+revision:                      54440
+thread_ids:                    []
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
+Settings:             {'background_pool_size':'32','load_balancing':'random','allow_suspicious_low_cardinality_types':'1','distributed_aggregation_memory_efficient':'1','skip_unavailable_shards':'1','log_queries':'1','max_bytes_before_external_group_by':'20000000000','max_bytes_before_external_sort':'20000000000','allow_introspection_functions':'1'}
 ```
 
 **See Also**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_log) <!--hide-->

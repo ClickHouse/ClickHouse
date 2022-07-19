@@ -132,34 +132,4 @@ Kafka 特性：
 
 有关详细配置选项列表，请参阅 [librdkafka配置参考](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中使用下划线 (`_`) ，并不是使用点 (`.`)。例如，`check.crcs=true` 将是 `<check_crcs>true</check_crcs>`。
 
-### Kerberos 支持 {#kafka-kerberos-zhi-chi}
-
-对于使用了kerberos的kafka, 将security_protocol 设置为sasl_plaintext就够了，如果kerberos的ticket是由操作系统获取和缓存的。
-clickhouse也支持自己使用keyfile的方式来维护kerbros的凭证。配置sasl_kerberos_service_name、sasl_kerberos_keytab、sasl_kerberos_principal三个子元素就可以。
-
-示例：
-
-``` xml
-  <!-- Kerberos-aware Kafka -->
-  <kafka>
-    <security_protocol>SASL_PLAINTEXT</security_protocol>
-    <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
-    <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
-  </kafka>
-```
-
-## 虚拟列
-
--   `_topic` – Kafka 主题。
--   `_key` – 信息的键。
--   `_offset` – 消息的偏移量。
--   `_timestamp` – 消息的时间戳。
--   `_timestamp_ms` – 消息的时间戳(毫秒)。
--   `_partition` – Kafka 主题的分区。
-
-**另请参阅**
-
--   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [后台消息代理调度池大小](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
-
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/kafka/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/zh/operations/table_engines/kafka/) <!--hide-->

@@ -50,7 +50,7 @@ private:
         int client_protocol_version,
         const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections = {});
 
-    void sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
+    void sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -63,7 +63,7 @@ private:
 class Fetcher final : private boost::noncopyable
 {
 public:
-    explicit Fetcher(StorageReplicatedMergeTree & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
+    explicit Fetcher(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     MergeTreeData::MutableDataPartPtr fetchPart(
@@ -81,8 +81,8 @@ public:
         bool to_detached = false,
         const String & tmp_prefix_ = "",
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_zero_copy = true,
-        DiskPtr dest_disk = nullptr);
+        bool try_use_s3_copy = true,
+        const DiskPtr disk_s3 = nullptr);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
@@ -115,21 +115,21 @@ private:
             const UUID & part_uuid,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context,
-            DiskPtr disk,
+            ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in,
             size_t projections,
             ThrottlerPtr throttler);
 
-    MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
+    MergeTreeData::MutableDataPartPtr downloadPartToS3(
             const String & part_name,
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            DiskPtr disk,
+            const Disks & disks_s3,
             PooledReadWriteBufferFromHTTP & in,
             ThrottlerPtr throttler);
 
-    StorageReplicatedMergeTree & data;
+    MergeTreeData & data;
     Poco::Logger * log;
 };
 

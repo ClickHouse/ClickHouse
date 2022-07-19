@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <mutations_sync>2</mutations_sync>
@@ -20,4 +20,4 @@
         <default>
         </default>
     </quotas>
-</clickhouse>
+</yandex>

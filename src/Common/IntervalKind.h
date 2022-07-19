@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/types.h>
-#include <base/EnumReflection.h>
+#include <common/types.h>
+
 
 namespace DB
 {
@@ -10,9 +10,6 @@ struct IntervalKind
 {
     enum Kind
     {
-        Nanosecond,
-        Microsecond,
-        Millisecond,
         Second,
         Minute,
         Hour,
@@ -24,21 +21,18 @@ struct IntervalKind
     };
     Kind kind = Second;
 
-    IntervalKind(Kind kind_ = Second) : kind(kind_) {} /// NOLINT
-    operator Kind() const { return kind; } /// NOLINT
+    IntervalKind(Kind kind_ = Second) : kind(kind_) {}
+    operator Kind() const { return kind; }
 
-    constexpr std::string_view toString() const { return magic_enum::enum_name(kind); }
+    const char * toString() const;
 
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
-    Float64 toAvgSeconds() const;
+    Int32 toAvgSeconds() const;
 
     /// Chooses an interval kind based on number of seconds.
     /// For example, `IntervalKind::fromAvgSeconds(3600)` returns `IntervalKind::Hour`.
     static IntervalKind fromAvgSeconds(Int64 num_seconds);
-
-    /// Returns whether IntervalKind has a fixed number of seconds (e.g. Day) or non-fixed(e.g. Month)
-    bool isFixedLength() const;
 
     /// Returns an uppercased version of what `toString()` returns.
     const char * toKeyword() const;
@@ -64,19 +58,4 @@ struct IntervalKind
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
 };
-
-/// NOLINTNEXTLINE
-#define FOR_EACH_INTERVAL_KIND(M) \
-    M(Nanosecond) \
-    M(Microsecond) \
-    M(Millisecond) \
-    M(Second) \
-    M(Minute) \
-    M(Hour) \
-    M(Day) \
-    M(Week) \
-    M(Month) \
-    M(Quarter) \
-    M(Year)
-
 }

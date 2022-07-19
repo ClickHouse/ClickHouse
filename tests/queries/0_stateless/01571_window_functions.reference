@@ -1,6 +1,6 @@
 -- { echo }
 -- Another test for window functions because the other one is too long.
-
+set allow_experimental_window_functions = 1;
 -- some craziness with a mix of materialized and unmaterialized const columns
 -- after merging sorted transform, that used to break the peer group detection in
 -- the window transform.
@@ -46,26 +46,3 @@ select count() over (rows between 1 + 1 preceding and 1 + 1 following) from numb
 3
 -- signed and unsigned in offset do not cause logical error
 select count() over (rows between 2 following and 1 + -1 following) FROM numbers(10); -- { serverError 36 }
--- default arguments of lagInFrame can be a subtype of the argument
-select number,
-    lagInFrame(toNullable(number), 2, null) over w,
-    lagInFrame(number, 2, 1) over w
-from numbers(10)
-window w as (order by number)
-;
-0	\N	1
-1	\N	1
-2	0	0
-3	1	1
-4	2	2
-5	3	3
-6	4	4
-7	5	5
-8	6	6
-9	7	7
--- the case when current_row goes past the partition end at the block end
-select number, row_number() over (partition by number rows between unbounded preceding and 1 preceding) from numbers(4) settings max_block_size = 2;
-0	1
-1	1
-2	1
-3	1

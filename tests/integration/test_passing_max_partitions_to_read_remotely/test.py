@@ -23,9 +23,6 @@ def test_default_database_on_cluster(started_cluster):
         sql="CREATE TABLE test_local_table ENGINE MergeTree PARTITION BY i ORDER BY tuple() SETTINGS max_partitions_to_read = 1 AS SELECT arrayJoin([1, 2]) i;",
     )
 
-    assert (
-        ch2.query(
-            sql="SELECT * FROM remote('ch1:9000', test_default_database, test_local_table) ORDER BY i FORMAT TSV SETTINGS max_partitions_to_read = 0;",
-        )
-        == "1\n2\n"
-    )
+    assert ch2.query(
+        sql="SELECT * FROM remote('ch1:9000', test_default_database, test_local_table) ORDER BY i FORMAT TSV SETTINGS max_partitions_to_read = 0;",
+    ) == "1\n2\n"

@@ -15,11 +15,11 @@ namespace ErrorCodes
 String ASTDropQuery::getID(char delim) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
-        return "DropQuery" + (delim + getDatabase()) + delim + getTable();
+        return "DropQuery" + (delim + database) + delim + table;
     else if (kind == ASTDropQuery::Kind::Detach)
-        return "DetachQuery" + (delim + getDatabase()) + delim + getTable();
+        return "DetachQuery" + (delim + database) + delim + table;
     else if (kind == ASTDropQuery::Kind::Truncate)
-        return "TruncateQuery" + (delim + getDatabase()) + delim + getTable();
+        return "TruncateQuery" + (delim + database) + delim + table;
     else
         throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
 }
@@ -28,7 +28,6 @@ ASTPtr ASTDropQuery::clone() const
 {
     auto res = std::make_shared<ASTDropQuery>(*this);
     cloneOutputOptions(*res);
-    cloneTableOptions(*res);
     return res;
 }
 
@@ -47,8 +46,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (temporary)
         settings.ostr << "TEMPORARY ";
 
-
-    if (!table && database)
+    if (table.empty() && !database.empty())
         settings.ostr << "DATABASE ";
     else if (is_dictionary)
         settings.ostr << "DICTIONARY ";
@@ -62,10 +60,10 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (!table && database)
-        settings.ostr << backQuoteIfNeed(getDatabase());
+    if (table.empty() && !database.empty())
+        settings.ostr << backQuoteIfNeed(database);
     else
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        settings.ostr << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
     formatOnCluster(settings);
 

@@ -1,3 +1,0 @@
-02005_log_formatted_queries.sql
-select \'02005_log_formatted_queries.sql\' from system.one;	SELECT \'02005_log_formatted_queries.sql\' FROM system.one
-select \'02005_log_formatted_queries.sql\' from system.one;	SELECT \'02005_log_formatted_queries.sql\' FROM system.one

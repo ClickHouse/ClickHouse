@@ -4,7 +4,7 @@
 
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/WriteHelpers.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/createReadBufferFromFileBase.h>
 
 
 namespace DB
@@ -33,16 +33,8 @@ bool CompressedReadBufferFromFile::nextImpl()
 
     decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
-    /// nextimpl_working_buffer_offset is set in the seek function (lazy seek). So we have to
-    /// check that we are not seeking beyond working buffer.
-    if (nextimpl_working_buffer_offset > working_buffer.size())
-        throw Exception("Required to move position beyond the decompressed block"
-        " (pos: " + toString(nextimpl_working_buffer_offset) + ", block size: " + toString(working_buffer.size()) + ")",
-        ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
-
     return true;
 }
-
 
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
@@ -52,41 +44,51 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
 }
 
 
-void CompressedReadBufferFromFile::prefetch()
+CompressedReadBufferFromFile::CompressedReadBufferFromFile(
+    const std::string & path,
+    size_t estimated_size,
+    size_t aio_threshold,
+    size_t mmap_threshold,
+    MMappedFileCache * mmap_cache,
+    size_t buf_size,
+    bool allow_different_codecs_)
+    : BufferWithOwnMemory<ReadBuffer>(0)
+    , p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size))
+    , file_in(*p_file_in)
 {
-    file_in.prefetch();
+    compressed_in = &file_in;
+    allow_different_codecs = allow_different_codecs_;
 }
 
 
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
-    /// Nothing to do if we already at required position
-    if (!size_compressed && static_cast<size_t>(file_in.getPosition()) == offset_in_compressed_file && /// correct position in compressed file
-        ((!buffer().empty() && offset() == offset_in_decompressed_block)     /// correct position in buffer or
-         || nextimpl_working_buffer_offset == offset_in_decompressed_block)) /// we will move our position to correct one
-        return;
-
-    /// Our seek is within working_buffer, so just move the position
     if (size_compressed &&
         offset_in_compressed_file == file_in.getPosition() - size_compressed &&
         offset_in_decompressed_block <= working_buffer.size())
     {
-        pos = working_buffer.begin() + offset_in_decompressed_block;
-    }
-    else /// Our seek outside working buffer, so perform "lazy seek"
-    {
-        /// Actually seek compressed file
-        file_in.seek(offset_in_compressed_file, SEEK_SET);
-        /// We will discard our working_buffer, but have to account rest bytes
         bytes += offset();
-        /// No data, everything discarded
-        resetWorkingBuffer();
-        size_compressed = 0;
-        /// Remember required offset in decompressed block which will be set in
-        /// the next ReadBuffer::next() call
-        nextimpl_working_buffer_offset = offset_in_decompressed_block;
+        pos = working_buffer.begin() + offset_in_decompressed_block;
+        /// `bytes` can overflow and get negative, but in `count()` everything will overflow back and get right.
+        bytes -= offset();
+    }
+    else
+    {
+        file_in.seek(offset_in_compressed_file, SEEK_SET);
+
+        bytes += offset();
+        nextImpl();
+
+        if (offset_in_decompressed_block > working_buffer.size())
+            throw Exception("Seek position is beyond the decompressed block"
+            " (pos: " + toString(offset_in_decompressed_block) + ", block size: " + toString(working_buffer.size()) + ")",
+            ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+
+        pos = working_buffer.begin() + offset_in_decompressed_block;
+        bytes -= offset();
     }
 }
+
 
 size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 {
@@ -109,32 +111,12 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
-        /// If the decompressed block fits entirely where it needs to be copied and we don't
-        /// need to skip some bytes in decompressed data (seek happened before readBig call).
-        if (nextimpl_working_buffer_offset == 0 && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
+        /// If the decompressed block fits entirely where it needs to be copied.
+        if (size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
             decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
             bytes += size_decompressed;
-        }
-        else if (nextimpl_working_buffer_offset > 0)
-        {
-            /// Need to skip some bytes in decompressed data (seek happened before readBig call).
-            size_compressed = new_size_compressed;
-            bytes += offset();
-
-            /// This is for clang static analyzer.
-            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
-            memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-            working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
-            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
-
-            /// Read partial data from first block. Won't run here at second block.
-            /// Avoid to call nextImpl and unnecessary memcpy in read when the second block fits entirely to output buffer.
-            size_t size_partial = std::min((size_decompressed - nextimpl_working_buffer_offset),(n - bytes_read));
-            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-            nextimpl_working_buffer_offset = 0;
-            bytes_read += read(to + bytes_read, size_partial);
         }
         else
         {
@@ -143,12 +125,13 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
             /// This is for clang static analyzer.
             assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
-            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
-            ///Read partial data from last block.
+            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
             pos = working_buffer.begin();
+
             bytes_read += read(to + bytes_read, n - bytes_read);
             break;
         }

@@ -49,7 +49,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , columns_list(columns_list_)
     , settings(settings_)
     , index_granularity(index_granularity_)
-    , with_final_mark(settings.can_use_adaptive_granularity)
+    , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity)
 {
 }
 

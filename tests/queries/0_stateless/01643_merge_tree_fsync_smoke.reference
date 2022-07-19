@@ -12,4 +12,3 @@ memory in_memory_parts_insert_sync
 1
 wide fsync_part_directory,vertical
 1
-2

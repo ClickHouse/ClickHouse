@@ -1,31 +1,14 @@
--- { echo }
-with anySimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(any, UInt64)	0
-with anyLastSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(anyLast, UInt64)	0
-with minSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(min, UInt64)	0
-with maxSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(max, UInt64)	0
-with sumSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(sum, UInt64)	0
-with sumWithOverflowSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(sumWithOverflow, UInt64)	0
-with groupBitAndSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(groupBitAnd, UInt64)	0
-with groupBitOrSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(groupBitOr, UInt64)	0
-with groupBitXorSimpleState(number) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(groupBitXor, UInt64)	0
-with sumMapSimpleState(([number], [number])) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(sumMap, Tuple(Array(UInt64), Array(UInt64)))	([],[])
-with minMapSimpleState(([number], [number])) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(minMap, Tuple(Array(UInt64), Array(UInt64)))	([0],[0])
-with maxMapSimpleState(([number], [number])) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(maxMap, Tuple(Array(UInt64), Array(UInt64)))	([0],[0])
-with groupArrayArraySimpleState([number]) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(groupArrayArray, Array(UInt64))	[0]
-with groupUniqArrayArraySimpleState([number]) as c select toTypeName(c), c from numbers(1);
 SimpleAggregateFunction(groupUniqArrayArray, Array(UInt64))	[0]
--- non-SimpleAggregateFunction
-with countSimpleState(number) as c select toTypeName(c), c from numbers(1); -- { serverError 36 }

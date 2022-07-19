@@ -1,15 +1,15 @@
 ---
-sidebar_position: 40
-sidebar_label: UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256
+toc_priority: 40
+toc_title: UInt8, UInt16, UInt32, UInt64, UInt256, Int8, Int16, Int32, Int64, Int128, Int256
 ---
 
-# UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256
+# UInt8, UInt16, UInt32, UInt64, UInt256, Int8, Int16, Int32, Int64, Int128, Int256 {#uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64-int128-int256}
 
 Fixed-length integers, with or without a sign.
 
-When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them.
+When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them. 
 
-## Int Ranges
+## Int Ranges {#int-ranges}
 
 -   `Int8` — \[-128 : 127\]
 -   `Int16` — \[-32768 : 32767\]
@@ -25,13 +25,14 @@ Aliases:
 -   `Int32` — `INT`, `INT4`, `INTEGER`.
 -   `Int64` — `BIGINT`.
 
-## UInt Ranges
+## Uint Ranges {#uint-ranges}
 
 -   `UInt8` — \[0 : 255\]
 -   `UInt16` — \[0 : 65535\]
 -   `UInt32` — \[0 : 4294967295\]
 -   `UInt64` — \[0 : 18446744073709551615\]
--   `UInt128` — \[0 : 340282366920938463463374607431768211455\]
 -   `UInt256` — \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\]
 
-[Original article](https://clickhouse.com/docs/en/data_types/int_uint/) <!--hide-->
+`UInt128` is not supported yet.
+
+[Original article](https://clickhouse.tech/docs/en/data_types/int_uint/) <!--hide-->

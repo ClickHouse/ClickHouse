@@ -14,7 +14,8 @@ struct NameMultiMatchAny
 };
 
 using FunctionMultiMatchAny = FunctionsMultiStringSearch<
-    MultiMatchAnyImpl<NameMultiMatchAny, UInt8, true, false, false>,
+    MultiMatchAnyImpl<UInt8, true, false, false>,
+    NameMultiMatchAny,
     std::numeric_limits<UInt32>::max()>;
 
 }

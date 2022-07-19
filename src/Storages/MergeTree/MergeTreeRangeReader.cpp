@@ -1,9 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/TargetSpecific.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 
@@ -11,19 +9,11 @@
 #include <emmintrin.h>
 #endif
 
-#if defined(__aarch64__) && defined(__ARM_NEON)
-#    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
-#endif
-
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -64,21 +54,9 @@ static void filterColumns(Columns & columns, const ColumnPtr & filter)
 }
 
 
-static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges)
-{
-    size_t current_task_last_mark = 0;
-    for (const auto & mark_range : ranges)
-        current_task_last_mark = std::max(current_task_last_mark, mark_range.range.end);
-    return current_task_last_mark;
-}
-
-
 MergeTreeRangeReader::DelayedStream::DelayedStream(
-    size_t from_mark,
-    size_t current_task_last_mark_,
-    IMergeTreeReader * merge_tree_reader_)
+        size_t from_mark, IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
-        , current_task_last_mark(current_task_last_mark_)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , continue_reading(false), is_finished(false)
@@ -95,8 +73,7 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Columns & columns, size_t n
 {
     if (num_rows)
     {
-        size_t rows_read = merge_tree_reader->readRows(
-            current_mark, current_task_last_mark, continue_reading, num_rows, columns);
+        size_t rows_read = merge_tree_reader->readRows(current_mark, continue_reading, num_rows, columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -174,13 +151,13 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
 
 
 MergeTreeRangeReader::Stream::Stream(
-        size_t from_mark, size_t to_mark, size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader_)
+        size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
-        , stream(from_mark, current_task_last_mark, merge_tree_reader)
+        , stream(from_mark, merge_tree_reader)
 {
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
@@ -195,7 +172,7 @@ MergeTreeRangeReader::Stream::Stream(
 void MergeTreeRangeReader::Stream::checkNotFinished() const
 {
     if (isFinished())
-        throw Exception("Cannot read out of marks range.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Cannot read out of marks range.", ErrorCodes::LOGICAL_ERROR);
 }
 
 void MergeTreeRangeReader::Stream::checkEnoughSpaceInCurrentGranule(size_t num_rows) const
@@ -300,12 +277,12 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (rows_per_granule.empty())
-        throw Exception("Can't adjust last granule because no granules were added", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't adjust last granule because no granules were added.", ErrorCodes::LOGICAL_ERROR);
 
     if (num_rows_to_subtract > rows_per_granule.back())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows.",
-                        toString(rows_per_granule.back()), toString(num_rows_to_subtract));
+        throw Exception("Can't adjust last granule because it has " + toString(rows_per_granule.back())
+                        + " rows, but try to subtract " + toString(num_rows_to_subtract) + " rows.",
+                        ErrorCodes::LOGICAL_ERROR);
 
     rows_per_granule.back() -= num_rows_to_subtract;
     total_rows_per_granule -= num_rows_to_subtract;
@@ -453,80 +430,8 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     new_filter_vec.resize(new_filter_data - new_filter_vec.data());
 }
 
-DECLARE_AVX512BW_SPECIFIC_CODE(
-size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
-{
-    size_t count = 0;
-    const __m512i zero64 = _mm512_setzero_epi32();
-    while (end - begin >= 64)
-    {
-        end -= 64;
-        const auto * pos = end;
-        UInt64 val = static_cast<UInt64>(_mm512_cmp_epi8_mask(
-                        _mm512_loadu_si512(reinterpret_cast<const __m512i *>(pos)),
-                        zero64,
-                        _MM_CMPINT_EQ));
-        val = ~val;
-        if (val == 0)
-            count += 64;
-        else
-        {
-            count += __builtin_clzll(val);
-            return count;
-        }
-    }
-    while (end > begin && *(--end) == 0)
-    {
-        ++count;
-    }
-    return count;
-}
-) /// DECLARE_AVX512BW_SPECIFIC_CODE
-
-DECLARE_AVX2_SPECIFIC_CODE(
-size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
-{
-    size_t count = 0;
-    const __m256i zero32 = _mm256_setzero_si256();
-    while (end - begin >= 64)
-    {
-        end -= 64;
-        const auto * pos = end;
-        UInt64 val =
-            (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
-                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos)),
-                        zero32))) & 0xffffffffu)
-            | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
-                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32)),
-                        zero32))) << 32u);
-
-        val = ~val;
-        if (val == 0)
-            count += 64;
-        else
-        {
-            count += __builtin_clzll(val);
-            return count;
-        }
-    }
-    while (end > begin && *(--end) == 0)
-    {
-        ++count;
-    }
-    return count;
-}
-) /// DECLARE_AVX2_SPECIFIC_CODE
-
 size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
-#if USE_MULTITARGET_CODE
-    /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
-    if (isArchSupported(TargetArch::AVX512BW))
-        return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
-    else if (isArchSupported(TargetArch::AVX2))
-        return TargetSpecific::AVX2::numZerosInTail(begin, end);
-#endif
-
     size_t count = 0;
 
 #if defined(__SSE2__) && defined(__POPCNT__)
@@ -548,34 +453,6 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
                 | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
                         zero16))) << 48u);
-        val = ~val;
-        if (val == 0)
-            count += 64;
-        else
-        {
-            count += __builtin_clzll(val);
-            return count;
-        }
-    }
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-    const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
-    while (end - begin >= 64)
-    {
-        end -= 64;
-        const auto * src = reinterpret_cast<const unsigned char *>(end);
-        const uint8x16_t p0 = vceqzq_u8(vld1q_u8(src));
-        const uint8x16_t p1 = vceqzq_u8(vld1q_u8(src + 16));
-        const uint8x16_t p2 = vceqzq_u8(vld1q_u8(src + 32));
-        const uint8x16_t p3 = vceqzq_u8(vld1q_u8(src + 48));
-        uint8x16_t t0 = vandq_u8(p0, bitmask);
-        uint8x16_t t1 = vandq_u8(p1, bitmask);
-        uint8x16_t t2 = vandq_u8(p2, bitmask);
-        uint8x16_t t3 = vandq_u8(p3, bitmask);
-        uint8x16_t sum0 = vpaddq_u8(t0, t1);
-        uint8x16_t sum1 = vpaddq_u8(t2, t3);
-        sum0 = vpaddq_u8(sum0, sum1);
-        sum0 = vpaddq_u8(sum0, sum0);
-        UInt64 val = vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
         val = ~val;
         if (val == 0)
             count += 64;
@@ -645,15 +522,13 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprInfo * prewhere_info_,
-    bool last_reader_in_chain_,
-    const Names & non_const_virtual_column_names_)
+    bool last_reader_in_chain_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part->index_granularity))
     , prev_reader(prev_reader_)
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
-    , non_const_virtual_column_names(non_const_virtual_column_names_)
 {
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
@@ -661,17 +536,11 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     for (const auto & name_and_type : merge_tree_reader->getColumns())
         sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
-    for (const auto & column_name : non_const_virtual_column_names)
-    {
-        if (sample_block.has(column_name))
-            continue;
-
-        if (column_name == "_part_offset")
-            sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
-    }
-
     if (prewhere_info)
     {
+        if (prewhere_info->alias_actions)
+            prewhere_info->alias_actions->execute(sample_block, true);
+
         if (prewhere_info->row_level_filter)
         {
             prewhere_info->row_level_filter->execute(sample_block, true);
@@ -730,16 +599,6 @@ size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
     size_t rows_between_marks = index_granularity->getRowsCountInRange(current_mark, last_mark);
     return rows_between_marks - offset_after_current_mark;
-}
-
-UInt64 MergeTreeRangeReader::Stream::currentPartOffset() const
-{
-    return index_granularity->getMarkStartingRow(current_mark) + offset_after_current_mark;
-}
-
-UInt64 MergeTreeRangeReader::Stream::lastPartOffset() const
-{
-    return index_granularity->getMarkStartingRow(last_mark);
 }
 
 
@@ -821,10 +680,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             {
                 auto block = prev_reader->sample_block.cloneWithColumns(read_result.columns);
                 auto block_before_prewhere = read_result.block_before_prewhere;
-                for (const auto & column : block)
+                for (auto & ctn : block)
                 {
-                    if (block_before_prewhere.has(column.name))
-                        block_before_prewhere.erase(column.name);
+                    if (block_before_prewhere.has(ctn.name))
+                        block_before_prewhere.erase(ctn.name);
                 }
 
                 if (block_before_prewhere)
@@ -833,11 +692,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                     {
                         auto old_columns = block_before_prewhere.getColumns();
                         filterColumns(old_columns, read_result.getFilterOriginal()->getData());
-                        block_before_prewhere.setColumns(old_columns);
+                        block_before_prewhere.setColumns(std::move(old_columns));
                     }
 
-                    for (auto & column : block_before_prewhere)
-                        block.insert(std::move(column));
+                    for (auto && ctn : block_before_prewhere)
+                        block.insert(std::move(ctn));
                 }
                 merge_tree_reader->evaluateMissingDefaults(block, columns);
             }
@@ -856,23 +715,16 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
         if (read_result.num_rows)
         {
-            /// Physical columns go first and then some virtual columns follow
-            const size_t physical_columns_count = read_result.columns.size() - non_const_virtual_column_names.size();
-            Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
-
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults,
+            merge_tree_reader->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults,
                                                   read_result.num_rows);
 
             /// If some columns absent in part, then evaluate default values
             if (should_evaluate_missing_defaults)
-                merge_tree_reader->evaluateMissingDefaults({}, physical_columns);
+                merge_tree_reader->evaluateMissingDefaults({}, read_result.columns);
 
             /// If result not empty, then apply on-fly alter conversions if any required
-            merge_tree_reader->performRequiredConversions(physical_columns);
-
-            for (size_t i = 0; i < physical_columns.size(); ++i)
-                read_result.columns[i] = std::move(physical_columns[i]);
+            merge_tree_reader->performRequiredConversions(read_result.columns);
         }
         else
             read_result.columns.clear();
@@ -898,19 +750,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     ReadResult result;
     result.columns.resize(merge_tree_reader->getColumns().size());
 
-    size_t current_task_last_mark = getLastMark(ranges);
-
-    /// The stream could be unfinished by the previous read request because of max_rows limit.
-    /// In this case it will have some rows from the previously started range. We need to save their begin and
-    /// end offsets to properly fill _part_offset column.
-    UInt64 leading_begin_part_offset = 0;
-    UInt64 leading_end_part_offset = 0;
-    if (!stream.isFinished())
-    {
-        leading_begin_part_offset = stream.currentPartOffset();
-        leading_end_part_offset = stream.lastPartOffset();
-    }
-
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
@@ -921,7 +760,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (stream.isFinished())
             {
                 result.addRows(stream.finalize(result.columns));
-                stream = Stream(ranges.front().begin, ranges.front().end, current_task_last_mark, merge_tree_reader);
+                stream = Stream(ranges.front().begin, ranges.front().end, merge_tree_reader);
                 result.addRange(ranges.front());
                 ranges.pop_front();
             }
@@ -947,40 +786,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// Last granule may be incomplete.
     result.adjustLastGranule();
 
-    for (const auto & column_name : non_const_virtual_column_names)
-    {
-        if (column_name == "_part_offset")
-            fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
-    }
-
     return result;
-}
-
-void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
-{
-    size_t num_rows = result.numReadRows();
-
-    auto column = ColumnUInt64::create(num_rows);
-    ColumnUInt64::Container & vec = column->getData();
-
-    UInt64 * pos = vec.data();
-    UInt64 * end = &vec[num_rows];
-
-    while (pos < end && leading_begin_part_offset < leading_end_part_offset)
-        *pos++ = leading_begin_part_offset++;
-
-    const auto start_ranges = result.startedRanges();
-
-    for (const auto & start_range : start_ranges)
-    {
-        UInt64 start_part_offset = index_granularity->getMarkStartingRow(start_range.range.begin);
-        UInt64 end_part_offset = index_granularity->getMarkStartingRow(start_range.range.end);
-
-        while (pos < end && start_part_offset < end_part_offset)
-            *pos++ = start_part_offset++;
-    }
-
-    result.columns.emplace_back(std::move(column));
 }
 
 Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t & num_rows)
@@ -1001,7 +807,6 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     const auto & rows_per_granule = result.rowsPerGranule();
     const auto & started_ranges = result.startedRanges();
 
-    size_t current_task_last_mark = getLastMark(started_ranges);
     size_t next_range_to_start = 0;
 
     auto size = rows_per_granule.size();
@@ -1013,7 +818,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
             num_rows += stream.finalize(columns);
             const auto & range = started_ranges[next_range_to_start].range;
             ++next_range_to_start;
-            stream = Stream(range.begin, range.end, current_task_last_mark, merge_tree_reader);
+            stream = Stream(range.begin, range.end, merge_tree_reader);
         }
 
         bool last = i + 1 == size;
@@ -1099,7 +904,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     const auto & header = merge_tree_reader->getColumns();
     size_t num_columns = header.size();
 
-    if (result.columns.size() != (num_columns + non_const_virtual_column_names.size()))
+    if (result.columns.size() != num_columns)
         throw Exception("Invalid number of columns passed to MergeTreeRangeReader. "
                         "Expected " + toString(num_columns) + ", "
                         "got " + toString(result.columns.size()), ErrorCodes::LOGICAL_ERROR);
@@ -1125,14 +930,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
             block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
-        for (const auto & column_name : non_const_virtual_column_names)
-        {
-            if (column_name == "_part_offset")
-                block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
-            else
-                throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);
-            ++pos;
-        }
+        if (prewhere_info->alias_actions)
+            prewhere_info->alias_actions->execute(block);
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;

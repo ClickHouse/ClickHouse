@@ -1,83 +1,84 @@
-    ReadFromMergeTree (default.test_index)
-    Indexes:
-      MinMax
-        Keys: 
-          y
-        Condition: (y in [1, +Inf))
-        Parts: 4/5
-        Granules: 11/12
-      Partition
-        Keys: 
-          y
-          bitAnd(z, 3)
-        Condition: and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1])))
-        Parts: 3/4
-        Granules: 10/11
-      PrimaryKey
-        Keys: 
-          x
-          y
-        Condition: and((x in [11, +Inf)), (y in [1, +Inf)))
-        Parts: 2/3
-        Granules: 6/10
-      Skip
-        Name: t_minmax
-        Description: minmax GRANULARITY 2
-        Parts: 1/2
-        Granules: 2/6
-      Skip
-        Name: t_set
-        Description: set GRANULARITY 2
-        Parts: 1/1
-        Granules: 1/2
+      ReadFromMergeTree
+      Indexes:
+        MinMax
+          Keys: 
+            y
+          Condition: (y in [1, +inf))
+          Parts: 4/5
+          Granules: 11/12
+        Partition
+          Keys: 
+            y
+            bitAnd(z, 3)
+          Condition: and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))
+          Parts: 3/4
+          Granules: 10/11
+        PrimaryKey
+          Keys: 
+            x
+            y
+          Condition: and((x in [11, +inf)), (y in [1, +inf)))
+          Parts: 2/3
+          Granules: 6/10
+        Skip
+          Name: t_minmax
+          Description: minmax GRANULARITY 2
+          Parts: 1/2
+          Granules: 2/6
+        Skip
+          Name: t_set
+          Description: set GRANULARITY 2
+          Parts: 1/1
+          Granules: 1/2
 -----------------
-              "Node Type": "ReadFromMergeTree",
-              "Description": "default.test_index",
-              "Indexes": [
-                {
-                  "Type": "MinMax",
-                  "Keys": ["y"],
-                  "Condition": "(y in [1, +Inf))",
-                  "Initial Parts": 5,
-                  "Selected Parts": 4,
-                  "Initial Granules": 12,
-                  "Selected Granules": 11
-                },
-                {
-                  "Type": "Partition",
-                  "Keys": ["y", "bitAnd(z, 3)"],
-                  "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +Inf)), (bitAnd(z, 3) not in [1, 1])))",
-                  "Initial Parts": 4,
-                  "Selected Parts": 3,
-                  "Initial Granules": 11,
-                  "Selected Granules": 10
-                },
-                {
-                  "Type": "PrimaryKey",
-                  "Keys": ["x", "y"],
-                  "Condition": "and((x in [11, +Inf)), (y in [1, +Inf)))",
-                  "Initial Parts": 3,
-                  "Selected Parts": 2,
-                  "Initial Granules": 10,
-                  "Selected Granules": 6
-                },
-                {
-                  "Type": "Skip",
-                  "Name": "t_minmax",
-                  "Description": "minmax GRANULARITY 2",
-                  "Initial Parts": 2,
-                  "Selected Parts": 1,
-                  "Initial Granules": 6,
-                  "Selected Granules": 2
-                },
-                {
-                  "Type": "Skip",
-                  "Name": "t_set",
-                  "Description": "set GRANULARITY 2",
-                  "Initial Parts": 1,
-                  "Selected Parts": 1,
-                  "Initial Granules": 2,
-                  "Selected Granules": 1
+                  "Node Type": "ReadFromMergeTree",
+                  "Indexes": [
+                    {
+                      "Type": "MinMax",
+                      "Keys": ["y"],
+                      "Condition": "(y in [1, +inf))",
+                      "Initial Parts": 5,
+                      "Selected Parts": 4,
+                      "Initial Granules": 12,
+                      "Selected Granules": 11
+                    },
+                    {
+                      "Type": "Partition",
+                      "Keys": ["y", "bitAnd(z, 3)"],
+                      "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
+                      "Initial Parts": 4,
+                      "Selected Parts": 3,
+                      "Initial Granules": 11,
+                      "Selected Granules": 10
+                    },
+                    {
+                      "Type": "PrimaryKey",
+                      "Keys": ["x", "y"],
+                      "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
+                      "Initial Parts": 3,
+                      "Selected Parts": 2,
+                      "Initial Granules": 10,
+                      "Selected Granules": 6
+                    },
+                    {
+                      "Type": "Skip",
+                      "Name": "t_minmax",
+                      "Description": "minmax GRANULARITY 2",
+                      "Initial Parts": 2,
+                      "Selected Parts": 1,
+                      "Initial Granules": 6,
+                      "Selected Granules": 2
+                    },
+                    {
+                      "Type": "Skip",
+                      "Name": "t_set",
+                      "Description": "set GRANULARITY 2",
+                      "Initial Parts": 1,
+                      "Selected Parts": 1,
+                      "Initial Granules": 2,
+                      "Selected Granules": 1
+                    }
+                  ]
                 }
               ]
             }
@@ -88,21 +89,21 @@
   }
 ]
 -----------------
-        ReadFromMergeTree (default.test_index)
-        ReadType: InOrder
-        Parts: 1
-        Granules: 3
+          ReadFromMergeTree
+          ReadType: InOrder
+          Parts: 1
+          Granules: 3
 -----------------
-        ReadFromMergeTree (default.test_index)
-        ReadType: InReverseOrder
-        Parts: 1
-        Granules: 3
-    ReadFromMergeTree (default.idx)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          x
-          plus(x, y)
-        Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
-        Parts: 1/1
-        Granules: 1/1
+          ReadFromMergeTree
+          ReadType: InReverseOrder
+          Parts: 1
+          Granules: 3
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            x
+            plus(x, y)
+          Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-inf, 2]))
+          Parts: 1/1
+          Granules: 1/1

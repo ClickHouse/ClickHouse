@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -46,11 +46,11 @@ void ArrayJoinStep::updateInputStream(DataStream input_stream, Block result_head
     res_header = std::move(result_header);
 }
 
-void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
-        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<ArrayJoinTransform>(header, array_join, on_totals);
     });
 

@@ -1,7 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <IO/WriteHelpers.h>
@@ -28,11 +27,11 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     }
 
     /// cast of numeric constant in condition to UInt8
-    /// Note: this solution is ad-hoc and only implemented for metrica use case (one of the best customers).
+    /// Note: this solution is ad-hoc and only implemented for yandex.metrica use case.
     /// We should allow any constant condition (or maybe remove this optimization completely) later.
     if (const auto * function = condition->as<ASTFunction>())
     {
-        if (isFunctionCast(function))
+        if (function->name == "CAST")
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {

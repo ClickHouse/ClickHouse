@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <Interpreters/Aggregator.h>
 
 namespace DB
@@ -17,11 +17,10 @@ public:
 
     String getName() const override { return "Cube"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
     const Aggregator::Params & getParams() const;
 private:
-    size_t keys_size;
     AggregatingTransformParamsPtr params;
 };
 

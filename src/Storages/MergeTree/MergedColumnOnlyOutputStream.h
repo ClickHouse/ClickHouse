@@ -23,19 +23,15 @@ public:
         const MergeTreeIndexGranularity & index_granularity = {},
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
-    Block getHeader() const { return header; }
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
-
+    void writeSuffix() override;
     MergeTreeData::DataPart::Checksums
-    fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
-
-    void finish(bool sync);
+    writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums, bool sync = false);
 
 private:
     Block header;
 };
-
-using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;
 
 
 }

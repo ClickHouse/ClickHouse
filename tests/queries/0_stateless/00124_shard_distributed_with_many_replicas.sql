@@ -1,7 +1,5 @@
--- Tags: replica, distributed
-
-SET allow_experimental_parallel_reading_from_replicas = 0;
 SET max_parallel_replicas = 2;
+
 DROP TABLE IF EXISTS report;
 
 CREATE TABLE report(id UInt32, event_date Date, priority UInt32, description String) ENGINE = MergeTree(event_date, intHash32(id), (id, event_date, intHash32(id)), 8192);

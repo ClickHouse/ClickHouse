@@ -1,7 +1,7 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <sstream>
 #include <iomanip>
@@ -179,7 +179,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
     CreateResponse response;
     Undo undo;
 
-    if (container.contains(path))
+    if (container.count(path))
     {
         response.error = Error::ZNODEEXISTS;
     }
@@ -493,7 +493,7 @@ TestKeeper::~TestKeeper()
 {
     try
     {
-        finalize(__PRETTY_FUNCTION__);
+        finalize();
         if (processing_thread.joinable())
             processing_thread.join();
     }
@@ -514,7 +514,7 @@ void TestKeeper::processingThread()
         {
             RequestInfo info;
 
-            UInt64 max_wait = static_cast<UInt64>(operation_timeout.totalMilliseconds());
+            UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
             if (requests_queue.tryPop(info, max_wait))
             {
                 if (expired)
@@ -556,12 +556,12 @@ void TestKeeper::processingThread()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize(__PRETTY_FUNCTION__);
+        finalize();
     }
 }
 
 
-void TestKeeper::finalize(const String &)
+void TestKeeper::finalize()
 {
     {
         std::lock_guard lock(push_request_mutex);
@@ -661,7 +661,7 @@ void TestKeeper::pushRequest(RequestInfo && request)
     }
     catch (...)
     {
-        finalize(__PRETTY_FUNCTION__);
+        finalize();
         throw;
     }
 }

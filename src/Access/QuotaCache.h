@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/EnabledQuota.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <memory>
 #include <mutex>
 #include <map>
@@ -10,16 +10,14 @@
 
 namespace DB
 {
-class AccessControl;
-struct Quota;
-using QuotaPtr = std::shared_ptr<const Quota>;
-struct RolesOrUsersSet;
+class AccessControlManager;
+
 
 /// Stores information how much amount of resources have been consumed and how much are left.
 class QuotaCache
 {
 public:
-    explicit QuotaCache(const AccessControl & access_control_);
+    QuotaCache(const AccessControlManager & access_control_manager_);
     ~QuotaCache();
 
     std::shared_ptr<const EnabledQuota> getEnabledQuota(
@@ -43,7 +41,7 @@ private:
 
         String calculateKey(const EnabledQuota & enabled_quota) const;
         boost::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
-        boost::shared_ptr<const Intervals> rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time);
+        boost::shared_ptr<const Intervals> rebuildIntervals(const String & key);
         void rebuildAllIntervals();
 
         QuotaPtr quota;
@@ -58,7 +56,7 @@ private:
     void chooseQuotaToConsume();
     void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota);
 
-    const AccessControl & access_control;
+    const AccessControlManager & access_control_manager;
     mutable std::mutex mutex;
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;

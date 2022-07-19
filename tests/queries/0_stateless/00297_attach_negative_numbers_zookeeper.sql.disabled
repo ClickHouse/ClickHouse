@@ -1,5 +1,3 @@
--- Tags: disabled, zookeeper, no-parallel
-
 DROP TABLE IF EXISTS r1;
 DROP TABLE IF EXISTS r2;
 

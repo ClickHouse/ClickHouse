@@ -19,13 +19,11 @@ struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
 
 struct TreeRewriterResult
 {
     ConstStoragePtr storage;
-    StorageSnapshotPtr storage_snapshot;
+    StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<TableJoin> analyzed_join;
     const ASTTablesInSelectQueryElement * ast_join = nullptr;
 
@@ -72,17 +70,13 @@ struct TreeRewriterResult
     /// Cache isRemote() call for storage, because it may be too heavy.
     bool is_remote_storage = false;
 
-    /// Rewrite _shard_num to shardNum()
-    bool has_virtual_shard_num = false;
-
     /// Results of scalar sub queries
     Scalars scalars;
-    Scalars local_scalars;
 
-    explicit TreeRewriterResult(
+    TreeRewriterResult(
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
-        const StorageSnapshotPtr & storage_snapshot_ = {},
+        const StorageMetadataPtr & metadata_snapshot_ = {},
         bool add_special = true);
 
     void collectSourceColumns(bool add_special);
@@ -90,6 +84,7 @@ struct TreeRewriterResult
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
+    Names getExpandedAliases() const { return {expanded_aliases.begin(), expanded_aliases.end()}; }
     const Scalars & getScalars() const { return scalars; }
 };
 
@@ -114,7 +109,7 @@ public:
         ASTPtr & query,
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage = {},
-        const StorageSnapshotPtr & storage_snapshot = {},
+        const StorageMetadataPtr & metadata_snapshot = {},
         bool allow_aggregations = false,
         bool allow_self_aliases = true,
         bool execute_scalar_subqueries = true) const;
@@ -129,7 +124,7 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_);
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases);
 };
 
 }

@@ -29,15 +29,12 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) final;
-
-    void finish(bool sync) final;
+    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) final;
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
-    void finishDataSerialization(bool sync);
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
 
     /// Write data of one column.
     /// Return how many marks were written and
@@ -87,7 +84,7 @@ private:
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
     /// errors.
-    void validateColumnOfFixedSize(const NameAndTypePair & name_type);
+    void validateColumnOfFixedSize(const String & name, const IDataType & type);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 

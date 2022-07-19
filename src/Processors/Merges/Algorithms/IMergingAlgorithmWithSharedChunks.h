@@ -10,13 +10,15 @@ class IMergingAlgorithmWithSharedChunks : public IMergingAlgorithm
 {
 public:
     IMergingAlgorithmWithSharedChunks(
-        Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs);
+        size_t num_inputs,
+        SortDescription description_,
+        WriteBuffer * out_row_sources_buf_,
+        size_t max_row_refs);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
 private:
-    Block header;
     SortDescription description;
 
     /// Allocator must be destroyed after source_chunks.

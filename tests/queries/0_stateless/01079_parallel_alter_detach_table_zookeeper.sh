@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest, no-backward-compatibility-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -104,8 +103,8 @@ done
 for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_detach_$i"
     $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) > $INITIAL_SUM FROM concurrent_alter_detach_$i"
-    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
+    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE table = 'concurrent_alter_detach_$i' and (type = 'ALTER_METADATA' or type = 'MUTATE_PART')" # all mutations and alters have to be done
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i"
 done

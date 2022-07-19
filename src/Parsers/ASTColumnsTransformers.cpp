@@ -7,7 +7,6 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <re2/re2.h>
-#include <stack>
 
 
 namespace DB
@@ -41,18 +40,10 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
 
     if (!column_name_prefix.empty())
         settings.ostr << "(";
+    settings.ostr << func_name;
 
-    if (lambda)
-    {
-        lambda->formatImpl(settings, state, frame);
-    }
-    else
-    {
-        settings.ostr << func_name;
-
-        if (parameters)
-            parameters->formatImpl(settings, state, frame);
-    }
+    if (parameters)
+        parameters->formatImpl(settings, state, frame);
 
     if (!column_name_prefix.empty())
         settings.ostr << ", '" << column_name_prefix << "')";
@@ -73,79 +64,12 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
             else
                 name = column->getColumnName();
         }
-        if (lambda)
-        {
-            auto body = lambda->as<const ASTFunction &>().arguments->children.at(1)->clone();
-            std::stack<ASTPtr> stack;
-            stack.push(body);
-            while (!stack.empty())
-            {
-                auto ast = stack.top();
-                stack.pop();
-                for (auto & child : ast->children)
-                {
-                    if (auto arg_name = tryGetIdentifierName(child); arg_name && arg_name == lambda_arg)
-                    {
-                        child = column->clone();
-                        continue;
-                    }
-                    stack.push(child);
-                }
-            }
-            column = body;
-        }
-        else
-        {
-            auto function = makeASTFunction(func_name, column);
-            function->parameters = parameters;
-            column = function;
-        }
+        auto function = makeASTFunction(func_name, column);
+        function->parameters = parameters;
+        column = function;
         if (!column_name_prefix.empty())
             column->setAlias(column_name_prefix + name);
     }
-}
-
-void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const
-{
-    writeCString("APPLY ", ostr);
-    if (!column_name_prefix.empty())
-        writeChar('(', ostr);
-
-    if (lambda)
-        lambda->appendColumnName(ostr);
-    else
-    {
-        writeString(func_name, ostr);
-
-        if (parameters)
-            parameters->appendColumnName(ostr);
-    }
-
-    if (!column_name_prefix.empty())
-    {
-        writeCString(", '", ostr);
-        writeString(column_name_prefix, ostr);
-        writeCString("')", ostr);
-    }
-}
-
-void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(func_name.size());
-    hash_state.update(func_name);
-    if (parameters)
-        parameters->updateTreeHashImpl(hash_state);
-
-    if (lambda)
-        lambda->updateTreeHashImpl(hash_state);
-
-    hash_state.update(lambda_arg.size());
-    hash_state.update(lambda_arg);
-
-    hash_state.update(column_name_prefix.size());
-    hash_state.update(column_name_prefix);
-
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -169,38 +93,6 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
 
     if (children.size() > 1)
         settings.ostr << ")";
-}
-
-void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
-{
-    writeCString("EXCEPT ", ostr);
-    if (is_strict)
-        writeCString("STRICT ", ostr);
-
-    if (children.size() > 1)
-        writeChar('(', ostr);
-
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-    {
-        if (it != children.begin())
-            writeCString(", ", ostr);
-        (*it)->appendColumnName(ostr);
-    }
-
-    if (!original_pattern.empty())
-        writeQuotedString(original_pattern, ostr);
-
-    if (children.size() > 1)
-        writeChar(')', ostr);
-}
-
-void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(is_strict);
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
@@ -276,21 +168,6 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
-void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
-{
-    expr->appendColumnName(ostr);
-    writeCString(" AS ", ostr);
-    writeProbablyBackQuotedString(name, ostr);
-}
-
-void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(name.size());
-    hash_state.update(name);
-    expr->updateTreeHashImpl(hash_state);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
@@ -301,39 +178,14 @@ void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, F
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
+        {
             settings.ostr << ", ";
-
+        }
         (*it)->formatImpl(settings, state, frame);
     }
 
     if (children.size() > 1)
         settings.ostr << ")";
-}
-
-void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const
-{
-    writeCString("REPLACE ", ostr);
-    if (is_strict)
-        writeCString("STRICT ", ostr);
-
-    if (children.size() > 1)
-        writeChar('(', ostr);
-
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-    {
-        if (it != children.begin())
-            writeCString(", ", ostr);
-        (*it)->appendColumnName(ostr);
-    }
-
-    if (children.size() > 1)
-        writeChar(')', ostr);
-}
-
-void ASTColumnsReplaceTransformer::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(is_strict);
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name)

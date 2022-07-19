@@ -9,13 +9,27 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-Float64 IntervalKind::toAvgSeconds() const
+const char * IntervalKind::toString() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond: return 0.000000001;
-        case IntervalKind::Microsecond: return 0.000001;
-        case IntervalKind::Millisecond: return 0.001;
+        case IntervalKind::Second: return "Second";
+        case IntervalKind::Minute: return "Minute";
+        case IntervalKind::Hour: return "Hour";
+        case IntervalKind::Day: return "Day";
+        case IntervalKind::Week: return "Week";
+        case IntervalKind::Month: return "Month";
+        case IntervalKind::Quarter: return "Quarter";
+        case IntervalKind::Year: return "Year";
+    }
+    __builtin_unreachable();
+}
+
+
+Int32 IntervalKind::toAvgSeconds() const
+{
+    switch (kind)
+    {
         case IntervalKind::Second: return 1;
         case IntervalKind::Minute: return 60;
         case IntervalKind::Hour: return 3600;
@@ -28,24 +42,6 @@ Float64 IntervalKind::toAvgSeconds() const
     __builtin_unreachable();
 }
 
-bool IntervalKind::isFixedLength() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Nanosecond:
-        case IntervalKind::Microsecond:
-        case IntervalKind::Millisecond:
-        case IntervalKind::Second:
-        case IntervalKind::Minute:
-        case IntervalKind::Hour:
-        case IntervalKind::Day:
-        case IntervalKind::Week: return true;
-        case IntervalKind::Month:
-        case IntervalKind::Quarter:
-        case IntervalKind::Year: return false;
-    }
-    __builtin_unreachable();
-}
 
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
 {
@@ -74,9 +70,6 @@ const char * IntervalKind::toKeyword() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond: return "NANOSECOND";
-        case IntervalKind::Microsecond: return "MICROSECOND";
-        case IntervalKind::Millisecond: return "MILLISECOND";
         case IntervalKind::Second: return "SECOND";
         case IntervalKind::Minute: return "MINUTE";
         case IntervalKind::Hour: return "HOUR";
@@ -94,9 +87,6 @@ const char * IntervalKind::toLowercasedKeyword() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond: return "nanosecond";
-        case IntervalKind::Microsecond: return "microsecond";
-        case IntervalKind::Millisecond: return "millisecond";
         case IntervalKind::Second: return "second";
         case IntervalKind::Minute: return "minute";
         case IntervalKind::Hour: return "hour";
@@ -114,12 +104,6 @@ const char * IntervalKind::toDateDiffUnit() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-            return "nanosecond";
-        case IntervalKind::Microsecond:
-            return "microsecond";
-        case IntervalKind::Millisecond:
-            return "millisecond";
         case IntervalKind::Second:
             return "second";
         case IntervalKind::Minute:
@@ -145,12 +129,6 @@ const char * IntervalKind::toNameOfFunctionToIntervalDataType() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-            return "toIntervalNanosecond";
-        case IntervalKind::Microsecond:
-            return "toIntervalMicrosecond";
-        case IntervalKind::Millisecond:
-            return "toIntervalMillisecond";
         case IntervalKind::Second:
             return "toIntervalSecond";
         case IntervalKind::Minute:
@@ -176,12 +154,6 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-            return "toNanosecond";
-        case IntervalKind::Microsecond:
-            return "toMicrosecond";
-        case IntervalKind::Millisecond:
-            return "toMillisecond";
         case IntervalKind::Second:
             return "toSecond";
         case IntervalKind::Minute:
@@ -208,21 +180,6 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 
 bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
 {
-    if ("nanosecond" == kind)
-    {
-        result = IntervalKind::Nanosecond;
-        return true;
-    }
-    if ("microsecond" == kind)
-    {
-        result = IntervalKind::Microsecond;
-        return true;
-    }
-    if ("millisecond" == kind)
-    {
-        result = IntervalKind::Millisecond;
-        return true;
-    }
     if ("second" == kind)
     {
         result = IntervalKind::Second;

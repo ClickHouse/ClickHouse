@@ -1,16 +1,12 @@
 #pragma once
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <Common/ArenaAllocator.h>
+
 #include <numeric>
 #include <algorithm>
 #include <utility>
-
-#include <base/sort.h>
-
-#include <Common/ArenaAllocator.h>
-
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-
 
 namespace DB
 {
@@ -19,6 +15,20 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+template <typename F>
+static Float64 integrateSimpson(Float64 a, Float64 b, F && func)
+{
+    const size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b) - std::round(a)));
+    const long double h = (b - a) / iterations;
+    Float64 sum_odds = 0.0;
+    for (size_t i = 1; i < iterations; i += 2)
+        sum_odds += func(a + i * h);
+    Float64 sum_evens = 0.0;
+    for (size_t i = 2; i < iterations; i += 2)
+        sum_evens += func(a + i * h);
+    return (func(a) + func(b) + 2 * sum_evens + 4 * sum_odds) * h / 3;
 }
 
 /// Because ranks are adjusted, we have to store each of them in Float type.
@@ -31,7 +41,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     /// Save initial positions, than sort indices according to the values.
     std::vector<size_t> indexes(size);
     std::iota(indexes.begin(), indexes.end(), 0);
-    ::sort(indexes.begin(), indexes.end(),
+    std::sort(indexes.begin(), indexes.end(),
                 [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
 
     size_t left = 0;
@@ -112,3 +122,4 @@ struct StatisticalSample
 };
 
 }
+

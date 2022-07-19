@@ -1,7 +1,6 @@
 ---
-sidebar_position: 62
-sidebar_label: Continuous Integration Checks
-description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
+toc_priority: 62
+toc_title: Continuous Integration Checks
 ---
 
 # Continuous Integration Checks
@@ -31,7 +30,7 @@ If you are not sure what to do, ask a maintainer for help.
 ## Merge With Master
 
 Verifies that the PR can be merged to master. If not, it will fail with the
-message `Cannot fetch mergecommit`. To fix this check, resolve the conflict as
+message 'Cannot fetch mergecommit'. To fix this check, resolve the conflict as
 described in the [GitHub
 documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github),
 or merge the `master` branch to your pull request branch using git.
@@ -54,10 +53,10 @@ the documentation is wrong. Go to the check report and look for `ERROR` and `WAR
 Check that the description of your pull request conforms to the template
 [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and
-write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/)
+write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
 
-## Push To DockerHub
+## Push To Dockerhub
 
 Builds docker images used for build and tests, then pushes them to DockerHub.
 
@@ -75,6 +74,15 @@ If it fails, fix the style errors following the [code style guide](style.md).
 ### Report Details
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)
 - `output.txt` contains the check resulting errors (invalid tabulation etc), blank page means no errors. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check/output.txt).
+
+
+## PVS Check
+Check the code with [PVS-studio](https://www.viva64.com/en/pvs-studio/), a static analysis tool. Look at the report to see the exact errors. Fix them if you can, if not -- ask a ClickHouse maintainer for help.
+
+### Report Details
+- [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/pvs_check.html)
+- `test_run.txt.out.log` contains the building and analyzing log file. It includes only parsing or not-found errors.
+- `HTML report` contains the analysis results. For its description visit PVS's [official site](https://www.viva64.com/en/m/0036/#ID14E9A2B2CD).
 
 
 ## Fast Test
@@ -109,7 +117,7 @@ described [here](tests.md#functional-test-locally).
 
 ## Build Check {#build-check}
 
-Builds ClickHouse in various configurations for use in further steps. You have to fix the builds that fail. Build logs often has enough information to fix the error, but you might have to reproduce the failure locally. The `cmake` options can be found in the build log, grepping for `cmake`. Use these options and follow the [general build process](../development/build.md).
+Builds ClickHouse in various configurations for use in further steps. You have to fix the builds that fail. Build logs often has enough information to fix the error, but you might have to reproduce the failure locally. The `cmake` options can be found in the build log, grepping for `cmake`. Use these options and follow the [general build process](build.md).
 
 ### Report Details
 
@@ -118,22 +126,24 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
-- **Split** `splitted` is a [split build](../development/build.md#split-build)
+- **Bundled**: `bundled` build uses libraries from `contrib` folder, and `unbundled` build uses system libraries.
+- **Splitted** `splitted` is a [split build](build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
 - **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
-  - `clickhouse-client_XXX_all.deb`
-  - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
-  - `clickhouse-common-staticXXX_amd64.deb`
-  - `clickhouse-server_XXX_all.deb`
-  - `clickhouse_XXX_amd64.buildinfo`
-  - `clickhouse_XXX_amd64.changes`
-  - `clickhouse`: Main built binary.
-  - `clickhouse-odbc-bridge`
-  - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-  - `shared_build.tgz`: build with shared libraries.
-  - `performance.tgz`: Special package for performance tests.
+    - `clickhouse-client_XXX_all.deb`
+    - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
+    - `clickhouse-common-staticXXX_amd64.deb`
+    - `clickhouse-server_XXX_all.deb`
+    - `clickhouse-test_XXX_all.deb`
+    - `clickhouse_XXX_amd64.buildinfo`
+    - `clickhouse_XXX_amd64.changes`
+    - `clickhouse`: Main built binary.
+    - `clickhouse-odbc-bridge`
+    - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
+    - `shared_build.tgz`: build with shared libraries.
+    - `performance.tgz`: Special package for performance tests.
 
 
 ## Special Build Check
@@ -147,11 +157,11 @@ etc. Look at the report to see which tests fail, then reproduce the failure
 locally as described [here](tests.md#functional-test-locally). Note that you
 have to use the correct build configuration to reproduce -- a test might fail
 under AddressSanitizer but pass in Debug. Download the binary from [CI build
-checks page](../development/build.md#you-dont-have-to-build-clickhouse), or build it locally.
+checks page](build.md#you-dont-have-to-build-clickhouse), or build it locally.
 
 
 ## Functional Stateful Tests
-Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
+Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) to run.
 
 
 ## Integration Tests
@@ -173,11 +183,11 @@ concurrency-related errors. If it fails:
 
 ## Split Build Smoke Test
 
-Checks that the server build in [split build](../development/build.md#split-build)
+Checks that the server build in [split build](build.md#split-build)
 configuration can start and run simple queries.  If it fails:
 
     * Fix other test errors first;
-    * Build the server in [split build](../development/build.md#split-build) configuration
+    * Build the server in [split build](build.md#split-build) configuration
       locally and check whether it can start and run `select 1`.
 
 
@@ -191,3 +201,15 @@ Runs randomly generated queries to catch program errors. If it fails, ask a main
 
 ## Performance Tests
 Measure changes in query performance. This is the longest check that takes just below 6 hours to run. The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).
+
+
+
+# QA
+
+> What is a `Task (private network)` item on status pages?
+
+It's a link to the Yandex's internal job system. Yandex employees can see the check's start time and its more verbose status.
+
+> Where the tests are run
+
+Somewhere on Yandex internal infrastructure.

@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table="optimize_me_finally"
 name="$CLICKHOUSE_DATABASE.$table"
-res_rows=150000 # >= vertical_merge_algorithm_min_rows_to_activate
+res_rows=1500000 # >= vertical_merge_algorithm_min_rows_to_activate
 
 function get_num_parts {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE active AND database='$CLICKHOUSE_DATABASE' AND table='$table'"

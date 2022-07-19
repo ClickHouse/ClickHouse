@@ -39,8 +39,10 @@ bool shardContains(
     const std::string & sharding_column_name,
     const OptimizeShardingKeyRewriteInMatcher::Data & data)
 {
-    /// Implicit conversion.
-    sharding_column_value = convertFieldToType(sharding_column_value, *data.sharding_key_type);
+    UInt64 field_value;
+    /// Convert value to numeric (if required).
+    if (!sharding_column_value.tryGet<UInt64>(field_value))
+        sharding_column_value = convertFieldToType(sharding_column_value, *data.sharding_key_type);
 
     /// NULL is not allowed in sharding key,
     /// so it should be safe to assume that shard cannot contain it.
@@ -53,12 +55,7 @@ bool shardContains(
         data.sharding_key_column_name);
     /// The value from IN can be non-numeric,
     /// but in this case it should be convertible to numeric type, let's try.
-    ///
-    /// NOTE: that conversion should not be done for signed types,
-    /// since it uses accurate cast, that will return Null,
-    /// but we need static_cast<> (as createBlockSelector()).
-    if (!isInt64OrUInt64FieldType(sharding_value.getType()))
-        sharding_value = convertFieldToType(sharding_value, DataTypeUInt64());
+    sharding_value = convertFieldToType(sharding_value, DataTypeUInt64());
     /// In case of conversion is not possible (NULL), shard cannot contain the value anyway.
     if (sharding_value.isNull())
         return false;

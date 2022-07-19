@@ -1,5 +1,6 @@
 -- { echo }
 
+set allow_experimental_window_functions = 1;
 -- just something basic
 select number, count() over (partition by intDiv(number, 3) order by number rows unbounded preceding) from numbers(10);
 0	1
@@ -39,7 +40,7 @@ select number, avg(number) over (order by number rows unbounded preceding) from 
 8	4
 9	4.5
 -- no order by
-select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by number rows unbounded preceding) from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) from numbers(10);
 0	0
 1	1
 2	1
@@ -51,7 +52,7 @@ select number, quantileExact(number) over (partition by intDiv(number, 3) AS val
 8	7
 9	9
 -- can add an alias after window spec
-select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by number rows unbounded preceding) q from numbers(10);
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10);
 0	0
 1	1
 2	1
@@ -174,8 +175,6 @@ select groupArray(number) over () from numbers(3);
 -- Seen errors like 'column `1` not found' from count(1).
 select count(1) over (rows unbounded preceding), max(number + 1) over () from numbers(3);
 1	3
-2	3
-3	3
 -- Should work in DISTINCT
 select distinct sum(0) over (rows unbounded preceding) from numbers(2);
 0
@@ -198,7 +197,7 @@ select sum(number) over w1, sum(number) over w2
 from numbers(10)
 window
     w1 as (rows unbounded preceding),
-    w2 as (partition by intDiv(number, 3) as value order by number rows unbounded preceding)
+    w2 as (partition by intDiv(number, 3) rows unbounded preceding)
 ;
 0	0
 1	1
@@ -214,7 +213,7 @@ window
 -- EXPLAIN test for this.
 select
     sum(number) over w1,
-    sum(number) over (partition by intDiv(number, 3) as value order by number rows unbounded preceding)
+    sum(number) over (partition by intDiv(number, 3) rows unbounded preceding)
 from numbers(10)
 window
     w1 as (partition by intDiv(number, 3) rows unbounded preceding)
@@ -240,118 +239,118 @@ select sum(number) over () from numbers(3);
 -- interesting corner cases.
 select number, intDiv(number, 3) p, mod(number, 2) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 5
 ;
-0	0	0	1
+0	0	0	2
 1	0	1	3
 2	0	0	2
-3	1	1	2
+3	1	1	3
 4	1	0	1
 5	1	1	3
-6	2	0	1
+6	2	0	2
 7	2	1	3
 8	2	0	2
-9	3	1	2
+9	3	1	3
 10	3	0	1
 11	3	1	3
-12	4	0	1
+12	4	0	2
 13	4	1	3
 14	4	0	2
-15	5	1	2
+15	5	1	3
 16	5	0	1
 17	5	1	3
-18	6	0	1
+18	6	0	2
 19	6	1	3
 20	6	0	2
-21	7	1	2
+21	7	1	3
 22	7	0	1
 23	7	1	3
-24	8	0	1
+24	8	0	2
 25	8	1	3
 26	8	0	2
-27	9	1	2
+27	9	1	3
 28	9	0	1
 29	9	1	3
 30	10	0	1
 select number, intDiv(number, 5) p, mod(number, 3) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 2
 ;
-0	0	0	1
-1	0	1	3
+0	0	0	2
+1	0	1	4
 2	0	2	5
 3	0	0	2
 4	0	1	4
-5	1	2	4
-6	1	0	1
+5	1	2	5
+6	1	0	2
 7	1	1	3
 8	1	2	5
 9	1	0	2
-10	2	1	2
-11	2	2	4
+10	2	1	3
+11	2	2	5
 12	2	0	1
 13	2	1	3
 14	2	2	5
-15	3	0	1
-16	3	1	3
+15	3	0	2
+16	3	1	4
 17	3	2	5
 18	3	0	2
 19	3	1	4
-20	4	2	4
-21	4	0	1
+20	4	2	5
+21	4	0	2
 22	4	1	3
 23	4	2	5
 24	4	0	2
-25	5	1	2
-26	5	2	4
+25	5	1	3
+26	5	2	5
 27	5	0	1
 28	5	1	3
 29	5	2	5
 30	6	0	1
 select number, intDiv(number, 5) p, mod(number, 2) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 3
 ;
-0	0	0	1
-1	0	1	4
-2	0	0	2
+0	0	0	3
+1	0	1	5
+2	0	0	3
 3	0	1	5
 4	0	0	3
-5	1	1	3
-6	1	0	1
-7	1	1	4
+5	1	1	5
+6	1	0	2
+7	1	1	5
 8	1	0	2
 9	1	1	5
-10	2	0	1
-11	2	1	4
-12	2	0	2
+10	2	0	3
+11	2	1	5
+12	2	0	3
 13	2	1	5
 14	2	0	3
-15	3	1	3
-16	3	0	1
-17	3	1	4
+15	3	1	5
+16	3	0	2
+17	3	1	5
 18	3	0	2
 19	3	1	5
-20	4	0	1
-21	4	1	4
-22	4	0	2
+20	4	0	3
+21	4	1	5
+22	4	0	3
 23	4	1	5
 24	4	0	3
-25	5	1	3
-26	5	0	1
-27	5	1	4
+25	5	1	5
+26	5	0	2
+27	5	1	5
 28	5	0	2
 29	5	1	5
 30	6	0	1
 select number, intDiv(number, 3) p, mod(number, 5) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 2
 ;
@@ -388,7 +387,7 @@ settings max_block_size = 2
 30	10	0	1
 select number, intDiv(number, 2) p, mod(number, 5) o, count(number) over w as c
 from numbers(31)
-window w as (partition by p order by o, number range unbounded preceding)
+window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 3
 ;
@@ -910,9 +909,12 @@ Expression ((Projection + Before ORDER BY))
   Window (Window step for window \'\')
     Window (Window step for window \'PARTITION BY p\')
       Window (Window step for window \'PARTITION BY p ORDER BY o ASC\')
-        Sorting (Sorting for window \'PARTITION BY p ORDER BY o ASC\')
-          Expression ((Before window functions + (Projection + Before ORDER BY)))
-            ReadFromStorage (SystemNumbers)
+        MergingSorted (Merge sorted streams for window \'PARTITION BY p ORDER BY o ASC\')
+          MergeSorting (Merge sorted blocks for window \'PARTITION BY p ORDER BY o ASC\')
+            PartialSorting (Sort each block for window \'PARTITION BY p ORDER BY o ASC\')
+              Expression ((Before window functions + (Projection + Before ORDER BY)))
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
 explain select
     count(*) over (order by o, number),
     count(*) over (order by number)
@@ -922,12 +924,16 @@ from
 ;
 Expression ((Projection + Before ORDER BY))
   Window (Window step for window \'ORDER BY o ASC, number ASC\')
-    Sorting (Sorting for window \'ORDER BY o ASC, number ASC\')
-      Window (Window step for window \'ORDER BY number ASC\')
-        Expression ((Before window functions + (Projection + Before ORDER BY)) [lifted up part])
-          Sorting (Sorting for window \'ORDER BY number ASC\')
-            Expression ((Before window functions + (Projection + Before ORDER BY)))
-              ReadFromStorage (SystemNumbers)
+    MergingSorted (Merge sorted streams for window \'ORDER BY o ASC, number ASC\')
+      MergeSorting (Merge sorted blocks for window \'ORDER BY o ASC, number ASC\')
+        PartialSorting (Sort each block for window \'ORDER BY o ASC, number ASC\')
+          Window (Window step for window \'ORDER BY number ASC\')
+            MergingSorted (Merge sorted streams for window \'ORDER BY number ASC\')
+              MergeSorting (Merge sorted blocks for window \'ORDER BY number ASC\')
+                PartialSorting (Sort each block for window \'ORDER BY number ASC\')
+                  Expression ((Before window functions + (Projection + Before ORDER BY)))
+                    SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                      ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.
 SELECT
     max(number) OVER (ORDER BY number DESC NULLS FIRST),
@@ -974,39 +980,39 @@ select number, p, o,
     row_number() over w
 from (select number, intDiv(number, 5) p, mod(number, 3) o
     from numbers(31) order by o, number) t
-window w as (partition by p order by o, number)
+window w as (partition by p order by o)
 order by p, o, number
 settings max_block_size = 2;
-0	0	0	1	1	1	1
-3	0	0	2	2	2	2
-1	0	1	3	3	3	3
-4	0	1	4	4	4	4
-2	0	2	5	5	5	5
-6	1	0	1	1	1	1
-9	1	0	2	2	2	2
-7	1	1	3	3	3	3
-5	1	2	4	4	4	4
-8	1	2	5	5	5	5
+0	0	0	2	1	1	1
+3	0	0	2	1	1	2
+1	0	1	4	3	2	3
+4	0	1	4	3	2	4
+2	0	2	5	5	3	5
+6	1	0	2	1	1	1
+9	1	0	2	1	1	2
+7	1	1	3	3	2	3
+5	1	2	5	4	3	4
+8	1	2	5	4	3	5
 12	2	0	1	1	1	1
-10	2	1	2	2	2	2
-13	2	1	3	3	3	3
-11	2	2	4	4	4	4
-14	2	2	5	5	5	5
-15	3	0	1	1	1	1
-18	3	0	2	2	2	2
-16	3	1	3	3	3	3
-19	3	1	4	4	4	4
-17	3	2	5	5	5	5
-21	4	0	1	1	1	1
-24	4	0	2	2	2	2
-22	4	1	3	3	3	3
-20	4	2	4	4	4	4
-23	4	2	5	5	5	5
+10	2	1	3	2	2	2
+13	2	1	3	2	2	3
+11	2	2	5	4	3	4
+14	2	2	5	4	3	5
+15	3	0	2	1	1	2
+18	3	0	2	1	1	1
+16	3	1	4	3	2	3
+19	3	1	4	3	2	4
+17	3	2	5	5	3	5
+21	4	0	2	1	1	1
+24	4	0	2	1	1	2
+22	4	1	3	3	2	3
+20	4	2	5	4	3	5
+23	4	2	5	4	3	4
 27	5	0	1	1	1	1
-25	5	1	2	2	2	2
-28	5	1	3	3	3	3
-26	5	2	4	4	4	4
-29	5	2	5	5	5	5
+25	5	1	3	2	2	2
+28	5	1	3	2	2	3
+26	5	2	5	4	3	4
+29	5	2	5	4	3	5
 30	6	0	1	1	1	1
 -- our replacement for lag/lead
 select
@@ -1050,26 +1056,10 @@ settings max_block_size = 3;
 15	3	15	0	15	15	15
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
-\N
+0
 select lagInFrameOrNull(1) over (); -- { serverError 36 }
--- this is the same as `select max(Null::Nullable(Nothing))`
 select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
 \N	Nullable(Nothing)	\N
--- to make lagInFrame return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    lagInFrame(toNullable(number), 1) OVER w,
-    lagInFrame(toNullable(number), 2) OVER w,
-    lagInFrame(number, 1) OVER w,
-    lagInFrame(number, 2) OVER w
-FROM numbers(4)
-WINDOW w AS (ORDER BY number ASC)
-;
-0	\N	\N	0	0
-1	0	\N	0	0
-2	1	0	1	0
-3	2	1	2	1
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
@@ -1089,94 +1079,6 @@ order by number
 7	6	8
 8	7	9
 9	8	9
--- nth_value without specific frame range given
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number)
-order by number
-;
-0	0	0	0	0
-1	0	1	0	0
-2	0	1	2	0
-3	0	1	2	3
-4	0	1	2	3
-5	0	1	2	3
-6	0	1	2	3
-7	0	1	2	3
-8	0	1	2	3
-9	0	1	2	3
--- nth_value with frame range specified
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number range between 1 preceding and 1 following)
-order by number
-;
-0	0	1	0	0
-1	0	1	2	0
-2	1	2	3	0
-3	2	3	4	0
-4	3	4	5	0
-5	4	5	6	0
-6	5	6	7	0
-7	6	7	8	0
-8	7	8	9	0
-9	8	9	0	0
--- to make nth_value return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    nth_value(toNullable(number), 1) OVER w as firstValue,
-    nth_value(toNullable(number), 3) OVER w as thridValue
-FROM numbers(5)
-WINDOW w AS (ORDER BY number ASC)
-;
-0	0	\N
-1	0	\N
-2	0	2
-3	0	2
-4	0	2
--- nth_value UBsan
-SELECT nth_value(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, 0) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT nth_value(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-0
-SELECT nth_value(1, 1) OVER ();
-1
--- lagInFrame UBsan
-SELECT lagInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT lagInFrame(1, 0) OVER ();
-1
-SELECT lagInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT lagInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-0
-SELECT lagInFrame(1, 1) OVER ();
-0
--- leadInFrame UBsan
-SELECT leadInFrame(1, -1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT leadInFrame(1, 0) OVER ();
-1
-SELECT leadInFrame(1, /* INT64_MAX+1 */ 0x7fffffffffffffff+1) OVER (); -- { serverError BAD_ARGUMENTS }
-SELECT leadInFrame(1, /* INT64_MAX */ 0x7fffffffffffffff) OVER ();
-0
-SELECT leadInFrame(1, 1) OVER ();
-0
--- nth_value Msan
-SELECT nth_value(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
--- lagInFrame Msan
-SELECT lagInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
--- leadInFrame Msan
-SELECT leadInFrame(1, '') OVER (); -- { serverError BAD_ARGUMENTS }
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;
@@ -1210,28 +1112,6 @@ from (
     from numbers_mt(10000)
 ) settings max_block_size = 7;
 49995000
--- a test with aggregate function which is -state type
-select bitmapCardinality(bs)
-from
-    (
-        select groupBitmapMergeState(bm) over (order by k asc rows between unbounded preceding and current row) as bs
-        from
-            (
-                select
-                    groupBitmapState(number) as bm, k
-                from
-                    (
-                        select
-                            number,
-                            number % 3 as k
-                        from numbers(3)
-                    )
-                group by k
-            )
-    );
-1
-2
-3
 -- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
 -- under UBSan. Should be limited to at most INT_MAX.
 select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
@@ -1244,7 +1124,7 @@ select count() over () where null;
 select number, count() over (w1 rows unbounded preceding) from numbers(10)
 window
     w0 as (partition by intDiv(number, 5) as p),
-    w1 as (w0 order by mod(number, 3) as o, number)
+    w1 as (w0 order by mod(number, 3) as o)
 order by p, o, number
 ;
 0	1

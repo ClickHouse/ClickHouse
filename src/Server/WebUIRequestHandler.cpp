@@ -6,7 +6,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <IO/HTTPCommon.h>
-#include <Common/getResource.h>
+#include <common/getResource.h>
 
 
 namespace DB

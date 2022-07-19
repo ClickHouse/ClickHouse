@@ -1,7 +1,5 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -42,7 +40,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of selects for ASTSelectWithUnionQuery");
 
     /// Since nodes are traversed from bottom to top, we can also collect union modes from children up to parents.
-    SelectUnionModesSet current_set_of_modes;
+    ASTSelectWithUnionQuery::UnionModesSet current_set_of_modes;
     bool distinct_found = false;
 
     int i;
@@ -59,22 +57,22 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
             continue;
 
         /// Rewrite UNION Mode
-        if (union_modes[i] == SelectUnionMode::Unspecified)
+        if (union_modes[i] == ASTSelectWithUnionQuery::Mode::Unspecified)
         {
             if (data.union_default_mode == UnionMode::ALL)
-                union_modes[i] = SelectUnionMode::ALL;
+                union_modes[i] = ASTSelectWithUnionQuery::Mode::ALL;
             else if (data.union_default_mode == UnionMode::DISTINCT)
-                union_modes[i] = SelectUnionMode::DISTINCT;
+                union_modes[i] = ASTSelectWithUnionQuery::Mode::DISTINCT;
             else
                 throw Exception(
                     "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
                     DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
         }
 
-        if (union_modes[i] == SelectUnionMode::ALL)
+        if (union_modes[i] == ASTSelectWithUnionQuery::Mode::ALL)
         {
             if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>();
-                inner_union && inner_union->union_mode == SelectUnionMode::ALL)
+                inner_union && inner_union->union_mode == ASTSelectWithUnionQuery::Mode::ALL)
             {
                 /// Inner_union is an UNION ALL list, just lift up
                 for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
@@ -85,7 +83,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
                 selects.push_back(select_list[i + 1]);
         }
         /// flatten all left nodes and current node to a UNION DISTINCT list
-        else if (union_modes[i] == SelectUnionMode::DISTINCT)
+        else if (union_modes[i] == ASTSelectWithUnionQuery::Mode::DISTINCT)
         {
             auto distinct_list = std::make_shared<ASTSelectWithUnionQuery>();
             distinct_list->list_of_selects = std::make_shared<ASTExpressionList>();
@@ -96,7 +94,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
                 getSelectsFromUnionListNode(select_list[j], distinct_list->list_of_selects->children);
             }
 
-            distinct_list->union_mode = SelectUnionMode::DISTINCT;
+            distinct_list->union_mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
             distinct_list->is_normalized = true;
             selects.push_back(std::move(distinct_list));
             distinct_found = true;
@@ -113,7 +111,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     if (!distinct_found)
     {
         if (auto * inner_union = select_list[0]->as<ASTSelectWithUnionQuery>();
-            inner_union && inner_union->union_mode == SelectUnionMode::ALL)
+            inner_union && inner_union->union_mode == ASTSelectWithUnionQuery::Mode::ALL)
         {
             /// Inner_union is an UNION ALL list, just lift it up
             for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
@@ -136,7 +134,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     std::reverse(selects.begin(), selects.end());
 
     ast.is_normalized = true;
-    ast.union_mode = SelectUnionMode::ALL;
+    ast.union_mode = ASTSelectWithUnionQuery::Mode::ALL;
     ast.set_of_modes = std::move(current_set_of_modes);
 
     ast.list_of_selects->children = std::move(selects);

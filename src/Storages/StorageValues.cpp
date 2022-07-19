@@ -2,7 +2,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageValues.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -22,14 +22,14 @@ StorageValues::StorageValues(
 
 Pipe StorageValues::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     /// Get only required columns.
     Block block;

@@ -1,5 +1,3 @@
--- Tags: shard
-
 SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4) ORDER BY X;
 
 DROP TABLE IF EXISTS globalin;
@@ -22,7 +20,7 @@ DROP TABLE IF EXISTS union_bug;
 
 CREATE TABLE union_bug (
     Event String,
-    Datetime DateTime('Asia/Istanbul')
+    Datetime DateTime('Europe/Moscow')
 ) Engine = Memory;
 
 INSERT INTO union_bug VALUES ('A', 1), ('B', 2);

@@ -1,5 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: long
 
 # This is a separate test, because we want to test the interactive mode.
 # https://github.com/ClickHouse/ClickHouse/issues/19353
@@ -8,11 +7,11 @@ log_user 0
 set timeout 60
 match_max 100000
 
+# A default timeout action is to fail
 expect_after {
-    # Do not ignore eof from expect
-    eof { exp_continue }
-    # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    timeout {
+        exit 1
+    }
 }
 
 set basedir [file dirname $argv0]

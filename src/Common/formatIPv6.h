@@ -1,17 +1,17 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <string.h>
 #include <algorithm>
 #include <utility>
-#include <base/range.h>
+#include <common/range.h>
 #include <Common/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
 constexpr size_t IPV6_BINARY_LENGTH = 16;
 constexpr size_t IPV4_MAX_TEXT_LENGTH = 15;     /// Does not count tail zero byte.
-constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;     /// Does not count tail zero byte.
+constexpr size_t IPV6_MAX_TEXT_LENGTH = 39;
 
 namespace DB
 {

@@ -1,5 +1,3 @@
--- Tags: no-debug, no-parallel, long, no-s3-storage
-
 DROP TABLE IF EXISTS table_with_single_pk;
 
 CREATE TABLE table_with_single_pk
@@ -8,8 +6,7 @@ CREATE TABLE table_with_single_pk
   value String
 )
 ENGINE = MergeTree
-ORDER BY key
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY key;
 
 INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(10000000);
 
@@ -18,9 +15,9 @@ ALTER TABLE table_with_single_pk DELETE WHERE key % 77 = 0 SETTINGS mutations_sy
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes
+-- read_bytes.
 SELECT
-  arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
+  DISTINCT read_bytes >= peak_memory_usage
 FROM
     system.part_log
 WHERE event_type = 'MutatePart' AND table = 'table_with_single_pk' AND database = currentDatabase();
@@ -37,8 +34,7 @@ CREATE TABLE table_with_multi_pk
   value String
 )
 ENGINE = MergeTree
-ORDER BY (key1, key2, key3)
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY (key1, key2, key3);
 
 INSERT INTO table_with_multi_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(10000000);
 
@@ -47,9 +43,9 @@ ALTER TABLE table_with_multi_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sy
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes
+-- read_bytes.
 SELECT
-  arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
+  DISTINCT read_bytes >= peak_memory_usage
   FROM
       system.part_log
  WHERE event_type = 'MutatePart' AND table = 'table_with_multi_pk' AND database = currentDatabase();
@@ -68,8 +64,7 @@ CREATE TABLE table_with_function_pk
     value String
   )
 ENGINE = MergeTree
-ORDER BY (cast(value as UInt64), key2)
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY (cast(value as UInt64), key2);
 
 INSERT INTO table_with_function_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(10000000);
 
@@ -78,9 +73,9 @@ ALTER TABLE table_with_function_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes
+-- read_bytes.
 SELECT
-  arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
+  DISTINCT read_bytes >= peak_memory_usage
   FROM
       system.part_log
  WHERE event_type = 'MutatePart' AND table = 'table_with_function_pk' AND database = currentDatabase();
@@ -97,8 +92,7 @@ CREATE TABLE table_without_pk
   value String
 )
 ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS min_compress_block_size=65536, max_compress_block_size=65536;
+ORDER BY tuple();
 
 INSERT INTO table_without_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(10000000);
 
@@ -107,9 +101,9 @@ ALTER TABLE table_without_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync 
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes
+-- read_bytes.
 SELECT
-  arrayDistinct(groupArray(if (read_bytes >= peak_memory_usage, [1], [read_bytes, peak_memory_usage])))
+  DISTINCT read_bytes >= peak_memory_usage
   FROM
       system.part_log
  WHERE event_type = 'MutatePart' AND table = 'table_without_pk' AND database = currentDatabase();

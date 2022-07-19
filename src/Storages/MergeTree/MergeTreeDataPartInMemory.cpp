@@ -6,7 +6,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::InMemory, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -35,7 +35,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::InMemory, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -91,46 +91,10 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec, NO_TRANSACTION_PTR);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec);
+    out.writePrefix();
     out.write(block);
-    const auto & projections = metadata_snapshot->getProjections();
-    for (const auto & [projection_name, projection] : projection_parts)
-    {
-        if (projections.has(projection_name))
-        {
-            String projection_destination_path = fs::path(destination_path) / projection_name / ".proj";
-            if (disk->exists(projection_destination_path))
-            {
-                throw Exception(
-                    ErrorCodes::DIRECTORY_ALREADY_EXISTS,
-                    "Could not flush projection part {}. Projection part in {} already exists",
-                    projection_name,
-                    fullPath(disk, projection_destination_path));
-            }
-
-            auto projection_part = asInMemoryPart(projection);
-            auto projection_type = storage.choosePartTypeOnDisk(projection_part->block.bytes(), rows_count);
-            MergeTreePartInfo projection_info("all", 0, 0, 0);
-            auto projection_data_part
-                = storage.createPart(projection_name, projection_type, projection_info, volume, projection_name + ".proj", parent_part);
-            projection_data_part->is_temp = false; // clean up will be done on parent part
-            projection_data_part->setColumns(projection->getColumns());
-
-            disk->createDirectories(projection_destination_path);
-            const auto & desc = projections.get(name);
-            auto projection_compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
-            auto projection_indices = MergeTreeIndexFactory::instance().getMany(desc.metadata->getSecondaryIndices());
-            MergedBlockOutputStream projection_out(
-                projection_data_part, desc.metadata, projection_part->columns, projection_indices,
-                projection_compression_codec, NO_TRANSACTION_PTR);
-
-            projection_out.write(projection_part->block);
-            projection_out.finalizePart(projection_data_part, false);
-            new_data_part->addProjectionPart(projection_name, std::move(projection_data_part));
-        }
-    }
-
-    out.finalizePart(new_data_part, false);
+    out.writeSuffixAndFinalizePart(new_data_part);
 }
 
 void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const

@@ -14,11 +14,9 @@ IMergingTransformBase::IMergingTransformBase(
     size_t num_inputs,
     const Block & input_header,
     const Block & output_header,
-    bool have_all_inputs_,
-    UInt64 limit_hint_)
+    bool have_all_inputs_)
     : IProcessor(InputPorts(num_inputs, input_header), {output_header})
     , have_all_inputs(have_all_inputs_)
-    , limit_hint(limit_hint_)
 {
 }
 
@@ -66,7 +64,10 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
 
         if (input_states[i].is_initialized)
+        {
+            // input.setNotNeeded();
             continue;
+        }
 
         input.setNeeded();
 
@@ -76,20 +77,12 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
         }
 
-        /// setNotNeeded after reading first chunk, because in optimismtic case
-        /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
-        /// we won't have to read any chunks anymore;
-        auto chunk = input.pull(limit_hint != 0);
-        if (limit_hint && chunk.getNumRows() < limit_hint)
-            input.setNeeded();
-
+        auto chunk = input.pull();
         if (!chunk.hasRows())
         {
+
             if (!input.isFinished())
-            {
-                input.setNeeded();
                 all_inputs_has_data = false;
-            }
 
             continue;
         }
@@ -131,11 +124,11 @@ IProcessor::Status IMergingTransformBase::prepare()
         return Status::Finished;
     }
 
-    /// Do not disable inputs, so they can be executed in parallel.
+    /// Do not disable inputs, so it will work in the same way as with AsynchronousBlockInputStream, like before.
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    if ((state.output_chunk || state.output_chunk.hasChunkInfo()) && !is_port_full)
+    if (state.output_chunk && !is_port_full)
         output.push(std::move(state.output_chunk));
 
     if (!is_initialized)

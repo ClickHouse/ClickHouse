@@ -6,18 +6,19 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
 
+#include <Parsers/queryToString.h>
+
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Interpreters/FunctionNameNormalizer.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
 
 
 namespace DB
@@ -112,7 +113,6 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , aggregate_descriptions(other.aggregate_descriptions)
     , destination_type(other.destination_type)
     , destination_name(other.destination_name)
-    , if_exists(other.if_exists)
     , recompression_codec(other.recompression_codec)
 {
     if (other.expression)
@@ -150,7 +150,6 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     aggregate_descriptions = other.aggregate_descriptions;
     destination_type = other.destination_type;
     destination_name = other.destination_name;
-    if_exists = other.if_exists;
 
     if (other.recompression_codec)
         recompression_codec = other.recompression_codec->clone();
@@ -187,10 +186,9 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
     else /// rows TTL
     {
-        result.mode = ttl_element->mode;
         result.destination_type = ttl_element->destination_type;
         result.destination_name = ttl_element->destination_name;
-        result.if_exists = ttl_element->if_exists;
+        result.mode = ttl_element->mode;
 
         if (ttl_element->mode == TTLMode::DELETE)
         {
@@ -253,7 +251,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// The separate step, because not all primary key columns are ordinary columns.
             for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
             {
-                if (!aggregation_columns_set.contains(pk_columns[i]))
+                if (!aggregation_columns_set.count(pk_columns[i]))
                 {
                     ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
                     aggregations.emplace_back(pk_columns[i], std::move(expr));
@@ -264,7 +262,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// Wrap with 'any' aggregate function other columns, which was not set explicitly.
             for (const auto & column : columns.getOrdinary())
             {
-                if (!aggregation_columns_set.contains(column.name) && !used_primary_key_columns_set.contains(column.name))
+                if (!aggregation_columns_set.count(column.name) && !used_primary_key_columns_set.count(column.name))
                 {
                     ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));
@@ -374,19 +372,6 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         }
     }
     return result;
-}
-
-TTLTableDescription TTLTableDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key)
-{
-    TTLTableDescription result;
-    if (str.empty())
-        return result;
-
-    ParserTTLExpressionList parser;
-    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    FunctionNameNormalizer().visit(ast.get());
-
-    return getTTLForTableFromAST(ast, columns, context, primary_key);
 }
 
 }

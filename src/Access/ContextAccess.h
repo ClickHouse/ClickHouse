@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Access/AccessRights.h>
-#include <Access/Common/RowPolicyDefs.h>
+#include <Access/RowPolicy.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
+#include <common/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
-#include <optional>
-#include <unordered_map>
 
 
 namespace Poco { class Logger; }
@@ -24,11 +23,9 @@ class EnabledQuota;
 class EnabledSettings;
 struct QuotaUsage;
 struct Settings;
-struct SettingsProfilesInfo;
-class SettingsChanges;
-class AccessControl;
+class SettingsConstraints;
+class AccessControlManager;
 class IAST;
-struct IAccessEntity;
 using ASTPtr = std::shared_ptr<IAST>;
 
 
@@ -63,18 +60,15 @@ struct ContextAccessParams
 };
 
 
-class ContextAccess : public std::enable_shared_from_this<ContextAccess>
+class ContextAccess
 {
 public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
-    /// Returns the current user. Throws if user is nullptr.
+    /// Returns the current user. The function can return nullptr.
     UserPtr getUser() const;
-    /// Same as above, but can return nullptr.
-    UserPtr tryGetUser() const;
     String getUserName() const;
-    std::optional<UUID> getUserID() const { return getParams().user_id; }
 
     /// Returns information about current and enabled roles.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
@@ -84,15 +78,17 @@ public:
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr = nullptr) const;
+    ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition = nullptr) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
 
-    /// Returns the default settings, i.e. the settings which should be applied on user's login.
-    SettingsChanges getDefaultSettings() const;
-    std::shared_ptr<const SettingsProfilesInfo> getDefaultProfileInfo() const;
+    /// Returns the default settings, i.e. the settings to apply on user's login.
+    std::shared_ptr<const Settings> getDefaultSettings() const;
+
+    /// Returns the settings' constraints.
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     /// Returns the current access rights.
     std::shared_ptr<const AccessRights> getAccessRights() const;
@@ -154,23 +150,15 @@ public:
     bool hasAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
     bool hasAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
-    /// Checks if a grantee is allowed for the current user, throws an exception if not.
-    void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const;
-    /// Checks if grantees are allowed for the current user, throws an exception if not.
-    void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
-
     /// Makes an instance of ContextAccess which provides full access to everything
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
-    ~ContextAccess();
-
 private:
-    friend class AccessControl;
-    ContextAccess() {} /// NOLINT
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
+    friend class AccessControlManager;
+    ContextAccess() {}
+    ContextAccess(const AccessControlManager & manager_, const Params & params_);
 
-    void initialize();
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
     void setSettingsAndConstraints() const;
@@ -189,7 +177,7 @@ private:
     bool checkAccessImpl(const AccessRightsElements & elements) const;
 
     template <bool throw_if_denied, bool grant_option, typename... Args>
-    bool checkAccessImplHelper(AccessFlags flags, const Args &... args) const;
+    bool checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImplHelper(const AccessRightsElement & element) const;
@@ -215,13 +203,12 @@ private:
     template <bool throw_if_denied, typename Container, typename GetNameFunction>
     bool checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const;
 
-    const AccessControl * access_control = nullptr;
+    const AccessControlManager * manager = nullptr;
     const Params params;
     bool is_full_access = false;
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;
     mutable String user_name;
-    mutable bool user_was_dropped = false;
     mutable scope_guard subscription_for_user_change;
     mutable std::shared_ptr<const EnabledRoles> enabled_roles;
     mutable scope_guard subscription_for_roles_changes;

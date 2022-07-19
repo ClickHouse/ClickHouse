@@ -2,11 +2,13 @@
 
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
-#include <base/extended_types.h>
+#include <common/extended_types.h>
 #include <limits>
 #include <type_traits>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace DB
@@ -23,7 +25,6 @@ struct GCDLCMImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)

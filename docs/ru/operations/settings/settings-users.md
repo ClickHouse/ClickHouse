@@ -1,15 +1,15 @@
 ---
-sidebar_position: 63
-sidebar_label: "Настройки пользователей"
+toc_priority: 63
+toc_title: "Настройки пользователей"
 ---
 
 # Настройки пользователей {#nastroiki-polzovatelei}
 
 Раздел `users` конфигурационного файла `user.xml` содержит настройки для пользователей.
 
-    :::note "Информация"
+!!! note "Информация"
     Для управления пользователями рекомендуется использовать [SQL-ориентированный воркфлоу](../access-rights.md#access-control), который также поддерживается в ClickHouse.
-    :::
+
 Структура раздела `users`:
 
 ``` xml
@@ -28,7 +28,7 @@ sidebar_label: "Настройки пользователей"
         <profile>profile_name</profile>
 
         <quota>default</quota>
-        <default_database>default<default_database>
+
         <databases>
             <database_name>
                 <table_name>
@@ -120,7 +120,7 @@ sidebar_label: "Настройки пользователей"
 <ip>::/0</ip>
 ```
 
-:::danger "Внимание"
+!!! warning "Внимание"
     Открывать доступ из любой сети небезопасно, если у вас нет правильно настроенного брандмауэра или сервер не отключен от интернета.
 
 Чтобы открыть только локальный доступ, укажите:
