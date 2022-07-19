@@ -316,7 +316,7 @@ public:
                 if (!time_slot_column)
                     throw Exception("Third argument for function " + getName() + " must be constant Decimal64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-                if (time_slot_size = time_slot_column->getValue<Decimal64>(); time_slot_size == 0)
+                if (time_slot_size = time_slot_column->getValue<Decimal64>().value; time_slot_size == 0)
                     throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
                 time_slot_scale = assert_cast<const DataTypeDecimalBase<Decimal64> *>(arguments[2].type.get())->getScale();
             }
