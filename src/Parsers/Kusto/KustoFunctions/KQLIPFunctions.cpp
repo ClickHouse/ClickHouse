@@ -22,21 +22,6 @@ namespace DB::ErrorCodes
 extern const int SYNTAX_ERROR;
 }
 
-namespace
-{
-String trimQuotes(const String & str)
-{
-    static constexpr auto QUOTE = '\'';
-
-    const auto first_index = str.find(QUOTE);
-    const auto last_index = str.rfind(QUOTE);
-    if (first_index == String::npos || last_index == String::npos)
-        throw DB::Exception("Syntax error, improper quotation: " + str, DB::ErrorCodes::SYNTAX_ERROR);
-
-    return str.substr(first_index + 1, last_index - first_index - 1);
-}
-}
-
 namespace DB
 {
 
@@ -59,8 +44,7 @@ bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
 
     const auto ip_range = getConvertedArgument(function_name, pos);
-    const auto slash_index = ip_range.find('/');
-    out = std::format(slash_index == String::npos ? "{0} = {1}" : "isIPAddressInRange({0}, {1})", ip_address, ip_range);
+    out = std::format("isIPAddressInRange({0}, concat({1}, if(position({1}, '/') > 0, '', '/32')))", ip_address, ip_range);
     return true;
 }
 
@@ -79,8 +63,9 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
     if (function_name.empty())
         return false;
 
-    const auto ip_address = trimQuotes(getConvertedArgument(function_name, pos));
-    const auto slash_index = ip_address.find('/');
+    ++pos;
+
+    const auto ip_address = getConvertedArgument(function_name, pos);
 
     out += "or(";
     for (int i = 0; i < std::ssize(PRIVATE_SUBNETS); ++i)
@@ -88,14 +73,13 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
         out += i > 0 ? ", " : "";
 
         const auto & subnet = PRIVATE_SUBNETS[i];
-        out += slash_index == String::npos
-            ? std::format("isIPAddressInRange('{0}', '{1}')", ip_address, subnet)
-            : std::format(
-                "and(isIPAddressInRange(IPv4NumToString(tupleElement((IPv4CIDRToRange(toIPv4('{0}'), {1}) as range), 1)) as begin, '{2}'), "
-                "isIPAddressInRange(IPv4NumToString(tupleElement(range, 2)) as end, '{2}'))",
-                std::string_view(ip_address.c_str(), slash_index),
-                std::string_view(ip_address.c_str() + slash_index + 1, ip_address.length() - slash_index - 1),
-                subnet);
+        out += std::format(
+            "or(and(length(splitByChar('/', {0}) as tokens) = 1, isIPAddressInRange(tokens[1] as ip, '{1}')), "
+            "and(length(tokens) = 2, isIPAddressInRange(IPv4NumToString(tupleElement((IPv4CIDRToRange(toIPv4(ip), "
+            "if(isNull(toUInt8OrNull(tokens[-1]) as suffix), throwIf(true, 'Unable to parse suffix'), assumeNotNull(suffix))) as range), "
+            "1)) as begin, '{1}'), isIPAddressInRange(IPv4NumToString(tupleElement(range, 2)) as end, '{1}')))",
+            ip_address,
+            subnet);
     }
 
     out += ")";
@@ -104,19 +88,18 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
 
 bool Ipv4NetmaskSuffix::convertImpl(String & out, IParser::Pos & pos)
 {
-    static constexpr auto DEFAULT_NETMASK = 32;
-
     const auto function_name = getKQLFunctionName(pos);
     if (function_name.empty())
         return false;
 
     ++pos;
 
-    const auto ip_range = trimQuotes(getConvertedArgument(function_name, pos));
-    const auto slash_index = ip_range.find('/');
-    const std::string_view ip_address(ip_range.c_str(), std::min(ip_range.length(), slash_index));
-    const auto netmask = slash_index == String::npos ? DEFAULT_NETMASK : std::strtol(ip_range.c_str() + slash_index + 1, nullptr, 10);
-    out = std::format("if(and(isIPv4String('{0}'), {1} between 1 and 32), {1}, null)", ip_address, netmask);
+    const auto ip_range = getConvertedArgument(function_name, pos);
+    out = std::format(
+        "if(length(splitByChar('/', {0}) as tokens) <= 2 and isIPv4String(tokens[1]), if(length(tokens) != 2, 32, "
+        "if((toInt8OrNull(tokens[-1]) as suffix) between 1 and 32, suffix, throwIf(true, 'Suffix must be between 1 and 32'))), "
+        "throwIf(true, 'Unable to recognize and IP address with or without a suffix'))",
+        ip_range);
     return true;
 }
 
