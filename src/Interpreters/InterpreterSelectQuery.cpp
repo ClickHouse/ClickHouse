@@ -39,6 +39,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -1445,9 +1446,34 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         plan.addStep(std::move(sorting_step));
                     };
 
+                    auto add_create_set = [&settings](QueryPlan & plan, const Names & key_names) -> SetPtr
+                    {
+                        SizeLimits size_limits(0, settings.max_bytes_in_set_to_optimize_join, OverflowMode::BREAK);
+                        auto creating_set_step = std::make_unique<CreatingSetOnTheFlyStep>(plan.getCurrentDataStream(), key_names, size_limits);
+                        SetPtr set = creating_set_step->getSet();
+                        plan.addStep(std::move(creating_set_step));
+                        return set;
+                    };
+
+                    auto add_filter_by_set = [](QueryPlan & plan, const Names & key_names, SetPtr set)
+                    {
+                        auto filter_by_set_step = std::make_unique<FilterBySetOnTheFlyStep>(plan.getCurrentDataStream(), key_names, set);
+                        plan.addStep(std::move(filter_by_set_step));
+                    };
+
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
                     {
                         const auto & join_clause = expressions.join->getTableJoin().getOnlyClause();
+
+                        if (settings.max_bytes_in_set_to_optimize_join > 0)
+                        {
+                            SetPtr left_set = add_create_set(query_plan, join_clause.key_names_left);
+                            SetPtr right_set = add_create_set(*joined_plan, join_clause.key_names_right);
+
+                            add_filter_by_set(query_plan, join_clause.key_names_left, right_set);
+                            add_filter_by_set(*joined_plan, join_clause.key_names_right, left_set);
+                        }
+
                         add_sorting(query_plan, join_clause.key_names_left, false);
                         add_sorting(*joined_plan, join_clause.key_names_right, true);
                     }
