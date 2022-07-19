@@ -19,10 +19,7 @@
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM 0xFFFF
 
-#define DAYNUM_OFFSET_EPOCH 25567
-
 /// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
-// #define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - (Time)DAYNUM_OFFSET_EPOCH)
 #define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - 25567)
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
@@ -195,7 +192,6 @@ private:
 
     /// Offset to epoch in days (ExtendedDayNum) of the first day in LUT.
     /// "epoch" is the Unix Epoch (starts at unix timestamp zero)
-    // static constexpr UInt32 daynum_offset_epoch = DAYNUM_OFFSET_EPOCH;
     static constexpr UInt32 daynum_offset_epoch = 25567;
     static_assert(daynum_offset_epoch == (1970 - DATE_LUT_MIN_YEAR) * 365 + (1970 - DATE_LUT_MIN_YEAR / 4 * 4) / 4);
 

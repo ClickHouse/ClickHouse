@@ -288,12 +288,17 @@ struct AddDaysImpl
 
     static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, UInt16 = 0)
     {
-        return d + delta;
+        Int64 r = d + delta;
+        if (r < 0)
+            return 0;
+        if (r > 65535)
+            return 65535;
+        return static_cast<UInt16>(r);
     }
 
     static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, UInt16 = 0)
     {
-        return d + delta;
+        return std::max(static_cast<Int32>(d + delta), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
     }
 };
 
@@ -322,12 +327,17 @@ struct AddWeeksImpl
 
     static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int32 delta, const DateLUTImpl &, UInt16 = 0)
     {
-        return d + delta * 7;
+        Int64 r = d + delta * 7;
+        if (r < 0)
+            return 0;
+        if (r > 65535)
+            return 65535;
+        return static_cast<UInt16>(r);
     }
 
     static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int32 delta, const DateLUTImpl &, UInt16 = 0)
     {
-        return d + delta * 7;
+        return std::max(static_cast<Int32>(d + delta * 7), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
     }
 };
 
