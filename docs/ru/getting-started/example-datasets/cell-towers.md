@@ -125,4 +125,4 @@ SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM 
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
 
-Вы можете протестировать другие запросы с помощью интерактивного ресурса [Playground](https://gh-api.clickhouse.com/play?user=play). Например, [вот так](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=). Однако, обратите внимание, что здесь нельзя создавать временные таблицы.
+Вы можете протестировать другие запросы с помощью интерактивного ресурса [Playground](https://play.clickhouse.com/play?user=play). Например, [вот так](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=). Однако, обратите внимание, что здесь нельзя создавать временные таблицы.

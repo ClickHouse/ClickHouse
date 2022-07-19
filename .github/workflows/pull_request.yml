@@ -13,6 +13,7 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
+      - 'docker/docs/**'
       - 'docs/**'
       - 'website/**'
 ##########################################################################################
@@ -260,7 +261,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_release
           EOF
       - name: Download changed images
@@ -273,6 +273,8 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync --recursive
@@ -280,7 +282,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -295,54 +297,6 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  BuilderPerformance:
-    needs: [DockerHubPush, FastTest]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
-          BUILD_NAME=performance
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 0  # is needed for ancestor commit search
-      - name: Build
-        run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
-        with:
-          name: ${{ env.BUILD_URLS }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinRelease:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -354,7 +308,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_release
           EOF
       - name: Download changed images
@@ -374,7 +327,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -400,7 +353,6 @@ jobs:
   #         IMAGES_PATH=${{runner.temp}}/images_path
   #         REPO_COPY=${{runner.temp}}/build_check/ClickHouse
   #         CACHES_PATH=${{runner.temp}}/../ccaches
-  #         CHECK_NAME=ClickHouse build check (actions)
   #         BUILD_NAME=binary_gcc
   #         EOF
   #     - name: Download changed images
@@ -420,7 +372,7 @@ jobs:
   #         sudo rm -fr "$TEMP_PATH"
   #         mkdir -p "$TEMP_PATH"
   #         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-  #         cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+  #         cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
   #     - name: Upload build URLs to artifacts
   #       if: ${{ success() || failure() }}
   #       uses: actions/upload-artifact@v2
@@ -446,7 +398,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_aarch64
           EOF
       - name: Download changed images
@@ -459,6 +410,8 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync --recursive
@@ -466,7 +419,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -492,7 +445,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_asan
           EOF
       - name: Download changed images
@@ -512,7 +464,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -538,7 +490,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_ubsan
           EOF
       - name: Download changed images
@@ -558,7 +509,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -584,7 +535,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_tsan
           EOF
       - name: Download changed images
@@ -604,7 +554,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -630,7 +580,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_msan
           EOF
       - name: Download changed images
@@ -650,7 +599,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -676,7 +625,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_debug
           EOF
       - name: Download changed images
@@ -696,7 +644,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -725,7 +673,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_splitted
           EOF
       - name: Download changed images
@@ -745,7 +692,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -760,7 +707,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinTidy:
+  BuilderBinClangTidy:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
@@ -771,7 +718,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_tidy
           EOF
       - name: Download changed images
@@ -791,7 +737,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -817,7 +763,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_darwin
           EOF
       - name: Download changed images
@@ -837,7 +782,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -863,7 +808,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_aarch64
           EOF
       - name: Download changed images
@@ -883,7 +827,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -909,7 +853,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_freebsd
           EOF
       - name: Download changed images
@@ -929,7 +872,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -955,7 +898,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_darwin_aarch64
           EOF
       - name: Download changed images
@@ -975,7 +917,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -1001,7 +943,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_ppc64le
           EOF
       - name: Download changed images
@@ -1021,7 +962,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
@@ -1051,7 +992,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 1  # It MUST BE THE SAME for all dependencies and the job itself
+          fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       - name: Check docker clickhouse/clickhouse-server building
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -1084,15 +1025,11 @@ jobs:
     steps:
       - name: Set envs
         run: |
-          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
-          ${{ toJSON(needs) }}
-          EOF
-          )
-          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           CHECK_NAME=ClickHouse build check (actions)
           REPORTS_PATH=${{runner.temp}}/reports_dir
           TEMP_PATH=${{runner.temp}}/report_check
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1107,8 +1044,11 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
+          python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -1125,22 +1065,18 @@ jobs:
       - BuilderBinFreeBSD
       # - BuilderBinGCC
       - BuilderBinPPC64
-      - BuilderBinTidy
+      - BuilderBinClangTidy
       - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
     if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
-          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
-          ${{ toJSON(needs) }}
-          EOF
-          )
-          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/report_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse special build check (actions)
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1155,8 +1091,11 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
+          python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -3179,8 +3118,8 @@ jobs:
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
-  PerformanceComparison0:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-0:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -3188,7 +3127,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=4
@@ -3217,8 +3156,8 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison1:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-1:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -3226,7 +3165,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=4
@@ -3255,8 +3194,8 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison2:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-2:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -3264,7 +3203,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=4
@@ -3293,8 +3232,8 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison3:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-3:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -3302,7 +3241,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=3
           RUN_BY_HASH_TOTAL=4
@@ -3331,6 +3270,165 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-0:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-1:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-2:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-3:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=3
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+#############################################################################################
+###################################### JEPSEN TESTS #########################################
+#############################################################################################
+  Jepsen:
+    needs: [BuilderBinRelease]
+    uses: ./.github/workflows/jepsen.yml
+
   FinishCheck:
     needs:
       - StyleCheck
@@ -3383,10 +3481,14 @@ jobs:
       - IntegrationTestsTsan1
       - IntegrationTestsTsan2
       - IntegrationTestsTsan3
-      - PerformanceComparison0
-      - PerformanceComparison1
-      - PerformanceComparison2
-      - PerformanceComparison3
+      - PerformanceComparisonX86-0
+      - PerformanceComparisonX86-1
+      - PerformanceComparisonX86-2
+      - PerformanceComparisonX86-3
+      - PerformanceComparisonAarch-0
+      - PerformanceComparisonAarch-1
+      - PerformanceComparisonAarch-2
+      - PerformanceComparisonAarch-3
       - UnitTestsAsan
       - UnitTestsTsan
       - UnitTestsMsan
@@ -3395,6 +3497,7 @@ jobs:
       - SplitBuildSmokeTest
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
+      - Jepsen
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository

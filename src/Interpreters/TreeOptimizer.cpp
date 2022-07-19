@@ -459,11 +459,26 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
-        for (auto & elem : group_by->children)
+        if (select_query->group_by_with_grouping_sets)
         {
-            auto hash = elem->getTreeHash();
-            String key = toString(hash.first) + '_' + toString(hash.second);
-            group_by_hashes.insert(key);
+            for (auto & set : group_by->children)
+            {
+                for (auto & elem : set->children)
+                {
+                    auto hash = elem->getTreeHash();
+                    String key = toString(hash.first) + '_' + toString(hash.second);
+                    group_by_hashes.insert(key);
+                }
+            }
+        }
+        else
+        {
+            for (auto & elem : group_by->children)
+            {
+                auto hash = elem->getTreeHash();
+                String key = toString(hash.first) + '_' + toString(hash.second);
+                group_by_hashes.insert(key);
+            }
         }
     }
 
@@ -659,6 +674,12 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
+void optimizeMultiIfToIf(ASTPtr & query)
+{
+    OptimizeMultiIfToIfVisitor::Data data;
+    OptimizeMultiIfToIfVisitor(data).visit(query);
+}
+
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
     RemoveInjectiveFunctionsVisitor::Data data(context);
@@ -804,6 +825,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
+
+    if (settings.optimize_multiif_to_if)
+        optimizeMultiIfToIf(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)

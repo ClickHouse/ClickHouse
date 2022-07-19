@@ -3,7 +3,7 @@ sidebar_position: 60
 sidebar_label: Set
 ---
 
-# Set Table Engine {#set}
+# Set Table Engine
 
 A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section “IN operators”).
 
@@ -20,4 +20,3 @@ When creating a table, the following settings are applied:
 
 -   [persistent](../../../operations/settings/settings.md#persistent)
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/set/) <!--hide-->

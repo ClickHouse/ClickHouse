@@ -27,7 +27,7 @@ struct ReadSettings;
 *
 * We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
-class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase, public WithFileSize
+class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
@@ -51,7 +51,7 @@ public:
 
     String getInfoForLog() override;
 
-    std::optional<size_t> getFileSize() override;
+    size_t getFileSize() override;
 
 private:
     bool nextImpl() override;
@@ -60,7 +60,7 @@ private:
 
     bool hasPendingDataToRead();
 
-    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
     AsynchronousReaderPtr reader;
 
@@ -79,8 +79,6 @@ private:
     size_t bytes_to_ignore = 0;
 
     std::optional<size_t> read_until_position;
-
-    bool must_read_until_position;
 
     Poco::Logger * log;
 };

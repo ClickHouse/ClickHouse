@@ -24,6 +24,7 @@ void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
+void registerFunctionHashID(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
 void registerFunctionsLogical(FunctionFactory &);
@@ -59,12 +60,15 @@ void registerFunctionsTimeWindow(FunctionFactory &);
 void registerFunctionToBool(FunctionFactory &);
 void registerFunctionMinSampleSize(FunctionFactory &);
 
+/// For Meilisearch
+void registerFunctionMeiliMatch(FunctionFactory & factory);
+
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
 void registerFunctionDecrypt(FunctionFactory & factory);
 void registerFunctionAESEncryptMysql(FunctionFactory & factory);
 void registerFunctionAESDecryptMysql(FunctionFactory & factory);
-
+void registerFunctionShowCertificate(FunctionFactory &);
 #endif
 
 void registerFunctions()
@@ -122,15 +126,20 @@ void registerFunctions()
     registerFunctionsTimeWindow(factory);
     registerFunctionToBool(factory);
     registerFunctionMinSampleSize(factory);
+    registerFunctionTid(factory);
+    registerFunctionLogTrace(factory);
+    registerFunctionHashID(factory);
+
+    /// For Meilisearch
+    registerFunctionMeiliMatch(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);
     registerFunctionDecrypt(factory);
     registerFunctionAESEncryptMysql(factory);
     registerFunctionAESDecryptMysql(factory);
+    registerFunctionShowCertificate(factory);
 #endif
-    registerFunctionTid(factory);
-    registerFunctionLogTrace(factory);
 }
 
 }

@@ -37,6 +37,8 @@ function(add_contrib cmake_folder)
 
         file(GLOB contrib_files "${base_folder}/*")
         if (NOT contrib_files)
+            # Checking out *all* submodules takes > 5 min. Therefore, the smoke build ("FastTest") in CI initializes only the set of
+            # submodules minimally needed for a build and we cannot assume here that all submodules are populated.
             message(STATUS "submodule ${base_folder} is missing or empty. to fix try run:")
             message(STATUS "    git submodule update --init")
             return()
@@ -56,7 +58,7 @@ add_contrib (boost-cmake boost)
 add_contrib (cctz-cmake cctz)
 add_contrib (consistent-hashing)
 add_contrib (dragonbox-cmake dragonbox)
-add_contrib (hyperscan-cmake hyperscan)
+add_contrib (vectorscan-cmake vectorscan)
 add_contrib (jemalloc-cmake jemalloc)
 add_contrib (libcpuid-cmake libcpuid)
 add_contrib (libdivide)
@@ -132,6 +134,7 @@ add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
 add_contrib (libgsasl-cmake libgsasl) # requires krb5
 add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
+add_contrib (nats-io-cmake nats-io)
 add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
@@ -140,6 +143,7 @@ add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
+add_contrib (hashidsxx-cmake hashidsxx)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
@@ -152,7 +156,7 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
-add_contrib (eigen-cmake eigen)
+add_contrib (base-x-cmake base-x)
 
 set (ENABLE_NMSLIB_DEFAULT ${ENABLE_LIBRARIES})
 option(ENABLE_NMSLIB "Enable Faiss indexes support" ${ENABLE_NMSLIB_DEFAULT})

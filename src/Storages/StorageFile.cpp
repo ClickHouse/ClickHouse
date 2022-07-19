@@ -1,5 +1,10 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/PartitionedSink.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -20,29 +25,26 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/ISource.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/PartitionedSink.h>
+
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-
 #include <re2/re2.h>
 #include <filesystem>
-#include <Storages/Distributed/DirectoryMonitor.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace fs = std::filesystem;
@@ -207,7 +209,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         in.setProgressCallback(context);
     }
 
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
+    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
 }
@@ -316,9 +319,9 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
-bool StorageFile::isColumnOriented() const
+bool StorageFile::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
@@ -382,6 +385,8 @@ StorageFile::StorageFile(CommonArguments args)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
 {
+    if (format_name != "Distributed")
+        FormatFactory::instance().checkFormatName(format_name);
 }
 
 void StorageFile::setStorageMetadata(CommonArguments args)
@@ -422,7 +427,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 
-class StorageFileSource : public SourceWithProgress
+class StorageFileSource : public ISource
 {
 public:
     struct FilesInfo
@@ -465,7 +470,7 @@ public:
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
-        if (storage->isColumnOriented())
+        if (storage->supportsSubsetOfColumns())
             return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         else
             return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
@@ -479,7 +484,7 @@ public:
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
+        : ISource(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
@@ -530,7 +535,7 @@ public:
 
                 auto get_block_for_format = [&]() -> Block
                 {
-                    if (storage->isColumnOriented())
+                    if (storage->supportsSubsetOfColumns())
                         return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
                     return storage_snapshot->metadata->getSampleBlock();
                 };
@@ -690,9 +695,8 @@ Pipe StorageFile::read(
     {
         const auto get_columns_for_format = [&]() -> ColumnsDescription
         {
-            if (isColumnOriented())
-                return ColumnsDescription{
-                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+            if (supportsSubsetOfColumns())
+                return storage_snapshot->getDescriptionForColumns(column_names);
             else
                 return storage_snapshot->metadata->getColumns();
         };
@@ -811,7 +815,9 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onFinish() override
@@ -1098,7 +1104,7 @@ void registerStorageFile(StorageFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
-            storage_args.format_name = engine_args_ast[0]->as<ASTLiteral &>().value.safeGet<String>();
+            storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");
 
             // Use format settings from global server context + settings from
             // the SETTINGS clause of the create query. Settings from current
@@ -1166,7 +1172,7 @@ void registerStorageFile(StorageFactory & factory)
             if (engine_args_ast.size() == 3)
             {
                 engine_args_ast[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[2], factory_args.getLocalContext());
-                storage_args.compression_method = engine_args_ast[2]->as<ASTLiteral &>().value.safeGet<String>();
+                storage_args.compression_method = checkAndGetLiteralArgument<String>(engine_args_ast[2], "compression_method");
             }
             else
                 storage_args.compression_method = "auto";

@@ -85,6 +85,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"visible",                                     std::make_shared<DataTypeUInt8>()},
         {"creation_tid",                                getTransactionIDDataType()},
+        {"removal_tid_lock",                            std::make_shared<DataTypeUInt64>()},
         {"removal_tid",                                 getTransactionIDDataType()},
         {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
         {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
@@ -194,9 +195,9 @@ void StorageSystemParts::processNextStorage(
         if (part->isStoredOnDisk())
         {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
         }
         else
         {
@@ -295,6 +296,8 @@ void StorageSystemParts::processNextStorage(
 
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_tid_as_field(part->version.creation_tid));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->version.removal_tid_lock.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_tid_as_field(part->version.getRemovalTID()));
         if (columns_mask[src_index++])

@@ -365,6 +365,59 @@
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
+    <!-- Multi-disk configuration example: -->
+    <!--
+    <storage_configuration>
+        <disks>
+            <default>
+                <keep_free_space_bytes>0</keep_free_space_bytes>
+            </default>
+            <data>
+                <path>/data/</path>
+                <keep_free_space_bytes>0</keep_free_space_bytes>
+            </data>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://path/to/endpoint</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+            </s3>
+            <blob_storage_disk>
+                <type>azure_blob_storage</type>
+                <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+                <container_name>container</container_name>
+                <account_name>account</account_name>
+                <account_key>pass123</account_key>
+                <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+                <cache_enabled>true</cache_enabled>
+                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
+                <skip_access_check>false</skip_access_check>
+            </blob_storage_disk>
+        </disks>
+
+        <policies>
+            <all>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                        <disk>data</disk>
+                        <disk>s3</disk>
+                        <disk>blob_storage_disk</disk>
+
+                        <max_data_part_size_bytes></max_data_part_size_bytes>
+                        <max_data_part_size_ratio></max_data_part_size_ratio>
+                        <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
+                        <prefer_not_to_merge>false</prefer_not_to_merge>
+                        <load_balancing>round_robin</load_balancing>
+                    </main>
+                </volumes>
+                <move_factor>0.2</move_factor>
+            </all>
+        </policies>
+    </storage_configuration>
+    -->
+
+
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
@@ -551,6 +604,23 @@
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
              By default this setting is false for compatibility with earlier access configurations. -->
         <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+        
+        <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
+             however you can change this behaviour by setting this to true -->
+        <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
+
+        <!-- By default, for backward compatibility "SELECT * FROM system.<table>" doesn't require any grants and can be executed
+             by any user. You can change this behaviour by setting this to true.
+             If it's set to true then this query requires "GRANT SELECT ON system.<table>" just like as for non-system tables.
+             Exceptions: a few system tables ("tables", "columns", "databases", and some constant tables like "one", "contributors")
+             are still accessible for everyone; and if there is a SHOW privilege (e.g. "SHOW USERS") granted the corresponding system
+             table (i.e. "system.users") will be accessible. -->
+        <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
+
+        <!-- By default, for backward compatibility "SELECT * FROM information_schema.<table>" doesn't require any grants and can be
+             executed by any user. You can change this behaviour by setting this to true.
+             If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
+        <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->

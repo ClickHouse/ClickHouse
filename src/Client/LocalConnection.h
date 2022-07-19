@@ -142,7 +142,7 @@ private:
 
     void updateProgress(const Progress & value);
 
-    void getProfileEvents(Block & block);
+    void sendProfileEvents();
 
     bool pollImpl();
 

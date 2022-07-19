@@ -214,10 +214,7 @@ void TSKVRowInputFormat::resetParser()
 }
 
 TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowWithNamesSchemaReader(
-        in_,
-        format_settings_.max_rows_to_read_for_schema_inference,
-        getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
+    : IRowWithNamesSchemaReader(in_, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
     , format_settings(format_settings_)
 {
 }
@@ -280,6 +277,8 @@ void registerInputFormatTSKV(FormatFactory & factory)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
     });
+
+    factory.markFormatSupportsSubsetOfColumns("TSKV");
 }
 void registerTSKVSchemaReader(FormatFactory & factory)
 {

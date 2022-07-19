@@ -75,4 +75,4 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(read_buffer_id);
 }
 
-};
+}
