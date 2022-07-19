@@ -88,6 +88,5 @@ void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
 void registerDataTypeObject(DataTypeFactory & factory);
-void registerDataTypeDomainBase58(DataTypeFactory & factory);
 
 }

@@ -219,7 +219,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
     registerDataTypeObject(*this);
-    registerDataTypeDomainBase58(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()
