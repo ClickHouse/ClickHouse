@@ -3,9 +3,11 @@
 
 #include <Interpreters/Context.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <memory>
-#include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 
 namespace DB
@@ -25,10 +27,10 @@ StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription 
 }
 
 
-class StorageInputSource : public ISource, WithContext
+class StorageInputSource : public SourceWithProgress, WithContext
 {
 public:
-    StorageInputSource(ContextPtr context_, Block sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
+    StorageInputSource(ContextPtr context_, Block sample_block) : SourceWithProgress(std::move(sample_block)), WithContext(context_) {}
 
     Chunk generate() override
     {
@@ -44,15 +46,15 @@ public:
 };
 
 
-void StorageInput::setPipe(Pipe pipe_)
+void StorageInput::setInputStream(BlockInputStreamPtr input_stream_)
 {
-    pipe = std::move(pipe_);
+    input_stream = input_stream_;
 }
 
 
 Pipe StorageInput::read(
     const Names & /*column_names*/,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -66,13 +68,13 @@ Pipe StorageInput::read(
     {
         /// Send structure to the client.
         query_context->initializeInput(shared_from_this());
-        return Pipe(std::make_shared<StorageInputSource>(query_context, storage_snapshot->metadata->getSampleBlock()));
+        return Pipe(std::make_shared<StorageInputSource>(query_context, metadata_snapshot->getSampleBlock()));
     }
 
-    if (pipe.empty())
+    if (!input_stream)
         throw Exception("Input stream is not initialized, input() must be used only in INSERT SELECT query", ErrorCodes::INVALID_USAGE_OF_INPUT);
 
-    return std::move(pipe);
+    return Pipe(std::make_shared<SourceFromInputStream>(input_stream));
 }
 
 }

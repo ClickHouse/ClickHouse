@@ -1,5 +1,5 @@
 #include <iostream>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/ShellCommand.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -28,9 +28,7 @@ TEST(ShellCommand, Execute)
 
 TEST(ShellCommand, ExecuteDirect)
 {
-    ShellCommand::Config config("/bin/echo");
-    config.arguments = {"Hello, world!"};
-    auto command = ShellCommand::executeDirect(config);
+    auto command = ShellCommand::executeDirect("/bin/echo", {"Hello, world!"});
 
     std::string res;
     readStringUntilEOF(res, command->out);

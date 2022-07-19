@@ -2,16 +2,16 @@
 
 #include <unordered_set>
 
+#include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/IAST_fwd.h>
 
 #include <Core/Settings.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 namespace DB
 {
 
 class ASTFunction;
-class ASTSelectWithUnionQuery;
 
 class NormalizeSelectWithUnionQueryMatcher
 {

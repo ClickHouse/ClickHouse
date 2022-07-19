@@ -1,12 +1,11 @@
 ---
-sidebar_position: 61
-sidebar_label: Getting Started
-description: Prerequisites and an overview of how to build ClickHouse
+toc_priority: 61
+toc_title: For Beginners
 ---
 
-# Getting Started Guide for Building ClickHouse
+# The Beginner ClickHouse Developer Instruction {#the-beginner-clickhouse-developer-instruction}
 
-The building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
+Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
@@ -66,11 +65,11 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    git clone https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
-You can also add original ClickHouse repo address to your local repository to pull updates from there:
+You can also add original ClickHouse repo’s address to your local repository to pull updates from there:
 
     git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
@@ -80,7 +79,7 @@ After successfully running this command you will be able to pull updates from th
 
 Working with submodules in git could be painful. Next commands will help to manage it:
 
-    # ! each command accepts
+    # ! each command accepts --recursive
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -93,16 +92,16 @@ Working with submodules in git could be painful. Next commands will help to mana
 The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync
+    git submodule sync --recursive
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init
+    git submodule update --init --recursive
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync
-    git submodule foreach git submodule update --init
+    git submodule foreach git submodule sync --recursive
+    git submodule foreach git submodule update --init --recursive
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -124,7 +123,11 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
+Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
+
+## Optional External Libraries {#optional-external-libraries}
+
+ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
 
 ## C++ Compiler {#c-compiler}
 
@@ -155,8 +158,6 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-14 CXX=clang++-14`. The clang version will be in the script output.
-
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
 For a faster build, you can resort to the `debug` build type - a build with no optimizations. For that supply the following parameter `-D CMAKE_BUILD_TYPE=Debug`:
@@ -177,7 +178,7 @@ If you require to build all the binaries (utilities and tests), you should run n
 
 Full build requires about 30GB of free disk space or 15GB to build the main binaries.
 
-When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` parameter:
+When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
 
     ninja -j 1 clickhouse-server clickhouse-client
 
@@ -232,24 +233,24 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 ## Writing Code {#writing-code}
 
-The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.com/docs/en/development/style/
+The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
-Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries
+Adding third-party libraries: https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries
 
-Writing tests: https://clickhouse.com/docs/en/development/tests/
+Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 ## Test Data {#test-data}
 
-Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data of web analytics. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
+Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz
@@ -269,30 +270,10 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
 Navigate to your fork repository in GitHub’s UI. If you have been developing in a branch, you need to select that branch. There will be a “Pull request” button located on the screen. In essence, this means “create a request for accepting my changes into the main repository”.
 
-A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelog.
+A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
 
-Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
+Testing will commence as soon as Yandex employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
 The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “ClickHouse build check” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
-
-## Faster builds for development: Split build configuration {#split-build}
-
-ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
-```
--DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
-```
-
-Note that the split build has several drawbacks:
-* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
-* Risk of segfault if you run any of the programs while rebuilding the project.
-* You cannot run the integration tests since they only work a single complete binary.
-* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
-
-If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
-```
--DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
-```
-
-In case of problems with any of the development options, you are on your own!

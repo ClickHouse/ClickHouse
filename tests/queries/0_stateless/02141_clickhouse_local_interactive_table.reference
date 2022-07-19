@@ -1,1 +1,0 @@
-CREATE TABLE _local.table\n(\n    `key` String\n)\nENGINE = File(\'TSVWithNamesAndTypes\', \'/dev/null\')

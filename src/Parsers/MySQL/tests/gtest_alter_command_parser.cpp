@@ -2,7 +2,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/MySQL/ASTAlterCommand.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 

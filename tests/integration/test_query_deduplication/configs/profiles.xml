@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <experimental_query_deduplication_send_all_part_uuids>1</experimental_query_deduplication_send_all_part_uuids>
+        </default>
+    </profiles>
+</yandex>

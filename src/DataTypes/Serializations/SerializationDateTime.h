@@ -1,17 +1,20 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/TimezoneMixin.h>
 
 class DateLUTImpl;
 
 namespace DB
 {
 
-class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
+class SerializationDateTime final : public SerializationNumber<UInt32>
 {
+private:
+    const DateLUTImpl & time_zone;
+    const DateLUTImpl & utc_time_zone;
+
 public:
-    explicit SerializationDateTime(const TimezoneMixin & time_zone_);
+    SerializationDateTime(const DateLUTImpl & time_zone_, const DateLUTImpl & utc_time_zone_);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

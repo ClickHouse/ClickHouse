@@ -11,5 +11,5 @@ keeper_server:
     server:
       id: 1
       hostname: localhost
-      port: 9234
+      port: 44444
 

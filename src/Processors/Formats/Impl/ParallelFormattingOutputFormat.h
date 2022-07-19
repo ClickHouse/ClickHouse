@@ -4,15 +4,14 @@
 
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/Exception.h>
 #include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
-#include <IO/NullWriteBuffer.h>
+#include <IO/WriteBufferFromArena.h>
 
 #include <deque>
 #include <atomic>
@@ -74,23 +73,14 @@ public:
         , pool(params.max_threads_for_parallel_formatting)
 
     {
-        LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
-
-        NullWriteBuffer buf;
-        save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
-
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
         processing_units.resize(params.max_threads_for_parallel_formatting + 2);
-
-        /// Do not put any code that could throw an exception under this line.
-        /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
-        /// Also some race condition is possible, because collector_thread runs in parallel with
-        /// the destruction of the objects already created in this scope.
         collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
         {
             collectorThreadFunction(thread_group);
         });
+        LOG_TRACE(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
     }
 
     ~ParallelFormattingOutputFormat() override
@@ -105,7 +95,7 @@ public:
         need_flush = true;
     }
 
-    void writePrefix() override
+    void doWritePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
     }
@@ -115,16 +105,8 @@ public:
         finishAndWait();
     }
 
-    void onProgress(const Progress & value) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.progress.incrementPiecewiseAtomically(value);
-    }
-
-    void writeSuffix() override
-    {
-        addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
-    }
+    /// There are no formats which support parallel formatting and progress writing at the same time
+    void onProgress(const Progress &) override {}
 
     String getContentType() const override
     {
@@ -132,7 +114,7 @@ public:
         return internal_formatter_creator(buffer)->getContentType();
     }
 
-private:
+protected:
     void consume(Chunk chunk) override final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
@@ -140,33 +122,17 @@ private:
 
     void consumeTotals(Chunk totals) override
     {
-        if (save_totals_and_extremes_in_statistics)
-        {
-            std::lock_guard lock(statistics_mutex);
-            statistics.totals = std::move(totals);
-        }
-        else
-        {
-            addChunk(std::move(totals), ProcessingUnitType::TOTALS, /*can_throw_exception*/ true);
-            are_totals_written = true;
-        }
+        addChunk(std::move(totals), ProcessingUnitType::TOTALS, /*can_throw_exception*/ true);
     }
 
     void consumeExtremes(Chunk extremes) override
     {
-        if (save_totals_and_extremes_in_statistics)
-        {
-            std::lock_guard lock(statistics_mutex);
-            statistics.extremes = std::move(extremes);
-        }
-        else
-        {
-            addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
-        }
+        addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
     }
 
-    void finalizeImpl() override;
+    void finalize() override;
 
+private:
     InternalFormatterCreator internal_formatter_creator;
 
     /// Status to synchronize multiple threads.
@@ -182,10 +148,9 @@ private:
     {
         START,
         PLAIN,
-        PLAIN_FINISH,
         TOTALS,
         EXTREMES,
-        FINALIZE,
+        FINALIZE
     };
 
     void addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception);
@@ -197,7 +162,6 @@ private:
         Chunk chunk;
         Memory<> segment;
         size_t actual_memory_size{0};
-        Statistics statistics;
     };
 
     Poco::Event collector_finished{};
@@ -224,19 +188,11 @@ private:
     std::condition_variable collector_condvar;
     std::condition_variable writer_condvar;
 
-    size_t rows_consumed = 0;
-    std::atomic_bool are_totals_written = false;
-
-    Statistics statistics;
-    /// We change statistics in onProgress() which can be called from different threads.
-    std::mutex statistics_mutex;
-    bool save_totals_and_extremes_in_statistics;
-
     void finishAndWait();
 
     void onBackgroundException()
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         if (!background_exception)
         {
             background_exception = std::current_exception();
@@ -246,11 +202,11 @@ private:
         collector_condvar.notify_all();
     }
 
-    void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
+    void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number, first_row_num]
+        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number]
         {
-            formatterThreadFunction(ticket_number, first_row_num, thread_group);
+            formatterThreadFunction(ticket_number, thread_group);
         });
     }
 
@@ -258,14 +214,7 @@ private:
     void collectorThreadFunction(const ThreadGroupStatusPtr & thread_group);
 
     /// This function is executed in ThreadPool and the only purpose of it is to format one Chunk into a continuous buffer in memory.
-    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group);
-
-    void setRowsBeforeLimit(size_t rows_before_limit) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.rows_before_limit = rows_before_limit;
-        statistics.applied_limit = true;
-    }
+    void formatterThreadFunction(size_t current_unit_number, const ThreadGroupStatusPtr & thread_group);
 };
 
 }

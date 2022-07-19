@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstring>
+#include <string.h>
 #include <memory>
 #include <vector>
 #include <boost/noncopyable.hpp>
@@ -69,7 +69,8 @@ private:
 
             Allocator<false>::free(begin, size());
 
-            delete prev;
+            if (prev)
+                delete prev;
         }
 
         size_t size() const { return end + pad_right - begin; }

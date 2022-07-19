@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -105,9 +104,6 @@ private:
 public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

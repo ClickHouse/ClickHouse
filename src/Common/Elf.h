@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <IO/MMapReadBufferFromFile.h>
 
@@ -54,14 +54,13 @@ public:
     const char * end() const { return mapped + elf_size; }
     size_t size() const { return elf_size; }
 
-    /// Obtain build id from SHT_NOTE of section headers (fallback to PT_NOTES section of program headers).
-    /// Return empty string if does not exist.
+    /// Obtain build id from PT_NOTES section of program headers. Return empty string if does not exist.
     /// The string is returned in binary. Note that "readelf -n ./clickhouse-server" prints it in hex.
     String getBuildID() const;
     static String getBuildID(const char * nhdr_pos, size_t size);
 
     /// Hash of the binary for integrity checks.
-    String getStoredBinaryHash() const;
+    String getBinaryHash() const;
 
 private:
     MMapReadBufferFromFile in;

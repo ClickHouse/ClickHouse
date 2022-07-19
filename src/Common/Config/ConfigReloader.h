@@ -42,12 +42,8 @@ public:
 
     ~ConfigReloader();
 
-    /// Starts periodic reloading in the background thread.
+    /// Call this method to run the background thread.
     void start();
-
-    /// Stops periodic reloading reloading in the background thread.
-    /// This function is automatically called by the destructor.
-    void stop();
 
     /// Reload immediately. For SYSTEM RELOAD CONFIG query.
     void reload() { reloadIfNewer(/* force */ true, /* throw_on_error */ true, /* fallback_to_preprocessed */ false, /* initial_loading = */ false); }
@@ -68,6 +64,8 @@ private:
     };
 
     FilesChangesTracker getNewFileList() const;
+
+private:
 
     static constexpr auto reload_interval = std::chrono::seconds(2);
 

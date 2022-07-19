@@ -49,20 +49,32 @@ public:
         return true;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// tuple(..., Nothing, ...) -> Tuple(..., Nothing, ...)
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<DataTypeTuple>(arguments);
+        DataTypes types;
+        Strings names;
+
+        for (const auto & argument : arguments)
+        {
+            types.emplace_back(argument.type);
+            names.emplace_back(argument.name);
+        }
+
+        /// Create named tuple if possible. We don't print tuple element names
+        /// because they are bad anyway -- aliases are not used, e.g. tuple(1 a)
+        /// will have element name '1' and not 'a'. If we ever change this, and
+        /// add the ability to access tuple elements by name, like tuple(1 a).a,
+        /// we should probably enable printing for better discoverability.
+        if (DataTypeTuple::canBeCreatedWithNames(names))
+            return std::make_shared<DataTypeTuple>(types, names, false /*print names*/);
+
+        return std::make_shared<DataTypeTuple>(types);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

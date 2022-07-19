@@ -2,8 +2,10 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/MergingSortedStep.h>
+#include <Processors/QueryPlan/FinishSortingStep.h>
+#include <Processors/QueryPlan/MergeSortingStep.h>
+#include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -19,15 +21,32 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
     QueryPlan::Node * child = nullptr;
     bool updated = false;
 
-    if (auto * sorting = typeid_cast<SortingStep *>(step.get()))
+    if (auto * merging_sorted = typeid_cast<MergingSortedStep *>(step.get()))
     {
         /// TODO: remove LimitStep here.
-        sorting->updateLimit(limit);
+        merging_sorted->updateLimit(limit);
         updated = true;
         child = node->children.front();
     }
+    else if (auto * finish_sorting = typeid_cast<FinishSortingStep *>(step.get()))
+    {
+        /// TODO: remove LimitStep here.
+        finish_sorting->updateLimit(limit);
+        updated = true;
+    }
+    else if (auto * merge_sorting = typeid_cast<MergeSortingStep *>(step.get()))
+    {
+        merge_sorting->updateLimit(limit);
+        updated = true;
+        child = node->children.front();
+    }
+    else if (auto * partial_sorting = typeid_cast<PartialSortingStep *>(step.get()))
+    {
+        partial_sorting->updateLimit(limit);
+        updated = true;
+    }
 
-    /// In case we have several sorting steps.
+    /// We often have chain PartialSorting -> MergeSorting -> MergingSorted
     /// Try update limit for them also if possible.
     if (child)
         tryUpdateLimitForSortingSteps(child, limit);
@@ -65,11 +84,6 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
     if (typeid_cast<const TotalsHavingStep *>(child.get()))
-        return 0;
-
-    /// Disable for WindowStep.
-    /// TODO: we can push down limit in some cases if increase the limit value.
-    if (typeid_cast<const WindowStep *>(child.get()))
         return 0;
 
     /// Now we should decide if pushing down limit possible for this step.

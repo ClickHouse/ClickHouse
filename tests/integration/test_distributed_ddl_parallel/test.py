@@ -19,50 +19,45 @@ class SafeThread(threading.Thread):
         super().__init__()
         self.target = target
         self.exception = None
-
     def run(self):
         try:
             self.target()
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e: # pylint: disable=broad-except
             self.exception = e
-
     def join(self, timeout=None):
         super().join(timeout)
         if self.exception:
             raise self.exception
 
-
 def add_instance(name, ddl_config=None):
-    main_configs = [
-        "configs/remote_servers.xml",
+    main_configs=[
+        'configs/remote_servers.xml',
     ]
     if ddl_config:
         main_configs.append(ddl_config)
-    dictionaries = [
-        "configs/dict.xml",
+    dictionaries=[
+        'configs/dict.xml',
     ]
-    return cluster.add_instance(
-        name, main_configs=main_configs, dictionaries=dictionaries, with_zookeeper=True
-    )
+    return cluster.add_instance(name,
+        main_configs=main_configs,
+        dictionaries=dictionaries,
+        with_zookeeper=True)
 
-
-initiator = add_instance("initiator")
+initiator = add_instance('initiator')
 # distributed_ddl.pool_size = 2
-n1 = add_instance("n1", "configs/ddl_a.xml")
-n2 = add_instance("n2", "configs/ddl_a.xml")
+n1 = add_instance('n1', 'configs/ddl_a.xml')
+n2 = add_instance('n2', 'configs/ddl_a.xml')
 # distributed_ddl.pool_size = 20
-n3 = add_instance("n3", "configs/ddl_b.xml")
-n4 = add_instance("n4", "configs/ddl_b.xml")
+n3 = add_instance('n3', 'configs/ddl_b.xml')
+n4 = add_instance('n4', 'configs/ddl_b.xml')
 
-
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope='module', autouse=True)
 def start_cluster():
     try:
         cluster.start()
         yield cluster
     finally:
         cluster.shutdown()
-
 
 # verifies that functions executes longer then `sec`
 def longer_then(sec):
@@ -72,60 +67,39 @@ def longer_then(sec):
             ts = time.time()
             result = func(*args, **kwargs)
             te = time.time()
-            took = te - ts
+            took = te-ts
             assert took >= sec
             return result
-
         return inner
-
     return wrapper
-
 
 # It takes 7 seconds to load slow_dict_7.
 def execute_reload_dictionary_slow_dict_7():
-    initiator.query(
-        "SYSTEM RELOAD DICTIONARY ON CLUSTER cluster_a slow_dict_7",
-        settings={
-            "distributed_ddl_task_timeout": 60,
-        },
-    )
-
-
+    initiator.query('SYSTEM RELOAD DICTIONARY ON CLUSTER cluster_a slow_dict_7', settings={
+        'distributed_ddl_task_timeout': 60,
+    })
 def execute_reload_dictionary_slow_dict_3():
-    initiator.query(
-        "SYSTEM RELOAD DICTIONARY ON CLUSTER cluster_b slow_dict_3",
-        settings={
-            "distributed_ddl_task_timeout": 60,
-        },
-    )
-
-
+    initiator.query('SYSTEM RELOAD DICTIONARY ON CLUSTER cluster_b slow_dict_3', settings={
+        'distributed_ddl_task_timeout': 60,
+    })
 def execute_smoke_query():
-    initiator.query(
-        "DROP DATABASE IF EXISTS foo ON CLUSTER cluster_b",
-        settings={
-            "distributed_ddl_task_timeout": 60,
-        },
-    )
-
+    initiator.query('DROP DATABASE IF EXISTS foo ON CLUSTER cluster_b', settings={
+        'distributed_ddl_task_timeout': 60,
+    })
 
 def check_log():
     # ensure that none of tasks processed multiple times
     for _, instance in list(cluster.instances.items()):
-        assert not instance.contains_in_log("Coordination::Exception: Node exists")
-
+        assert not instance.contains_in_log('Coordination::Exception: Node exists')
 
 # NOTE: uses inner function to exclude slow start_cluster() from timeout.
-
 
 def test_slow_dict_load_7():
     @pytest.mark.timeout(10)
     @longer_then(7)
     def inner_test():
-        initiator.query("SYSTEM RELOAD DICTIONARY slow_dict_7")
-
+        initiator.query('SYSTEM RELOAD DICTIONARY slow_dict_7')
     inner_test()
-
 
 def test_all_in_parallel():
     @pytest.mark.timeout(10)
@@ -138,10 +112,8 @@ def test_all_in_parallel():
             thread.start()
         for thread in threads:
             thread.join(70)
-
     inner_test()
     check_log()
-
 
 def test_two_in_parallel_two_queued():
     @pytest.mark.timeout(19)
@@ -154,16 +126,13 @@ def test_two_in_parallel_two_queued():
             thread.start()
         for thread in threads:
             thread.join(70)
-
     inner_test()
     check_log()
-
 
 def test_smoke():
     for _ in range(100):
         execute_smoke_query()
     check_log()
-
 
 def test_smoke_parallel():
     threads = []
@@ -174,7 +143,6 @@ def test_smoke_parallel():
     for thread in threads:
         thread.join(70)
     check_log()
-
 
 def test_smoke_parallel_dict_reload():
     threads = []

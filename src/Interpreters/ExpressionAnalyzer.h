@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
@@ -63,13 +62,9 @@ struct ExpressionAnalyzerData
     NamesAndTypesList aggregated_columns;
     /// Columns after window functions.
     NamesAndTypesList columns_after_window;
-    /// Keys of ORDER BY
-    NameSet order_by_keys;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
-    NamesAndTypesLists aggregation_keys_list;
-    ColumnNumbersList aggregation_keys_indexes_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
@@ -80,8 +75,6 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     TemporaryTablesMapping external_tables;
-
-    GroupByKind group_by_kind = GroupByKind::NONE;
 };
 
 
@@ -97,16 +90,15 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
-        const UInt64 distributed_group_by_no_merge;
 
-        explicit ExtractedSettings(const Settings & settings_);
+        ExtractedSettings(const Settings & settings_);
     };
 
 public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_)
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {}, {})
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {}, {})
     {
     }
 
@@ -140,7 +132,6 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
-    void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
     /**
@@ -163,7 +154,6 @@ protected:
         ContextPtr context_,
         size_t subquery_depth_,
         bool do_global_,
-        bool is_explain_,
         SubqueriesForSets subqueries_for_sets_,
         PreparedSets prepared_sets_);
 
@@ -178,41 +168,31 @@ protected:
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
-    void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
+    void initGlobalSubqueriesAndExternalTables(bool do_global);
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
 
-    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActions(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
       * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the
       * prepared sets would not be applicable for MergeTree index optimization.
       */
-    void getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
-    void getRootActionsForHaving(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
-
-    void getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions);
+    void getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
-    void analyzeAggregation(ActionsDAGPtr & temp_actions);
-    void makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions);
+    void analyzeAggregation();
+    bool makeAggregateDescriptions(ActionsDAGPtr & actions);
 
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const { return syntax->is_remote_storage; }
-
-    NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
-    NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
-
-    AggregationKeysInfo getAggregationKeysInfo() const noexcept
-    {
-      return { aggregation_keys, aggregation_keys_indexes_list, group_by_kind };
-    }
 };
 
 class SelectQueryExpressionAnalyzer;
@@ -236,8 +216,6 @@ struct ExpressionAnalysisResult
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
-
-    bool use_grouping_set_key = false;
 
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
@@ -324,7 +302,6 @@ public:
             context_,
             options_.subquery_depth,
             do_global_,
-            options_.is_explain,
             std::move(subqueries_for_sets_),
             std::move(prepared_sets_))
         , metadata_snapshot(metadata_snapshot_)
@@ -339,21 +316,11 @@ public:
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
-    /// When there is only one group in GROUPING SETS
-    /// it is a special case that is equal to GROUP BY, i.e.:
-    ///
-    ///     GROUPING SETS ((a, b)) -> GROUP BY a, b
-    ///
-    /// But it is rewritten by GroupingSetsRewriterVisitor to GROUP BY,
-    /// so instead of aggregation_keys_list.size() > 1,
-    /// !aggregation_keys_list.empty() can be used.
-    bool useGroupingSetKey() const { return !aggregation_keys_list.empty(); }
-
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
-    const NamesAndTypesLists & aggregationKeysList() const { return aggregation_keys_list; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
+    const PreparedSets & getPreparedSets() const { return prepared_sets; }
     std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
@@ -366,19 +333,18 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
-
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
 
-    JoinPtr makeJoin(
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
+
+    JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,
-        const ColumnsWithTypeAndName & left_columns,
-        ActionsDAGPtr & left_convert_actions);
+        const ColumnsWithTypeAndName & left_sample_columns);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -399,8 +365,7 @@ private:
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns);
-
+    JoinPtr appendJoin(ExpressionActionsChain & chain);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
@@ -408,9 +373,6 @@ private:
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
-
-    void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);

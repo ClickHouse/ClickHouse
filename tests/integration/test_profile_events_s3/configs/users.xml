@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
         </default>
@@ -21,4 +21,4 @@
         <default>
         </default>
     </quotas>
-</clickhouse>
+</yandex>

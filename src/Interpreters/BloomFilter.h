@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
 #include <Common/Allocator.h>
@@ -31,7 +31,7 @@ public:
     using UnderType = UInt64;
     using Container = std::vector<UnderType>;
 
-    explicit BloomFilter(const BloomFilterParameters & params);
+    BloomFilter(const BloomFilterParameters & params);
     /// size -- size of filter in bytes.
     /// hashes -- number of used hash functions.
     /// seed -- random seed for hash functions generation.

@@ -1,7 +1,7 @@
 SELECT 'simple partition key:';
 DROP TABLE IF EXISTS table1 SYNC;
 CREATE TABLE table1 (id Int64, v UInt64)
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{database}/test_table12', '1', v)
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/test/tables/table12', '1', v)
 PARTITION BY id % 200 ORDER BY id;
 INSERT INTO table1 SELECT number-205, number FROM numbers(10);
 INSERT INTO table1 SELECT number-205, number FROM numbers(400, 10);
@@ -48,7 +48,7 @@ SELECT count() FROM table4 WHERE id % 10 = 7;
 SELECT 'comparison:';
 SELECT v, v-205 as vv, modulo(vv, 200), moduloLegacy(vv, 200) FROM table1 ORDER BY v;
 
-DROP TABLE table1 SYNC;
-DROP TABLE table2 SYNC;
-DROP TABLE table3 SYNC;
-DROP TABLE table4 SYNC;
+DROP TABLE table1;
+DROP TABLE table2;
+DROP TABLE table3;
+DROP TABLE table4;

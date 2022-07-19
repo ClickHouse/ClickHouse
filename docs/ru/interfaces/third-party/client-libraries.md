@@ -1,11 +1,11 @@
 ---
-sidebar_position: 26
-sidebar_label: "Клиентские библиотеки от сторонних разработчиков"
+toc_priority: 26
+toc_title: "Клиентские библиотеки от сторонних разработчиков"
 ---
 
 # Клиентские библиотеки от сторонних разработчиков {#klientskie-biblioteki-ot-storonnikh-razrabotchikov}
 
-:::danger "Disclaimer"
+!!! warning "Disclaimer"
     Яндекс не поддерживает перечисленные ниже библиотеки и не проводит тщательного тестирования для проверки их качества.
 
 -   Python:
@@ -31,8 +31,6 @@ sidebar_label: "Клиентские библиотеки от сторонни�
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
-    -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
-    -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -41,10 +39,9 @@ sidebar_label: "Клиентские библиотеки от сторонни�
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   Rust
-    -   [clickhouse.rs](https://github.com/loyd/clickhouse.rs)
-    -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
     -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
+    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)

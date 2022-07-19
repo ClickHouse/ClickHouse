@@ -88,8 +88,6 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (ignore_set)
@@ -104,7 +102,7 @@ public:
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        ColumnsWithTypeAndName columns_of_key_columns;
+        DB::Block columns_of_key_columns;
 
         /// First argument may be a tuple or a single column.
         const ColumnWithTypeAndName & left_arg = arguments[0];
@@ -121,23 +119,22 @@ public:
 
         auto set = column_set->getData();
         auto set_types = set->getDataTypes();
-
-        if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
+        if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
         {
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
-                columns_of_key_columns.emplace_back(tuple_columns[i], tuple_types[i], "_" + toString(i));
+                columns_of_key_columns.insert({ tuple_columns[i], tuple_types[i], "" });
         }
         else
-            columns_of_key_columns.emplace_back(left_arg);
+            columns_of_key_columns.insert(left_arg);
 
         /// Replace single LowCardinality column to it's dictionary if possible.
         ColumnPtr lc_indexes = nullptr;
-        if (columns_of_key_columns.size() == 1)
+        if (columns_of_key_columns.columns() == 1)
         {
-            auto & arg = columns_of_key_columns.at(0);
+            auto & arg = columns_of_key_columns.safeGetByPosition(0);
             const auto * col = arg.column.get();
             if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
                 col = &const_col->getDataColumn();

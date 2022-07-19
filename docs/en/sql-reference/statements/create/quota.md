@@ -1,9 +1,9 @@
 ---
-sidebar_position: 42
-sidebar_label: QUOTA
+toc_priority: 42
+toc_title: QUOTA
 ---
 
-# CREATE QUOTA
+# CREATE QUOTA {#create-quota-statement}
 
 Creates a [quota](../../../operations/access-rights.md#quotas-management) that can be assigned to a user or a role.
 
@@ -24,7 +24,7 @@ Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`,
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-**Examples**
+**Examples** 
 
 Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
 

@@ -1,8 +1,3 @@
-<clickhouse>
+<yandex>
     <database_atomic_delay_before_drop_table_sec>60</database_atomic_delay_before_drop_table_sec>
-
-    <!-- Aggressive cleanup for tests to catch more issues -->
-    <database_catalog_unused_dir_hide_timeout_sec>0</database_catalog_unused_dir_hide_timeout_sec>
-    <database_catalog_unused_dir_rm_timeout_sec>5</database_catalog_unused_dir_rm_timeout_sec>
-    <database_catalog_unused_dir_cleanup_period_sec>10</database_catalog_unused_dir_cleanup_period_sec>
-</clickhouse>
+</yandex>

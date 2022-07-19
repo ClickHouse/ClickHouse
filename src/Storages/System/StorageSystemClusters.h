@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -15,8 +16,9 @@ class Cluster;
   *  that allows to obtain information about available clusters
   *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemClusters>
+class StorageSystemClusters final : public shared_ptr_helper<StorageSystemClusters>, public IStorageSystemOneBlock<StorageSystemClusters>
 {
+    friend struct shared_ptr_helper<StorageSystemClusters>;
 public:
     std::string getName() const override { return "SystemClusters"; }
 

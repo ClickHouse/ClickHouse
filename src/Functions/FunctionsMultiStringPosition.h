@@ -12,7 +12,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
 
 namespace DB
@@ -58,7 +58,6 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -98,8 +97,7 @@ public:
                     + ", should be at most 255",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        std::vector<std::string_view> refs;
-        refs.reserve(src_arr.size());
+        std::vector<StringRef> refs;
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 

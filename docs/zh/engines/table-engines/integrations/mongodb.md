@@ -1,6 +1,6 @@
 ---
-sidebar_position: 5
-sidebar_label: MongoDB
+toc_priority: 5
+toc_title: MongoDB
 ---
 
 # MongoDB {#mongodb}
@@ -37,7 +37,7 @@ ClickHouse 中的表，从 MongoDB 集合中读取数据:
 ``` text
 CREATE TABLE mongo_table
 (
-    key UInt64,
+    key UInt64, 
     data String
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
 ```
@@ -54,4 +54,4 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
-[原始文章](https://clickhouse.com/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->

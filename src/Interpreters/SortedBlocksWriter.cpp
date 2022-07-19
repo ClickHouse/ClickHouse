@@ -1,48 +1,48 @@
 #include <Core/SortCursor.h>
 #include <Interpreters/SortedBlocksWriter.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Sources/TemporaryFileLazySource.h>
-#include <Formats/TemporaryFileStream.h>
+#include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/TemporaryFileStream.h>
+#include <DataStreams/materializeBlock.h>
 #include <Disks/IVolume.h>
-
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+}
+
 namespace
 {
 
-std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
+std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block & header, IBlockInputStream & stream, const String & codec)
 {
     auto tmp_file = createTemporaryFile(tmp_path);
 
-    TemporaryFileStream::write(tmp_file->path(), header, std::move(pipeline), codec);
+    std::atomic<bool> is_cancelled{false};
+    TemporaryFileStream::write(tmp_file->path(), header, stream, &is_cancelled, codec);
+    if (is_cancelled)
+        throw Exception("Cannot flush MergeJoin data on disk. No space at " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
 
     return tmp_file;
 }
 
-SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const Block & header, QueryPipelineBuilder builder,
+SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const Block & header, IBlockInputStream & stream,
                                                  const String & codec, std::function<void(const Block &)> callback = [](const Block &){})
 {
     std::vector<std::unique_ptr<TemporaryFile>> files;
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    PullingPipelineExecutor executor(pipeline);
 
-    Block block;
-    while (executor.pull(block))
+    while (Block block = stream.read())
     {
         if (!block.rows())
             continue;
 
         callback(block);
 
-        QueryPipelineBuilder one_block_pipeline;
-        Chunk chunk(block.getColumns(), block.rows());
-        one_block_pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk))));
-        auto tmp_file = flushToFile(tmp_path, header, std::move(one_block_pipeline), codec);
+        OneBlockInputStream block_stream(block);
+        auto tmp_file = flushToFile(tmp_path, header, block_stream, codec);
         files.emplace_back(std::move(tmp_file));
     }
 
@@ -118,31 +118,23 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
 {
     const std::string path = getPath();
 
-    Pipes pipes;
-    pipes.reserve(blocks.size());
-    for (const auto & block : blocks)
-        if (auto num_rows = block.rows())
-            pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), num_rows)));
-
-    if (pipes.empty())
+    if (blocks.empty())
         return {};
 
-    QueryPipelineBuilder pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-
-    if (pipeline.getNumStreams() > 1)
+    if (blocks.size() == 1)
     {
-        auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(),
-            pipeline.getNumStreams(),
-            sort_description,
-            rows_in_block,
-            SortingQueueStrategy::Default);
-
-        pipeline.addTransform(std::move(transform));
+        OneBlockInputStream sorted_input(blocks.front());
+        return flushToFile(path, sample_block, sorted_input, codec);
     }
 
-    return flushToFile(path, sample_block, std::move(pipeline), codec);
+    BlockInputStreams inputs;
+    inputs.reserve(blocks.size());
+    for (const auto & block : blocks)
+        if (block.rows())
+            inputs.push_back(std::make_shared<OneBlockInputStream>(block));
+
+    MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+    return flushToFile(path, sample_block, sorted_input, codec);
 }
 
 SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
@@ -165,8 +157,8 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
     if (!blocks.empty())
         files.emplace_back(flush(blocks));
 
-    Pipes pipes;
-    pipes.reserve(num_files_for_merge);
+    BlockInputStreams inputs;
+    inputs.reserve(num_files_for_merge);
 
     /// Merge by parts to save memory. It's possible to exchange disk I/O and memory by num_files_for_merge.
     {
@@ -177,27 +169,13 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
         {
             for (const auto & file : files)
             {
-                pipes.emplace_back(streamFromFile(file));
+                inputs.emplace_back(streamFromFile(file));
 
-                if (pipes.size() == num_files_for_merge || &file == &files.back())
+                if (inputs.size() == num_files_for_merge || &file == &files.back())
                 {
-                    QueryPipelineBuilder pipeline;
-                    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-                    pipes = Pipes();
-
-                    if (pipeline.getNumStreams() > 1)
-                    {
-                        auto transform = std::make_shared<MergingSortedTransform>(
-                            pipeline.getHeader(),
-                            pipeline.getNumStreams(),
-                            sort_description,
-                            rows_in_block,
-                            SortingQueueStrategy::Default);
-
-                        pipeline.addTransform(std::move(transform));
-                    }
-
-                    new_files.emplace_back(flushToFile(getPath(), sample_block, std::move(pipeline), codec));
+                    MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+                    new_files.emplace_back(flushToFile(getPath(), sample_block, sorted_input, codec));
+                    inputs.clear();
                 }
             }
 
@@ -206,36 +184,22 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
         }
 
         for (const auto & file : files)
-            pipes.emplace_back(streamFromFile(file));
+            inputs.emplace_back(streamFromFile(file));
     }
 
-    return PremergedFiles{std::move(files), Pipe::unitePipes(std::move(pipes))};
+    return PremergedFiles{std::move(files), std::move(inputs)};
 }
 
 SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
 {
     PremergedFiles files = premerge();
-    QueryPipelineBuilder pipeline;
-    pipeline.init(std::move(files.pipe));
-
-    if (pipeline.getNumStreams() > 1)
-    {
-        auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(),
-            pipeline.getNumStreams(),
-            sort_description,
-            rows_in_block,
-            SortingQueueStrategy::Default);
-
-        pipeline.addTransform(std::move(transform));
-    }
-
-    return flushToManyFiles(getPath(), sample_block, std::move(pipeline), codec, callback);
+    MergingSortedBlockInputStream sorted_input(files.streams, sort_description, rows_in_block);
+    return flushToManyFiles(getPath(), sample_block, sorted_input, codec, callback);
 }
 
-Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
+BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 {
-    return Pipe(std::make_shared<TemporaryFileLazySource>(file->path(), materializeBlock(sample_block)));
+    return std::make_shared<TemporaryFileLazyInputStream>(file->path(), materializeBlock(sample_block));
 }
 
 String SortedBlocksWriter::getPath() const
@@ -285,37 +249,18 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
     size_t num_rows = 0;
 
     { /// Merge sort blocks
-        Pipes pipes;
-        pipes.reserve(blocks.size());
+        BlockInputStreams inputs;
+        inputs.reserve(blocks.size());
 
         for (auto & block : blocks)
         {
             num_rows += block.rows();
-            Chunk chunk(block.getColumns(), block.rows());
-            pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
+            inputs.emplace_back(std::make_shared<OneBlockInputStream>(block));
         }
 
         Blocks tmp_blocks;
-
-        QueryPipelineBuilder builder;
-        builder.init(Pipe::unitePipes(std::move(pipes)));
-
-        if (builder.getNumStreams() > 1)
-        {
-            auto transform = std::make_shared<MergingSortedTransform>(
-                builder.getHeader(),
-                builder.getNumStreams(),
-                sort_description,
-                num_rows,
-                SortingQueueStrategy::Default);
-
-            builder.addTransform(std::move(transform));
-        }
-
-        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-        PullingPipelineExecutor executor(pipeline);
-        Block block;
-        while (executor.pull(block))
+        MergingSortedBlockInputStream stream(inputs, sort_description, num_rows);
+        while (const auto & block = stream.read())
             tmp_blocks.emplace_back(block);
 
         blocks.swap(tmp_blocks);
@@ -324,7 +269,25 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
     if (blocks.size() == 1)
         return blocks[0];
 
-    return concatenateBlocks(blocks);
+    Block out = blocks[0].cloneEmpty();
+
+    { /// Concatenate blocks
+        MutableColumns columns = out.mutateColumns();
+
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            columns[i]->reserve(num_rows);
+            for (const auto & block : blocks)
+            {
+                const auto & tmp_column = *block.getByPosition(i).column;
+                columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
+            }
+        }
+
+        out.setColumns(std::move(columns));
+    }
+
+    return out;
 }
 
 }

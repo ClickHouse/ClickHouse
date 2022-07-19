@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
 #include <Columns/ColumnString.h>
@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -43,8 +43,6 @@ public:
     {
         return 1;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

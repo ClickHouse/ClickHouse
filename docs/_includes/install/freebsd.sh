@@ -1,3 +1,3 @@
-fetch 'https://builds.clickhouse.com/master/freebsd/clickhouse'
+wget 'https://builds.clickhouse.tech/master/freebsd/clickhouse'
 chmod a+x ./clickhouse
-su -m root -c './clickhouse install'
+sudo ./clickhouse install

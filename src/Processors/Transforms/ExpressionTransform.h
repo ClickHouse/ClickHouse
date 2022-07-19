@@ -1,5 +1,4 @@
 #pragma once
-#include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -12,10 +11,10 @@ class ActionsDAG;
 
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.
-  * For example: hits * 2 + 3, url LIKE '%clickhouse%'
+  * For example: hits * 2 + 3, url LIKE '%yandex%'
   * The expression processes each row independently of the others.
   */
-class ExpressionTransform final : public ISimpleTransform
+class ExpressionTransform : public ISimpleTransform
 {
 public:
     ExpressionTransform(
@@ -31,29 +30,6 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
-};
-
-class ConvertingTransform final : public ExceptionKeepingTransform
-{
-public:
-    ConvertingTransform(
-            const Block & header_,
-            ExpressionActionsPtr expression_);
-
-    String getName() const override { return "ConvertingTransform"; }
-
-protected:
-    void onConsume(Chunk chunk) override;
-    GenerateResult onGenerate() override
-    {
-        GenerateResult res;
-        res.chunk = std::move(cur_chunk);
-        return res;
-    }
-
-private:
-    ExpressionActionsPtr expression;
-    Chunk cur_chunk;
 };
 
 }

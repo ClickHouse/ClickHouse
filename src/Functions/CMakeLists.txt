@@ -1,4 +1,3 @@
-include(configure_config.cmake)
 configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
 add_subdirectory(divide)
@@ -13,76 +12,99 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        ch_contrib::wyhash
-        ch_contrib::cityhash
-        ch_contrib::farmhash
+        ${BASE64_LIBRARY}
+        ${CITYHASH_LIBRARIES}
+        ${FARMHASH_LIBRARIES}
+        ${FASTOPS_LIBRARY}
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
         clickhouse_parsers
-        ch_contrib::consistent_hashing
+        consistent-hashing
         dbms
-        ch_contrib::metrohash
-        ch_contrib::murmurhash
-        ch_contrib::hashidsxx
+        metrohash
+        murmurhash
 
     PRIVATE
-        ch_contrib::zlib
+        ${ZLIB_LIBRARIES}
         boost::filesystem
         divide_impl
 )
 
-if (TARGET OpenSSL::Crypto)
-    target_link_libraries(clickhouse_functions PUBLIC OpenSSL::Crypto)
+if (OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
 endif()
 
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
+target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+    set (STRIP_DSF_DEFAULT ON)
+else()
+    set (STRIP_DSF_DEFAULT OFF)
+endif()
+
+
+#  Provides faster linking and lower binary size.
+#  Tradeoff is the inability to debug some source files with e.g. gdb
+#  (empty stack frames and no local variables)."
+option(STRIP_DEBUG_SYMBOLS_FUNCTIONS "Do not generate debugger info for ClickHouse functions" ${STRIP_DSF_DEFAULT})
+
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
+    message(WARNING "Not generating debugger info for ClickHouse functions")
     target_compile_options(clickhouse_functions PRIVATE "-g0")
+else()
+    message(STATUS "Generating debugger info for ClickHouse functions")
 endif()
 
-if (TARGET ch_contrib::icu)
-    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::icu)
+if (USE_ICU)
+    target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
 endif ()
 
-if (TARGET ch_contrib::fastops)
-    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::fastops)
+if (USE_FASTOPS)
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${FASTOPS_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif ()
 
-if (TARGET ch_contrib::llvm)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::llvm)
+if (USE_EMBEDDED_COMPILER)
+    target_link_libraries(clickhouse_functions PRIVATE ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
-if (TARGET ch_contrib::base-x)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base-x)
+if(USE_BASE64)
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
 endif()
 
-if (TARGET ch_contrib::base64)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base64)
+target_link_libraries(clickhouse_functions PRIVATE lz4)
+
+if (USE_H3)
+    target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${H3_INCLUDE_DIR})
 endif()
 
-target_link_libraries(clickhouse_functions PRIVATE ch_contrib::lz4)
+target_link_libraries(clickhouse_functions PRIVATE hyperscan)
 
-if (ENABLE_NLP)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::cld2)
+if(USE_SIMDJSON)
+    target_link_libraries(clickhouse_functions PRIVATE simdjson)
 endif()
 
-if (TARGET ch_contrib::h3)
-    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::h3)
+if(USE_RAPIDJSON)
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
 
-if (TARGET ch_contrib::vectorscan)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::vectorscan)
-endif()
+# ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
+# If turned ON, this option defines such macro.
+# See `src/Functions/TargetSpecific.h`
+option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (TARGET ch_contrib::simdjson)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::simdjson)
-endif()
-
-if (TARGET ch_contrib::rapidjson)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::rapidjson)
+if (ENABLE_MULTITARGET_CODE)
+    add_definitions(-DENABLE_MULTITARGET_CODE=1)
+else()
+    add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
 add_subdirectory(GatherUtils)
@@ -96,9 +118,9 @@ target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_array)
 
 add_subdirectory(JSONPath)
 
+if (USE_STATS)
+    target_link_libraries(clickhouse_functions PRIVATE stats)
+endif()
+
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()

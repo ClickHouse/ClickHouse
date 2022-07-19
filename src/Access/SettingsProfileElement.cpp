@@ -1,42 +1,34 @@
 #include <Access/SettingsProfileElement.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
+#include <Parsers/ASTSettingsProfileElement.h>
 #include <Core/Settings.h>
 #include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/Access/ASTSettingsProfileElement.h>
-#include <base/removeDuplicates.h>
 
 
 namespace DB
 {
-
-namespace
-{
-    constexpr const char ALLOW_BACKUP_SETTING_NAME[] = "allow_backup";
-}
-
-
 SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast)
 {
     init(ast, nullptr);
 }
 
-SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControl & access_control)
+SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControlManager & manager)
 {
-    init(ast, &access_control);
+    init(ast, &manager);
 }
 
-void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const AccessControl * access_control)
+void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const AccessControlManager * manager)
 {
-    auto name_to_id = [id_mode{ast.id_mode}, access_control](const String & name_) -> UUID
+    auto name_to_id = [id_mode{ast.id_mode}, manager](const String & name_) -> UUID
     {
         if (id_mode)
             return parse<UUID>(name_);
-        assert(access_control);
-        return access_control->getID<SettingsProfile>(name_);
+        assert(manager);
+        return manager->getID<SettingsProfile>(name_);
     };
 
     if (!ast.parent_profile.empty())
@@ -47,11 +39,8 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
         setting_name = ast.setting_name;
 
         /// Optionally check if a setting with that name is allowed.
-        if (access_control)
-        {
-            if (setting_name != ALLOW_BACKUP_SETTING_NAME)
-                access_control->checkSettingNameIsAllowed(setting_name);
-        }
+        if (manager)
+            manager->checkSettingNameIsAllowed(setting_name);
 
         value = ast.value;
         min_value = ast.min_value;
@@ -86,13 +75,13 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 }
 
 
-std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControlManager & manager) const
 {
     auto ast = std::make_shared<ASTSettingsProfileElement>();
 
     if (parent_profile)
     {
-        auto parent_profile_name = access_control.tryReadName(*parent_profile);
+        auto parent_profile_name = manager.tryReadName(*parent_profile);
         if (parent_profile_name)
             ast->parent_profile = *parent_profile_name;
     }
@@ -113,10 +102,10 @@ SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElement
         emplace_back(*ast_element);
 }
 
-SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControl & access_control)
+SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControlManager & manager)
 {
     for (const auto & ast_element : ast.elements)
-        emplace_back(*ast_element, access_control);
+        emplace_back(*ast_element, manager);
 }
 
 
@@ -128,42 +117,12 @@ std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() con
     return res;
 }
 
-std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControlManager & manager) const
 {
     auto res = std::make_shared<ASTSettingsProfileElements>();
     for (const auto & element : *this)
-        res->elements.push_back(element.toASTWithNames(access_control));
+        res->elements.push_back(element.toASTWithNames(manager));
     return res;
-}
-
-
-std::vector<UUID> SettingsProfileElements::findDependencies() const
-{
-    std::vector<UUID> res;
-    for (const auto & element : *this)
-    {
-        if (element.parent_profile)
-            res.push_back(*element.parent_profile);
-    }
-    return res;
-}
-
-
-void SettingsProfileElements::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
-{
-    for (auto & element : *this)
-    {
-        if (element.parent_profile)
-        {
-            auto id = *element.parent_profile;
-            auto it_new_id = old_to_new_ids.find(id);
-            if (it_new_id != old_to_new_ids.end())
-            {
-                auto new_id = it_new_id->second;
-                element.parent_profile = new_id;
-            }
-        }
-    }
 }
 
 
@@ -178,11 +137,8 @@ Settings SettingsProfileElements::toSettings() const
     Settings res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
-        {
-            if (!elem.value.isNull())
-                res.set(elem.setting_name, elem.value);
-        }
+        if (!elem.setting_name.empty() && !elem.value.isNull())
+            res.set(elem.setting_name, elem.value);
     }
     return res;
 }
@@ -192,21 +148,18 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     SettingsChanges res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
-        {
-            if (!elem.value.isNull())
-                res.push_back({elem.setting_name, elem.value});
-        }
+        if (!elem.setting_name.empty() && !elem.value.isNull())
+            res.push_back({elem.setting_name, elem.value});
     }
     return res;
 }
 
-SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControl & access_control) const
+SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControlManager & manager) const
 {
-    SettingsConstraints res{access_control};
+    SettingsConstraints res{manager};
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
+        if (!elem.setting_name.empty())
         {
             if (!elem.min_value.isNull())
                 res.setMinValue(elem.setting_name, elem.min_value);
@@ -217,32 +170,6 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
         }
     }
     return res;
-}
-
-std::vector<UUID> SettingsProfileElements::toProfileIDs() const
-{
-    std::vector<UUID> res;
-    for (const auto & elem : *this)
-    {
-        if (elem.parent_profile)
-            res.push_back(*elem.parent_profile);
-    }
-
-    /// If some profile occurs multiple times (with some other settings in between),
-    /// the latest occurrence overrides all the previous ones.
-    removeDuplicatesKeepLast(res);
-
-    return res;
-}
-
-bool SettingsProfileElements::isBackupAllowed() const
-{
-    for (const auto & setting : *this)
-    {
-        if (setting.setting_name == ALLOW_BACKUP_SETTING_NAME)
-            return static_cast<bool>(SettingFieldBool{setting.value});
-    }
-    return true;
 }
 
 }

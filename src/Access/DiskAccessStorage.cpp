@@ -1,20 +1,44 @@
 #include <Access/DiskAccessStorage.h>
-#include <Access/AccessEntityIO.h>
-#include <Access/AccessChangesNotifier.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/RestoreSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Interpreters/Access/InterpreterCreateUserQuery.h>
-#include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <Common/logger_useful.h>
+#include <IO/ReadBufferFromString.h>
+#include <Access/User.h>
+#include <Access/Role.h>
+#include <Access/RowPolicy.h>
+#include <Access/Quota.h>
+#include <Access/SettingsProfile.h>
+#include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTCreateRoleQuery.h>
+#include <Parsers/ASTCreateRowPolicyQuery.h>
+#include <Parsers/ASTCreateQuotaQuery.h>
+#include <Parsers/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/ASTGrantQuery.h>
+#include <Parsers/ParserCreateUserQuery.h>
+#include <Parsers/ParserCreateRoleQuery.h>
+#include <Parsers/ParserCreateRowPolicyQuery.h>
+#include <Parsers/ParserCreateQuotaQuery.h>
+#include <Parsers/ParserCreateSettingsProfileQuery.h>
+#include <Parsers/ParserGrantQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Interpreters/InterpreterCreateUserQuery.h>
+#include <Interpreters/InterpreterCreateRoleQuery.h>
+#include <Interpreters/InterpreterCreateRowPolicyQuery.h>
+#include <Interpreters/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
+#include <Interpreters/InterpreterGrantQuery.h>
+#include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/InterpreterShowGrantsQuery.h>
+#include <Common/quoteString.h>
+#include <Core/Defines.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
+#include <boost/range/algorithm_ext/push_back.hpp>
 #include <filesystem>
 #include <fstream>
 
@@ -25,11 +49,44 @@ namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FILE_DOESNT_EXIST;
+    extern const int INCORRECT_ACCESS_ENTITY_DEFINITION;
 }
 
 
 namespace
 {
+    using EntityType = IAccessStorage::EntityType;
+    using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
+
+    /// Special parser for the 'ATTACH access entity' queries.
+    class ParserAttachAccessEntity : public IParserBase
+    {
+    protected:
+        const char * getName() const override { return "ATTACH access entity query"; }
+
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserCreateUserQuery create_user_p;
+            ParserCreateRoleQuery create_role_p;
+            ParserCreateRowPolicyQuery create_policy_p;
+            ParserCreateQuotaQuery create_quota_p;
+            ParserCreateSettingsProfileQuery create_profile_p;
+            ParserGrantQuery grant_p;
+
+            create_user_p.useAttachMode();
+            create_role_p.useAttachMode();
+            create_policy_p.useAttachMode();
+            create_quota_p.useAttachMode();
+            create_profile_p.useAttachMode();
+            grant_p.useAttachMode();
+
+            return create_user_p.parse(pos, node, expected) || create_role_p.parse(pos, node, expected)
+                || create_policy_p.parse(pos, node, expected) || create_quota_p.parse(pos, node, expected)
+                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected);
+        }
+    };
+
+
     /// Reads a file containing ATTACH queries and then parses it to build an access entity.
     AccessEntityPtr readEntityFile(const String & file_path)
     {
@@ -39,7 +96,80 @@ namespace
         readStringUntilEOF(file_contents, in);
 
         /// Parse the file contents.
-        return deserializeAccessEntity(file_contents, file_path);
+        ASTs queries;
+        ParserAttachAccessEntity parser;
+        const char * begin = file_contents.data(); /// begin of current query
+        const char * pos = begin; /// parser moves pos from begin to the end of current query
+        const char * end = begin + file_contents.size();
+        while (pos < end)
+        {
+            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
+            while (isWhitespaceASCII(*pos) || *pos == ';')
+                ++pos;
+        }
+
+        /// Interpret the AST to build an access entity.
+        std::shared_ptr<User> user;
+        std::shared_ptr<Role> role;
+        std::shared_ptr<RowPolicy> policy;
+        std::shared_ptr<Quota> quota;
+        std::shared_ptr<SettingsProfile> profile;
+        AccessEntityPtr res;
+
+        for (const auto & query : queries)
+        {
+            if (auto * create_user_query = query->as<ASTCreateUserQuery>())
+            {
+                if (res)
+                    throw Exception("Two access entities in one file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                res = user = std::make_unique<User>();
+                InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query);
+            }
+            else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
+            {
+                if (res)
+                    throw Exception("Two access entities in one file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                res = role = std::make_unique<Role>();
+                InterpreterCreateRoleQuery::updateRoleFromQuery(*role, *create_role_query);
+            }
+            else if (auto * create_policy_query = query->as<ASTCreateRowPolicyQuery>())
+            {
+                if (res)
+                    throw Exception("Two access entities in one file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                res = policy = std::make_unique<RowPolicy>();
+                InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
+            }
+            else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
+            {
+                if (res)
+                    throw Exception("Two access entities are attached in the same file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                res = quota = std::make_unique<Quota>();
+                InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
+            }
+            else if (auto * create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
+            {
+                if (res)
+                    throw Exception("Two access entities are attached in the same file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                res = profile = std::make_unique<SettingsProfile>();
+                InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
+            }
+            else if (auto * grant_query = query->as<ASTGrantQuery>())
+            {
+                if (!user && !role)
+                    throw Exception("A user or role should be attached before grant in file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                if (user)
+                    InterpreterGrantQuery::updateUserFromQuery(*user, *grant_query);
+                else
+                    InterpreterGrantQuery::updateRoleFromQuery(*role, *grant_query);
+            }
+            else
+                throw Exception("No interpreter found for query " + query->getID(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+        }
+
+        if (!res)
+            throw Exception("No access entities attached in file " + file_path, ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+
+        return res;
     }
 
 
@@ -51,15 +181,29 @@ namespace
         }
         catch (...)
         {
-            tryLogCurrentException(&log);
+            tryLogCurrentException(&log, "Could not parse " + file_path);
             return nullptr;
         }
     }
 
+
     /// Writes ATTACH queries for building a specified access entity to a file.
     void writeEntityFile(const String & file_path, const IAccessEntity & entity)
     {
-        String file_contents = serializeAccessEntity(entity);
+        /// Build list of ATTACH queries.
+        ASTs queries;
+        queries.push_back(InterpreterShowCreateAccessEntityQuery::getAttachQuery(entity));
+        if ((entity.getType() == EntityType::USER) || (entity.getType() == EntityType::ROLE))
+            boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
+
+        /// Serialize the list of ATTACH queries to a string.
+        WriteBufferFromOwnString buf;
+        for (const ASTPtr & query : queries)
+        {
+            formatAST(*query, buf, false, true);
+            buf.write(";\n", 2);
+        }
+        String file_contents = buf.str();
 
         /// First we save *.tmp file and then we rename if everything's ok.
         auto tmp_file_path = std::filesystem::path{file_path}.replace_extension(".tmp");
@@ -136,9 +280,9 @@ namespace
 
 
     /// Calculates the path for storing a map of name of access entity to UUID for access entities of some type.
-    String getListFilePath(const String & directory_path, AccessEntityType type)
+    String getListFilePath(const String & directory_path, EntityType type)
     {
-        String file_name = AccessEntityTypeInfo::get(type).plural_raw_name;
+        String file_name = EntityTypeInfo::get(type).plural_raw_name;
         boost::to_lower(file_name);
         return directory_path + file_name + ".list";
     }
@@ -154,17 +298,29 @@ namespace
 
     bool tryParseUUID(const String & str, UUID & id)
     {
-        return tryParse(id, str);
+        try
+        {
+            id = parseFromString<UUID>(str);
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
     }
 }
 
 
-DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
+DiskAccessStorage::DiskAccessStorage(const String & directory_path_, bool readonly_)
+    : DiskAccessStorage(STORAGE_TYPE, directory_path_, readonly_)
+{
+}
+
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_)
+    : IAccessStorage(storage_name_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
-    backup_allowed = allow_backup_;
 
     std::error_code create_dir_error_code;
     std::filesystem::create_directories(directory_path, create_dir_error_code);
@@ -190,15 +346,7 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
 DiskAccessStorage::~DiskAccessStorage()
 {
     stopListsWritingThread();
-
-    try
-    {
-        writeLists();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    writeLists();
 }
 
 
@@ -226,7 +374,7 @@ bool DiskAccessStorage::isPathEqual(const String & directory_path_) const
 void DiskAccessStorage::clear()
 {
     entries_by_id.clear();
-    for (auto type : collections::range(AccessEntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
         entries_by_name_and_type[static_cast<size_t>(type)].clear();
 }
 
@@ -236,7 +384,7 @@ bool DiskAccessStorage::readLists()
     clear();
 
     bool ok = true;
-    for (auto type : collections::range(AccessEntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
     {
         auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
         auto file_path = getListFilePath(directory_path, type);
@@ -309,7 +457,7 @@ bool DiskAccessStorage::writeLists()
 }
 
 
-void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
+void DiskAccessStorage::scheduleWriteLists(EntityType type)
 {
     if (failed_to_write_lists)
         return; /// We don't try to write list files after the first fail.
@@ -326,8 +474,7 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
-    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
-    out.close();
+    std::ofstream{getNeedRebuildListsMarkFilePath(directory_path)};
 
     lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
     lists_writing_thread_is_waiting = true;
@@ -396,14 +543,14 @@ bool DiskAccessStorage::rebuildLists()
         entries_by_name[entry.name] = &entry;
     }
 
-    for (auto type : collections::range(AccessEntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
         types_of_lists_to_write.insert(type);
 
     return true;
 }
 
 
-std::optional<UUID> DiskAccessStorage::findImpl(AccessEntityType type, const String & name) const
+std::optional<UUID> DiskAccessStorage::findImpl(EntityType type, const String & name) const
 {
     std::lock_guard lock{mutex};
     const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
@@ -415,7 +562,7 @@ std::optional<UUID> DiskAccessStorage::findImpl(AccessEntityType type, const Str
 }
 
 
-std::vector<UUID> DiskAccessStorage::findAllImpl(AccessEntityType type) const
+std::vector<UUID> DiskAccessStorage::findAllImpl(EntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
@@ -426,24 +573,19 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(AccessEntityType type) const
     return res;
 }
 
-bool DiskAccessStorage::exists(const UUID & id) const
+bool DiskAccessStorage::existsImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return entries_by_id.contains(id);
+    return entries_by_id.count(id);
 }
 
 
-AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
+AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return nullptr;
-    }
+        throwNotFound(id);
 
     const auto & entry = it->second;
     if (!entry.entity)
@@ -452,59 +594,43 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
 }
 
 
-std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
+String DiskAccessStorage::readNameImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return std::nullopt;
-    }
-    return std::make_pair(it->second.name, it->second.type);
+        throwNotFound(id);
+    return String{it->second.name};
 }
 
 
-std::optional<UUID> DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool DiskAccessStorage::canInsertImpl(const AccessEntityPtr &) const
 {
+    return !readonly;
+}
+
+
+UUID DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists)
+{
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     UUID id = generateRandomID();
-    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
-        return id;
-
-    return std::nullopt;
-}
-
-
-bool DiskAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
-{
     std::lock_guard lock{mutex};
-    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
+    insertNoLock(id, new_entity, replace_if_exists, notifications);
+    return id;
 }
 
 
-bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+void DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications)
 {
     const String & name = new_entity->getName();
-    AccessEntityType type = new_entity->getType();
+    EntityType type = new_entity->getType();
 
-    /// Check that we can insert.
     if (readonly)
         throwReadonlyCannotInsert(type, name);
 
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    auto it_by_name = entries_by_name.find(name);
-    bool name_collision = (it_by_name != entries_by_name.end());
-
-    if (name_collision && !replace_if_exists)
-    {
-        if (throw_if_exists)
-            throwNameCollisionCannotInsert(type, name);
-        else
-            return false;
-    }
-
+    /// Check that we can insert.
     auto it_by_id = entries_by_id.find(id);
     if (it_by_id != entries_by_id.end())
     {
@@ -512,11 +638,18 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
     }
 
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    auto it_by_name = entries_by_name.find(name);
+    bool name_collision = (it_by_name != entries_by_name.end());
+
+    if (name_collision && !replace_if_exists)
+        throwNameCollisionCannotInsert(type, name);
+
     scheduleWriteLists(type);
     writeAccessEntityToDisk(id, *new_entity);
 
     if (name_collision && replace_if_exists)
-        removeNoLock(it_by_name->second->id, /* throw_if_not_exists = */ false);
+        removeNoLock(it_by_name->second->id, notifications);
 
     /// Do insertion.
     auto & entry = entries_by_id[id];
@@ -525,32 +658,28 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     entry.name = name;
     entry.entity = new_entity;
     entries_by_name[entry.name] = &entry;
-
-    changes_notifier.onEntityAdded(id, new_entity);
-    return true;
+    prepareNotifications(id, entry, false, notifications);
 }
 
 
-bool DiskAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
+void DiskAccessStorage::removeImpl(const UUID & id)
 {
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     std::lock_guard lock{mutex};
-    return removeNoLock(id, throw_if_not_exists);
+    removeNoLock(id, notifications);
 }
 
 
-bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
+void DiskAccessStorage::removeNoLock(const UUID & id, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return false;
-    }
+        throwNotFound(id);
 
     Entry & entry = it->second;
-    AccessEntityType type = entry.type;
+    EntityType type = entry.type;
 
     if (readonly)
         throwReadonlyCannotRemove(type, entry.name);
@@ -559,38 +688,32 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
     deleteAccessEntityOnDisk(id);
 
     /// Do removing.
-    UUID removed_id = id;
+    prepareNotifications(id, entry, true, notifications);
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     entries_by_name.erase(entry.name);
     entries_by_id.erase(it);
-
-    changes_notifier.onEntityRemoved(removed_id, type);
-    return true;
 }
 
 
-bool DiskAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
+void DiskAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
 {
+    Notifications notifications;
+    SCOPE_EXIT({ notify(notifications); });
+
     std::lock_guard lock{mutex};
-    return updateNoLock(id, update_func, throw_if_not_exists);
+    updateNoLock(id, update_func, notifications);
 }
 
 
-bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
+void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return false;
-    }
+        throwNotFound(id);
 
     Entry & entry = it->second;
     if (readonly)
         throwReadonlyCannotUpdate(entry.type, entry.name);
-
     if (!entry.entity)
         entry.entity = readAccessEntityFromDisk(id);
     auto old_entity = entry.entity;
@@ -600,17 +723,17 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());
 
     if (*new_entity == *old_entity)
-        return true;
+        return;
 
     const String & new_name = new_entity->getName();
     const String & old_name = old_entity->getName();
-    const AccessEntityType type = entry.type;
+    const EntityType type = entry.type;
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
 
     bool name_changed = (new_name != old_name);
     if (name_changed)
     {
-        if (entries_by_name.contains(new_name))
+        if (entries_by_name.count(new_name))
             throwNameCollisionCannotRename(type, old_name, new_name);
         scheduleWriteLists(type);
     }
@@ -625,9 +748,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
         entries_by_name[entry.name] = &entry;
     }
 
-    changes_notifier.onEntityUpdated(id, new_entity);
-
-    return true;
+    prepareNotifications(id, entry, false, notifications);
 }
 
 
@@ -651,24 +772,73 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 }
 
 
-void DiskAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+void DiskAccessStorage::prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const
 {
-    if (!isRestoreAllowed())
-        throwRestoreNotAllowed();
-
-    auto entities = restorer.getAccessEntitiesToRestore();
-    if (entities.empty())
+    if (!remove && !entry.entity)
         return;
 
-    auto create_access = restorer.getRestoreSettings().create_access;
-    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+    const AccessEntityPtr entity = remove ? nullptr : entry.entity;
+    for (const auto & handler : entry.handlers_by_id)
+        notifications.push_back({handler, id, entity});
 
-    restorer.addDataRestoreTask([this, entities = std::move(entities), replace_if_exists, throw_if_exists]
+    for (const auto & handler : handlers_by_type[static_cast<size_t>(entry.type)])
+        notifications.push_back({handler, id, entity});
+}
+
+
+scope_guard DiskAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries_by_id.find(id);
+    if (it == entries_by_id.end())
+        return {};
+    const Entry & entry = it->second;
+    auto handler_it = entry.handlers_by_id.insert(entry.handlers_by_id.end(), handler);
+
+    return [this, id, handler_it]
     {
-        for (const auto & [id, entity] : entities)
-            insertWithID(id, entity, replace_if_exists, throw_if_exists);
-    });
+        std::lock_guard lock2{mutex};
+        auto it2 = entries_by_id.find(id);
+        if (it2 != entries_by_id.end())
+        {
+            const Entry & entry2 = it2->second;
+            entry2.handlers_by_id.erase(handler_it);
+        }
+    };
+}
+
+scope_guard DiskAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+{
+    std::lock_guard lock{mutex};
+    auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    handlers.push_back(handler);
+    auto handler_it = std::prev(handlers.end());
+
+    return [this, type, handler_it]
+    {
+        std::lock_guard lock2{mutex};
+        auto & handlers2 = handlers_by_type[static_cast<size_t>(type)];
+        handlers2.erase(handler_it);
+    };
+}
+
+bool DiskAccessStorage::hasSubscriptionImpl(const UUID & id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries_by_id.find(id);
+    if (it != entries_by_id.end())
+    {
+        const Entry & entry = it->second;
+        return !entry.handlers_by_id.empty();
+    }
+    return false;
+}
+
+bool DiskAccessStorage::hasSubscriptionImpl(EntityType type) const
+{
+    std::lock_guard lock{mutex};
+    const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
+    return !handlers.empty();
 }
 
 }

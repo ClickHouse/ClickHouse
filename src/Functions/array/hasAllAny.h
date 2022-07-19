@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/range.h>
-#include <base/map.h>
+#include <common/range.h>
+#include <common/map.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -38,13 +38,12 @@ public:
 
     bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (auto i : collections::range(0, arguments.size()))
         {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+            auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
                 throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
                                 + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

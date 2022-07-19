@@ -1,4 +1,4 @@
-# settings_profiles
+# system.settings_profiles {#system_tables-settings_profiles}
 
 Contains properties of configured setting profiles.
 
@@ -7,7 +7,7 @@ Columns:
 
 -    `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Setting profile ID.
 
--    `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of setting profiles. Configured in the `access_control_path` parameter.
+-    `storage` ([String](../../sql-reference/data-types/string.md)) — Path to the storage of setting profiles. Configured in the `access_control_path` parameter. 
 
 -    `num_elements` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of elements for this profile in the `system.settings_profile_elements` table.
 
@@ -21,4 +21,4 @@ Columns:
 
 -   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings_profiles) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/settings_profiles) <!--hide-->

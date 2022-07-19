@@ -5,17 +5,15 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
-#include <concepts>
 
 #include <pcg-random/pcg_random.hpp>
 
-#include <Common/DateLUT.h>
-#include <Common/LocalDate.h>
-#include <Common/LocalDateTime.h>
-#include <base/find_symbols.h>
-#include <base/StringRef.h>
-#include <base/DecomposedFloat.h>
-#include <base/EnumReflection.h>
+#include <common/DateLUT.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
+#include <common/find_symbols.h>
+#include <common/StringRef.h>
+#include <common/DecomposedFloat.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -80,7 +78,7 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
-    buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+    buf.write(reinterpret_cast<const char *>(&x), sizeof(x));
 }
 
 template <typename T>
@@ -113,11 +111,10 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(StringRef{s}, buf);
 }
 
-inline void writeStringBinary(std::string_view s, WriteBuffer & buf)
+inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
 {
     writeStringBinary(StringRef{s}, buf);
 }
-
 
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
@@ -186,16 +183,11 @@ inline void writeString(const char * data, size_t size, WriteBuffer & buf)
     buf.write(data, size);
 }
 
-// Otherwise StringRef and string_view overloads are ambiguous when passing string literal. Prefer std::string_view
-void writeString(std::same_as<StringRef> auto ref, WriteBuffer & buf)
+inline void writeString(const StringRef & ref, WriteBuffer & buf)
 {
     writeString(ref.data, ref.size, buf);
 }
 
-inline void writeString(std::string_view ref, WriteBuffer & buf)
-{
-    writeString(ref.data(), ref.size(), buf);
-}
 
 /** Writes a C-string without creating a temporary object. If the string is a literal, then `strlen` is executed at the compilation stage.
   * Use when the string is a literal.
@@ -365,7 +357,7 @@ inline void writeJSONString(const StringRef & s, WriteBuffer & buf, const Format
     writeJSONString(s.data, s.data + s.size, buf, settings);
 }
 
-inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const std::string_view & s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(StringRef{s}, buf, settings);
 }
@@ -380,7 +372,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
 {
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
+    const bool need_quote = (is_integer_v<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
         || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
@@ -440,7 +432,7 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
     writeEscapedString(ref.data, ref.size, buf);
 }
 
-inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
+inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
 {
     writeEscapedString(ref.data(), ref.size(), buf);
 }
@@ -478,7 +470,7 @@ inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
+inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
 }
@@ -493,7 +485,7 @@ inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-inline void writeDoubleQuotedString(std::string_view s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
@@ -663,7 +655,7 @@ inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 }
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
+void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
 void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
@@ -736,11 +728,6 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
     writeDateText<delimiter>(LocalDate(date), buf);
 }
 
-template <char delimiter = '-'>
-inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf)
-{
-    writeDateText<delimiter>(LocalDate(date), buf);
-}
 
 /// In the format YYYY-MM-DD HH:MM:SS
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
@@ -805,23 +792,6 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     scale = scale > MaxScale ? MaxScale : scale;
 
     auto components = DecimalUtils::split(datetime64, scale);
-    /// Case1:
-    /// -127914467.877
-    /// => whole = -127914467, fraction = 877(After DecimalUtils::split)
-    /// => new whole = -127914468(1965-12-12 12:12:12), new fraction = 1000 - 877 = 123(.123)
-    /// => 1965-12-12 12:12:12.123
-    ///
-    /// Case2:
-    /// -0.877
-    /// => whole = 0, fractional = -877(After DecimalUtils::split)
-    /// => whole = -1(1969-12-31 23:59:59), fractional = 1000 + (-877) = 123(.123)
-    using T = typename DateTime64::NativeType;
-    if (datetime64.value < 0 && components.fractional)
-    {
-        components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
-        --components.whole;
-    }
-
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(LocalDateTime(components.whole, time_zone), buf);
 
     if (scale > 0)
@@ -886,12 +856,12 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
 
 /// Methods for output in binary format.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -901,22 +871,24 @@ inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBi
 inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
+template <typename T>
+inline std::enable_if_t<is_integer_v<T>, void>
+writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
-inline void writeText(is_integer auto x, WriteBuffer & buf)
-{
-    if constexpr (std::is_same_v<decltype(x), bool>)
-        writeBoolText(x, buf);
-    else if constexpr (std::is_same_v<decltype(x), char>)
-        writeChar(x, buf);
-    else
-        writeIntText(x, buf);
-}
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
+writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
-inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeText(const String & x, WriteBuffer & buf) { writeString(x.c_str(), x.size(), buf); }
+inline void writeText(const std::string_view & x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
 
-inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
+/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
+template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
 
-inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
+/// unlike the method for std::string
+/// assumes here that `x` is a null-terminated string.
+inline void writeText(const char * x, WriteBuffer & buf) { writeCString(x, buf); }
+inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeString(x, size, buf); }
 
 inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
@@ -924,67 +896,34 @@ inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTim
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 
 template <typename T>
-void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+String decimalFractional(const T & x, UInt32 scale)
 {
-    /// If it's big integer, but the number of digits is small,
-    /// use the implementation for smaller integers for more efficient arithmetic.
-
     if constexpr (std::is_same_v<T, Int256>)
     {
         if (x <= std::numeric_limits<UInt32>::max())
-        {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt32>(x), scale);
         else if (x <= std::numeric_limits<UInt64>::max())
-        {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt64>(x), scale);
         else if (x <= std::numeric_limits<UInt128>::max())
-        {
-            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt128>(x), scale);
     }
     else if constexpr (std::is_same_v<T, Int128>)
     {
         if (x <= std::numeric_limits<UInt32>::max())
-        {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt32>(x), scale);
         else if (x <= std::numeric_limits<UInt64>::max())
-        {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt64>(x), scale);
     }
 
-    constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    assert(scale <= max_digits);
-    char buf[max_digits];
-    memset(buf, '0', scale);
-
+    String str(scale, '0');
     T value = x;
-    Int32 last_nonzero_pos = 0;
-    for (Int32 pos = scale - 1; pos >= 0; --pos)
-    {
-        auto remainder = value % 10;
-        value /= 10;
-
-        if (remainder != 0 && last_nonzero_pos == 0)
-            last_nonzero_pos = pos;
-
-        buf[pos] += static_cast<char>(remainder);
-    }
-
-    writeChar('.', ostr);
-    ostr.write(buf, trailing_zeros ? scale : last_nonzero_pos + 1);
+    for (Int32 pos = scale - 1; pos >= 0; --pos, value /= 10)
+        str[pos] += static_cast<char>(value % 10);
+    return str;
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
 {
     T part = DecimalUtils::getWholePart(x, scale);
 
@@ -997,25 +936,21 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
     if (scale)
     {
+        writeChar('.', ostr);
         part = DecimalUtils::getFractionalPart(x, scale);
-        if (part || trailing_zeros)
-        {
-            if (part < 0)
-                part *= T(-1);
-
-            writeDecimalFractional(part, scale, ostr, trailing_zeros);
-        }
+        String fractional = decimalFractional(part, scale);
+        ostr.write(fractional.data(), scale);
     }
 }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
-inline void writeQuoted(std::string_view x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
 inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
@@ -1043,12 +978,12 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
-inline void writeDoubleQuoted(std::string_view x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
@@ -1076,8 +1011,8 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-requires is_arithmetic_v<T>
-inline void writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
@@ -1146,8 +1081,8 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 }
 
 template <typename T>
-requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
     if constexpr (sizeof(x) == 2)
         x = __builtin_bswap16(x);
@@ -1157,17 +1092,6 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little 
         x = __builtin_bswap64(x);
 
     writePODBinary(x, buf);
-}
-
-template <typename T>
-requires is_big_int_v<T>
-inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
-{
-    for (size_t i = 0; i != std::size(x.items); ++i)
-    {
-        const auto & item = x.items[std::size(x.items) - i - 1];
-        writeBinaryBigEndian(item, buf);
-    }
 }
 
 struct PcgSerializer
@@ -1185,19 +1109,3 @@ struct PcgSerializer
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 }
-
-template<>
-struct fmt::formatter<DB::UUID>
-{
-    template<typename ParseContext>
-    constexpr auto parse(ParseContext & context)
-    {
-        return context.begin();
-    }
-
-    template<typename FormatContext>
-    auto format(const DB::UUID & uuid, FormatContext & context)
-    {
-        return fmt::format_to(context.out(), "{}", toString(uuid));
-    }
-};

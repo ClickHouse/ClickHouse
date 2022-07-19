@@ -1,0 +1,45 @@
+option(ENABLE_GSASL_LIBRARY "Enable gsasl library" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_GSASL_LIBRARY)
+    if(USE_INTERNAL_LIBGSASL_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal libgsasl library with ENABLE_GSASL_LIBRARY=OFF")
+    endif()
+    return()
+endif()
+
+if (UNBUNDLED)
+    # when USE_STATIC_LIBRARIES we usually need to pick up hell a lot of dependencies for libgsasl
+    option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ${USE_STATIC_LIBRARIES})
+else()
+    option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ON)
+endif()
+
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src/gsasl.h")
+    if (USE_INTERNAL_LIBGSASL_LIBRARY)
+        message (WARNING "submodule contrib/libgsasl is missing. to fix try run: \n git submodule update --init --recursive")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libgsasl")
+        set (USE_INTERNAL_LIBGSASL_LIBRARY 0)
+    endif ()
+    set (MISSING_INTERNAL_LIBGSASL_LIBRARY 1)
+endif ()
+
+if (NOT USE_INTERNAL_LIBGSASL_LIBRARY)
+    find_library (LIBGSASL_LIBRARY gsasl)
+    find_path (LIBGSASL_INCLUDE_DIR  NAMES gsasl.h PATHS ${LIBGSASL_INCLUDE_PATHS})
+    if (NOT LIBGSASL_LIBRARY OR NOT LIBGSASL_INCLUDE_DIR)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system libgsasl")
+    endif ()
+endif ()
+
+if (LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)
+elseif (NOT MISSING_INTERNAL_LIBGSASL_LIBRARY)
+    set (LIBGSASL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src" "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/linux_x86_64/include")
+    set (USE_INTERNAL_LIBGSASL_LIBRARY 1)
+    set (LIBGSASL_LIBRARY libgsasl)
+endif ()
+
+if(LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)
+    set (USE_LIBGSASL 1)
+endif()
+
+message (STATUS "Using libgsasl=${USE_LIBGSASL}: ${LIBGSASL_INCLUDE_DIR} : ${LIBGSASL_LIBRARY}")

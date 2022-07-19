@@ -1,5 +1,5 @@
 ---
-sidebar_label: FROM
+toc_title: FROM
 ---
 
 # FROM子句 {#select-from}
@@ -14,13 +14,13 @@ sidebar_label: FROM
 
 子查询是另一个 `SELECT` 可以指定在 `FROM` 后的括号内的查询。
 
-`FROM` 子句可以包含多个数据源，用逗号分隔，这相当于在他们身上执行 [CROSS JOIN](../../../sql-reference/statements/select/join.md)
+`FROM` 子句可以包含多个数据源，用逗号分隔，这相当于在他们身上执行 [CROSS JOIN](../../../sql-reference/statements/select/join.md) 
 
 ## FINAL 修饰符 {#select-from-final}
 
 当 `FINAL` 被指定，ClickHouse会在返回结果之前完全合并数据，从而执行给定表引擎合并期间发生的所有数据转换。
 
-它适用于从使用 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-引擎族. 还支持:
+它适用于从使用 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-引擎族（除了 `GraphiteMergeTree`). 还支持:
 
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) 版本 `MergeTree` 引擎
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md)，和 [MaterializedView](../../../engines/table-engines/special/materializedview.md) 在其他引擎上运行的引擎，只要是它们底层是 `MergeTree`-引擎表即可。

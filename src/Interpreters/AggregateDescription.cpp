@@ -82,6 +82,24 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
         }
         out << "\n";
     }
+
+    out << prefix << "  Argument positions: ";
+
+    if (arguments.empty())
+        out << "none\n";
+    else
+    {
+        bool first = true;
+        for (auto arg : arguments)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+
+            out << arg;
+        }
+        out << '\n';
+    }
 }
 
 void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
@@ -119,6 +137,15 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
         args_array->add(name);
 
     map.add("Arguments", std::move(args_array));
+
+    if (!arguments.empty())
+    {
+        auto args_pos_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (auto pos : arguments)
+            args_pos_array->add(pos);
+
+        map.add("Argument Positions", std::move(args_pos_array));
+    }
 }
 
 }

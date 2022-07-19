@@ -1,17 +1,14 @@
-#ifdef HAS_RESERVED_IDENTIFIER
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
-
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
-#include <cstring>
+#include <string.h>
 #include <algorithm>
 #include <type_traits>
 
@@ -419,7 +416,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (UInt32(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
@@ -443,7 +440,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Gorilla);
+    UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
     factory.registerCompressionCodecWithType("Gorilla", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {

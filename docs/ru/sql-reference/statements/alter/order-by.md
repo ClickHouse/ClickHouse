@@ -1,6 +1,6 @@
 ---
-sidebar_position: 41
-sidebar_label: ORDER BY
+toc_priority: 41
+toc_title: ORDER BY
 ---
 
 # Манипуляции с ключевыми выражениями таблиц {#manipuliatsii-s-kliuchevymi-vyrazheniiami-tablits}

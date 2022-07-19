@@ -1,6 +1,4 @@
-#include "remapExecutable.h"
-
-#if defined(OS_LINUX) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG) && !defined(SPLIT_SHARED_LIBRARIES)
+#if defined(__linux__) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG) && !defined(SPLIT_SHARED_LIBRARIES)
 
 #include <sys/mman.h>
 #include <unistd.h>
@@ -12,6 +10,8 @@
 #include <Common/getMappedArea.h>
 #include <Common/Exception.h>
 #include <fmt/format.h>
+
+#include "remapExecutable.h"
 
 
 namespace DB
@@ -136,11 +136,10 @@ __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 }
 
 
-size_t remapExecutable()
+void remapExecutable()
 {
     auto [begin, size] = getMappedArea(reinterpret_cast<void *>(remapExecutable));
     remapToHugeStep1(begin, size);
-    return size;
 }
 
 }
@@ -150,7 +149,7 @@ size_t remapExecutable()
 namespace DB
 {
 
-size_t remapExecutable() { return 0; }
+void remapExecutable() {}
 
 }
 

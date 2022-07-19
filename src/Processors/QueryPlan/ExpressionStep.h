@@ -18,7 +18,9 @@ public:
     explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
     String getName() const override { return "Expression"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+    void updateInputStream(DataStream input_stream, bool keep_header);
 
     void describeActions(FormatSettings & settings) const override;
 
@@ -27,8 +29,6 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
 private:
-    void updateOutputStream() override;
-
     ActionsDAGPtr actions_dag;
 };
 

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 76
-sidebar_label: 安全更新日志
+toc_priority: 76
+toc_title: 安全更新日志
 ---
 
 ## 修复于ClickHouse Release 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
@@ -71,4 +71,4 @@ deb包中的错误配置可能导致未经授权使用数据库。
 
 作者：英国国家网络安全中心（NCSC）
 
-{## [Original article](https://clickhouse.com/docs/en/security_changelog/) ##}
+{## [Original article](https://clickhouse.tech/docs/en/security_changelog/) ##}

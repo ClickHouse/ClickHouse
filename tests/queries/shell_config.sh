@@ -11,7 +11,6 @@ export CLICKHOUSE_TEST_PATH="${BASH_SOURCE[1]}"
 CLICKHOUSE_TEST_NAME="$(basename "$CLICKHOUSE_TEST_PATH" .sh)"
 export CLICKHOUSE_TEST_NAME
 export CLICKHOUSE_TEST_ZOOKEEPER_PREFIX="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABASE}"
-export CLICKHOUSE_TEST_UNIQUE_NAME="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABASE}"
 
 [ -v CLICKHOUSE_CONFIG_CLIENT ] && CLICKHOUSE_CLIENT_OPT0+=" --config-file=${CLICKHOUSE_CONFIG_CLIENT} "
 [ -v CLICKHOUSE_HOST ] && CLICKHOUSE_CLIENT_OPT0+=" --host=${CLICKHOUSE_HOST} "
@@ -19,9 +18,9 @@ export CLICKHOUSE_TEST_UNIQUE_NAME="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABAS
 [ -v CLICKHOUSE_PORT_TCP ] && CLICKHOUSE_BENCHMARK_OPT0+=" --port=${CLICKHOUSE_PORT_TCP} "
 [ -v CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL ] && CLICKHOUSE_CLIENT_OPT0+=" --send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL} "
 [ -v CLICKHOUSE_DATABASE ] && CLICKHOUSE_CLIENT_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
-[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_CLIENT_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
+[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_CLIENT_OPT0+=" --log_comment='${CLICKHOUSE_LOG_COMMENT}' "
 [ -v CLICKHOUSE_DATABASE ] && CLICKHOUSE_BENCHMARK_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
-[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_BENCHMARK_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
+[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_BENCHMARK_OPT0+=" --log_comment='${CLICKHOUSE_LOG_COMMENT}' "
 
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
 # client
@@ -73,10 +72,8 @@ export CLICKHOUSE_PORT_MYSQL=${CLICKHOUSE_PORT_MYSQL:=$(${CLICKHOUSE_EXTRACT_CON
 export CLICKHOUSE_PORT_MYSQL=${CLICKHOUSE_PORT_MYSQL:="9004"}
 export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=postgresql_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:="9005"}
-export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=keeper_server.tcp_port 2>/dev/null)} 2>/dev/null
-export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 
-export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
+export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'/'"--secure --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
 
 # Add database and log comment to url params
 if [ -v CLICKHOUSE_URL_PARAMS ]
@@ -128,24 +125,4 @@ function clickhouse_client_removed_host_parameter()
     # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
-}
-
-function wait_for_queries_to_finish()
-{
-    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
-    num_tries=0
-    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
-        sleep 0.5;
-        num_tries=$((num_tries+1))
-        if [ $num_tries -eq 20 ]; then
-            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
-            break
-        fi
-    done
-}
-
-function random_str()
-{
-    local n=$1 && shift
-    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }

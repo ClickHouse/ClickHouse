@@ -1,11 +1,12 @@
 <?xml version="1.0"?>
-<clickhouse>
-    <!-- See also the files in users.d directory where the settings can be overridden. -->
-
+<yandex>
     <!-- Profiles of settings. -->
     <profiles>
         <!-- Default settings. -->
         <default>
+            <!-- Maximum memory usage for processing single query, in bytes. -->
+            <max_memory_usage>10000000000</max_memory_usage>
+
             <!-- How to choose between replicas during distributed query processing.
                  random - choose random replica from set of replicas with minimum number of errors
                  nearest_hostname - from set of replicas with minimum number of errors, choose replica
@@ -27,9 +28,7 @@
     <users>
         <!-- If user name was not specified, 'default' user is used. -->
         <default>
-            <!-- See also the files in users.d directory where the password can be overridden.
-
-                 Password could be specified in plaintext or in SHA256 (in hex format).
+            <!-- Password could be specified in plaintext or in SHA256 (in hex format).
 
                  If you want to specify password in plaintext (not recommended), place it in 'password' element.
                  Example: <password>qwerty</password>.
@@ -50,7 +49,7 @@
                   place 'kerberos' element instead of 'password' (and similar) elements.
                  The name part of the canonical principal name of the initiator must match the user name for authentication to succeed.
                  You can also place 'realm' element inside 'kerberos' element to further restrict authentication to only those requests
-                  whose initiator's realm matches it.
+                  whose initiator's realm matches it. 
                  Example: <kerberos />
                  Example: <kerberos><realm>EXAMPLE.COM</realm></kerberos>
 
@@ -76,9 +75,9 @@
                  Each element of list has one of the following forms:
                  <ip> IP-address or network mask. Examples: 213.180.204.3 or 10.0.0.1/8 or 10.0.0.1/255.255.255.0
                      2a02:6b8::3 or 2a02:6b8::3/64 or 2a02:6b8::3/ffff:ffff:ffff:ffff::.
-                 <host> Hostname. Example: server01.clickhouse.com.
+                 <host> Hostname. Example: server01.yandex.ru.
                      To check access, DNS query is performed, and all received addresses compared to peer address.
-                 <host_regexp> Regular expression for host names. Example, ^server\d\d-\d\d-\d\.clickhouse\.com$
+                 <host_regexp> Regular expression for host names. Example, ^server\d\d-\d\d-\d\.yandex\.ru$
                      To check access, DNS PTR query is performed for peer address and then regexp is applied.
                      Then, for result of PTR query, another DNS query is performed and all received addresses compared to peer address.
                      Strongly recommended that regexp is ends with $
@@ -117,4 +116,4 @@
             </interval>
         </default>
     </quotas>
-</clickhouse>
+</yandex>

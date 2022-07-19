@@ -1,9 +1,9 @@
 ---
-sidebar_position: 50
-sidebar_label: SET
+toc_priority: 49
+toc_title: SET
 ---
 
-# SET Statement
+# SET Statement {#query-set}
 
 ``` sql
 SET param = value

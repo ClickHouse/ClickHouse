@@ -7,8 +7,7 @@
 #include <mutex>
 #include <atomic>
 
-#include <Common/logger_useful.h>
-#include <base/defines.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -40,7 +39,7 @@ public:
     /** Initialize LRUCache with max_size and max_elements_size.
       * max_elements_size == 0 means no elements size restrictions.
       */
-    explicit LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
+    LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
         : max_size(std::max(static_cast<size_t>(1), max_size_))
         , max_elements_size(max_elements_size_)
         {}
@@ -49,7 +48,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        auto res = getImpl(key);
+        auto res = getImpl(key, lock);
         if (res)
             ++hits;
         else
@@ -62,19 +61,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        setImpl(key, mapped);
-    }
-
-    void remove(const Key & key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end())
-            return;
-        auto & cell = it->second;
-        current_size -= cell.size;
-        queue.erase(cell.queue_iterator);
-        cells.erase(it);
+        setImpl(key, mapped, lock);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -92,7 +79,7 @@ public:
         {
             std::lock_guard cache_lock(mutex);
 
-            auto val = getImpl(key);
+            auto val = getImpl(key, cache_lock);
             if (val)
             {
                 ++hits;
@@ -130,7 +117,7 @@ public:
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            setImpl(key, token->value);
+            setImpl(key, token->value, cache_lock);
             result = true;
         }
 
@@ -175,7 +162,7 @@ public:
         misses = 0;
     }
 
-    virtual ~LRUCache() = default;
+    virtual ~LRUCache() {}
 
 protected:
     using LRUQueue = std::list<Key>;
@@ -190,7 +177,7 @@ protected:
 
     using Cells = std::unordered_map<Key, Cell, HashFunction>;
 
-    Cells cells TSA_GUARDED_BY(mutex);
+    Cells cells;
 
     mutable std::mutex mutex;
 private:
@@ -201,8 +188,8 @@ private:
         explicit InsertToken(LRUCache & cache_) : cache(cache_) {}
 
         std::mutex mutex;
-        bool cleaned_up TSA_GUARDED_BY(mutex) = false;
-        MappedPtr value TSA_GUARDED_BY(mutex);
+        bool cleaned_up = false; /// Protected by the token mutex
+        MappedPtr value; /// Protected by the token mutex
 
         LRUCache & cache;
         size_t refcount = 0; /// Protected by the cache mutex
@@ -222,7 +209,6 @@ private:
         InsertTokenHolder() = default;
 
         void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             key = key_;
             token = token_;
@@ -230,7 +216,6 @@ private:
         }
 
         void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -261,21 +246,21 @@ private:
     friend struct InsertTokenHolder;
 
 
-    InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
+    InsertTokenById insert_tokens;
 
-    LRUQueue queue TSA_GUARDED_BY(mutex);
+    LRUQueue queue;
 
     /// Total weight of values.
-    size_t current_size TSA_GUARDED_BY(mutex) = 0;
+    size_t current_size = 0;
     const size_t max_size;
     const size_t max_elements_size;
 
     std::atomic<size_t> hits {0};
     std::atomic<size_t> misses {0};
 
-    const WeightFunction weight_function;
+    WeightFunction weight_function;
 
-    MappedPtr getImpl(const Key & key) TSA_REQUIRES(mutex)
+    MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -291,7 +276,7 @@ private:
         return cell.value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped) TSA_REQUIRES(mutex)
+    void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -324,7 +309,7 @@ private:
         removeOverflow();
     }
 
-    void removeOverflow() TSA_REQUIRES(mutex)
+    void removeOverflow()
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();

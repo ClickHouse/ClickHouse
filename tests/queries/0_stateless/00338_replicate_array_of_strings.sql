@@ -1,5 +1,3 @@
--- Tags: replica
-
 DROP TABLE IF EXISTS bad_arrays;
 CREATE TABLE bad_arrays (a Array(String), b Array(UInt8)) ENGINE = Memory;
 

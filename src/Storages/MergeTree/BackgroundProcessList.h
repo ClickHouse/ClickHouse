@@ -26,8 +26,6 @@ public:
     BackgroundProcessListEntry(const BackgroundProcessListEntry &) = delete;
     BackgroundProcessListEntry & operator=(const BackgroundProcessListEntry &) = delete;
 
-    BackgroundProcessListEntry(BackgroundProcessListEntry &&) noexcept = default;
-
     BackgroundProcessListEntry(BackgroundProcessList<ListElement, Info> & list_, const typename container_t::iterator it_, const CurrentMetrics::Metric & metric)
         : list(list_), it{it_}, metric_increment{metric}
     {
@@ -60,7 +58,7 @@ protected:
 
     CurrentMetrics::Metric metric;
 
-    explicit BackgroundProcessList(const CurrentMetrics::Metric & metric_)
+    BackgroundProcessList(const CurrentMetrics::Metric & metric_)
         : metric(metric_)
     {}
 public:
@@ -87,7 +85,7 @@ public:
 
     virtual void onEntryCreate(const Entry & /* entry */) {}
     virtual void onEntryDestroy(const Entry & /* entry */) {}
-    virtual inline ~BackgroundProcessList() = default;
+    virtual inline ~BackgroundProcessList() {}
 };
 
 }

@@ -43,10 +43,8 @@ optimize table data_01643 final;
 drop table data_01643;
 
 select 'wide fsync_part_directory,vertical';
-create table data_01643 (key Int) engine=MergeTree() order by key settings min_bytes_for_wide_part=0, fsync_part_directory=1, enable_vertical_merge_algorithm=1, vertical_merge_algorithm_min_rows_to_activate=0, vertical_merge_algorithm_min_columns_to_activate=0;
+create table data_01643 (key Int) engine=MergeTree() order by key settings min_bytes_for_wide_part=0, fsync_part_directory=1, enable_vertical_merge_algorithm=1, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;
 insert into data_01643 values (1);
-insert into data_01643 values (2);
-select * from data_01643 order by key;
--- vertical merge does not supports deduplicate, hence no FINAL
-optimize table data_01643;
+select * from data_01643;
+optimize table data_01643 final;
 drop table data_01643;

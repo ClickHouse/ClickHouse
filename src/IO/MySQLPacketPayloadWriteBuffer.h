@@ -13,7 +13,7 @@ class MySQLPacketPayloadWriteBuffer : public WriteBuffer
 public:
     MySQLPacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_);
 
-    bool remainingPayloadSize() const { return total_left; }
+    bool remainingPayloadSize() { return total_left; }
 
 protected:
     void nextImpl() override;

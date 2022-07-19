@@ -7,7 +7,7 @@
 -   ReplicatedReplacingMergeTree
 -   ReplicatedAggregatingMergeTree
 -   ReplicatedCollapsingMergeTree
--   ReplicatedVersionedCollapsingMergeTree
+-   ReplicatedVersionedCollapsingMergetree
 -   ReplicatedGraphiteMergeTree
 
 副本是表级别的，不是整个服务器级的。所以，服务器里可以同时有复制表和非复制表。
@@ -18,19 +18,11 @@
 
 而 `CREATE`，`DROP`，`ATTACH`，`DETACH` 和 `RENAME` 语句只会在单个服务器上执行，不会被复制。
 
--   `CREATE TABLE` 在运行此语句的服务器上创建一个新的可复制表。如果此表已存在其他服务器上，则给该表添加新副本。
--   `DROP TABLE` 删除运行此查询的服务器上的副本。
--   `RENAME` 重命名一个副本。换句话说，可复制表不同的副本可以有不同的名称。
+-   `The CREATE TABLE` 在运行此语句的服务器上创建一个新的可复制表。如果此表已存在其他服务器上，则给该表添加新副本。
+-   `The DROP TABLE` 删除运行此查询的服务器上的副本。
+-   `The RENAME` 重命名一个副本。换句话说，可复制表不同的副本可以有不同的名称。
 
-ClickHouse 使用 [Apache ZooKeeper](https://zookeeper.apache.org) 存储副本的元信息。请使用 ZooKeeper 3.4.5 或更高版本。
-
-要使用副本，需在 [Zookeeper](../../../operations/server-configuration-parameters/settings.md#server-settings_zookeeper) 服务器的配置部分设置相应参数。
-
-:::warning
-不要忽视安全设置。 ClickHouse 支持 ZooKeeper 安全子系统中的 `digest` [ACL 方案](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) 。
-:::
-
-Zookeeper 集群地址的设置样例如下：
+要使用副本，需在配置文件中设置 ZooKeeper 集群的地址。例如：
 
 ``` xml
 <zookeeper>
@@ -49,41 +41,7 @@ Zookeeper 集群地址的设置样例如下：
 </zookeeper>
 ```
 
-通过以引擎参数的形式提供 ZooKeeper 集群的名称和路径，ClickHouse 同样支持将副本的元信息存储在备用 ZooKeeper 集群上。也就是说，支持将不同数据表的元数据存储在不同的 ZooKeeper 集群上。
-
-设置备用 ZooKeeper 集群地址的样例如下：
-
-``` xml
-<auxiliary_zookeepers>
-    <zookeeper2>
-        <node>
-            <host>example_2_1</host>
-            <port>2181</port>
-        </node>
-        <node>
-            <host>example_2_2</host>
-            <port>2181</port>
-        </node>
-        <node>
-            <host>example_2_3</host>
-            <port>2181</port>
-        </node>
-    </zookeeper2>
-    <zookeeper3>
-        <node>
-            <host>example_3_1</host>
-            <port>2181</port>
-        </node>
-    </zookeeper3>
-</auxiliary_zookeepers>
-```
-
-为了将数据表的元数据存储到备用 ZooKeeper 集群而非默认 ZooKeeper 集群，我们可以通过如下 SQL 的方式创建使用
-ReplicatedMergeTree 引擎的数据表：
-
-```
-CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
-```
+需要 ZooKeeper 3.4.5 或更高版本。
 
 你可以配置任何现有的 ZooKeeper 集群，系统会使用里面的目录来存取元数据（该目录在创建可复制表时指定）。
 
@@ -95,9 +53,7 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 
 对于非常大的集群，你可以把不同的 ZooKeeper 集群用于不同的分片。然而，即使 Yandex.Metrica 集群（大约300台服务器）也证明还不需要这么做。
 
-复制是多主异步。 `INSERT` 语句（以及 `ALTER` ）可以发给任意可用的服务器。数据会先插入到执行该语句的服务器上，然后被复制到其他服务器。由于它是异步的，在其他副本上最近插入的数据会有一些延迟。如果部分副本不可用，则数据在其可用时再写入。副本可用的情况下，则延迟时长是通过网络传输压缩数据块所需的时间。为复制表执行后台任务的线程数量，可以通过 [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size) 进行设置。
-
-`ReplicatedMergeTree` 引擎采用一个独立的线程池进行复制拉取。线程池的大小通过 [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size) 进行限定，它可以在重启服务器时进行调整。
+复制是多主异步。 `INSERT` 语句（以及 `ALTER` ）可以发给任意可用的服务器。数据会先插入到执行该语句的服务器上，然后被复制到其他服务器。由于它是异步的，在其他副本上最近插入的数据会有一些延迟。如果部分副本不可用，则数据在其可用时再写入。副本可用的情况下，则延迟时长是通过网络传输压缩数据块所需的时间。
 
 默认情况下，INSERT 语句仅等待一个副本写入成功后返回。如果数据只成功写入一个副本后该副本所在的服务器不再存在，则存储的数据会丢失。要启用数据写入多个副本才确认返回，使用 `insert_quorum` 选项。
 
@@ -119,7 +75,6 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 
 -   `zoo_path` — ZooKeeper 中该表的路径。
 -   `replica_name` — ZooKeeper 中的该表的副本名称。
--   `other_parameters` — 关于引擎的一系列参数，这个引擎即是用来创建复制的引擎，例如，`ReplacingMergeTree` 。
 
 示例:
 
@@ -135,9 +90,7 @@ ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
 ```
 
-<details markdown="1">
-
-<summary>已弃用的建表语法示例：</summary>
+已弃用的建表语法示例：
 
 ``` sql
 CREATE TABLE table_name
@@ -148,19 +101,17 @@ CREATE TABLE table_name
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 ```
 
-</details>
-
 如上例所示，这些参数可以包含宏替换的占位符，即大括号的部分。它们会被替换为配置文件里 ‘macros’ 那部分配置的值。示例：
 
 ``` xml
 <macros>
     <layer>05</layer>
     <shard>02</shard>
-    <replica>example05-02-1</replica>
+    <replica>example05-02-1.yandex.ru</replica>
 </macros>
 ```
 
-ZooKeeper 中该表的路径对每个可复制表都要是唯一的。不同分片上的表要有不同的路径。
+«ZooKeeper 中该表的路径»对每个可复制表都要是唯一的。不同分片上的表要有不同的路径。
 这种情况下，路径包含下面这些部分：
 
 `/clickhouse/tables/` 是公共前缀，我们推荐使用这个。
@@ -168,42 +119,13 @@ ZooKeeper 中该表的路径对每个可复制表都要是唯一的。不同分�
 `{layer}-{shard}` 是分片标识部分。在此示例中，由于 Yandex.Metrica 集群使用了两级分片，所以它是由两部分组成的。但对于大多数情况来说，你只需保留 {shard} 占位符即可，它会替换展开为分片标识。
 
 `table_name` 是该表在 ZooKeeper 中的名称。使其与 ClickHouse 中的表名相同比较好。 这里它被明确定义，跟 ClickHouse 表名不一样，它并不会被 RENAME 语句修改。
-*HINT*：你也可以在 `table_name` 前面添加一个数据库名称。例如： `db_name.table_name` 。
-
-两个内置的占位符 `{database}` 和 `{table}` 也可使用，它们可以展开成数据表名称和数据库名称（只有当这些宏指令在 `macros` 部分已经定义时才可以）。因此 ZooKeeper 路径可以指定为 `'/clickhouse/tables/{layer}-{shard}/{database}/{table}'` 。
-
-当使用这些内置占位符时，请当心数据表重命名。 ZooKeeper 中的路径无法变更，而当数据表被重命名时，宏命令将展开为另一个路径，数据表将指向一个 ZooKeeper 上并不存在的路径，并因此转变为只读模式。
+*HINT*：你可以在前面添加一个数据库名称 `table_name` 也是 例如。 `db_name.table_name`
 
 副本名称用于标识同一个表分片的不同副本。你可以使用服务器名称，如上例所示。同个分片中不同副本的副本名称要唯一。
 
 你也可以显式指定这些参数，而不是使用宏替换。对于测试和配置小型集群这可能会很方便。但是，这种情况下，则不能使用分布式 DDL 语句（`ON CLUSTER`）。
 
 使用大型集群时，我们建议使用宏替换，因为它可以降低出错的可能性。
-
-你可以在服务器的配置文件中指定 `Replicated` 数据表引擎的默认参数。例如：
-
-```xml
-<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
-<default_replica_name>{replica}</default_replica_name>
-```
-
-这样，你可以在建表时省略参数：
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree
-ORDER BY x;
-```
-
-它等价于：
-
-``` sql
-CREATE TABLE table_name (
-	x UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
-ORDER BY x;
-```
 
 在每个副本服务器上运行 `CREATE TABLE` 查询。将创建新的复制表，或给现有表添加新副本。
 
@@ -242,7 +164,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 1.  在服务器上安装 ClickHouse。在包含分片标识符和副本的配置文件中正确定义宏配置，如果有用到的话，
 2.  如果服务器上有非复制表则必须手动复制，可以从副本服务器上（在 `/var/lib/clickhouse/data/db_name/table_name/` 目录中）复制它们的数据。
 3.  从副本服务器上中复制位于 `/var/lib/clickhouse/metadata/` 中的表定义信息。如果在表定义信息中显式指定了分片或副本标识符，请更正它以使其对应于该副本。（另外，启动服务器，然后会在 `/var/lib/clickhouse/metadata/` 中的.sql文件中生成所有的 `ATTACH TABLE` 语句。）
-4.  要开始恢复，ZooKeeper 中创建节点 `/path_to_table/replica_name/flags/force_restore_data`，节点内容不限，或运行命令来恢复所有复制的表：`sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
+    4.要开始恢复，ZooKeeper 中创建节点 `/path_to_table/replica_name/flags/force_restore_data`，节点内容不限，或运行命令来恢复所有复制的表：`sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
 
 然后启动服务器（如果它已运行则重启）。数据会从副本中下载。
 
@@ -277,12 +199,4 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 如果 ZooKeeper 中的数据丢失或损坏，如上所述，你可以通过将数据转移到非复制表来保存数据。
 
-**参考**
-
--   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
--   [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size)
--   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
--   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
--   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)
-
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->

@@ -15,8 +15,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/LimitTransform.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -24,14 +24,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Formats/registerFormats.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <base/StringRef.h>
-#include <Common/DateLUT.h>
-#include <base/bit_cast.h>
+#include <common/StringRef.h>
+#include <common/DateLUT.h>
+#include <common/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <memory>
@@ -549,7 +545,7 @@ private:
 
         CodePoint sample(UInt64 random, double end_multiplier) const
         {
-            UInt64 range = total + static_cast<UInt64>(count_end * end_multiplier);
+            UInt64 range = total + UInt64(count_end * end_multiplier);
             if (range == 0)
                 return END;
 
@@ -728,7 +724,7 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = static_cast<double>(histogram.total) / histogram.buckets.size();
+                double average = double(histogram.total) / histogram.buckets.size();
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
@@ -909,7 +905,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(column_array.getOffsetsPtr()));
+        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_array.getOffsetsPtr())));
     }
 
     void updateSeed() override
@@ -947,7 +943,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(column_nullable.getNullMapColumnPtr()));
+        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_nullable.getNullMapColumnPtr())));
     }
 
     void updateSeed() override
@@ -1160,19 +1156,17 @@ try
         if (!silent)
             std::cerr << "Training models\n";
 
-        Pipe pipe(context->getInputFormat(input_format, file_in, header, max_block_size));
+        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
 
-        QueryPipeline pipeline(std::move(pipe));
-        PullingPipelineExecutor executor(pipeline);
-
-        Block block;
-        while (executor.pull(block))
+        input->readPrefix();
+        while (Block block = input->read())
         {
             obfuscator.train(block.getColumns());
             source_rows += block.rows();
             if (!silent)
                 std::cerr << "Processed " << source_rows << " rows\n";
         }
+        input->readSuffix();
     }
 
     obfuscator.finalize();
@@ -1189,35 +1183,24 @@ try
 
         file_in.seek(0, SEEK_SET);
 
-        Pipe pipe(context->getInputFormat(input_format, file_in, header, max_block_size));
+        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
+        BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
 
         if (processed_rows + source_rows > limit)
-        {
-            pipe.addSimpleTransform([&](const Block & cur_header)
-            {
-                return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
-            });
-        }
+            input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);
 
-        QueryPipeline in_pipeline(std::move(pipe));
-
-        auto output = context->getOutputFormatParallelIfPossible(output_format, file_out, header);
-        QueryPipeline out_pipeline(std::move(output));
-
-        PullingPipelineExecutor in_executor(in_pipeline);
-        PushingPipelineExecutor out_executor(out_pipeline);
-
-        Block block;
-        out_executor.start();
-        while (in_executor.pull(block))
+        input->readPrefix();
+        output->writePrefix();
+        while (Block block = input->read())
         {
             Columns columns = obfuscator.generate(block.getColumns());
-            out_executor.push(header.cloneWithColumns(columns));
+            output->write(header.cloneWithColumns(columns));
             processed_rows += block.rows();
             if (!silent)
                 std::cerr << "Processed " << processed_rows << " rows\n";
         }
-        out_executor.finish();
+        output->writeSuffix();
+        input->readSuffix();
 
         obfuscator.updateSeed();
     }

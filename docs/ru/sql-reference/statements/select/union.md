@@ -1,5 +1,5 @@
 ---
-sidebar_label: UNION
+toc_title: UNION
 ---
 
 # Секция UNION {#union-clause}

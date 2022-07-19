@@ -13,12 +13,11 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <base/types.h>
-#include <base/unaligned.h>
+#include <common/types.h>
+#include <common/unaligned.h>
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
-#include <base/extended_types.h>
 
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
@@ -71,7 +70,7 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 k0 = 0, UInt64 k1 = 0) /// NOLINT
+    SipHash(UInt64 k0 = 0, UInt64 k1 = 0)
     {
         /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ k0;
@@ -83,7 +82,7 @@ public:
         current_word = 0;
     }
 
-    ALWAYS_INLINE void update(const char * data, UInt64 size)
+    void update(const char * data, UInt64 size)
     {
         const char * end = data + size;
 
@@ -137,19 +136,14 @@ public:
     }
 
     template <typename T>
-    ALWAYS_INLINE void update(const T & x)
+    void update(const T & x)
     {
-        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+        update(reinterpret_cast<const char *>(&x), sizeof(x));
     }
 
-    ALWAYS_INLINE void update(const std::string & x)
+    void update(const std::string & x)
     {
         update(x.data(), x.length());
-    }
-
-    ALWAYS_INLINE void update(const std::string_view x)
-    {
-        update(x.data(), x.size());
     }
 
     /// Get the result in some form. This can only be done once!
@@ -195,15 +189,6 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     SipHash hash;
     hash.update(data, size);
     hash.get128(out);
-}
-
-inline UInt128 sipHash128(const char * data, const size_t size)
-{
-    SipHash hash;
-    hash.update(data, size);
-    UInt128 res;
-    hash.get128(res);
-    return res;
 }
 
 inline UInt64 sipHash64(const char * data, const size_t size)

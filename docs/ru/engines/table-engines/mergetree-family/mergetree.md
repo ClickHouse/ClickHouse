@@ -1,6 +1,6 @@
 ---
-sidebar_position: 30
-sidebar_label: MergeTree
+toc_priority: 30
+toc_title: MergeTree
 ---
 
 # MergeTree {#table_engines-mergetree}
@@ -19,9 +19,9 @@ sidebar_label: MergeTree
 
 -   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
-    :::info
+!!! info "Info"
     Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
-    :::
+
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ``` sql
@@ -68,7 +68,7 @@ ORDER BY expr
 
 -   `SAMPLE BY` — выражение для сэмплирования. Необязательный параметр.
 
-    Если используется выражение для сэмплирования, то первичный ключ должен содержать его. Результат выражения для сэмплирования должен быть беззнаковым целым числом. Пример: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    Если используется выражение для сэмплирования, то первичный ключ должен содержать его. Пример: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 -   `TTL` — список правил, определяющих длительности хранения строк, а также задающих правила перемещения частей на определённые тома или диски. Необязательный параметр.
 
@@ -86,9 +86,7 @@ ORDER BY expr
     -   `enable_mixed_granularity_parts` — включает или выключает переход к ограничению размера гранул с помощью настройки `index_granularity_bytes`. Настройка `index_granularity_bytes` улучшает производительность ClickHouse при выборке данных из таблиц с большими (десятки и сотни мегабайтов) строками. Если у вас есть таблицы с большими строками, можно включить эту настройку, чтобы повысить эффективность запросов `SELECT`.
     -   `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
     -   `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
-    -   `merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием для удаления данных с истекшим TTL. По умолчанию: `14400` секунд (4 часа).
-    -   `merge_with_recompression_ttl_timeout` — минимальное время в секундах перед повторным слиянием для повторного сжатия данных с истекшим TTL. По умолчанию: `14400` секунд (4 часа).
-    -   `try_fetch_recompressed_part_timeout` — время ожидания (в секундах) перед началом слияния с повторным сжатием. В течение этого времени ClickHouse пытается извлечь сжатую часть из реплики, которая назначила это слияние. Значение по умолчанию: `7200` секунд (2 часа).   
+    -   <a name="mergetree_setting-merge_with_ttl_timeout"></a>`merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
     -   `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных, указывающей за последний байт. По умолчанию — 1. Не отключайте её.
     -   `merge_max_block_size` — максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
     -   `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
@@ -114,9 +112,9 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Attention"
+!!! attention "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
-    :::
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
@@ -182,7 +180,7 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 Разреженный индекс допускает чтение лишних строк. При чтении одного диапазона первичного ключа, может быть прочитано до `index_granularity * 2` лишних строк в каждом блоке данных.
 
-Разреженный индекс почти всегда помещается в оперативную память и позволяет работать с очень большим количеством строк в таблицах.
+Разреженный индекс почти всегда помещаеся в оперативную память и позволяет работать с очень большим количеством строк в таблицах.
 
 ClickHouse не требует уникального первичного ключа. Можно вставить много строк с одинаковым первичным ключом.
 
@@ -316,26 +314,17 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Доступные индексы {#available-types-of-indices}
 
--   `minmax` — хранит минимум и максимум выражения (если выражение - [Tuple](../../../sql-reference/data-types/tuple.md), то для каждого элемента `Tuple`), используя их для пропуска блоков аналогично первичному ключу.
+-   `minmax` — Хранит минимум и максимум выражения (если выражение - `tuple`, то для каждого элемента `tuple`), используя их для пропуска блоков аналогично первичному ключу.
 
--   `set(max_rows)` — хранит уникальные значения выражения на блоке в количестве не более `max_rows` (если `max_rows = 0`, то ограничений нет), используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
-
--   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — хранит [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter), содержащий все N-граммы блока данных. Работает только с данными форматов [String](../../../sql-reference/data-types/string.md), [FixedString](../../../sql-reference/data-types/fixedstring.md) и [Map](../../../sql-reference/data-types/map.md) с ключами типа `String` или `fixedString`. Может быть использован для оптимизации выражений `EQUALS`, `LIKE` и `IN`.
-
-    -   `n` — размер N-граммы,
-    -   `size_of_bloom_filter_in_bytes` — размер в байтах фильтра Блума (можно использовать большие значения, например, 256 или 512, поскольку сжатие компенсирует возможные издержки).
-    -   `number_of_hash_functions` — количество хеш-функций, использующихся в фильтре Блума.
-    -   `random_seed` — состояние генератора случайных чисел для хеш-функций фильтра Блума.
-
--   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` — то же, что и`ngrambf_v1`, но хранит токены вместо N-грамм. Токены — это последовательности символов, разделенные не буквенно-цифровыми символами.
+-   `set(max_rows)` — Хранит уникальные значения выражения на блоке в количестве не более `max_rows` (если `max_rows = 0`, то ограничений нет), используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
 
 -   `bloom_filter([false_positive])` — [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter) для указанных стоблцов.
 
     Необязательный параметр `false_positive` — это вероятность получения ложноположительного срабатывания. Возможные значения: (0, 1). Значение по умолчанию: 0.025.
 
-    Поддерживаемые типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+    Поддержанные типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
-    Фильтром могут пользоваться функции: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions#hasany), [hasAll](../../../sql-reference/functions/array-functions#hasall).
+    Фильтром могут пользоваться функции: [equals](../../../engines/table-engines/mergetree-family/mergetree.md), [notEquals](../../../engines/table-engines/mergetree-family/mergetree.md), [in](../../../engines/table-engines/mergetree-family/mergetree.md), [notIn](../../../engines/table-engines/mergetree-family/mergetree.md).
 
 **Примеры**
 
@@ -353,20 +342,20 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 | Функция (оператор) / Индекс                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
-| [in](../../../sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notIn](../../../sql-reference/functions/in-functions#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [empty](../../../sql-reference/functions/array-functions#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [notEmpty](../../../sql-reference/functions/array-functions#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
 | hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 
 Функции с постоянным агрументом, который меньше, чем размер ngram не могут использовать индекс `ngrambf_v1` для оптимизации запроса.
@@ -386,34 +375,6 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
     -   `s != 1`
     -   `NOT startsWith(s, 'test')`
 
-## Проекции {#projections}
-Проекции похожи на [материализованные представления](../../../sql-reference/statements/create/view.md#materialized), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
-
-Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#force-optimize-projection).
-
-Проекции не поддерживаются для запросов `SELECT` с модификатором [FINAL](../../../sql-reference/statements/select/from.md#select-from-final).
-
-### Запрос проекции {#projection-query}
-Запрос проекции — это то, что определяет проекцию. Такой запрос неявно выбирает данные из родительской таблицы. 
-**Синтаксис**
-
-```sql
-SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
-```
-
-Проекции можно изменить или удалить с помощью запроса [ALTER](../../../sql-reference/statements/alter/projection.md).
-
-### Хранение проекции {#projection-storage}
-Проекции хранятся в каталоге куска данных. Это похоже на хранение индексов, но используется подкаталог, в котором хранится анонимный кусок таблицы `MergeTree`. Таблица создается запросом определения проекции. 
-Если присутствует секция `GROUP BY`, то используется движок [AggregatingMergeTree](aggregatingmergetree.md), а все агрегатные функции преобразуются в `AggregateFunction`. 
-Если присутствует секция `ORDER BY`, таблица `MergeTree` использует ее в качестве выражения для первичного ключа. 
-Во время процесса слияния кусок данных проекции объединяется с помощью процедуры слияния хранилища. Контрольная сумма куска данных родительской таблицы включает кусок данных проекции. Другие процедуры аналогичны индексам пропуска данных.
-
-### Анализ запросов {#projection-query-analysis}
-1. Проверьте, можно ли использовать проекцию в данном запросе, то есть, что с ней получается тот же результат, что и с запросом к базовой таблице.
-2. Выберите наиболее подходящее совпадение, содержащее наименьшее количество гранул для чтения.
-3. План запроса, который использует проекции, отличается от того, который использует исходные куски данных. Если в некоторых кусках проекции отсутствуют, можно расширить план, чтобы «проецировать» на лету.
-
 ## Конкурентный доступ к данным {#concurrent-data-access}
 
 Для конкурентного доступа к таблице используется мультиверсионность. То есть, при одновременном чтении и обновлении таблицы, данные будут читаться из набора кусочков, актуального на момент запроса. Длинных блокировок нет. Вставки никак не мешают чтениям.
@@ -422,22 +383,20 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 
 ## TTL для столбцов и таблиц {#table_engine-mergetree-ttl}
 
-Определяет время жизни значений.
+Определяет время жизни значений, а также правила перемещения данных на другой диск или том.
 
-Секция `TTL` может быть установлена как для всей таблицы, так и для каждого отдельного столбца. Для таблиц можно установить правила `TTL` для фонового перемещения кусков данных на целевые диски или тома, или правила повторного сжатия кусков данных.
+Секция `TTL` может быть установлена как для всей таблицы, так и для каждого отдельного столбца. Правила `TTL` для таблицы позволяют указать целевые диски или тома для фонового перемещения на них частей данных.
 
 Выражения должны возвращать тип [Date](../../../engines/table-engines/mergetree-family/mergetree.md) или [DateTime](../../../engines/table-engines/mergetree-family/mergetree.md).
 
-**Синтаксис**
-
-Для задания времени жизни столбца:
+Для задания времени жизни столбца, например:
 
 ``` sql
 TTL time_column
 TTL time_column + interval
 ```
 
-Чтобы задать `interval`, используйте операторы [интервала времени](../../../engines/table-engines/mergetree-family/mergetree.md#operators-datetime), например:
+Чтобы задать `interval`, используйте операторы [интервала времени](../../../engines/table-engines/mergetree-family/mergetree.md#operators-datetime).
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -446,13 +405,13 @@ TTL date_time + INTERVAL 15 HOUR
 
 ### TTL столбца {#mergetree-column-ttl}
 
-Когда срок действия значений в столбце истечёт, ClickHouse заменит их значениями по умолчанию для типа данных столбца. Если срок действия всех значений столбцов в части данных истек, ClickHouse удаляет столбец из куска данных в файловой системе.
+Когда срок действия значений в столбце истечет, ClickHouse заменит их значениями по умолчанию для типа данных столбца. Если срок действия всех значений столбцов в части данных истек, ClickHouse удаляет столбец из куска данных в файловой системе.
 
 Секцию `TTL` нельзя использовать для ключевых столбцов.
 
-**Примеры**
+Примеры:
 
-Создание таблицы с `TTL`:
+Создание таблицы с TTL
 
 ``` sql
 CREATE TABLE example_table
@@ -467,7 +426,7 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d;
 ```
 
-Добавление `TTL` на колонку существующей таблицы:
+Добавление TTL на колонку существующей таблицы
 
 ``` sql
 ALTER TABLE example_table
@@ -475,7 +434,7 @@ ALTER TABLE example_table
     c String TTL d + INTERVAL 1 DAY;
 ```
 
-Изменение `TTL` у колонки:
+Изменение TTL у колонки
 
 ``` sql
 ALTER TABLE example_table
@@ -485,24 +444,23 @@ ALTER TABLE example_table
 
 ### TTL таблицы {#mergetree-table-ttl}
 
-Для таблицы можно задать одно выражение для устаревания данных, а также несколько выражений, при срабатывании которых данные будут перемещены на [некоторый диск или том](#table_engine-mergetree-multiple-volumes). Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки. Операции перемещения или повторного сжатия данных выполняются только когда устаревают все данные в куске.
+Для таблицы можно задать одно выражение для устаревания данных, а также несколько выражений, по срабатывании которых данные переместятся на [некоторый диск или том](#table_engine-mergetree-multiple-volumes). Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки.
 
 ``` sql
 TTL expr
-    [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
 ```
 
-За каждым `TTL` выражением может следовать тип действия, которое выполняется после достижения времени, соответствующего результату `TTL` выражения:
+За каждым TTL выражением может следовать тип действия, которое выполняется после достижения времени, соответствующего результату TTL выражения:
 
 -   `DELETE` - удалить данные (действие по умолчанию);
--   `RECOMPRESS codec_name` - повторно сжать данные с помощью кодека `codec_name`;   
 -   `TO DISK 'aaa'` - переместить данные на диск `aaa`;
 -   `TO VOLUME 'bbb'` - переместить данные на том `bbb`;
 -   `GROUP BY` -  агрегировать данные.
 
-В секции `WHERE` можно задать условие удаления или агрегирования устаревших строк (для перемещения и сжатия условие `WHERE` не применимо).
+В секции `WHERE` можно задать условие удаления или агрегирования устаревших строк (для перемещения условие `WHERE` не применимо).
 
 Колонки, по которым агрегируются данные в `GROUP BY`, должны являться префиксом первичного ключа таблицы.
 
@@ -510,7 +468,7 @@ TTL expr
 
 **Примеры**
 
-Создание таблицы с `TTL`:
+Создание таблицы с TTL:
 
 ``` sql
 CREATE TABLE example_table
@@ -526,7 +484,7 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Изменение `TTL`:
+Изменение TTL:
 
 ``` sql
 ALTER TABLE example_table
@@ -547,21 +505,6 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-Создание таблицы, в которой куски с устаревшими данными повторно сжимаются:
-
-```sql
-CREATE TABLE table_for_recompression
-(
-    d DateTime,
-    key UInt64,
-    value String
-) ENGINE MergeTree()
-ORDER BY tuple()
-PARTITION BY key
-TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(ZSTD(17)), d + INTERVAL 1 YEAR RECOMPRESS CODEC(LZ4HC(10))
-SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
-```
-
 Создание таблицы, где устаревшие строки агрегируются. В результирующих строках колонка `x` содержит максимальное значение по сгруппированным строкам, `y` — минимальное значение, а `d` — случайное значение из одной из сгуппированных строк.
 
 ``` sql
@@ -578,17 +521,13 @@ ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
-### Удаление устаревших данных {#mergetree-removing-expired-data}
+**Удаление данных**
 
-Данные с истекшим `TTL` удаляются, когда ClickHouse мёржит куски данных.
+Данные с истекшим TTL удаляются, когда ClickHouse мёржит куски данных.
 
 Когда ClickHouse видит, что некоторые данные устарели, он выполняет внеплановые мёржи. Для управление частотой подобных мёржей, можно задать настройку `merge_with_ttl_timeout`. Если её значение слишком низкое, придется выполнять много внеплановых мёржей, которые могут начать потреблять значительную долю ресурсов сервера.
 
 Если вы выполните запрос `SELECT` между слияниями вы можете получить устаревшие данные. Чтобы избежать этого используйте запрос [OPTIMIZE](../../../engines/table-engines/mergetree-family/mergetree.md#misc_operations-optimize) перед `SELECT`.
-
-**См. также**
-
-- настройку [ttl_only_drop_parts](../../../operations/settings/settings.md#ttl_only_drop_parts)
 
 ## Хранение данных таблицы на нескольких блочных устройствах {#table_engine-mergetree-multiple-volumes}
 
@@ -677,8 +616,8 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 -   `policy_name_N` — название политики. Названия политик должны быть уникальны.
 -   `volume_name_N` — название тома. Названия томов должны быть уникальны.
 -   `disk` — диск, находящийся внутри тома.
--   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома. Если в результате слияния размер куска ожидается больше, чем max_data_part_size_bytes, то этот кусок будет записан в следующий том. В основном эта функция позволяет хранить новые / мелкие куски на горячем (SSD) томе и перемещать их на холодный (HDD) том, когда они достигают большого размера. Не используйте этот параметр, если политика имеет только один том. 
--   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1). Для перемещения куски сортируются по размеру от большего к меньшему (по убыванию) и выбираются куски, совокупный размер которых достаточен для соблюдения условия `move_factor`, если совокупный размер всех партов недостаточен, будут перемещены все парты.
+-   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома.
+-   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1).
 -   `prefer_not_to_merge` — Отключает слияние кусков данных, хранящихся на данном томе. Если данная настройка включена, то слияние данных, хранящихся на данном томе, не допускается. Это позволяет контролировать работу ClickHouse с медленными дисками.
 
 Примеры конфигураций:
@@ -775,8 +714,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
-Пользователь может сбалансированно распределять новые большие куски данных по разным дискам тома [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures), используя настройку [min_bytes_to_rebalance_partition_over_jbod](../../../operations/settings/merge-tree-settings.md#min-bytes-to-rebalance-partition-over-jbod).
-
 ## Использование сервиса S3 для хранения данных {#table_engine-mergetree-s3}
 
 Таблицы семейства `MergeTree` могут хранить данные в сервисе [S3](https://aws.amazon.com/s3/) при использовании диска типа `s3`.
@@ -834,6 +771,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
 
+
 Диск S3 может быть сконфигурирован как `main` или `cold`:
 
 ``` xml
@@ -872,13 +810,3 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 Если диск сконфигурирован как `cold`, данные будут переноситься в S3 при срабатывании правил TTL или когда свободное место на локальном диске станет меньше порогового значения, которое определяется как `move_factor * disk_size`.
-
-## Виртуальные столбцы {#virtual-columns}
-
--   `_part` — Имя куска.
--   `_part_index` — Номер куска по порядку в результате запроса.
--   `_partition_id` — Имя партиции.
--   `_part_uuid` — Уникальный идентификатор куска (если включена MergeTree настройка `assign_part_uuids`).
--   `_partition_value` — Значения (кортеж) выражения `partition by`.
--   `_sample_factor` — Коэффициент сэмплирования (из запроса).
-

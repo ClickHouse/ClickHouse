@@ -31,8 +31,6 @@ public:
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         RENAME_COLUMN,
-        MATERIALIZE_COLUMN,
-
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
@@ -41,7 +39,6 @@ public:
         RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
-        REMOVE_SAMPLE_BY,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -71,10 +68,6 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
-
-        MODIFY_DATABASE_SETTING,
-
-        MODIFY_COMMENT,
     };
 
     Type type = NO_TYPE;
@@ -204,11 +197,9 @@ public:
     /// Which property user want to remove
     String remove_property;
 
-    String getID(char delim) const override;
+    String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
     ASTPtr clone() const override;
-
-    static const char * typeToString(Type type);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -217,15 +208,7 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class AlterObjectType
-    {
-        TABLE,
-        DATABASE,
-        LIVE_VIEW,
-        UNKNOWN,
-    };
-
-    AlterObjectType alter_object = AlterObjectType::UNKNOWN;
+    bool is_live_view{false}; /// true for ALTER LIVE VIEW
 
     ASTExpressionList * command_list = nullptr;
 
@@ -233,22 +216,14 @@ public:
 
     bool isFreezeAlter() const;
 
-    bool isAttachAlter() const;
-
-    bool isFetchAlter() const;
-
-    bool isDropPartitionAlter() const;
-
     String getID(char) const override;
 
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
-        return removeOnCluster<ASTAlterQuery>(clone(), params.default_database);
+        return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
-
-    QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

@@ -1,6 +1,3 @@
--- Tags: zookeeper, no-parallel
--- Tag no-parallel: leftovers
-
 SET optimize_on_insert = 0;
 
 SELECT '*** Replicated with sampling ***';
@@ -8,7 +5,7 @@ SELECT '*** Replicated with sampling ***';
 DROP TABLE IF EXISTS replicated_with_sampling;
 
 CREATE TABLE replicated_with_sampling(x UInt8)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00509/replicated_with_sampling', 'r1')
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00509/replicated_with_sampling', 'r1')
     ORDER BY x
     SAMPLE BY x;
 
@@ -38,7 +35,7 @@ SELECT '*** Replicated Collapsing ***';
 DROP TABLE IF EXISTS replicated_collapsing;
 
 CREATE TABLE replicated_collapsing(d Date, x UInt32, sign Int8)
-    ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/{database}/test_00509/replicated_collapsing', 'r1', sign)
+    ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/test_00509/replicated_collapsing', 'r1', sign)
     PARTITION BY toYYYYMM(d) ORDER BY d;
 
 INSERT INTO replicated_collapsing VALUES ('2017-10-23', 1, 1);
@@ -56,7 +53,7 @@ SELECT '*** Replicated VersionedCollapsing ***';
 DROP TABLE IF EXISTS replicated_versioned_collapsing;
 
 CREATE TABLE replicated_versioned_collapsing(d Date, x UInt32, sign Int8, version UInt8)
-    ENGINE = ReplicatedVersionedCollapsingMergeTree('/clickhouse/tables/{database}/test_00509/replicated_versioned_collapsing', 'r1', sign, version)
+    ENGINE = ReplicatedVersionedCollapsingMergeTree('/clickhouse/tables/test_00509/replicated_versioned_collapsing', 'r1', sign, version)
     PARTITION BY toYYYYMM(d) ORDER BY (d, version);
 
 INSERT INTO replicated_versioned_collapsing VALUES ('2017-10-23', 1, 1, 0);
@@ -75,7 +72,7 @@ SELECT '*** Table definition with SETTINGS ***';
 DROP TABLE IF EXISTS with_settings;
 
 CREATE TABLE with_settings(x UInt32)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00509/with_settings', 'r1')
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00509/with_settings', 'r1')
     ORDER BY x
     SETTINGS replicated_can_become_leader = 0;
 

@@ -22,7 +22,7 @@ struct ColumnWithTypeAndName
     DataTypePtr type;
     String name;
 
-    ColumnWithTypeAndName() = default;
+    ColumnWithTypeAndName() {}
     ColumnWithTypeAndName(const ColumnPtr & column_, const DataTypePtr & type_, const String & name_)
         : column(column_), type(type_), name(name_) {}
 

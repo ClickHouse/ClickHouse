@@ -1,208 +1,190 @@
 #!/usr/bin/env python3
 
-from typing import Dict, TypeVar
-
-ConfValue = TypeVar("ConfValue", str, bool)
-BuildConfig = Dict[str, ConfValue]
-
 CI_CONFIG = {
     "build_config": {
         "package_release": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
-            "static_binary_name": "amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "additional_pkgs": True,
+            "alien_pkgs": True,
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
-        "coverity": {
-            "compiler": "clang-14",
+        "performance": {
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
-            "package_type": "coverity",
+            "package_type": "performance",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
-            "official": False,
+            "with_coverage": False
         },
-        "package_aarch64": {
-            "compiler": "clang-14-aarch64",
+        "binary_gcc": {
+            "compiler": "gcc-10",
             "build_type": "",
             "sanitizer": "",
-            "package_type": "deb",
-            "static_binary_name": "aarch64",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "additional_pkgs": True,
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "package_asan": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "package_ubsan": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "package_tsan": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "package_msan": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "package_debug": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_release": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_tidy": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "debug-amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_splitted": {
-            "compiler": "clang-14",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "bundled": "bundled",
             "splitted": "splitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_darwin": {
-            "compiler": "clang-14-darwin",
+            "compiler": "clang-11-darwin",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "macos",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_aarch64": {
-            "compiler": "clang-14-aarch64",
+            "compiler": "clang-11-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_freebsd": {
-            "compiler": "clang-14-freebsd",
+            "compiler": "clang-11-freebsd",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "freebsd",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_darwin_aarch64": {
-            "compiler": "clang-14-darwin-aarch64",
+            "compiler": "clang-11-darwin-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "macos-aarch64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
+            "with_coverage": False
         },
         "binary_ppc64le": {
-            "compiler": "clang-14-ppc64le",
+            "compiler": "clang-11-ppc64le",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "powerpc64le",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False,
-        },
+            "with_coverage": False
+        }
     },
     "builds_report_config": {
         "ClickHouse build check (actions)": [
             "package_release",
-            "coverity",
-            "package_aarch64",
+            "performance",
             "package_asan",
             "package_ubsan",
             "package_tsan",
             "package_msan",
             "package_debug",
-            "binary_release",
+            "binary_release"
         ],
         "ClickHouse special build check (actions)": [
             "binary_tidy",
             "binary_splitted",
             "binary_darwin",
-            "binary_aarch64",
+            "binary_arrach64",
             "binary_freebsd",
-            "binary_darwin_aarch64",
-            "binary_ppc64le",
+            "binary_darwin_aarch64"
         ],
     },
     "tests_config": {
-        # required_build - build name for artifacts
-        # force_tests - force success status for tests
         "Stateful tests (address, actions)": {
             "required_build": "package_asan",
         },
@@ -220,9 +202,6 @@ CI_CONFIG = {
         },
         "Stateful tests (release, actions)": {
             "required_build": "package_release",
-        },
-        "Stateful tests (aarch64, actions)": {
-            "required_build": "package_aarch64",
         },
         "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
@@ -248,9 +227,6 @@ CI_CONFIG = {
         "Stateless tests (release, actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests (aarch64, actions)": {
-            "required_build": "package_aarch64",
-        },
         "Stateless tests (release, wide parts enabled, actions)": {
             "required_build": "package_release",
         },
@@ -258,9 +234,6 @@ CI_CONFIG = {
             "required_build": "package_release",
         },
         "Stateless tests (release, DatabaseReplicated, actions)": {
-            "required_build": "package_release",
-        },
-        "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
         },
         "Stress test (address, actions)": {
@@ -302,6 +275,9 @@ CI_CONFIG = {
         "Testflows check (actions)": {
             "required_build": "package_release",
         },
+        "Unit tests (release-gcc, actions)": {
+            "required_build": "binary_gcc",
+        },
         "Unit tests (release-clang, actions)": {
             "required_build": "binary_release",
         },
@@ -338,19 +314,8 @@ CI_CONFIG = {
         "Stateless tests flaky check (address, actions)": {
             "required_build": "package_asan",
         },
-        "Stateless tests bugfix validate check (address, actions)": {
-            "required_build": "package_asan",
-        },
         "ClickHouse Keeper Jepsen (actions)": {
             "required_build": "binary_release",
-        },
-        "Performance Comparison": {
-            "required_build": "package_release",
-            "test_grep_exclude_filter": "",
-        },
-        "Performance Comparison Aarch64": {
-            "required_build": "package_aarch64",
-            "test_grep_exclude_filter": "constant_column_search",
-        },
-    },
-}  # type: dict
+        }
+    }
+}

@@ -2,11 +2,11 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
 
-class ASTSelectQuery;
 struct Settings;
 
 /** Predicate optimization based on rewriting ast rules

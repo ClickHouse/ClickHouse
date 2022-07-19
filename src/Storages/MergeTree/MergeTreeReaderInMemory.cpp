@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReaderInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
-#include <Interpreters/getColumnFromBlock.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
@@ -12,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -21,15 +21,9 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
     const StorageMetadataPtr & metadata_snapshot_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_)
-    : IMergeTreeReader(
-        data_part_,
-        columns_,
-        metadata_snapshot_,
-        nullptr,
-        nullptr,
-        mark_ranges_,
-        settings_,
-        {})
+    : IMergeTreeReader(data_part_, std::move(columns_), metadata_snapshot_,
+        nullptr, nullptr, std::move(mark_ranges_),
+        std::move(settings_), {})
     , part_in_memory(std::move(data_part_))
 {
     for (const auto & name_and_type : columns)
@@ -44,8 +38,20 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
     }
 }
 
-size_t MergeTreeReaderInMemory::readRows(
-    size_t from_mark, size_t /* current_task_last_mark */, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+static ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & name_and_type)
+{
+    auto storage_name = name_and_type.getNameInStorage();
+    if (!block.has(storage_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column '{}' in block", storage_name);
+
+    const auto & column = block.getByName(storage_name).column;
+    if (name_and_type.isSubcolumn())
+        return name_and_type.getTypeInStorage()->getSubcolumn(name_and_type.getSubcolumnName(), *column);
+
+    return column;
+}
+
+size_t MergeTreeReaderInMemory::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
     if (!continue_reading)
         total_rows_read = 0;

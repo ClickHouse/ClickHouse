@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 
 namespace DB
 {
@@ -36,7 +36,7 @@ DataStream ITransformingStep::createOutputStream(
 }
 
 
-QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (collect_processors)
     {
@@ -68,11 +68,6 @@ void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet 
 void ITransformingStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
-}
-
-void ITransformingStep::appendExtraProcessors(const Processors & extra_processors)
-{
-    processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
 }

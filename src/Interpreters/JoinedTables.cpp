@@ -1,7 +1,5 @@
 #include <Interpreters/JoinedTables.h>
 
-#include <Core/SettingsEnums.h>
-
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -185,9 +183,7 @@ std::unique_ptr<InterpreterSelectWithUnionQuery> JoinedTables::makeLeftTableSubq
 {
     if (!isLeftTableSubquery())
         return {};
-
-    /// Only build dry_run interpreter during analysis. We will reconstruct the subquery interpreter during plan building.
-    return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options.copy().analyze());
+    return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options);
 }
 
 StoragePtr JoinedTables::getLeftTableStorage()
@@ -294,7 +290,6 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         return {};
 
     auto settings = context->getSettingsRef();
-    MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
     auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query.join();
@@ -304,26 +299,16 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
-        if (storage)
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+        if (table)
         {
-            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
-            {
-                table_join->setStorageJoin(storage_join);
-            }
-            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
-            {
-                table_join->setStorageJoin(storage_dict);
-            }
-            else if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueStorage>(storage);
-                     storage_kv && join_algorithm.isSet(JoinAlgorithm::DIRECT))
-            {
-                table_join->setStorageJoin(storage_kv);
-            }
+            if (dynamic_cast<StorageJoin *>(table.get()) ||
+                dynamic_cast<StorageDictionary *>(table.get()))
+                table_join->joined_storage = table;
         }
     }
 
-    if (!table_join->isSpecialStorage() &&
+    if (!table_join->joined_storage &&
         settings.enable_optimize_predicate_expression)
         replaceJoinedTable(select_query);
 

@@ -34,7 +34,7 @@ private:
         working_buffer = in.buffer();
         pos = in.position();
 
-        // `pos` may be different from working_buffer.begin() when using sophisticated ReadBuffers.
+        // `pos` may be different from working_buffer.begin() when using AIO.
         calculateHash(pos, working_buffer.end() - pos);
 
         return res;

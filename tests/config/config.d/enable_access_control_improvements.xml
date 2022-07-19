@@ -1,6 +1,0 @@
-<clickhouse>
-    <access_control_improvements>
-        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
-        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
-    </access_control_improvements>
-</clickhouse>

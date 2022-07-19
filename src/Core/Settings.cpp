@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
-#include <cstring>
+#include <string.h>
 #include <boost/program_options/options_description.hpp>
 
 namespace DB
@@ -85,32 +85,14 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
 {
     for (const auto & field : all())
     {
-        addProgramOption(options, field);
+        const std::string_view name = field.getName();
+        auto on_program_option
+            = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
+        options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+            name.data(),
+            boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
+            field.getDescription())));
     }
-}
-
-void Settings::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
-{
-    for (const auto & field : all())
-    {
-        addProgramOptionAsMultitoken(options, field);
-    }
-}
-
-void Settings::addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field)
-{
-    const std::string_view name = field.getName();
-    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
-}
-
-void Settings::addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field)
-{
-    const std::string_view name = field.getName();
-    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
@@ -122,7 +104,7 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
     for (auto setting : settings.all())
     {
         const auto & name = setting.getName();
-        if (config.has(name) && !setting.isObsolete())
+        if (config.has(name))
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
@@ -133,16 +115,6 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
                 ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         }
     }
-}
-
-std::vector<String> Settings::getAllRegisteredNames() const
-{
-    std::vector<String> all_settings;
-    for (const auto & setting_field : all())
-    {
-        all_settings.push_back(setting_field.getName());
-    }
-    return all_settings;
 }
 
 IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)

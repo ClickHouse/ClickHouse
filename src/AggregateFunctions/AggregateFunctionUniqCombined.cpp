@@ -6,7 +6,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <functional>
@@ -52,8 +51,6 @@ namespace
                 return res;
             else if (which.isDate())
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate::FieldType>>(argument_types, params);
-            else if (which.isDate32())
-                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate32::FieldType>>(argument_types, params);
             else if (which.isDateTime())
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDateTime::FieldType>>(argument_types, params);
             else if (which.isStringOrFixedString())
@@ -102,7 +99,7 @@ namespace
             // This range is hardcoded below
             if (precision_param > 20 || precision_param < 12)
                 throw Exception(
-                    "Parameter for aggregate function " + name + " is out of range: [12, 20].", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                    "Parameter for aggregate function " + name + " is out or range: [12, 20].", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             precision = precision_param;
         }
 

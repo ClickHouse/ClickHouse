@@ -10,13 +10,13 @@ namespace DB
 
 /// Visits AST tree in depth, call functions for nodes according to Matcher type data.
 /// You need to define Data, visit() and needChildVisit() in Matcher class.
-template <typename Matcher, bool _top_to_bottom, bool need_child_accept_data = false, typename T = ASTPtr>
+template <typename Matcher, bool _top_to_bottom, typename T = ASTPtr>
 class InDepthNodeVisitor
 {
 public:
     using Data = typename Matcher::Data;
 
-    explicit InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
+    InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
     :   data(data_),
         visit_depth(0),
         ostr(ostr_)
@@ -51,21 +51,13 @@ private:
     void visitChildren(T & ast)
     {
         for (auto & child : ast->children)
-        {
-            bool need_visit_child = false;
-            if constexpr (need_child_accept_data)
-                need_visit_child = Matcher::needChildVisit(ast, child, data);
-            else
-                need_visit_child = Matcher::needChildVisit(ast, child);
-
-            if (need_visit_child)
+            if (Matcher::needChildVisit(ast, child))
                 visit(child);
-        }
     }
 };
 
-template <typename Matcher, bool top_to_bottom, bool need_child_accept_data = false>
-using ConstInDepthNodeVisitor = InDepthNodeVisitor<Matcher, top_to_bottom, need_child_accept_data, const ASTPtr>;
+template <typename Matcher, bool top_to_bottom>
+using ConstInDepthNodeVisitor = InDepthNodeVisitor<Matcher, top_to_bottom, const ASTPtr>;
 
 struct NeedChild
 {
@@ -94,34 +86,5 @@ public:
 
 template <typename Data, NeedChild::Condition need_child = NeedChild::all>
 using ConstOneTypeMatcher = OneTypeMatcher<Data, need_child, const ASTPtr>;
-
-template <typename Visitor, typename T = ASTPtr>
-struct InDepthNodeVisitorWithChildInfo : Visitor
-{
-    using ChildInfo = typename Visitor::ChildInfo;
-
-    ChildInfo visit(T & ast, const T & parent = {})
-    {
-        ChildInfo all_children_info;
-        for (auto & child : ast->children)
-        {
-            if (Visitor::needVisitChild(ast, child))
-            {
-                ChildInfo child_info = visit(child, ast);
-                all_children_info.update(child_info);
-            }
-        }
-
-        try
-        {
-            return Visitor::visitNode(ast, parent, all_children_info);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While processing {}", ast->formatForErrorMessage());
-            throw;
-        }
-    }
-};
 
 }

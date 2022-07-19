@@ -1,7 +1,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -82,10 +82,8 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 }
 
 template <typename T>
-void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    const char * output_end = dest + output_size;
-
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot delta decompress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
@@ -94,8 +92,6 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     while (source < source_end)
     {
         accumulator += unalignedLoad<T>(source);
-        if (dest + sizeof(accumulator) > output_end)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
         unalignedStore<T>(dest, accumulator);
 
         source += sizeof(T);
@@ -141,9 +137,8 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
-    UInt32 output_size = uncompressed_size - bytes_to_skip;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (UInt32(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
@@ -151,16 +146,16 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
     switch (bytes_size)
     {
     case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     }
 }
@@ -186,7 +181,7 @@ UInt8 getDeltaBytesSize(const IDataType * column_type)
 
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Delta);
+    UInt8 method_code = UInt8(CompressionMethodByte::Delta);
     factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         UInt8 delta_bytes_size = 0;
@@ -214,10 +209,4 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
     });
 }
-
-CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size)
-{
-    return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
-}
-
 }

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 49
-sidebar_label: "Функции для битмапов"
+toc_priority: 49
+toc_title: "Функции для битмапов"
 ---
 
 # Функции для битовых масок {#bitmap-functions}
@@ -66,14 +66,15 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 **Аргументы**
 
 -   `bitmap` – битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
+
 -   `range_start` – начальная точка подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
--   `cardinality_limit` – верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
+-   `cardinality_limit` – Верхний предел подмножества. [UInt32](../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
 
 **Возвращаемое значение**
 
 Подмножество битмапа.
 
-Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
+Тип: `Bitmap object`.
 
 **Пример**
 
@@ -89,44 +90,6 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
 ┌─res───────────────────────┐
 │ [30,31,32,33,100,200,500] │
 └───────────────────────────┘
-```
-
-## subBitmap {#subbitmap}
-
-Возвращает элементы битмапа, начиная с позиции `offset`. Число возвращаемых элементов ограничивается параметром `cardinality_limit`. Аналог строковой функции [substring](string-functions.md#substring)), но для битмапа.
-
-**Синтаксис**
-
-``` sql
-subBitmap(bitmap, offset, cardinality_limit)
-```
-
-**Аргументы**
-
--   `bitmap` – битмап. Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
--   `offset` – позиция первого элемента возвращаемого подмножества. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `cardinality_limit` – максимальное число элементов возвращаемого подмножества. Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
-
-**Возвращаемое значение**
-
-Подмножество битмапа.
-
-Тип: [Bitmap object](#bitmap_functions-bitmapbuild).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res;
-```
-
-Результат:
-
-``` text
-┌─res─────────────────────────────┐
-│ [10,11,12,13,14,15,16,17,18,19] │
-└─────────────────────────────────┘
 ```
 
 ## bitmapContains {#bitmap_functions-bitmapcontains}

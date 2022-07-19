@@ -1,31 +1,23 @@
 ---
-sidebar_position: 55
-sidebar_label: IP Addresses
+toc_priority: 55
+toc_title: IP Addresses
 ---
 
-# Functions for Working with IPv4 and IPv6 Addresses
+# Functions for Working with IPv4 and IPv6 Addresses {#functions-for-working-with-ip-addresses}
 
-## IPv4NumToString(num)
+## IPv4NumToString(num) {#ipv4numtostringnum}
 
 Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a string containing the corresponding IPv4 address in the format A.B.C.d (dot-separated numbers in decimal form).
 
 Alias: `INET_NTOA`.
 
-## IPv4StringToNum(s)
+## IPv4StringToNum(s) {#ipv4stringtonums}
 
-The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it throws exception.
+The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it returns 0.
 
 Alias: `INET_ATON`.
 
-## IPv4StringToNumOrDefault(s)
-
-Same as `IPv4StringToNum`, but if the IPv4 address has an invalid format, it returns 0.
-
-## IPv4StringToNumOrNull(s)
-
-Same as `IPv4StringToNum`, but if the IPv4 address has an invalid format, it returns null.
-
-## IPv4NumToStringClassC(num)
+## IPv4NumToStringClassC(num) {#ipv4numtostringclasscnum}
 
 Similar to IPv4NumToString, but using xxx instead of the last octet.
 
@@ -58,10 +50,10 @@ LIMIT 10
 
 Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you do not rely on the exact format of this fragment.
 
-### IPv6NumToString(x)
+### IPv6NumToString(x) {#ipv6numtostringx}
 
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
-IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44.
+IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. 
 
 Alias: `INET6_NTOA`.
 
@@ -129,9 +121,9 @@ LIMIT 10
 └────────────────────────────┴────────┘
 ```
 
-## IPv6StringToNum
+## IPv6StringToNum {#ipv6stringtonums}
 
-The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it throws exception.
+The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes. 
 
 If the input string contains a valid IPv4 address, returns its IPv6 equivalent.
 HEX can be uppercase or lowercase.
@@ -144,13 +136,13 @@ Alias: `INET6_ATON`.
 IPv6StringToNum(string)
 ```
 
-**Argument**
+**Argument** 
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   IPv6 address in binary format.
+-   IPv6 address in binary format. 
 
 Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
@@ -176,15 +168,7 @@ Result:
 
 -   [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
 
-## IPv6StringToNumOrDefault(s)
-
-Same as `IPv6StringToNum`, but if the IPv6 address has an invalid format, it returns 0.
-
-## IPv6StringToNumOrNull(s)
-
-Same as `IPv6StringToNum`, but if the IPv6 address has an invalid format, it returns null.
-
-## IPv4ToIPv6(x)
+## IPv4ToIPv6(x) {#ipv4toipv6x}
 
 Takes a `UInt32` number. Interprets it as an IPv4 address in [big endian](https://en.wikipedia.org/wiki/Endianness). Returns a `FixedString(16)` value containing the IPv6 address in binary format. Examples:
 
@@ -198,7 +182,7 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
 └────────────────────┘
 ```
 
-## cutIPv6(x, bytesToCutForIPv6, bytesToCutForIPv4)
+## cutIPv6(x, bytesToCutForIPv6, bytesToCutForIPv4) {#cutipv6x-bytestocutforipv6-bytestocutforipv4}
 
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing the address of the specified number of bytes removed in text format. For example:
 
@@ -217,7 +201,7 @@ SELECT
 └─────────────────────────────────────┴─────────────────────┘
 ```
 
-## IPv4CIDRToRange(ipv4, Cidr),
+## IPv4CIDRToRange(ipv4, Cidr), {#ipv4cidrtorangeipv4-cidr}
 
 Accepts an IPv4 and an UInt8 value containing the [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). Return a tuple with two IPv4 containing the lower range and the higher range of the subnet.
 
@@ -231,7 +215,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16);
 └────────────────────────────────────────────┘
 ```
 
-## IPv6CIDRToRange(ipv6, Cidr),
+## IPv6CIDRToRange(ipv6, Cidr), {#ipv6cidrtorangeipv6-cidr}
 
 Accepts an IPv6 and an UInt8 value containing the CIDR. Return a tuple with two IPv6 containing the lower range and the higher range of the subnet.
 
@@ -245,7 +229,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## toIPv4(string)
+## toIPv4(string) {#toipv4string}
 
 An alias to `IPv4StringToNum()` that takes a string form of IPv4 address and returns value of [IPv4](../../sql-reference/data-types/domains/ipv4.md) type, which is binary equal to value returned by `IPv4StringToNum()`.
 
@@ -277,15 +261,7 @@ SELECT
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
-## toIPv4OrDefault(string)
-
-Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns 0.
-
-## toIPv4OrNull(string)
-
-Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns null.
-
-## toIPv6
+## toIPv6 {#toipv6string}
 
 Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
 Similar to [IPv6StringToNum](#ipv6stringtonums) function, which converts IPv6 address to binary format.
@@ -304,7 +280,7 @@ toIPv6(string)
 
 **Returned value**
 
--   IP address.
+-   IP address. 
 
 Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 
@@ -341,15 +317,7 @@ Result:
 └─────────────────────┘
 ```
 
-## IPv6StringToNumOrDefault(s)
-
-Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns 0.
-
-## IPv6StringToNumOrNull(s)
-
-Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns null.
-
-## isIPv4String
+## isIPv4String {#isipv4string}
 
 Determines whether the input string is an IPv4 address or not. If `string` is IPv6 address returns `0`.
 
@@ -387,7 +355,7 @@ Result:
 └──────────────────┴────────────────────┘
 ```
 
-## isIPv6String
+## isIPv6String {#isipv6string}
 
 Determines whether the input string is an IPv6 address or not. If `string` is IPv4 address returns `0`.
 
@@ -426,7 +394,7 @@ Result:
 └──────────────────┴────────────────────┘
 ```
 
-## isIPAddressInRange
+## isIPAddressInRange {#isipaddressinrange}
 
 Determines if an IP address is contained in a network represented in the [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation. Returns `1` if true, or `0` otherwise.
 
@@ -477,18 +445,4 @@ Result:
 ┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
 │                                            0 │
 └──────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128');
-```
-
-Result:
-
-``` text
-┌─isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')─┐
-│                                                                  0 │
-└────────────────────────────────────────────────────────────────────┘
 ```

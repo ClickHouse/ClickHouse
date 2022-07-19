@@ -55,7 +55,6 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    // ORDER BY needs to be an ASTFunction so that we can use it as a sorting key
     if (s_order_by.ignore(pos, expected))
     {
         ASTPtr expr_list;

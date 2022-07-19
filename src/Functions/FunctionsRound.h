@@ -16,8 +16,7 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <base/bit_cast.h>
-#include <base/sort.h>
+#include <common/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -159,6 +158,7 @@ struct IntegerRoundingComputation
         switch (scale_mode)
         {
             case ScaleMode::Zero:
+                return x;
             case ScaleMode::Positive:
                 return x;
             case ScaleMode::Negative:
@@ -168,23 +168,14 @@ struct IntegerRoundingComputation
         __builtin_unreachable();
     }
 
-    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
+    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
-        if constexpr (sizeof(T) <= sizeof(scale) && scale_mode == ScaleMode::Negative)
-        {
-            if (scale > size_t(std::numeric_limits<T>::max()))
-            {
-                *out = 0;
-                return;
-            }
-        }
-        *out = compute(*in, scale);
+        if (sizeof(T) <= sizeof(scale) && scale > size_t(std::numeric_limits<T>::max()))
+            *out = 0;
+        else
+            *out = compute(*in, scale);
     }
 
-    static ALWAYS_INLINE void compute(const T * __restrict in, T scale, T * __restrict out) requires(!std::integral<T>)
-    {
-        *out = compute(*in, scale);
-    }
 };
 
 
@@ -324,11 +315,11 @@ template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingImpl
 {
 private:
-    static_assert(!is_decimal<T>);
+    static_assert(!IsDecimalNumber<T>);
 
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
-    using ColumnType = ColumnVector<T>;
+    using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using Container = typename ColumnType::Container;
 
 public:
@@ -422,21 +413,23 @@ public:
 };
 
 
-template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
+template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 class DecimalRoundingImpl
 {
 private:
+    static_assert(IsDecimalNumber<T>);
+
     using NativeType = typename T::NativeType;
     using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative, tie_breaking_mode>;
     using Container = typename ColumnDecimal<T>::Container;
 
 public:
-    static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
+    static NO_INLINE void apply(const Container & in, Container & out, Scale scale_arg)
     {
-        scale_arg = in_scale - scale_arg;
+        scale_arg = in.getScale() - scale_arg;
         if (scale_arg > 0)
         {
-            auto scale = intExp10OfSize<T>(scale_arg);
+            size_t scale = intExp10(scale_arg);
 
             const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
             const NativeType * end_in = reinterpret_cast<const NativeType *>(in.data()) + in.size();
@@ -460,16 +453,15 @@ public:
 /** Select the appropriate processing algorithm depending on the scale.
   */
 template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-struct Dispatcher
+class Dispatcher
 {
     template <ScaleMode scale_mode>
     using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
-    static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
+    static ColumnPtr apply(const ColumnVector<T> * col, Scale scale_arg)
     {
-        const auto * const col = checkAndGetColumn<ColumnVector<T>>(col_general);
         auto col_res = ColumnVector<T>::create();
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
@@ -496,24 +488,27 @@ struct Dispatcher
 
         return col_res;
     }
-};
 
-template <is_decimal T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-struct Dispatcher<T, rounding_mode, tie_breaking_mode>
-{
-public:
-    static ColumnPtr apply(const IColumn * col_general, Scale scale_arg)
+    static ColumnPtr apply(const ColumnDecimal<T> * col, Scale scale_arg)
     {
-        const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_general);
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
-        auto col_res = ColumnDecimal<T>::create(vec_src.size(), col->getScale());
+        auto col_res = ColumnDecimal<T>::create(vec_src.size(), vec_src.getScale());
         auto & vec_res = col_res->getData();
 
         if (!vec_res.empty())
-            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), col->getScale(), vec_res, scale_arg);
+            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), vec_res, scale_arg);
 
         return col_res;
+    }
+
+public:
+    static ColumnPtr apply(const IColumn * column, Scale scale_arg)
+    {
+        if constexpr (is_arithmetic_v<T>)
+            return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
+        else if constexpr (IsDecimalNumber<T>)
+            return apply(checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg);
     }
 };
 
@@ -534,7 +529,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -623,7 +617,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { .is_monotonic = true, .is_always_monotonic = true };
+        return { true, true, true };
     }
 };
 
@@ -643,7 +637,6 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -667,7 +660,7 @@ public:
             throw Exception{"Elements of array of second argument of function " + getName()
                             + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
-        return getLeastSupertype(DataTypes{type_x, type_arr_nested});
+        return getLeastSupertype({type_x, type_arr_nested});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
@@ -747,7 +740,7 @@ private:
         for (size_t i = 0; i < boundaries.size(); ++i)
             boundary_values[i] = boundaries[i].get<ValueType>();
 
-        ::sort(boundary_values.begin(), boundary_values.end());
+        std::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
 
         size_t size = src.size();

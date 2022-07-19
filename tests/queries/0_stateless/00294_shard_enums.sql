@@ -1,9 +1,6 @@
--- Tags: shard
-
 set max_threads = 1;
 drop table if exists enums;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 create table enums (
     d Date default '2015-12-29', k default 0,
     e Enum8('world' = 2, 'hello' = 1), sign Enum8('minus' = -1, 'plus' = 1),

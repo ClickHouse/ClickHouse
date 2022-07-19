@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +14,7 @@ mkdir -p "${WORKING_FOLDER_01600}"
 clickhouse_local() {
     local query="$1"
     shift
-    ${CLICKHOUSE_LOCAL} --allow_deprecated_database_ordinary=1 --query "$query" "$@" --path="${WORKING_FOLDER_01600}"
+    ${CLICKHOUSE_LOCAL} --query "$query" "$@" -- --path="${WORKING_FOLDER_01600}"
 }
 
 test_detach_attach_sequence() {

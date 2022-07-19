@@ -2,6 +2,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Stopwatch.h>
+
 
 namespace DB
 {
@@ -10,7 +12,7 @@ namespace DB
 class DNSCacheUpdater : WithContext
 {
 public:
-    DNSCacheUpdater(ContextPtr context, Int32 update_period_seconds_, UInt32 max_consecutive_failures);
+    DNSCacheUpdater(ContextPtr context, Int32 update_period_seconds_);
     ~DNSCacheUpdater();
     void start();
 
@@ -18,7 +20,6 @@ private:
     void run();
 
     Int32 update_period_seconds;
-    UInt32 max_consecutive_failures;
 
     BackgroundSchedulePool & pool;
     BackgroundSchedulePoolTaskHolder task_handle;

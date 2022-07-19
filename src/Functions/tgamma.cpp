@@ -7,7 +7,7 @@ namespace
 {
 
 struct TGammaName { static constexpr auto name = "tgamma"; };
-using FunctionTGamma = FunctionMathUnary<UnaryFunctionVectorized<TGammaName, std::tgamma>>;
+using FunctionTGamma = FunctionMathUnary<UnaryFunctionPlain<TGammaName, std::tgamma>>;
 
 }
 

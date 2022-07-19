@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -34,19 +34,40 @@ ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPt
 {
 }
 
-void ArrayJoinStep::updateOutputStream()
+void ArrayJoinStep::updateInputStream(DataStream input_stream, Block result_header)
 {
     output_stream = createOutputStream(
-        input_streams.front(), ArrayJoinTransform::transformHeader(input_streams.front().header, array_join), getDataStreamTraits());
+            input_stream,
+            ArrayJoinTransform::transformHeader(input_stream.header, array_join),
+            getDataStreamTraits());
+
+    input_streams.clear();
+    input_streams.emplace_back(std::move(input_stream));
+    res_header = std::move(result_header);
 }
 
-void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
-        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<ArrayJoinTransform>(header, array_join, on_totals);
     });
+
+    if (res_header && !blocksHaveEqualStructure(res_header, output_stream->header))
+    {
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+                pipeline.getHeader().getColumnsWithTypeAndName(),
+                res_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+
+        auto actions = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
+
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, actions);
+        });
+    }
 }
 
 void ArrayJoinStep::describeActions(FormatSettings & settings) const

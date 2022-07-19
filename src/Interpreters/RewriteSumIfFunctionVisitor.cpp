@@ -10,12 +10,7 @@ namespace DB
 void RewriteSumIfFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
-    {
-        if (func->is_window_function)
-            return;
-
         visit(*func, ast, data);
-    }
 }
 
 void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
@@ -25,8 +20,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
     auto lower_name = Poco::toLower(func.name);
 
-    /// sumIf, SumIf or sUMIf are valid function names, but sumIF or sumiF are not
-    if (lower_name != "sum" && (lower_name != "sumif" || !endsWith(func.name, "If")))
+    if (lower_name != "sum" && lower_name != "sumif")
         return;
 
     const auto & func_arguments = func.arguments->children;

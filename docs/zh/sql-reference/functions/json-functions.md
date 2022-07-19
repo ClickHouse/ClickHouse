@@ -171,4 +171,4 @@
 
     select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/json_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->

@@ -13,7 +13,7 @@ namespace DB
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
-/**   Provides read tasks for MergeTreeThreadSelectProcessor`s in fine-grained batches, allowing for more
+/**   Provides read tasks for MergeTreeThreadSelectBlockInputStream`s in fine-grained batches, allowing for more
  *    uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
  *    workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
  *    in "sequential" manner, requesting work in small batches. As soon as some thread has exhausted
@@ -40,7 +40,7 @@ public:
         size_t min_concurrency = 1;
 
         /// Constants above is just an example.
-        explicit BackoffSettings(const Settings & settings)
+        BackoffSettings(const Settings & settings)
             : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
             max_throughput(settings.read_backoff_max_throughput),
             min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
@@ -63,52 +63,51 @@ private:
         Stopwatch time_since_prev_event {CLOCK_MONOTONIC_COARSE};
         size_t num_events = 0;
 
-        explicit BackoffState(size_t threads) : current_threads(threads) {}
+        BackoffState(size_t threads) : current_threads(threads) {}
     };
 
     BackoffState backoff_state;
 
 public:
     MergeTreeReadPool(
-        size_t threads_, size_t sum_marks_, size_t min_marks_for_concurrent_read_,
-        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageSnapshotPtr & storage_snapshot_,
+        const size_t threads_, const size_t sum_marks_, const size_t min_marks_for_concurrent_read_,
+        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageMetadataPtr & metadata_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        const Names & column_names_,
+        const bool check_columns_, const Names & column_names_,
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
-        bool do_not_steal_tasks_ = false);
+        const bool do_not_steal_tasks_ = false);
 
-    MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names);
+    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names);
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
       * This allows to overcome excessive load to disk subsystem, when reads are not from page cache.
       */
-    void profileFeedback(ReadBufferFromFileBase::ProfileInfo info);
+    void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info);
+
+    /// This method tells which mark ranges we have to read if we start from @from mark range
+    MarkRanges getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const;
 
     Block getHeader() const;
 
 private:
-    std::vector<size_t> fillPerPartInfo(const RangesInDataParts & parts);
+    std::vector<size_t> fillPerPartInfo(
+        const RangesInDataParts & parts, const bool check_columns);
 
     void fillPerThreadInfo(
-        size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-        const RangesInDataParts & parts, size_t min_marks_for_concurrent_read);
+        const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+        const RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
 
     const MergeTreeData & data;
-    StorageSnapshotPtr storage_snapshot;
+    StorageMetadataPtr metadata_snapshot;
     const Names column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
-
-    struct PerPartParams
-    {
-        MergeTreeReadTaskColumns task_columns;
-        NameSet column_name_set;
-        MergeTreeBlockSizePredictorPtr size_predictor;
-    };
-
-    std::vector<PerPartParams> per_part_params;
-
+    std::vector<NameSet> per_part_column_name_set;
+    std::vector<NamesAndTypesList> per_part_columns;
+    std::vector<NamesAndTypesList> per_part_pre_columns;
+    std::vector<char> per_part_should_reorder;
+    std::vector<MergeTreeBlockSizePredictorPtr> per_part_size_predictor;
     PrewhereInfoPtr prewhere_info;
 
     struct Part
@@ -140,8 +139,6 @@ private:
     mutable std::mutex mutex;
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPool");
-
-    std::vector<bool> is_part_on_remote_disk;
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;

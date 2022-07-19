@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <allow_introspection_functions>1</allow_introspection_functions>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

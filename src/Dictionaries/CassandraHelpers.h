@@ -1,9 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_CASSANDRA
-#include <cassandra.h>
+#include <cassandra.h> // Y_IGNORE
 #include <utility>
 #include <memory>
 
@@ -23,8 +25,8 @@ class ObjectHolder
     CassT * ptr = nullptr;
 public:
     template<typename... Args>
-    ObjectHolder(Args &&... args) : ptr(Ctor(std::forward<Args>(args)...)) {} /// NOLINT
-    ObjectHolder(CassT * ptr_) : ptr(ptr_) {} /// NOLINT
+    ObjectHolder(Args &&... args) : ptr(Ctor(std::forward<Args>(args)...)) {}
+    ObjectHolder(CassT * ptr_) : ptr(ptr_) {}
 
     ObjectHolder(const ObjectHolder &) = delete;
     ObjectHolder & operator = (const ObjectHolder &) = delete;
@@ -46,8 +48,8 @@ public:
     }
 
     /// For implicit conversion when passing object to driver library functions
-    operator CassT * () { return ptr; } /// NOLINT
-    operator const CassT * () const { return ptr; } /// NOLINT
+    operator CassT * () { return ptr; }
+    operator const CassT * () const { return ptr; }
 };
 
 }

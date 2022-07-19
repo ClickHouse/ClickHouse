@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <vector>
@@ -34,29 +34,23 @@ struct ACL
     int32_t permissions;
     String scheme;
     String id;
-
-    bool operator<(const ACL & other) const
-    {
-        return std::tuple(permissions, scheme, id)
-            < std::tuple(other.permissions, other.scheme, other.id);
-    }
 };
 
 using ACLs = std::vector<ACL>;
 
 struct Stat
 {
-    int64_t czxid{0};
-    int64_t mzxid{0};
-    int64_t ctime{0};
-    int64_t mtime{0};
-    int32_t version{0};
-    int32_t cversion{0};
-    int32_t aversion{0};
-    int64_t ephemeralOwner{0}; /// NOLINT
-    int32_t dataLength{0}; /// NOLINT
-    int32_t numChildren{0}; /// NOLINT
-    int64_t pzxid{0};
+    int64_t czxid;
+    int64_t mzxid;
+    int64_t ctime;
+    int64_t mtime;
+    int32_t version;
+    int32_t cversion;
+    int32_t aversion;
+    int64_t ephemeralOwner;
+    int32_t dataLength;
+    int32_t numChildren;
+    int64_t pzxid;
 };
 
 enum class Error : int32_t
@@ -281,13 +275,6 @@ struct SetResponse : virtual Response
     size_t bytesSize() const override { return sizeof(stat); }
 };
 
-enum class ListRequestType : uint8_t
-{
-    ALL,
-    PERSISTENT_ONLY,
-    EPHEMERAL_ONLY
-};
-
 struct ListRequest : virtual Request
 {
     String path;
@@ -325,23 +312,6 @@ struct CheckRequest : virtual Request
 
 struct CheckResponse : virtual Response
 {
-};
-
-struct SyncRequest : virtual Request
-{
-    String path;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size(); }
-};
-
-struct SyncResponse : virtual Response
-{
-    String path;
-
-    size_t bytesSize() const override { return path.size(); }
 };
 
 struct MultiRequest : virtual Request
@@ -388,7 +358,6 @@ using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
 using ListCallback = std::function<void(const ListResponse &)>;
 using CheckCallback = std::function<void(const CheckResponse &)>;
-using SyncCallback = std::function<void(const SyncResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 
 
@@ -418,16 +387,16 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const Error code_, int); /// NOLINT
+    Exception(const std::string & msg, const Error code_, int);
 
 public:
-    explicit Exception(const Error code_); /// NOLINT
-    Exception(const std::string & msg, const Error code_); /// NOLINT
-    Exception(const Error code_, const std::string & path); /// NOLINT
+    explicit Exception(const Error code_);
+    Exception(const std::string & msg, const Error code_);
+    Exception(const Error code_, const std::string & path);
     Exception(const Exception & exc);
 
-    const char * name() const noexcept override { return "Coordination::Exception"; }
-    const char * className() const noexcept override { return "Coordination::Exception"; }
+    const char * name() const throw() override { return "Coordination::Exception"; }
+    const char * className() const throw() override { return "Coordination::Exception"; }
     Exception * clone() const override { return new Exception(*this); }
 
     const Error code;
@@ -499,7 +468,6 @@ public:
 
     virtual void list(
         const String & path,
-        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) = 0;
 
@@ -508,16 +476,12 @@ public:
         int32_t version,
         CheckCallback callback) = 0;
 
-    virtual void sync(
-        const String & path,
-        SyncCallback callback) = 0;
-
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
 
     /// Expire session and finish all pending requests
-    virtual void finalize(const String & reason) = 0;
+    virtual void finalize() = 0;
 };
 
 }

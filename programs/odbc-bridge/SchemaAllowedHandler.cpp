@@ -7,9 +7,9 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include "validateODBCConnectionString.h"
-#include "ODBCPooledConnectionFactory.h"
+#include "ODBCConnectionFactory.h"
 #include <sql.h>
 #include <sqlext.h>
 
@@ -37,7 +37,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             *response.send() << message << std::endl;
-        LOG_WARNING(log, fmt::runtime(message));
+        LOG_WARNING(log, message);
     };
 
     if (!params.has("connection_string"))
@@ -50,7 +50,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     {
         std::string connection_string = params.get("connection_string");
 
-        auto connection = ODBCPooledConnectionFactory::instance().get(
+        auto connection = ODBCConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 

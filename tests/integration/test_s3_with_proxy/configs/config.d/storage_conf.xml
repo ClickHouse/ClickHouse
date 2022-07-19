@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <storage_configuration>
         <disks>
             <s3>
@@ -26,7 +26,6 @@
                         <endpoint>http://resolver:8080/hostname</endpoint>
                         <proxy_scheme>http</proxy_scheme>
                         <proxy_port>80</proxy_port>
-                        <proxy_cache_time>10</proxy_cache_time>
                     </resolver>
                 </proxy>
             </s3_with_resolver>
@@ -48,4 +47,4 @@
             </s3_with_resolver>
         </policies>
     </storage_configuration>
-</clickhouse>
+</yandex>

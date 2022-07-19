@@ -1,9 +1,9 @@
 ---
-sidebar_position: 40
-sidebar_label: PostgreSQL
+toc_priority: 35
+toc_title: PostgreSQL
 ---
 
-# PostgreSQL
+# PostgreSQL {#postgresql}
 
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
 
@@ -14,8 +14,8 @@ Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `
 ## Creating a Database {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+CREATE DATABASE test_database 
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
 ```
 
 **Engine Parameters**
@@ -24,7 +24,6 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 -   `database` — Remote database name.
 -   `user` — PostgreSQL user.
 -   `password` — User password.
--   `schema` — PostgreSQL schema.
 -   `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 ## Data Types Support {#data_types-support}
@@ -44,15 +43,15 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
-
+ 
 
 ## Examples of Use {#examples-of-use}
 
 Database in ClickHouse, exchanging data with the PostgreSQL server:
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+CREATE DATABASE test_database 
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
 ```
 
 ``` sql
@@ -103,7 +102,7 @@ SELECT * FROM test_database.test_table;
 └────────┴───────┘
 ```
 
-Consider the table structure was modified in PostgreSQL:
+Consider the table structure was modified in PostgreSQL: 
 
 ``` sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text
@@ -136,3 +135,4 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
+[Original article](https://clickhouse.tech/docs/en/database-engines/postgresql/) <!--hide-->

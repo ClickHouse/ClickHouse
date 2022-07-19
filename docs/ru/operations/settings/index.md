@@ -1,7 +1,7 @@
 ---
-sidebar_label: Settings
-sidebar_position: 55
-slug: /ru/operations/settings/
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: Introduction
 ---
 
 # Настройки {#session-settings-intro}
@@ -24,13 +24,13 @@ slug: /ru/operations/settings/
 
     -   При запуске консольного клиента ClickHouse в не интерактивном режиме установите параметр запуска `--setting=value`.
     -   При использовании HTTP API передавайте cgi-параметры (`URL?setting_1=value&setting_2=value...`).
-    -  Укажите необходимые настройки в секции [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select) запроса SELECT. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
+    -  Укажите необходимые настройки в секции [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select) запроса SELECT. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию. 
 
 Настройки, которые можно задать только в конфигурационном файле сервера, в разделе не рассматриваются.
 
 ## Пользовательские настройки {#custom_settings}
 
-В дополнение к общим [настройкам](../../operations/settings/settings.md), пользователи могут определять собственные настройки.
+В дополнение к общим [настройкам](../../operations/settings/settings.md), пользователи могут определять собственные настройки. 
 
 Название пользовательской настройки должно начинаться с одного из предопределённых префиксов. Список этих префиксов должен быть задан в параметре [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) конфигурационнного файла сервера.
 
@@ -47,7 +47,7 @@ SET custom_a = 123;
 Чтобы получить текущее значение пользовательской настройки, используйте функцию `getSetting()`:
 
 ```sql
-SELECT getSetting('custom_a');
+SELECT getSetting('custom_a');    
 ```
 
 **См. также**

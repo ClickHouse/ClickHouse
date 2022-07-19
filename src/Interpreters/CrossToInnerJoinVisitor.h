@@ -18,7 +18,8 @@ public:
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns;
         const Aliases & aliases;
         const String current_database;
-        UInt8 cross_to_inner_join_rewrite = 1;
+        bool done = false;
+        bool cross_to_inner_join_rewrite = true;
     };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &);

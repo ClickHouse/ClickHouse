@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/UVLoop.h>
+#include <Storages/RabbitMQ/UVLoop.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
 
@@ -14,9 +14,6 @@ struct RabbitMQConfiguration
     String username;
     String password;
     String vhost;
-
-    bool secure;
-    String connection_string;
 };
 
 class RabbitMQConnection

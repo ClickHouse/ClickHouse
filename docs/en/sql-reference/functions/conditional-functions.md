@@ -1,23 +1,21 @@
 ---
-sidebar_position: 43
-sidebar_label: 'Conditional '
+toc_priority: 43
+toc_title: 'Conditional '
 ---
 
-# Conditional Functions
+# Conditional Functions {#conditional-functions}
 
-## if
+## if {#if}
 
 Controls conditional branching. Unlike most systems, ClickHouse always evaluate both expressions `then` and `else`.
 
 **Syntax**
 
 ``` sql
-if(cond, then, else)
+SELECT if(cond, then, else)
 ```
 
 If the condition `cond` evaluates to a non-zero value, returns the result of the expression `then`, and the result of the expression `else`, if present, is skipped. If the `cond` is zero or `NULL`, then the result of the `then` expression is skipped and the result of the `else` expression, if present, is returned.
-
-You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `if` function according to a short scheme. If this setting is enabled, `then` expression is evaluated only on rows where `cond` is true, `else` expression – where `cond` is false. For example, an exception about division by zero is not thrown when executing the query `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`, because `intDiv(42, number)` will be evaluated only for numbers that doesn't satisfy condition `number = 0`.
 
 **Arguments**
 
@@ -97,7 +95,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 
 Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
 
-## Ternary Operator
+## Ternary Operator {#ternary-operator}
 
 It works same as `if` function.
 
@@ -113,19 +111,13 @@ Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise
 
 -   [ifNotFinite](../../sql-reference/functions/other-functions.md#ifnotfinite).
 
-## multiIf
+## multiIf {#multiif}
 
 Allows you to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
 
-**Syntax**
+Syntax: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
-``` sql
-multiIf(cond_1, then_1, cond_2, then_2, ..., else)
-```
-
-You can use the [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) setting to calculate the `multiIf` function according to a short scheme. If this setting is enabled, `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is true. For example, an exception about division by zero is not thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
-
-**Arguments**
+**Arguments:**
 
 -   `cond_N` — The condition for the function to return `then_N`.
 -   `then_N` — The result of the function when executed.
@@ -157,7 +149,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Using Conditional Results Directly
+## Using Conditional Results Directly {#using-conditional-results-directly}
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
@@ -174,7 +166,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## NULL Values in Conditionals
+## NULL Values in Conditionals {#null-values-in-conditionals}
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
@@ -209,3 +201,4 @@ FROM LEFT_RIGHT
 │    4 │  ᴺᵁᴸᴸ │ Both equal       │
 └──────┴───────┴──────────────────┘
 ```
+

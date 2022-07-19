@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
@@ -44,14 +43,9 @@ CreatingSetStep::CreatingSetStep(
 {
 }
 
-void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void CreatingSetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
-}
-
-void CreatingSetStep::updateOutputStream()
-{
-    output_stream = createOutputStream(input_streams.front(), Block{}, getDataStreamTraits());
 }
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
@@ -90,7 +84,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
                             input_streams[i].header.dumpStructure());
 }
 
-QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -101,11 +95,11 @@ QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders p
 
     pipelines.erase(pipelines.begin());
 
-    QueryPipelineBuilder delayed_pipeline;
+    QueryPipeline delayed_pipeline;
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
+        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines));
         processors = collector.detachProcessors();
     }
     else
@@ -143,7 +137,7 @@ void addCreatingSetsStep(
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
-                description,
+                std::move(description),
                 std::move(set),
                 limits,
                 context);
