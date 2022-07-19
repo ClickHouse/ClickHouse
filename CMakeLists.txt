@@ -515,7 +515,7 @@ endif ()
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 if (NOT ENABLE_JEMALLOC)
-    message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
+    message (WARNING "Non default allocator is enabled. This is not recommended for production builds.")
 endif ()
 
 macro (clickhouse_add_executable target)
