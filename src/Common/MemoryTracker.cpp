@@ -295,14 +295,15 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 
 void MemoryTracker::free(Int64 size)
 {
+    if (level == VariableContext::Global)
+        rss.fetch_sub(size, std::memory_order_relaxed);
+
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
         if (level == VariableContext::Global)
         {
             /// For global memory tracker always update memory usage.
             amount.fetch_sub(size, std::memory_order_relaxed);
-            rss.fetch_sub(size, std::memory_order_relaxed);
-
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::add(metric_loaded, size);
