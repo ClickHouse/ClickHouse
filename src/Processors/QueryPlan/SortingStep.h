@@ -22,7 +22,8 @@ public:
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
         VolumePtr tmp_volume_,
-        size_t min_free_disk_space_);
+        size_t min_free_disk_space_,
+        bool optimize_sorting_for_input_stream_);
 
     /// FinishSorting
     SortingStep(
@@ -86,6 +87,7 @@ private:
     size_t max_bytes_before_external_sort = 0;
     VolumePtr tmp_volume;
     size_t min_free_disk_space = 0;
+    const bool optimize_sorting_for_input_stream = false;
 };
 
 }

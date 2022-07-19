@@ -1,4 +1,15 @@
 <test>
+    <settings><optimize_sorting_for_input_stream>1</optimize_sorting_for_input_stream></settings>
+
+    <!-- ORDER BY key is prefix of MergeTree sorting key -->
+    <query>SELECT CounterID, EventDate FROM hits_10m_single ORDER BY CounterID SETTINGS optimize_read_in_order=1 FORMAT Null</query>
+    <query>SELECT CounterID, EventDate FROM hits_10m_single ORDER BY CounterID SETTINGS optimize_read_in_order=0 FORMAT Null</query>
+
+    <!-- MergeTree sorting key is prefix of ORDER BY key -->
+    <query>SELECT CounterID, EventTime FROM hits_10m_single ORDER BY CounterID, EventTime SETTINGS optimize_read_in_order=1 format Null</query>
+    <query>SELECT CounterID, EventTime FROM hits_10m_single ORDER BY CounterID, EventTime SETTINGS optimize_read_in_order=0 format Null</query>
+
+    <!-- sorting step getting sort description from subquery -->
     <query>SELECT * FROM (SELECT CounterID, EventDate FROM hits_10m_single) ORDER BY CounterID SETTINGS optimize_read_in_order=1 FORMAT Null</query>
     <query>SELECT * FROM (SELECT CounterID, EventDate FROM hits_10m_single) ORDER BY CounterID SETTINGS optimize_read_in_order=0 FORMAT Null</query>
     <query>SELECT * FROM (SELECT CounterID, EventDate FROM hits_10m_single ORDER BY CounterID, EventDate) ORDER BY CounterID SETTINGS optimize_duplicate_order_by_and_distinct=1 FORMAT Null</query>
