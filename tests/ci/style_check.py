@@ -127,6 +127,7 @@ def commit_push_staged(pr_info: PRInfo):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("git_helper").setLevel(logging.DEBUG)
     args = parse_args()
 
     stopwatch = Stopwatch()
