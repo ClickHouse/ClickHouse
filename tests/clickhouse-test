@@ -2099,7 +2099,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--backward-compatibility-check",
         action="store_true",
-        help="Run tests for further backwoard compatibility testing by ignoring all"
+        help="Run tests for further backward compatibility testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
     )
     parser.add_argument(
