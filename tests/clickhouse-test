@@ -330,11 +330,33 @@ def print_stacktraces(output = sys.stdout) -> None:
     )
 
 
+def start_perf_recording():
+    def perf_runner():
+        pid = get_server_pid()
+        timestamp = datetime.now()
+        timestamp = "{timestamp}".replace(' ', "_")
+        cmd = "perf record -p {pid} -o record_{timestamp}.perf"
+        try:
+            subprocess.call(
+                cmd, shell=True
+            )
+        except Exception as e:
+            print(f"Stopped perf command: {cmd}, got: {e}")
+    perf_process = multiprocessing.Process(target=perf_runner)
+    perf_process.start()
+    return perf_process
+
+
 def stacktraces_collector() -> None:
     global stop_stacktraces_collection
     with open("/test_output/tsan_traces.txt", "w") as traces_file:
         while True:
+            perf_process = start_perf_recording()
             sleep(210)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            os.killpg(os.getpgid(os.getpid()), signal.SIGINT)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            perf_process.join()
             if not stop_stacktraces_collection.is_set():
                 print("\nStarting to collect stacktraces at", datetime.now(), "\n", file=traces_file)
                 print_stacktraces(traces_file)
