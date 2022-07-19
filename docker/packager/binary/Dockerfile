@@ -98,12 +98,23 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
-ARG NFPM_VERSION=2.15.1
+ARG NFPM_VERSION=2.16.0
 
 RUN arch=${TARGETARCH:-amd64} \
   && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
   && dpkg -i /tmp/nfpm.deb \
   && rm /tmp/nfpm.deb
+
+ARG GO_VERSION=1.18.3
+# We need go for clickhouse-diagnostics
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+  && tar -xzf /tmp/go.tgz -C /usr/local/ \
+  && rm /tmp/go.tgz
+
+ENV PATH="$PATH:/usr/local/go/bin"
+ENV GOPATH=/workdir/go
+ENV GOCACHE=/workdir/
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir

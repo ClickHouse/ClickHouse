@@ -414,12 +414,14 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     String mrk_path = escaped_name + marks_file_extension;
     String bin_path = escaped_name + DATA_FILE_EXTENSION;
 
+    auto data_part_storage = data_part_storage_builder->getStorage();
+
     /// Some columns may be removed because of ttl. Skip them.
-    if (!data_part_storage_builder->exists(mrk_path))
+    if (!data_part_storage->exists(mrk_path))
         return;
 
-    auto mrk_in = data_part_storage_builder->readFile(mrk_path, {}, std::nullopt, std::nullopt);
-    DB::CompressedReadBufferFromFile bin_in(data_part_storage_builder->readFile(bin_path, {}, std::nullopt, std::nullopt));
+    auto mrk_in = data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt);
+    DB::CompressedReadBufferFromFile bin_in(data_part_storage->readFile(bin_path, {}, std::nullopt, std::nullopt));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;

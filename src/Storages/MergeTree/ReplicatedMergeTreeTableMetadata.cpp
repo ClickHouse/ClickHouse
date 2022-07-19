@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
 
@@ -351,6 +352,125 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     }
 
     return diff;
+}
+
+StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const
+{
+    StorageInMemoryMetadata new_metadata = old_metadata;
+    new_metadata.columns = new_columns;
+
+    if (!empty())
+    {
+        auto parse_key_expr = [] (const String & key_expr)
+        {
+            ParserNotEmptyExpressionList parser(false);
+            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+            ASTPtr order_by_ast;
+            if (new_sorting_key_expr_list->children.size() == 1)
+                order_by_ast = new_sorting_key_expr_list->children[0];
+            else
+            {
+                auto tuple = makeASTFunction("tuple");
+                tuple->arguments->children = new_sorting_key_expr_list->children;
+                order_by_ast = tuple;
+            }
+            return order_by_ast;
+        };
+
+        if (sorting_key_changed)
+        {
+            auto order_by_ast = parse_key_expr(new_sorting_key);
+
+            new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, context);
+
+            if (new_metadata.primary_key.definition_ast == nullptr)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
+                new_metadata.primary_key = KeyDescription::getKeyFromAST(
+                    old_sorting_key_ast, new_metadata.columns, context);
+            }
+        }
+
+        if (sampling_expression_changed)
+        {
+            if (!new_sampling_expression.empty())
+            {
+                auto sample_by_ast = parse_key_expr(new_sampling_expression);
+                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, context);
+            }
+            else /// SAMPLE BY was removed
+            {
+                new_metadata.sampling_key = {};
+            }
+        }
+
+        if (skip_indices_changed)
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
+
+        if (constraints_changed)
+            new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
+
+        if (projections_changed)
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, context);
+
+        if (ttl_table_changed)
+        {
+            if (!new_ttl_table.empty())
+            {
+                ParserTTLExpressionList parser;
+                auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key);
+            }
+            else /// TTL was removed
+            {
+                new_metadata.table_ttl = TTLTableDescription{};
+            }
+        }
+    }
+
+    /// Changes in columns may affect following metadata fields
+    new_metadata.column_ttls_by_name.clear();
+    for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key);
+        new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (new_metadata.partition_key.definition_ast != nullptr)
+        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    if (!sorting_key_changed) /// otherwise already updated
+        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    /// Primary key is special, it exists even if not defined
+    if (new_metadata.primary_key.definition_ast != nullptr)
+    {
+        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, context);
+    }
+    else
+    {
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
+        new_metadata.primary_key.definition_ast = nullptr;
+    }
+
+    if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
+        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    if (!skip_indices_changed) /// otherwise already updated
+    {
+        for (auto & index : new_metadata.secondary_indices)
+            index.recalculateWithNewColumns(new_metadata.columns, context);
+    }
+
+    if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
+        new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key);
+
+    return new_metadata;
 }
 
 }

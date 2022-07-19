@@ -34,7 +34,6 @@
 * Add two new settings `input_format_csv_skip_first_lines/input_format_tsv_skip_first_lines` to allow skipping specified number of lines in the beginning of the file in CSV/TSV formats. [#37537](https://github.com/ClickHouse/ClickHouse/pull/37537) ([Kruglov Pavel](https://github.com/Avogar)).
 * `showCertificate` function shows current server's SSL certificate. [#37540](https://github.com/ClickHouse/ClickHouse/pull/37540) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * HTTP source for Data Dictionaries in Named Collections is supported. [#37581](https://github.com/ClickHouse/ClickHouse/pull/37581) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
-* Added a new window function `nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL x SECOND])`. [#37628](https://github.com/ClickHouse/ClickHouse/pull/37628) ([Andrey Zvonov](https://github.com/zvonand)).
 * Implemented changing the comment for `ReplicatedMergeTree` tables. [#37416](https://github.com/ClickHouse/ClickHouse/pull/37416) ([Vasily Nemkov](https://github.com/Enmk)).
 * Added `SYSTEM UNFREEZE` query that deletes the whole backup regardless if the corresponding table is deleted or not. [#36424](https://github.com/ClickHouse/ClickHouse/pull/36424) ([Vadim Volodin](https://github.com/PolyProgrammist)).
 

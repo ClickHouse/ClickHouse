@@ -39,7 +39,7 @@ DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & e
                 const String & new_table_name = element.new_table_name;
                 assert(!table_name.empty());
                 assert(!new_table_name.empty());
-                map.setNewTemporaryTableName(table_name, new_table_name);
+                map.setNewTableName({DatabaseCatalog::TEMPORARY_DATABASE, table_name}, {DatabaseCatalog::TEMPORARY_DATABASE, new_table_name});
                 break;
             }
 

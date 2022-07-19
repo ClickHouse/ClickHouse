@@ -45,8 +45,8 @@ public:
 
     bool isBackupAllowed() const override;
     bool isRestoreAllowed() const override;
-    std::vector<std::pair<UUID, AccessEntityPtr>> readAllForBackup(AccessEntityType type, const BackupSettings & backup_settings) const override;
-    void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
+    void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
