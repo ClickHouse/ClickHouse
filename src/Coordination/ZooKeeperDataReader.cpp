@@ -6,6 +6,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Coordination/KeeperConstants.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/pathUtils.h>
 
@@ -136,7 +137,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
 
     for (const auto & itr : storage.container)
     {
-        if (itr.key != "/")
+        if (itr.key != "/" && !itr.key.toView().starts_with(keeper_system_path))
         {
             auto parent_path = parentPath(itr.key);
             storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseName(path)); value.stat.numChildren++; });
